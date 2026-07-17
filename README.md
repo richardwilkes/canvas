@@ -1,13 +1,14 @@
 # canvas
 
+[![Go Reference](https://pkg.go.dev/badge/github.com/richardwilkes/canvas.svg)](https://pkg.go.dev/github.com/richardwilkes/canvas)
+[![Build](https://github.com/richardwilkes/canvas/actions/workflows/build.yml/badge.svg)](https://github.com/richardwilkes/canvas/actions/workflows/build.yml)
+
 A 2D graphics library for Go: a pure-Go reimplementation of the [Skia](https://skia.org) rendering subsystems, with both
 a CPU rasterizer and a GPU (OpenGL) renderer.
 
-Note that this has been tailored to the needs of my specific projects (principally
-[unison](https://github.com/richardwilkes/unison)) and may not be suitable for anyone else.
-
-[![Go Reference](https://pkg.go.dev/badge/github.com/richardwilkes/canvas.svg)](https://pkg.go.dev/github.com/richardwilkes/canvas)
-[![Build](https://github.com/richardwilkes/canvas/actions/workflows/build.yml/badge.svg)](https://github.com/richardwilkes/canvas/actions/workflows/build.yml)
+> [!WARNING]
+> This library has been tailored to the needs of my specific projects (principally
+> [unison](https://github.com/richardwilkes/unison)) and may not be suitable for anyone else.
 
 ## Packages
 

@@ -1,0 +1,259 @@
+GL_VERSION: 4.6 (Core Profile) Mesa 22.3.6
+GL_RENDERER: AMD Radeon R9 200 Series (tonga, LLVM 15.0.6, DRM 3.49, 6.1.0-50-amd64)
+GL_VENDOR: AMD
+GL_SHADING_LANGUAGE_VERSION: 4.60
+MAX_TEXTURE_SIZE: 16384
+MAX_RENDERBUFFER_SIZE: 16384
+MAX_SAMPLES: 8
+EXT: GL_AMD_conservative_depth
+EXT: GL_AMD_depth_clamp_separate
+EXT: GL_AMD_draw_buffers_blend
+EXT: GL_AMD_framebuffer_multisample_advanced
+EXT: GL_AMD_gpu_shader_int64
+EXT: GL_AMD_multi_draw_indirect
+EXT: GL_AMD_performance_monitor
+EXT: GL_AMD_pinned_memory
+EXT: GL_AMD_query_buffer_object
+EXT: GL_AMD_seamless_cubemap_per_texture
+EXT: GL_AMD_shader_stencil_export
+EXT: GL_AMD_shader_trinary_minmax
+EXT: GL_AMD_texture_texture4
+EXT: GL_AMD_vertex_shader_layer
+EXT: GL_AMD_vertex_shader_viewport_index
+EXT: GL_ANGLE_texture_compression_dxt3
+EXT: GL_ANGLE_texture_compression_dxt5
+EXT: GL_ARB_ES2_compatibility
+EXT: GL_ARB_ES3_1_compatibility
+EXT: GL_ARB_ES3_2_compatibility
+EXT: GL_ARB_ES3_compatibility
+EXT: GL_ARB_arrays_of_arrays
+EXT: GL_ARB_base_instance
+EXT: GL_ARB_bindless_texture
+EXT: GL_ARB_blend_func_extended
+EXT: GL_ARB_buffer_storage
+EXT: GL_ARB_clear_buffer_object
+EXT: GL_ARB_clear_texture
+EXT: GL_ARB_clip_control
+EXT: GL_ARB_color_buffer_float
+EXT: GL_ARB_compressed_texture_pixel_storage
+EXT: GL_ARB_compute_shader
+EXT: GL_ARB_compute_variable_group_size
+EXT: GL_ARB_conditional_render_inverted
+EXT: GL_ARB_conservative_depth
+EXT: GL_ARB_copy_buffer
+EXT: GL_ARB_copy_image
+EXT: GL_ARB_cull_distance
+EXT: GL_ARB_debug_output
+EXT: GL_ARB_depth_buffer_float
+EXT: GL_ARB_depth_clamp
+EXT: GL_ARB_derivative_control
+EXT: GL_ARB_direct_state_access
+EXT: GL_ARB_draw_buffers
+EXT: GL_ARB_draw_buffers_blend
+EXT: GL_ARB_draw_elements_base_vertex
+EXT: GL_ARB_draw_indirect
+EXT: GL_ARB_draw_instanced
+EXT: GL_ARB_enhanced_layouts
+EXT: GL_ARB_explicit_attrib_location
+EXT: GL_ARB_explicit_uniform_location
+EXT: GL_ARB_fragment_coord_conventions
+EXT: GL_ARB_fragment_layer_viewport
+EXT: GL_ARB_fragment_shader
+EXT: GL_ARB_framebuffer_no_attachments
+EXT: GL_ARB_framebuffer_object
+EXT: GL_ARB_framebuffer_sRGB
+EXT: GL_ARB_get_program_binary
+EXT: GL_ARB_get_texture_sub_image
+EXT: GL_ARB_gl_spirv
+EXT: GL_ARB_gpu_shader5
+EXT: GL_ARB_gpu_shader_fp64
+EXT: GL_ARB_gpu_shader_int64
+EXT: GL_ARB_half_float_pixel
+EXT: GL_ARB_half_float_vertex
+EXT: GL_ARB_indirect_parameters
+EXT: GL_ARB_instanced_arrays
+EXT: GL_ARB_internalformat_query
+EXT: GL_ARB_internalformat_query2
+EXT: GL_ARB_invalidate_subdata
+EXT: GL_ARB_map_buffer_alignment
+EXT: GL_ARB_map_buffer_range
+EXT: GL_ARB_multi_bind
+EXT: GL_ARB_multi_draw_indirect
+EXT: GL_ARB_occlusion_query2
+EXT: GL_ARB_parallel_shader_compile
+EXT: GL_ARB_pipeline_statistics_query
+EXT: GL_ARB_pixel_buffer_object
+EXT: GL_ARB_point_sprite
+EXT: GL_ARB_polygon_offset_clamp
+EXT: GL_ARB_program_interface_query
+EXT: GL_ARB_provoking_vertex
+EXT: GL_ARB_query_buffer_object
+EXT: GL_ARB_robust_buffer_access_behavior
+EXT: GL_ARB_robustness
+EXT: GL_ARB_sample_shading
+EXT: GL_ARB_sampler_objects
+EXT: GL_ARB_seamless_cube_map
+EXT: GL_ARB_seamless_cubemap_per_texture
+EXT: GL_ARB_separate_shader_objects
+EXT: GL_ARB_shader_atomic_counter_ops
+EXT: GL_ARB_shader_atomic_counters
+EXT: GL_ARB_shader_ballot
+EXT: GL_ARB_shader_bit_encoding
+EXT: GL_ARB_shader_clock
+EXT: GL_ARB_shader_draw_parameters
+EXT: GL_ARB_shader_group_vote
+EXT: GL_ARB_shader_image_load_store
+EXT: GL_ARB_shader_image_size
+EXT: GL_ARB_shader_objects
+EXT: GL_ARB_shader_precision
+EXT: GL_ARB_shader_stencil_export
+EXT: GL_ARB_shader_storage_buffer_object
+EXT: GL_ARB_shader_subroutine
+EXT: GL_ARB_shader_texture_image_samples
+EXT: GL_ARB_shader_texture_lod
+EXT: GL_ARB_shader_viewport_layer_array
+EXT: GL_ARB_shading_language_420pack
+EXT: GL_ARB_shading_language_include
+EXT: GL_ARB_shading_language_packing
+EXT: GL_ARB_spirv_extensions
+EXT: GL_ARB_stencil_texturing
+EXT: GL_ARB_sync
+EXT: GL_ARB_tessellation_shader
+EXT: GL_ARB_texture_barrier
+EXT: GL_ARB_texture_buffer_object
+EXT: GL_ARB_texture_buffer_object_rgb32
+EXT: GL_ARB_texture_buffer_range
+EXT: GL_ARB_texture_compression_bptc
+EXT: GL_ARB_texture_compression_rgtc
+EXT: GL_ARB_texture_cube_map_array
+EXT: GL_ARB_texture_filter_anisotropic
+EXT: GL_ARB_texture_float
+EXT: GL_ARB_texture_gather
+EXT: GL_ARB_texture_mirror_clamp_to_edge
+EXT: GL_ARB_texture_multisample
+EXT: GL_ARB_texture_non_power_of_two
+EXT: GL_ARB_texture_query_levels
+EXT: GL_ARB_texture_query_lod
+EXT: GL_ARB_texture_rectangle
+EXT: GL_ARB_texture_rg
+EXT: GL_ARB_texture_rgb10_a2ui
+EXT: GL_ARB_texture_stencil8
+EXT: GL_ARB_texture_storage
+EXT: GL_ARB_texture_storage_multisample
+EXT: GL_ARB_texture_swizzle
+EXT: GL_ARB_texture_view
+EXT: GL_ARB_timer_query
+EXT: GL_ARB_transform_feedback2
+EXT: GL_ARB_transform_feedback3
+EXT: GL_ARB_transform_feedback_instanced
+EXT: GL_ARB_transform_feedback_overflow_query
+EXT: GL_ARB_uniform_buffer_object
+EXT: GL_ARB_vertex_array_bgra
+EXT: GL_ARB_vertex_array_object
+EXT: GL_ARB_vertex_attrib_64bit
+EXT: GL_ARB_vertex_attrib_binding
+EXT: GL_ARB_vertex_buffer_object
+EXT: GL_ARB_vertex_shader
+EXT: GL_ARB_vertex_type_10f_11f_11f_rev
+EXT: GL_ARB_vertex_type_2_10_10_10_rev
+EXT: GL_ARB_viewport_array
+EXT: GL_ATI_blend_equation_separate
+EXT: GL_ATI_meminfo
+EXT: GL_ATI_texture_float
+EXT: GL_ATI_texture_mirror_once
+EXT: GL_EXT_EGL_image_storage
+EXT: GL_EXT_EGL_sync
+EXT: GL_EXT_abgr
+EXT: GL_EXT_blend_equation_separate
+EXT: GL_EXT_debug_label
+EXT: GL_EXT_demote_to_helper_invocation
+EXT: GL_EXT_depth_bounds_test
+EXT: GL_EXT_draw_buffers2
+EXT: GL_EXT_draw_instanced
+EXT: GL_EXT_framebuffer_blit
+EXT: GL_EXT_framebuffer_multisample
+EXT: GL_EXT_framebuffer_multisample_blit_scaled
+EXT: GL_EXT_framebuffer_object
+EXT: GL_EXT_framebuffer_sRGB
+EXT: GL_EXT_memory_object
+EXT: GL_EXT_memory_object_fd
+EXT: GL_EXT_packed_depth_stencil
+EXT: GL_EXT_packed_float
+EXT: GL_EXT_pixel_buffer_object
+EXT: GL_EXT_polygon_offset_clamp
+EXT: GL_EXT_provoking_vertex
+EXT: GL_EXT_semaphore
+EXT: GL_EXT_semaphore_fd
+EXT: GL_EXT_shader_image_load_formatted
+EXT: GL_EXT_shader_image_load_store
+EXT: GL_EXT_shader_integer_mix
+EXT: GL_EXT_shader_samples_identical
+EXT: GL_EXT_texture_array
+EXT: GL_EXT_texture_compression_dxt1
+EXT: GL_EXT_texture_compression_rgtc
+EXT: GL_EXT_texture_compression_s3tc
+EXT: GL_EXT_texture_filter_anisotropic
+EXT: GL_EXT_texture_integer
+EXT: GL_EXT_texture_mirror_clamp
+EXT: GL_EXT_texture_sRGB
+EXT: GL_EXT_texture_sRGB_R8
+EXT: GL_EXT_texture_sRGB_decode
+EXT: GL_EXT_texture_shadow_lod
+EXT: GL_EXT_texture_shared_exponent
+EXT: GL_EXT_texture_snorm
+EXT: GL_EXT_texture_swizzle
+EXT: GL_EXT_timer_query
+EXT: GL_EXT_transform_feedback
+EXT: GL_EXT_vertex_array_bgra
+EXT: GL_EXT_vertex_attrib_64bit
+EXT: GL_EXT_window_rectangles
+EXT: GL_IBM_multimode_draw_arrays
+EXT: GL_INTEL_blackhole_render
+EXT: GL_KHR_blend_equation_advanced
+EXT: GL_KHR_context_flush_control
+EXT: GL_KHR_debug
+EXT: GL_KHR_no_error
+EXT: GL_KHR_parallel_shader_compile
+EXT: GL_KHR_robust_buffer_access_behavior
+EXT: GL_KHR_robustness
+EXT: GL_KHR_texture_compression_astc_ldr
+EXT: GL_KHR_texture_compression_astc_sliced_3d
+EXT: GL_MESA_framebuffer_flip_y
+EXT: GL_MESA_pack_invert
+EXT: GL_MESA_shader_integer_functions
+EXT: GL_MESA_texture_signed_rgba
+EXT: GL_NVX_gpu_memory_info
+EXT: GL_NV_alpha_to_coverage_dither_control
+EXT: GL_NV_compute_shader_derivatives
+EXT: GL_NV_conditional_render
+EXT: GL_NV_copy_image
+EXT: GL_NV_depth_clamp
+EXT: GL_NV_packed_depth_stencil
+EXT: GL_NV_shader_atomic_int64
+EXT: GL_NV_texture_barrier
+EXT: GL_NV_vdpau_interop
+EXT: GL_OES_EGL_image
+EXT: GL_S3_s3tc
+
+# Caps derived by the desktop-trimmed GrGLCaps port (12.0.2), from TestCapsLiveDump:
+CAPS core_profile: true
+CAPS glsl_generation: 6
+CAPS version_decl: "#version 420\n"
+CAPS vendor/renderer/driver: 8/22/0
+CAPS driver_version: 0x001600030000
+CAPS msfbo_type: 1
+CAPS stencil_formats: [STENCIL_INDEX8 STENCIL_INDEX16 DEPTH24_STENCIL8]
+CAPS fence_type: 1 timer_query: 1 multi_draw: 1
+CAPS map_buffer: 2 transfer_buffer: 1 invalidate_fb: 2 invalidate_buffer: 2
+CAPS max_frag_uniform_vectors: 4096 max_vertex_attribs: 16 max_frag_samplers: 32
+CAPS dual_source_blending: true texture_barrier: true texture_swizzle: true sampler_objects: true
+CAPS program_binary: true blend_equation_support: 1 aniso: true/16
+CAPS format RGBA8: texturable=true tex_storage=true max_samples=8
+CAPS format R8: texturable=true tex_storage=true max_samples=8
+CAPS format ALPHA8: texturable=false tex_storage=false max_samples=0
+CAPS format LUMINANCE8: texturable=false tex_storage=false max_samples=0
+CAPS format BGRA8: texturable=false tex_storage=false max_samples=0
+CAPS format RGB565: texturable=true tex_storage=false max_samples=8
+CAPS format RGBA16F: texturable=true tex_storage=true max_samples=8
+CAPS format R16F: texturable=true tex_storage=true max_samples=8
+CAPS format RGB8: texturable=true tex_storage=true max_samples=1

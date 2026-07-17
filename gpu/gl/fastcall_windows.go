@@ -1,0 +1,33 @@
+// Copyright (c) 2026 by Richard A. Wilkes. All rights reserved.
+//
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, version 2.0. If a copy of the MPL was not distributed with
+// this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+//
+// This Source Code Form is "Incompatible With Secondary Licenses", as
+// defined by the Mozilla Public License, version 2.0.
+
+// The B.2 fixed-arity GL call lane for Windows: syscall.Syscall15 is the public, fixed-arity, allocation-free stdcall
+// dispatcher the runtime provides — it is exactly what purego.SyscallN wraps on Windows (its syscall_windows.go), minus
+// purego's escaping variadic []uintptr at the call site. S134 already showed Windows marshaling more cheaply than the
+// SysV platforms (122 allocs/frame vs 234-238) because purego's internal syscall15Args struct never exists there;
+// calling Syscall15 directly removes the remaining per-call slice allocation. Trailing arguments are padded with zero,
+// which is inert: the dispatcher always passes 15 slots (just as purego always did) and a C callee never reads beyond
+// its declared parameters.
+
+//go:build windows
+
+package gl
+
+import "syscall"
+
+// glCall invokes the GL proc fn with up to nine integer-class arguments and returns the proc's integer result. The
+// //go:uintptrescapes tag is the S105 GC-stack contract, identical to the tag on the purego.SyscallN this lane
+// replaces: a Go pointer converted at a glCall call site (e.g. uintptr(unsafe.Pointer(buffers)) in a generated wrapper)
+// is forced to escape and stays alive and pinned for the duration of the call.
+//
+//go:uintptrescapes
+func glCall(fn, a1, a2, a3, a4, a5, a6, a7, a8, a9 uintptr) uintptr {
+	r1, _, _ := syscall.Syscall15(fn, 15, a1, a2, a3, a4, a5, a6, a7, a8, a9, 0, 0, 0, 0, 0, 0) //nolint:staticcheck // SA1019: the fixed-arity form is the point
+	return r1
+}

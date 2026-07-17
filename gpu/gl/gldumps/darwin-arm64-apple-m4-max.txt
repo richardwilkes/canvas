@@ -1,0 +1,73 @@
+GL_VERSION: 4.1 Metal - 90.5
+GL_RENDERER: Apple M4 Max
+GL_VENDOR: Apple
+GL_SHADING_LANGUAGE_VERSION: 4.10
+MAX_TEXTURE_SIZE: 16384
+MAX_RENDERBUFFER_SIZE: 16384
+MAX_SAMPLES: 4
+EXT: GL_APPLE_client_storage
+EXT: GL_APPLE_container_object_shareable
+EXT: GL_APPLE_flush_render
+EXT: GL_APPLE_rgb_422
+EXT: GL_APPLE_row_bytes
+EXT: GL_APPLE_texture_range
+EXT: GL_ARB_ES2_compatibility
+EXT: GL_ARB_blend_func_extended
+EXT: GL_ARB_draw_buffers_blend
+EXT: GL_ARB_draw_indirect
+EXT: GL_ARB_explicit_attrib_location
+EXT: GL_ARB_gpu_shader5
+EXT: GL_ARB_gpu_shader_fp64
+EXT: GL_ARB_instanced_arrays
+EXT: GL_ARB_internalformat_query
+EXT: GL_ARB_occlusion_query2
+EXT: GL_ARB_sample_shading
+EXT: GL_ARB_sampler_objects
+EXT: GL_ARB_separate_shader_objects
+EXT: GL_ARB_shader_bit_encoding
+EXT: GL_ARB_shader_subroutine
+EXT: GL_ARB_shading_language_include
+EXT: GL_ARB_tessellation_shader
+EXT: GL_ARB_texture_buffer_object_rgb32
+EXT: GL_ARB_texture_cube_map_array
+EXT: GL_ARB_texture_gather
+EXT: GL_ARB_texture_query_lod
+EXT: GL_ARB_texture_rgb10_a2ui
+EXT: GL_ARB_texture_storage
+EXT: GL_ARB_texture_swizzle
+EXT: GL_ARB_timer_query
+EXT: GL_ARB_transform_feedback2
+EXT: GL_ARB_transform_feedback3
+EXT: GL_ARB_vertex_attrib_64bit
+EXT: GL_ARB_vertex_type_2_10_10_10_rev
+EXT: GL_ARB_viewport_array
+EXT: GL_EXT_debug_label
+EXT: GL_EXT_debug_marker
+EXT: GL_EXT_framebuffer_multisample_blit_scaled
+EXT: GL_EXT_texture_compression_s3tc
+EXT: GL_EXT_texture_filter_anisotropic
+EXT: GL_EXT_texture_sRGB_decode
+EXT: GL_NV_texture_barrier
+
+# Caps derived by the desktop-trimmed GrGLCaps port (12.0.2), from TestCapsLiveDump:
+CAPS core_profile: true
+CAPS glsl_generation: 5
+CAPS version_decl: "#version 400\n"
+CAPS vendor/renderer/driver: 7/21/3
+CAPS driver_version: 0x005a00000000
+CAPS msfbo_type: 1
+CAPS stencil_formats: [STENCIL_INDEX8 STENCIL_INDEX16 DEPTH24_STENCIL8]
+CAPS fence_type: 1 timer_query: 1 multi_draw: 0
+CAPS map_buffer: 2 transfer_buffer: 1 invalidate_fb: 0 invalidate_buffer: 1
+CAPS max_frag_uniform_vectors: 1024 max_vertex_attribs: 16 max_frag_samplers: 16
+CAPS dual_source_blending: true texture_barrier: true texture_swizzle: true sampler_objects: true
+CAPS program_binary: false blend_equation_support: 0 aniso: true/16
+CAPS format RGBA8: texturable=true tex_storage=true max_samples=4
+CAPS format R8: texturable=true tex_storage=true max_samples=4
+CAPS format ALPHA8: texturable=false tex_storage=false max_samples=0
+CAPS format LUMINANCE8: texturable=false tex_storage=false max_samples=0
+CAPS format BGRA8: texturable=false tex_storage=false max_samples=0
+CAPS format RGB565: texturable=true tex_storage=false max_samples=4
+CAPS format RGBA16F: texturable=true tex_storage=true max_samples=4
+CAPS format R16F: texturable=true tex_storage=true max_samples=4
+CAPS format RGB8: texturable=true tex_storage=true max_samples=1

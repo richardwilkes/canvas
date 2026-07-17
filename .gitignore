@@ -1,0 +1,10 @@
+/notes.md
+/.claude/settings.local.json
+*.test
+*.test.exe
+# Scratch dir for the Windows GPU run recipe (test binaries + the Mesa DLL drop beside them) — see
+# internal/oracle/goldens/gpu/README.md.
+gltmp/
+# Mesa3D llvmpipe drop-in fetched for the Windows GPU oracle (provisioned in CI, downloaded locally).
+/mesa
+/mesa.7z

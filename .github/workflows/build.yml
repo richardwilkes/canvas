@@ -1,0 +1,253 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Build and test with cgo disabled everywhere, so every step defaults to CGO_ENABLED=0 rather than repeating it. A step
+# needing cgo must override this explicitly — only "Test (race)" does, and only on the non-darwin legs (see the comment
+# there).
+env:
+  CGO_ENABLED: '0'
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-22.04-arm, macos-26-intel, macos-26, windows-2022, windows-11-arm]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.26'
+      - name: Lint gate
+        if: runner.os != 'Windows'
+        run: |
+          if git ls-files '*.go' | grep -v '^internal/oracle/' | xargs grep -l 'import "C"' 2>/dev/null; then
+            echo 'import "C" found in shipped module' >&2
+            exit 1
+          fi
+      - name: gofmt
+        if: runner.os != 'Windows'
+        run: |
+          files=$(git ls-files '*.go' | xargs gofmt -l)
+          if [ -n "$files" ]; then
+            echo "gofmt needed on:" >&2
+            echo "$files" >&2
+            exit 1
+          fi
+      - name: Build
+        run: go build ./...
+      - name: Vet
+        run: go vet ./...
+      - name: Test
+        run: go test ./...
+      # The one step that needs cgo, overriding the workflow-level CGO_ENABLED=0: outside darwin the race
+      # detector requires it, and `go test -race` hard-fails with "-race requires cgo" on the two Linux legs
+      # (cmd/go/internal/work/init.go: "On macOS, -race does not require cgo").
+      - name: Test (race)
+        if: runner.os != 'Windows'
+        run: go test -race ./...
+        env:
+          CGO_ENABLED: '1'
+      # Render the corpus through the pure-Go GL backend and diff against the self-captured per-platform GPU goldens
+      # under the exact1 profile (±1 LSB, zero pixels beyond — the proven driver-wobble envelope; see the oracle soak
+      # doc comment). The gate self-pins CANVAS_GLTEST_RENDERER=software and verifies the context's GL_RENDERER string
+      # against the manifest, so a runner-image driver bump fails with a one-line diagnosis instead of pixel noise.
+      # The test derives its per-platform golden dir from GOOS_GOARCH and skips (before touching GL) where none is
+      # checked in. Restricted to macOS because that is where a GL context comes up on the `test` runners today (both
+      # darwin legs have golden sets); -v surfaces a skip in the log.
+      - name: Go GPU backend vs self-captured GPU goldens
+        if: runner.os == 'macOS'
+        working-directory: internal/oracle
+        run: go test ./gorender/ -run TestGoGPUvsSelfCapturedGolden -count=1 -v
+  # The oracle harness (internal/oracle): the numeric probes (bit-exact / contraction-tolerance differentials, replayed
+  # against Skia's frozen answers) plus golden regeneration + diff of the scenario corpus, and the GPU golden lanes on
+  # any platform with a GL context.
+  oracle:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            install: |
+              sudo apt-get update
+              sudo apt-get install -y libgl1 libglx-mesa0 libgl1-mesa-dri libx11-6 xvfb mesa-utils
+          - os: ubuntu-22.04-arm
+            install: |
+              sudo apt-get update
+              sudo apt-get install -y libgl1 libglx-mesa0 libgl1-mesa-dri libx11-6 xvfb mesa-utils
+          - os: macos-26
+            install: ''
+          - os: macos-26-intel
+            install: ''
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.26'
+      - name: Install GL stack
+        if: matrix.install != ''
+        run: ${{ matrix.install }}
+      - name: Oracle vet
+        working-directory: internal/oracle
+        run: go vet ./...
+      # Log the headless GL stack (llvmpipe under Xvfb) so a GPU-context failure is diagnosable. Non-fatal.
+      - name: Report GL stack (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a -s "-screen 0 1280x1024x24" glxinfo -B || echo "glxinfo unavailable"
+        env:
+          LIBGL_ALWAYS_SOFTWARE: '1'
+      - name: Oracle probes and tests
+        working-directory: internal/oracle
+        # On Linux, run under a virtual X server (Xvfb) with Mesa's software rasterizer (llvmpipe) forced, so every
+        # GL-touching test renders on the deterministic non-hardware stack. If no GL context comes up, tests skip (not
+        # fail), so a missing GL stack degrades gracefully.
+        #
+        # The two GL env vars stay inline on the Linux branch rather than moving to the step's `env:` block: a block
+        # would export them to the macOS branch too, where CANVAS_GLTEST_RENDERER=software is not inert — it pins
+        # kCGLRendererGenericFloatID as a CGLChoosePixelFormat attribute (gpu/gl/gltest/context_darwin.go), changing
+        # which GL stack the darwin leg renders on, and silently skipping every GPU test if no such pixel format is
+        # found. The renderer-sensitive golden gates (TestGoGPU*SelfCapturedGolden) each pin the variable for
+        # themselves via t.Setenv, verify the context's GL_RENDERER against the manifest, and fail (not skip) on
+        # darwin if the pinned context can't be created.
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            LIBGL_ALWAYS_SOFTWARE=1 CANVAS_GLTEST_RENDERER=software xvfb-run -a -s "-screen 0 1280x1024x24" \
+              go test ./...
+          else
+            go test ./...
+          fi
+      # Re-run the allocation gate alone, verbosely. The step above already covers it, but silently: without -v a skip
+      # (no GL context) is indistinguishable from a pass, and a gate that quietly stops running is worse than no gate.
+      # -v puts the measured allocs/frame — or the skip — in the log on every leg. Costs a few seconds.
+      - name: Per-frame allocation gate (verbose)
+        working-directory: internal/oracle
+        # GL env vars inline on the Linux branch only, for the reason given on the step above.
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            LIBGL_ALWAYS_SOFTWARE=1 CANVAS_GLTEST_RENDERER=software xvfb-run -a -s "-screen 0 1280x1024x24" \
+              go test ./gorender/ -run TestGLFramePanelsAllocs -count=1 -v
+          else
+            go test ./gorender/ -run TestGLFramePanelsAllocs -count=1 -v
+          fi
+      # The raster gate: regenerate the corpus through the pure-Go raster backend and require it to be bit-identical
+      # to this platform's self-captured raster golden set (raster has no GL-driver exposure, so no ±1 envelope).
+      - name: Regenerate goldens and diff (exact, per-platform)
+        working-directory: internal/oracle
+        run: |
+          go run ./cmd/oracle gen -out "$RUNNER_TEMP/goldens"
+          go run ./cmd/oracle diff -a "goldens/raster/$(go env GOOS)_$(go env GOARCH)" -b "$RUNNER_TEMP/goldens" \
+            -profile exact -artifacts "$RUNNER_TEMP/diff-artifacts"
+      - name: Upload diff artifacts
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: oracle-diff-${{ matrix.os }}
+          path: ${{ runner.temp }}/diff-artifacts
+          if-no-files-found: ignore
+
+  # The Windows GPU leg. Separate from the `oracle` job because the Windows run flow diverges: a Mesa3D llvmpipe
+  # software-GL drop-in must be dropped beside each test binary (opengl32.dll is not a KnownDLL, so the app-directory
+  # copy is loaded ahead of System32's GL 1.1; PATH does not work), and there is no Xvfb. It verifies the raster and
+  # GPU golden gates and the frozen numeric probes on windows/amd64. Tests skip (not fail) if no GL context comes up,
+  # matching the other GL legs.
+  oracle-windows:
+    runs-on: windows-2022
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.26'
+      # Mesa3D llvmpipe: the pal1000/mesa-dist-win release-msvc archive's x64 opengl32.dll + libgallium_wgl.dll +
+      # dxil.dll (7-Zip is preinstalled on the runner). Pinned to a version confirmed to render the corpus under
+      # llvmpipe. GALLIUM_DRIVER=llvmpipe (set on the run steps) forces the software driver — mesa-dist-win otherwise
+      # defaults to hardware d3d12 when a GPU is present.
+      - name: Provision Mesa3D (llvmpipe software GL)
+        run: |
+          curl -sSL -o mesa.7z https://github.com/pal1000/mesa-dist-win/releases/download/26.1.3/mesa3d-26.1.3-release-msvc.7z
+          7z e -y -omesa mesa.7z x64/opengl32.dll x64/libgallium_wgl.dll x64/dxil.dll
+      - name: Oracle vet
+        working-directory: internal/oracle
+        run: go vet ./...
+      # Compile the test binaries to a known dir and drop the Mesa DLLs beside them (the app-directory copy of
+      # opengl32.dll wins over System32). The probe binary needs no GL at all, but is built the same way.
+      - name: Build GPU test binaries and stage DLLs
+        working-directory: internal/oracle
+        run: |
+          go test -c -o gltmp/gorender.test.exe ./gorender
+          go test -c -o gltmp/probe.test.exe ./probe
+          cp ../../mesa/opengl32.dll ../../mesa/libgallium_wgl.dll ../../mesa/dxil.dll gltmp/
+      # Run from the package source dir so the goldens (read via a path relative to the working directory) resolve; the
+      # DLLs load from the binary's own directory regardless of the working directory.
+      #
+      # All three golden lanes run against the self-captured windows_amd64 sets under exact1: the port-owned offscreen
+      # target, the caller-owned wrapped FBO (unison's production surface path), and DMSAA. TestGLFramePanelsAllocs is
+      # the per-frame allocation gate (see gorender/framealloc_test.go).
+      - name: GPU gates (goldens + per-frame allocations)
+        working-directory: internal/oracle/gorender
+        run: >-
+          ../gltmp/gorender.test.exe
+          -test.run 'SelfCapturedGolden|TestGLFramePanelsAllocs' -test.v
+        env:
+          GALLIUM_DRIVER: 'llvmpipe'
+      # The raster gate needs no GL: regenerate through the pure-Go raster backend and require bit-identity with the
+      # self-captured windows_amd64 raster set.
+      - name: Raster gate (exact, per-platform)
+        working-directory: internal/oracle
+        run: |
+          go run ./cmd/oracle gen -out "$RUNNER_TEMP/goldens"
+          go run ./cmd/oracle diff -a "goldens/raster/$(go env GOOS)_$(go env GOARCH)" -b "$RUNNER_TEMP/goldens" \
+            -profile exact -artifacts "$RUNNER_TEMP/diff-artifacts"
+      - name: Numeric probes (frozen Skia reference fixtures)
+        working-directory: internal/oracle/probe
+        run: >-
+          ../gltmp/probe.test.exe -test.v
+          -test.run 'TestMatrix|TestRect|TestScalar|TestChop|TestConic|TestBuildUnitArc|TestAnalytic|TestPath|TestStrokeFillPath'
+      - name: Upload diff artifacts
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: oracle-diff-windows-2022
+          path: ${{ runner.temp }}/diff-artifacts
+          if-no-files-found: ignore
+
+  # The windows/arm64 oracle leg gates only the raster lane: raster needs no GL, and no arm64 Mesa llvmpipe stack is
+  # provisioned (the GPU lanes have no windows_arm64 golden sets either — capture skips them there). The numeric probes
+  # run too; they are pure math.
+  oracle-windows-arm:
+    runs-on: windows-11-arm
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.26'
+      - name: Oracle vet
+        working-directory: internal/oracle
+        run: go vet ./...
+      - name: Raster gate (exact, per-platform)
+        working-directory: internal/oracle
+        run: |
+          go run ./cmd/oracle gen -out "$RUNNER_TEMP/goldens"
+          go run ./cmd/oracle diff -a "goldens/raster/$(go env GOOS)_$(go env GOARCH)" -b "$RUNNER_TEMP/goldens" \
+            -profile exact -artifacts "$RUNNER_TEMP/diff-artifacts"
+      - name: Numeric probes (frozen Skia reference fixtures)
+        working-directory: internal/oracle
+        run: go test ./probe/ -count=1
+      - name: Upload diff artifacts
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: oracle-diff-windows-11-arm
+          path: ${{ runner.temp }}/diff-artifacts
+          if-no-files-found: ignore

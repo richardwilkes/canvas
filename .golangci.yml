@@ -1,0 +1,218 @@
+version: '2'
+run:
+  modules-download-mode: readonly
+  tests: true
+linters:
+  default: none
+  enable:
+    - copyloopvar
+    - depguard
+    - errcheck
+    - errorlint
+    - goconst
+    - gocritic
+    - goheader
+    - gosec
+    - govet
+    - ineffassign
+    - misspell
+    - prealloc
+    - predeclared
+    - revive
+    - staticcheck
+    - unconvert
+    - unused
+  settings:
+    depguard:
+      rules:
+        main:
+          deny:
+            - pkg: github.com/satori/go.uuid
+              desc: Use github.com/google/uuid or github.com/gofrs/uuid instead
+    errcheck:
+      # Single-result type assertions are used pervasively as intentional downcasts (e.g. args.FP.(*rectBlurFP) in the
+      # GPU processor code), where a mismatch is a programming error and the runtime's panic is the desired check.
+      # Rewriting hundreds of them into the two-value form with a hand-rolled panic would add noise without value.
+      check-type-assertions: false
+      check-blank: true
+      exclude-functions:
+        - encoding/binary.Write
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+        - (fmt.State).Write
+        - (*bufio.Writer).WriteByte
+        - (*bufio.Writer).WriteRune
+        - (*bufio.Writer).WriteString
+        - (*github.com/richardwilkes/toolbox/v2/xbytes.InsertBuffer).Insert
+        - (*github.com/richardwilkes/toolbox/v2/xbytes.InsertBuffer).InsertByte
+        - (*github.com/richardwilkes/toolbox/v2/xbytes.InsertBuffer).InsertRune
+        - (*github.com/richardwilkes/toolbox/v2/xbytes.InsertBuffer).InsertString
+        - (*github.com/richardwilkes/toolbox/v2/xbytes.InsertBuffer).Write
+        - (*github.com/richardwilkes/toolbox/v2/xbytes.InsertBuffer).WriteByte
+        - (*github.com/richardwilkes/toolbox/v2/xbytes.InsertBuffer).WriteRune
+        - (*github.com/richardwilkes/toolbox/v2/xbytes.InsertBuffer).WriteString
+    goconst:
+      # Tests are ignored: their repeated literals are fixtures (ASCII-art golden rows like "..######..", driver
+      # version strings) that read better inline than behind a constant.
+      ignore-tests: true
+      min-len: 3
+      min-occurrences: 4
+    gocritic:
+      disabled-checks:
+        - sloppyReassign
+        # Every hit was a false positive: the numeric/GPU code annotates its math with expression-shaped comments
+        # (e.g. "// A = a + c - 2*b" or "// fma(float2(-3), E, D)") that the heuristic mistakes for disabled code.
+        - commentedOutCode
+      enabled-tags:
+        - diagnostic
+        - experimental
+        - opinionated
+        - performance
+        - style
+    goheader:
+      template: |-
+        Copyright (c) {{.YEAR_RANGE}} by Richard A. Wilkes. All rights reserved.
+
+        This Source Code Form is subject to the terms of the Mozilla Public
+        License, version 2.0. If a copy of the MPL was not distributed with
+        this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+        This Source Code Form is "Incompatible With Secondary Licenses", as
+        defined by the Mozilla Public License, version 2.0.
+    gosec:
+      excludes:
+        - G103
+        - G104
+        - G115
+        - G204
+        - G301
+        - G304
+        - G306
+        # G602's bounds analysis cannot follow loop invariants or documented caller contracts; every occurrence here
+        # was a false positive (e.g. b[i+1] after an even-length check, or slices guarded by the verb's point count).
+        # A real out-of-range access would panic in tests, so the check adds nothing but noise.
+        - G602
+    govet:
+      disable:
+        - composites
+      enable-all: true
+      settings:
+        printf:
+          funcs:
+            - Errorf
+            - Warnf
+            - Infof
+            - Debugf
+            - Fatalf
+            - StartRootSpanf
+            - StartSubSpanf
+            - EndWithMsgf
+            - Newf
+            - NewWithCausef
+        shadow:
+          strict: true
+    misspell:
+      locale: US
+    prealloc:
+      simple: true
+      range-loops: true
+      for-loops: false
+    revive:
+      rules:
+        - name: blank-imports
+          disabled: false
+        - name: context-as-argument
+          disabled: false
+        - name: context-keys-type
+          disabled: false
+        - name: dot-imports
+          disabled: false
+        - name: error-return
+          disabled: false
+        - name: error-strings
+          disabled: false
+        - name: error-naming
+          disabled: false
+        - name: exported
+          disabled: false
+        - name: if-return
+          disabled: false
+        - name: increment-decrement
+          disabled: false
+        - name: var-naming
+          disabled: false
+        - name: var-declaration
+          disabled: false
+        - name: package-comments
+          disabled: true
+        - name: range
+          disabled: false
+        - name: receiver-naming
+          disabled: false
+        - name: time-naming
+          disabled: false
+        - name: unexported-return
+          disabled: false
+        - name: indent-error-flow
+          disabled: false
+        - name: errorf
+          disabled: false
+        - name: unused-parameter
+          arguments:
+            - allowRegex: ^_
+          disabled: false
+    staticcheck:
+      checks:
+        - all
+        - -ST1000
+        - -ST1003
+        - -SA3000
+        - -SA5008
+  exclusions:
+    rules:
+      # The GL constants mirror the names in the OpenGL registry and man pages verbatim, so that they remain greppable
+      # against the specs. Renaming them to CamelCase would break that correspondence. revive's var-naming and
+      # staticcheck's ST1003 both flag them, so both are excluded here.
+      - path: gpu/gl/interface\.go
+        linters:
+          - revive
+          - staticcheck
+        text: use ALL_CAPS in Go names
+      # The ASTC constants (e.g. COMPRESSED_RGBA_ASTC_4x4) contain a lowercase 'x' in their block dimensions, so they
+      # miss the ALL_CAPS exclusion above and trigger the underscore message instead. Same rationale: they mirror the
+      # OpenGL registry names verbatim.
+      - path: gpu/gl/interface\.go
+        linters:
+          - revive
+          - staticcheck
+        text: don't use underscores in Go names; const
+      # GLSL (the shading language) is a domain term, not package-name stutter: stripping the "GL" prefix from names
+      # like GLSLType or GLSLBlendExpression would leave nonsense (SLType, SLBlendExpression), so those names stay.
+      - linters:
+          - revive
+        text: 'stutters; consider calling this SL'
+      # Tests use seeded math/rand deliberately so failures are reproducible; crypto/rand would defeat that, and there
+      # is no security context in test data generation.
+      - path: _test\.go
+        linters:
+          - gosec
+        text: 'G404:'
+      # Cpu and Gpu are deliberately spelled as words (CpuBuffer, GpuBufferTypeXferCpuToGpu, ...) rather than the
+      # CPU/GPU initialisms revive's var-naming wants. revive accepts Gpu but flags Cpu, so following its suggestions
+      # would yield inconsistent names like GpuBufferTypeXferCPUToGpu; keep the consistent Cpu/Gpu spelling instead.
+      - linters:
+          - revive
+        text: 'var-naming: .* should be \w*(CPU|GPU)'
+issues:
+  max-same-issues: 0
+  max-issues-per-linter: 0
+formatters:
+  enable:
+    - gofumpt
+    - goimports
+  settings:
+    gofumpt:
+      extra-rules: true
+  exclusions:
+    generated: lax

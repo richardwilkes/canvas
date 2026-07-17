@@ -1,0 +1,732 @@
+{
+	"schema": 1,
+	"platform": "darwin_arm64",
+	"entries": [
+		{
+			"name": "arcs",
+			"width": 256,
+			"height": 256,
+			"sha256": "9856bcecf1db53ca2bc9611ce18888a295d77d3a65cf27d85eb52b43adcd0c86"
+		},
+		{
+			"name": "arcs-degenerate",
+			"width": 256,
+			"height": 256,
+			"sha256": "ddb57e320a1f57b67333b5643c405a3cda80966f4cd57902ab69e58bdc01ea30"
+		},
+		{
+			"name": "atlas-basic",
+			"width": 256,
+			"height": 256,
+			"sha256": "a91731331397933f9d1c22fce3a122099d544bdc0602f76fdb7c749becc412af"
+		},
+		{
+			"name": "atlas-blend",
+			"width": 256,
+			"height": 256,
+			"sha256": "94d886c960cba80d5f186206d387ac1b71b24d626054d696044c24b1d7841bdf"
+		},
+		{
+			"name": "atlas-colors-modulate",
+			"width": 256,
+			"height": 256,
+			"sha256": "443f6568ecee39d506beeaee66864a063e1b95d7c8bedcb854df63bb0ae02cbb"
+		},
+		{
+			"name": "atlas-cull",
+			"width": 256,
+			"height": 256,
+			"sha256": "cff8341724ccf570a8a64c5d22a1336e6fb061023d544a2143e0073f977d6740"
+		},
+		{
+			"name": "blend-modes-basic",
+			"width": 256,
+			"height": 256,
+			"sha256": "c633cea97a9a04c622950c38c98026013994e758b05a0ac825ebe3098c26254e"
+		},
+		{
+			"name": "blend-modes-gradient-dst",
+			"width": 256,
+			"height": 256,
+			"sha256": "0abfd70ba32bf4421c3760f72580fae3cbcccea0e367bfbcd215919e6f6e0ed6"
+		},
+		{
+			"name": "blend-modes-hsl",
+			"width": 256,
+			"height": 256,
+			"sha256": "539000b94a6176f6d18842cb7bd8845ed6c63190b0f07af616f90c1239645f4b"
+		},
+		{
+			"name": "blend-modes-porterduff",
+			"width": 256,
+			"height": 256,
+			"sha256": "86dc4c3b0b32ee93a73695456d016b4026c74d113620a8a1d24cb39fbedfa2fd"
+		},
+		{
+			"name": "blend-modes-separable",
+			"width": 256,
+			"height": 256,
+			"sha256": "0460d4a6fbf92877aacca899795a3d7de38386a75f9204f26a6d8aa1cfb9ef2c"
+		},
+		{
+			"name": "clear-color",
+			"width": 256,
+			"height": 256,
+			"sha256": "9315c1a0f90b6a4a814930d34bd9d2a147feac2dbd88762a782706192921d132"
+		},
+		{
+			"name": "clip-difference-grid",
+			"width": 256,
+			"height": 256,
+			"sha256": "fc50b8d87d8d15959d45fa44a3094b2ffd235851f2d664fa746b809d6598c267"
+		},
+		{
+			"name": "clip-mixed-aa",
+			"width": 256,
+			"height": 256,
+			"sha256": "4cd0591b10b0cb8b136f26fedd68da37268f8cd1f6a356d6100f6f894a2e2859"
+		},
+		{
+			"name": "clip-nested-shrink",
+			"width": 256,
+			"height": 256,
+			"sha256": "50c3597e0dc8182341223f50b3ba4ef7e5ab65b9ba0f9081679a46fe10d82ae1"
+		},
+		{
+			"name": "clip-path",
+			"width": 256,
+			"height": 256,
+			"sha256": "c0793ba12c5e0e186e8c9629aa275e469e12c7e221012558a0bbb70ca6f05ba3"
+		},
+		{
+			"name": "clip-path-evenodd",
+			"width": 256,
+			"height": 256,
+			"sha256": "5fad447792e38ede42fc266d799363d242f1bba36f8854faad5141a0c5828712"
+		},
+		{
+			"name": "clip-persp",
+			"width": 256,
+			"height": 256,
+			"sha256": "92a3d9e9c35d357dd992b4a38a4af2e77bcc5168ea900cbc9c8f612f5ff9be2a"
+		},
+		{
+			"name": "clip-rect",
+			"width": 256,
+			"height": 256,
+			"sha256": "da8be31d8f1c48941769b282c9f9412bf78e1724d13500e1ace738fef4781903"
+		},
+		{
+			"name": "clip-rotated-rect",
+			"width": 256,
+			"height": 256,
+			"sha256": "086b0c23c64d0dc721afcd609db24a6501f3b7815d8f581696665a589c0eef24"
+		},
+		{
+			"name": "clip-save-restore-interleave",
+			"width": 256,
+			"height": 256,
+			"sha256": "b8658a885e381fb973b2e1ddf8a11f69b956828e94b784a547dac3d7460ad891"
+		},
+		{
+			"name": "clip-stroke-interaction",
+			"width": 256,
+			"height": 256,
+			"sha256": "fe342cd09013b55d500be51c5f0d0cddfeec03eb27efff168f1c41987d32a185"
+		},
+		{
+			"name": "clip-tiny-slivers",
+			"width": 256,
+			"height": 256,
+			"sha256": "9ad8749d1379e96eff0226d179d2e2179a1d5ba3ae5b19ae62308deab91967fb"
+		},
+		{
+			"name": "colorfilter-blend-tint",
+			"width": 256,
+			"height": 256,
+			"sha256": "228e9471594c44faf5d19d99ba8a35bb26e2288f8a0a0811281149dc112e910e"
+		},
+		{
+			"name": "colorfilter-compose",
+			"width": 256,
+			"height": 256,
+			"sha256": "08982f4a0e5a0857a4b146c6578dacdcb8e6c960aee934518d66f1d570741193"
+		},
+		{
+			"name": "colorfilter-highcontrast",
+			"width": 256,
+			"height": 256,
+			"sha256": "5745986131043040e2f727b329c8a52071843e71624a320a9da44fe945f33e8f"
+		},
+		{
+			"name": "colorfilter-lighting",
+			"width": 256,
+			"height": 256,
+			"sha256": "00051b268fff7dd55f9961e40f8295c85ba64b414edaf1113eaae3ddfd5f0dce"
+		},
+		{
+			"name": "colorfilter-luma",
+			"width": 256,
+			"height": 256,
+			"sha256": "04d84409f6ddd837f2028354ef4fe0b6bdc4cc2aa0d7930b88c67ec567dc8f70"
+		},
+		{
+			"name": "colorfilter-matrix-saturate",
+			"width": 256,
+			"height": 256,
+			"sha256": "98523c23785ce88cbd86e9ef1c22c6552bba4d2ac96d1315a579da74e3aabb59"
+		},
+		{
+			"name": "colorfilter-matrix-swap",
+			"width": 256,
+			"height": 256,
+			"sha256": "83aee8c9f975c63088ba14b40f4f90d8daa3d1365f95f8f757cb54b4664b4961"
+		},
+		{
+			"name": "dash-caps",
+			"width": 256,
+			"height": 256,
+			"sha256": "2e2f4b1699f39124a58f79ea415da3b9104626abc4f033ca6126800a894e57a4"
+		},
+		{
+			"name": "dash-closed-contours",
+			"width": 256,
+			"height": 256,
+			"sha256": "c339f60f8fe580614caebe324623cbb9466d00961214191c0d46e3bde037a6f8"
+		},
+		{
+			"name": "dash-curves",
+			"width": 256,
+			"height": 256,
+			"sha256": "89e854a2a89304e753523b5774756bd687155cf7488af7e0a216d580cbb5b226"
+		},
+		{
+			"name": "dash-joins-zigzag",
+			"width": 256,
+			"height": 256,
+			"sha256": "0d35f04b6b65f7781c8fc3631047cffb2978a195105e621a67c2f728a01a6b5c"
+		},
+		{
+			"name": "dash-phase",
+			"width": 256,
+			"height": 256,
+			"sha256": "12c9ac6d19812d1f3e1f84852d067000483ea4461b628c3e2e7e36559d0c5461"
+		},
+		{
+			"name": "draw-color-blends",
+			"width": 256,
+			"height": 256,
+			"sha256": "f91a401957e99fdd73d97b2b6b5118154906e0e72c484de33d75122e37266424"
+		},
+		{
+			"name": "draw-paint-shader",
+			"width": 256,
+			"height": 256,
+			"sha256": "3f57530eacd128a53f0c6b2584889b70e6702bc4756df277f28e98908f288295"
+		},
+		{
+			"name": "draw-points",
+			"width": 256,
+			"height": 256,
+			"sha256": "545e25877835a9b6d22f2000cc744121208c211f52b292d964a5e5895a0dad30"
+		},
+		{
+			"name": "fill-ovals",
+			"width": 256,
+			"height": 256,
+			"sha256": "39db4a6f44ed7f99f8086912f6c615578bfbf9209aa61b063351b1aae5564c9d"
+		},
+		{
+			"name": "fill-rects-aa",
+			"width": 256,
+			"height": 256,
+			"sha256": "ae5ab08c0559ca677d0cb91b6aebaa722df73211182ad270160e9247f80ee662"
+		},
+		{
+			"name": "fill-rects-aliased",
+			"width": 256,
+			"height": 256,
+			"sha256": "c90ff7340e4cdd120639ba99bb9e59345644f96a95d38cd8dbd56e952c773b4c"
+		},
+		{
+			"name": "gradient-200-stops",
+			"width": 256,
+			"height": 256,
+			"sha256": "313a3191167873cf044a391ea7f409f75fa9bf2cd7238c1e5cbf66ee48fe52ec"
+		},
+		{
+			"name": "gradient-alpha-stops",
+			"width": 256,
+			"height": 256,
+			"sha256": "3cb9974b2defdc05436e2fe02d78dcc69ea74ed07b1bc4e8649b6c4081c746b0"
+		},
+		{
+			"name": "gradient-conical",
+			"width": 256,
+			"height": 256,
+			"sha256": "108c39408146ca07de5eedb9850a3f5c9ed9255c0935715158e4640206d5b60d"
+		},
+		{
+			"name": "gradient-decal",
+			"width": 256,
+			"height": 256,
+			"sha256": "4a02212f901b7cf734bc8c990787acbbb6c230b277051875305a5b33a297a035"
+		},
+		{
+			"name": "gradient-dither",
+			"width": 256,
+			"height": 256,
+			"sha256": "92476d4184095a85a1d52172ec4b20857744a0d76c2e3e0bfef4fc1fb9dee5c8"
+		},
+		{
+			"name": "gradient-linear",
+			"width": 256,
+			"height": 256,
+			"sha256": "5383479c52aa651aa589e6e8ab1982fe777dd9540afadb8febac46cd3d5ce31b"
+		},
+		{
+			"name": "gradient-local-matrix",
+			"width": 256,
+			"height": 256,
+			"sha256": "7b9621cc242651c3968f847c190ab790381005efe67267ff2599a08ac5e62cab"
+		},
+		{
+			"name": "gradient-many-stops",
+			"width": 256,
+			"height": 256,
+			"sha256": "2ace2467889f1d8532e65dac92f4b937379fd9cdde880ee4b9c8754060f44a2c"
+		},
+		{
+			"name": "gradient-on-stroke",
+			"width": 256,
+			"height": 256,
+			"sha256": "767867d6f4905c7abf35b7f2ef2ede6046e0ac94ec36fd2a45fa5f173bc95ad0"
+		},
+		{
+			"name": "gradient-radial",
+			"width": 256,
+			"height": 256,
+			"sha256": "76c8975b4cb5f020d652343c778226b94d8aec360b0324df75bade68728bf418"
+		},
+		{
+			"name": "gradient-sweep",
+			"width": 256,
+			"height": 256,
+			"sha256": "e5960d6682fe9bf42e0fa14667423d3509496019e33c91daa491951ae1f29e0b"
+		},
+		{
+			"name": "hairlines",
+			"width": 256,
+			"height": 256,
+			"sha256": "654d0f6bf340beb558af8b3b501baac2e2249269351f9f00d49f53ab9cf8f3da"
+		},
+		{
+			"name": "imagefilter-arithmetic",
+			"width": 256,
+			"height": 256,
+			"sha256": "6ade67a6620d2e8711f16d2514ede732d0366f87755d2a3a9b7db6fa686b2802"
+		},
+		{
+			"name": "imagefilter-blur-aniso",
+			"width": 256,
+			"height": 256,
+			"sha256": "81a0150c58b1326792979a1f2d11cf6674fb46dd5710205a2200547d58088397"
+		},
+		{
+			"name": "imagefilter-blur-tilemodes",
+			"width": 256,
+			"height": 256,
+			"sha256": "f70e8aa12669bf5daad7e620109e40ee392ff4983ddf8aa7bf9891d9eceacd3d"
+		},
+		{
+			"name": "imagefilter-colorfilter",
+			"width": 256,
+			"height": 256,
+			"sha256": "899e92c7a1687274bdb87b67b2fe9878dfe793c991a7968e4c7ad414babe467a"
+		},
+		{
+			"name": "imagefilter-compose",
+			"width": 256,
+			"height": 256,
+			"sha256": "dbe5497586d203a60d26c3b1fefffbb7201406cb69eab78e033c993ca7b5e799"
+		},
+		{
+			"name": "imagefilter-convolution",
+			"width": 256,
+			"height": 256,
+			"sha256": "1a9f35f592464d3d7f6a5d223f10f15ec03c545d2e86291d305a07b3e0ed5749"
+		},
+		{
+			"name": "imagefilter-crop-rect",
+			"width": 256,
+			"height": 256,
+			"sha256": "cd22d70455b1db94fb25e1b5085141bd468b9645b1692ed6b7c404697794c72f"
+		},
+		{
+			"name": "imagefilter-displacement",
+			"width": 256,
+			"height": 256,
+			"sha256": "1d7fa86d56d1a194734639bcc36aef69ab509433ef2c7e3d714bc364760eb123"
+		},
+		{
+			"name": "imagefilter-dropshadow",
+			"width": 256,
+			"height": 256,
+			"sha256": "552d42b43e7467f39a6c68b2f18e5477a66106a27281b8f5829271200688e7cd"
+		},
+		{
+			"name": "imagefilter-lit-diffuse",
+			"width": 256,
+			"height": 256,
+			"sha256": "9976c2961332aaff1aa44aa89eb0b5ab50c73de2859636f78d627e3ff8883065"
+		},
+		{
+			"name": "imagefilter-lit-specular",
+			"width": 256,
+			"height": 256,
+			"sha256": "dca9a140b58a690dde9d4a0922ee7c74d052c177203364922ed1d4d7f3ad561c"
+		},
+		{
+			"name": "imagefilter-lit-spot-diffuse",
+			"width": 256,
+			"height": 256,
+			"sha256": "30c27f3c69d2f542fb1ac0329a5f2ec7a896034a5acf8d27336945121ef9f6f7"
+		},
+		{
+			"name": "imagefilter-magnifier",
+			"width": 256,
+			"height": 256,
+			"sha256": "6d116e181ce55cd179753d04cb27742ab6a8613cd7611f1f66440f2a42b1ffb7"
+		},
+		{
+			"name": "imagefilter-matrix-transform",
+			"width": 256,
+			"height": 256,
+			"sha256": "dd6c853943d385536207c22e7d34ad98687089cf0365e218c14b86ac90289680"
+		},
+		{
+			"name": "imagefilter-merge",
+			"width": 256,
+			"height": 256,
+			"sha256": "e9d18d6d746687ca90dd45a3b1b619adf6e127fb3f6b785a0301f8fb5d3885f9"
+		},
+		{
+			"name": "imagefilter-morphology",
+			"width": 256,
+			"height": 256,
+			"sha256": "27991a873665f4855e9dc77210972870473ee76b0279f50d7415f4900c23e0b5"
+		},
+		{
+			"name": "imagefilter-offset",
+			"width": 256,
+			"height": 256,
+			"sha256": "16088a7ebbb831f830facdc556bde55fe23dd7c4870889736d9f2540acc1c086"
+		},
+		{
+			"name": "imagefilter-tile",
+			"width": 256,
+			"height": 256,
+			"sha256": "8f847bbc4c4f604e8a7677d8df13b70b5191a642ccd88d2726559fdbf20b8184"
+		},
+		{
+			"name": "layer-blend-multiply",
+			"width": 256,
+			"height": 256,
+			"sha256": "42fdfb2bd82ca2d71a75f1289a25ab96aac9fe385361c31c2e7083b0607eabe4"
+		},
+		{
+			"name": "layer-blend-screen-alpha",
+			"width": 256,
+			"height": 256,
+			"sha256": "866e0e184b6f03a0348d81f243bca7c76524c73da1c9d486887736f8be962480"
+		},
+		{
+			"name": "layer-bounded",
+			"width": 256,
+			"height": 256,
+			"sha256": "5fbf99b1fef2979a33caa9a0665f74dbdb8138d896e50accb154966d38a899fc"
+		},
+		{
+			"name": "layer-clip-interaction",
+			"width": 256,
+			"height": 256,
+			"sha256": "2d10b7437ff6803db8ad59704012553038b5b840232500384118ff72e559f6b7"
+		},
+		{
+			"name": "layer-colorfilter",
+			"width": 256,
+			"height": 256,
+			"sha256": "0588e6faa3cdd9fbacbf2be9f07f91ab83ba08003b86931b940008023d436fea"
+		},
+		{
+			"name": "layer-imagefilter-blur",
+			"width": 256,
+			"height": 256,
+			"sha256": "f1fc7f1d75ba26aa771285c63d259735ac606c4601bace1a07293e9cc9056708"
+		},
+		{
+			"name": "layer-nested-alpha",
+			"width": 256,
+			"height": 256,
+			"sha256": "28207b260c8d2cc1a9be11b71a66891064ed1fcd0ec33c94c5546cb4e4b889cf"
+		},
+		{
+			"name": "layer-under-transform",
+			"width": 256,
+			"height": 256,
+			"sha256": "dd5e6b72ac839789afbae388382eb120e0b1f59c4374a37386e814a7bff57f18"
+		},
+		{
+			"name": "line-caps",
+			"width": 256,
+			"height": 256,
+			"sha256": "617fc7d7187344b7d82ab69298d9f58a042939bf12d28782c07523f6d3557fed"
+		},
+		{
+			"name": "maskblur-ctm",
+			"width": 256,
+			"height": 256,
+			"sha256": "8b966d34a7a6bb7485e565e2cbc33412841ca179cf91495837540db55a5b8e55"
+		},
+		{
+			"name": "maskblur-geometries",
+			"width": 256,
+			"height": 256,
+			"sha256": "152daf0b6688aa8091e3ee8266811c1687f53299392dc8c732bb5713f1f5230f"
+		},
+		{
+			"name": "maskblur-stroked",
+			"width": 256,
+			"height": 256,
+			"sha256": "e472485f35223c1c30a50f4c3c810eac4de8fd4ec25ff13ec88186e0765d330f"
+		},
+		{
+			"name": "maskblur-styles",
+			"width": 256,
+			"height": 256,
+			"sha256": "b28173698e129d3a29fd0fbe77f75b3dae90753d7140bba8d17d80981d78a494"
+		},
+		{
+			"name": "maskblur-translucent-overlap",
+			"width": 256,
+			"height": 256,
+			"sha256": "ddedd37a88e63091ae5ee412364bdfd3d2503a26a8a9e536f03f0896b75099bf"
+		},
+		{
+			"name": "ovals-rotated",
+			"width": 256,
+			"height": 256,
+			"sha256": "ca538051a35ee20a94da4ce2c9dc7b52b3f17b523ffab07b66f9ac616e0f16ba"
+		},
+		{
+			"name": "path-arcs-svg",
+			"width": 256,
+			"height": 256,
+			"sha256": "20aa8bf23a08183ec5713332ff911812d9fa1cefc8e46f1de85ef76d88eb8022"
+		},
+		{
+			"name": "path-conics-weights",
+			"width": 256,
+			"height": 256,
+			"sha256": "5b9824ae6308f4b7e88d4cc5b34cf105dbc04075d0591f7777210fadbafb2b0c"
+		},
+		{
+			"name": "path-fill-winding-vs-evenodd",
+			"width": 256,
+			"height": 256,
+			"sha256": "6afc38ec463a0a97bbaab63312a41a42a9fa889f68ead832f935e7e64ae69dbd"
+		},
+		{
+			"name": "path-inverse-clipped",
+			"width": 256,
+			"height": 256,
+			"sha256": "037b0b3f7790afe684cd7cbe43952323dd04fe906b1fd4e9b3a4b56626088150"
+		},
+		{
+			"name": "path-inverse-fill",
+			"width": 256,
+			"height": 256,
+			"sha256": "dca9d9f92540123d42f73868f6d51d8d746dbb892d49cd1fac0082cb7b5aa9db"
+		},
+		{
+			"name": "path-star-selfintersect",
+			"width": 256,
+			"height": 256,
+			"sha256": "2bb7fff030fc09d2d9346f863cb02070712fab7e3010d0ed3ccdf5af3eb6ab0f"
+		},
+		{
+			"name": "patheffect-1d-path",
+			"width": 256,
+			"height": 256,
+			"sha256": "78d9ad2c1fd3cdbb0b0550f30c233cfdcca223aa44da7cd2d8471430cfccf227"
+		},
+		{
+			"name": "patheffect-2d",
+			"width": 256,
+			"height": 256,
+			"sha256": "e7ac6d0769347ba96918da04cfdd00be7bbe69e161e2de38775f0983ce04b90c"
+		},
+		{
+			"name": "patheffect-corner",
+			"width": 256,
+			"height": 256,
+			"sha256": "42db7d54fcd887f5f58877e042dcad8c8833998ebdf3a01f8df9afa65736fa6b"
+		},
+		{
+			"name": "patheffect-discrete",
+			"width": 256,
+			"height": 256,
+			"sha256": "02875689e4e6aff9a7de6d82aed40e01df9e5df79e4336e39ae4f0c2f3fd4b93"
+		},
+		{
+			"name": "patheffect-sum-compose",
+			"width": 256,
+			"height": 256,
+			"sha256": "06c7d0c613a4cd6fbffe650d35be41359971fb4b1c2036404dc482fb525f8aa7"
+		},
+		{
+			"name": "patheffect-trim",
+			"width": 256,
+			"height": 256,
+			"sha256": "3569ba09b307b3b9da20b6f48d38a23d8ba3713b14ba7576245abae2f55626f4"
+		},
+		{
+			"name": "points-modes-caps",
+			"width": 256,
+			"height": 256,
+			"sha256": "ea8e57c6de9db8af3fc6d6badcf5f73d14b55ad648f55c391fd5e6aff978bdb5"
+		},
+		{
+			"name": "round-rects",
+			"width": 256,
+			"height": 256,
+			"sha256": "8de83adb6c048ef598eaaf42ba76bad4912d7f5c1b510430412456191778ffe8"
+		},
+		{
+			"name": "rrects-varied",
+			"width": 256,
+			"height": 256,
+			"sha256": "84d220d2dffefec3199125fd00644249faa83086d19229b3bbbd99ad43d9bd87"
+		},
+		{
+			"name": "save-layer-alpha",
+			"width": 256,
+			"height": 256,
+			"sha256": "ebcc5621e9f5dd22d718b11811d81564a2d3e9a32ff0de6a59573237ee5f19cb"
+		},
+		{
+			"name": "save-restore-nesting",
+			"width": 256,
+			"height": 256,
+			"sha256": "ce425e3c55fdb88632d0b965e24e371c08c7a0498c736f2d1e95f58b3c766e4c"
+		},
+		{
+			"name": "shader-color-blend",
+			"width": 256,
+			"height": 256,
+			"sha256": "f90894ac55469aacfecd6b77ae6436394f7e8901368087e8bc8b667004f22605"
+		},
+		{
+			"name": "stroke-and-fill-shapes",
+			"width": 256,
+			"height": 256,
+			"sha256": "3753118e94855f3b8c7a31ad994b82cb2b6ee344df6c3e8ea96645d4ab0216e6"
+		},
+		{
+			"name": "stroke-curves",
+			"width": 256,
+			"height": 256,
+			"sha256": "c58b2d6fb9f02b907bce6d9baf8d93eeabe4a8cc5503607be069d3b775de2fb6"
+		},
+		{
+			"name": "stroke-degenerate",
+			"width": 256,
+			"height": 256,
+			"sha256": "e14513f2f7d2c66c32f8edc4f3211a750a1d7bd1e0a8dab264d4e90e38a9874d"
+		},
+		{
+			"name": "stroke-joins",
+			"width": 256,
+			"height": 256,
+			"sha256": "76a75ccad02766d8b21ff4b6dd08c63f2d6c2de955a1ae6296e137abf06bf4c8"
+		},
+		{
+			"name": "stroke-under-scale",
+			"width": 256,
+			"height": 256,
+			"sha256": "f75279495097e3dd99b61a83f5a623af56b1943b8e37f3ba03b36b50199485f1"
+		},
+		{
+			"name": "text-clipped-layer",
+			"width": 256,
+			"height": 256,
+			"sha256": "d4b0ea204abbc73b66825188e982fe2fdeb742cb99c05ca1b7e8beb83e139d36"
+		},
+		{
+			"name": "text-direct-rotated",
+			"width": 256,
+			"height": 256,
+			"sha256": "990b5b48e9308924403dc0226f163df150470067ad4d2426d17d0d58d8426ad8"
+		},
+		{
+			"name": "text-emoji-colr",
+			"width": 256,
+			"height": 256,
+			"sha256": "1e189b57fbe520a93bf8d3cd00cc2eec893e9b4cca9095b2a9fcfea98763cd6f"
+		},
+		{
+			"name": "text-emoji-sbix",
+			"width": 256,
+			"height": 256,
+			"sha256": "9f89bf9d1ef36358564d597a62f751f0a70cf8e2064111e38f415a73b55c5307"
+		},
+		{
+			"name": "text-sdf-rotated",
+			"width": 256,
+			"height": 256,
+			"sha256": "f0a6edba1ea71f3fd46561e9599b4ceffce554aa221e1837e0286a0f24c42f3a"
+		},
+		{
+			"name": "text-sdf-scaled",
+			"width": 256,
+			"height": 256,
+			"sha256": "09a65d69c50ce4dbe383013febeef980ed82f99131f6a72d57c6af9e9b44e0ee"
+		},
+		{
+			"name": "text-skewed",
+			"width": 256,
+			"height": 256,
+			"sha256": "6ecfd3cf6a4a3954869a844a1e04aea95400089cb16eb0c2ac5a3f589ad43886"
+		},
+		{
+			"name": "text-styled",
+			"width": 256,
+			"height": 256,
+			"sha256": "03a3bee90ae0a5410562c26663790313dd294ef44f033fb2070695fe31924e76"
+		},
+		{
+			"name": "text-waterfall",
+			"width": 256,
+			"height": 256,
+			"sha256": "52182e5896b968e983f12832b55ae46f3b914539665d9566f96ed6c612fb05a0"
+		},
+		{
+			"name": "transform-perspective",
+			"width": 256,
+			"height": 256,
+			"sha256": "cbca4218f4246e8f71e7118e6e43518b4f5d36be064f1732d110968093484f6e"
+		},
+		{
+			"name": "transform-rotate-sweep",
+			"width": 256,
+			"height": 256,
+			"sha256": "c119286a1f15d34f4589f011d773d7b5795d0ac93ded4f22b375472120a830b9"
+		},
+		{
+			"name": "transforms",
+			"width": 256,
+			"height": 256,
+			"sha256": "14f9ac9e2d13456dfc657a61ae5d5d6af8dc22545d81b2520ea936c8d0f6c0f6"
+		}
+	]
+}

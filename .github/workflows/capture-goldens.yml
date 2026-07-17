@@ -1,0 +1,249 @@
+# Capture the per-platform self-captured golden sets the rendering gates compare against.
+#
+# Manual dispatch only — capture is never automatic, because port-generated goldens can absorb a regression: a gate
+# failure must be diagnosed, never silently re-blessed, so regeneration is always a deliberate, human-reviewed act.
+# Each matrix leg soaks every lane it can bring up (the determinism proof: two soak processes of three fresh-session
+# corpus passes each, with the cross-process corpus digests compared), blesses the lanes that soaked clean into
+# goldens/<lane>/<GOOS_GOARCH>/, and uploads the resulting goldens/ subtree as a goldens-<GOOS_GOARCH> artifact.
+# Nothing is ever committed by this workflow: review and commit happen manually via internal/oracle/capture.sh + git.
+#
+# GL provisioning mirrors build.yml's oracle jobs: Xvfb + Mesa llvmpipe (LIBGL_ALWAYS_SOFTWARE=1 and
+# CANVAS_GLTEST_RENDERER=software) on Linux, the pinned Mesa3D llvmpipe drop-in beside the binary on Windows (the
+# app-directory copy of opengl32.dll wins over System32; PATH does not work), and the runner's own GL on macOS (the
+# gpudmsaa lane self-pins CANVAS_GLTEST_RENDERER=software inside the oracle CLI, exactly as the DMSAA gate does — the
+# variable stays out of the darwin env so the plain gpu lane keeps rendering on the runner's default stack). A leg
+# whose GL context fails to come up logs a loud warning and skips that lane's artifact content (oracle exits 3 for
+# exactly this case); a lane that soaks or blesses *nondeterministically* marks the leg failed — nondeterminism is a
+# rendering bug that would make exact golden comparison meaningless, and must be fixed, never papered over.
+name: Capture goldens
+
+on:
+  workflow_dispatch:
+
+env:
+  CGO_ENABLED: '0'
+
+jobs:
+  capture:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            platform: linux_amd64
+          - os: ubuntu-22.04-arm
+            platform: linux_arm64
+          - os: macos-26-intel
+            platform: darwin_amd64
+          - os: macos-26
+            platform: darwin_arm64
+          - os: windows-2022
+            platform: windows_amd64
+            mesa_arch: x64
+          - os: windows-11-arm
+            platform: windows_arm64
+            mesa_arch: arm64
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.26'
+      - name: Install GL stack (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgl1 libglx-mesa0 libgl1-mesa-dri libx11-6 xvfb mesa-utils
+      # Log the headless GL stack (llvmpipe under Xvfb) so a GPU-context failure is diagnosable. Non-fatal.
+      - name: Report GL stack (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a -s "-screen 0 1280x1024x24" glxinfo -B || echo "glxinfo unavailable"
+        env:
+          LIBGL_ALWAYS_SOFTWARE: '1'
+      # Mesa3D llvmpipe, pinned to the same release build.yml's oracle-windows job uses. The x64 build is proven; the
+      # arm64 build is an attempt (mesa-dist-win publishes arm64 builds, but this one is unproven here) — if the
+      # archive has no arm64 DLLs the step warns and continues, and the GPU lanes then skip loudly when no GL context
+      # comes up.
+      # Deliberately non-fatal end to end: a leg that cannot provision Mesa (the arm64 build especially is an attempt)
+      # still captures its raster lane, and the GPU lanes skip loudly when no GL context comes up.
+      - name: Provision Mesa3D (Windows, llvmpipe software GL)
+        if: runner.os == 'Windows'
+        run: |
+          curl -sSL -o mesa.7z https://github.com/pal1000/mesa-dist-win/releases/download/26.1.3/mesa3d-26.1.3-release-msvc.7z || true
+          7z e -y -omesa mesa.7z \
+            ${{ matrix.mesa_arch }}/opengl32.dll \
+            ${{ matrix.mesa_arch }}/libgallium_wgl.dll \
+            ${{ matrix.mesa_arch }}/dxil.dll || true
+          if [ ! -f mesa/opengl32.dll ]; then
+            echo "::warning title=No Mesa ${{ matrix.mesa_arch }} DLLs::mesa-dist-win 26.1.3 provided no ${{ matrix.mesa_arch }} llvmpipe; GPU lanes will be skipped on this leg"
+          fi
+      # Bless writes into goldens/<lane>/<GOOS_GOARCH>/ inside this checkout, over the committed self-captured sets —
+      # a prior schema-2 manifest is what gives bless its per-scenario old-vs-new change summary. Its refusal to
+      # replace a schema-1 (Skia-era) manifest remains as a guard, but the archived Skia sets live under goldens-skia/
+      # and nothing writes there, so it can only trip if something is badly wrong with the checkout.
+      # Build the CLI once; on Windows the Mesa DLLs are staged beside the binary so its WGL context comes up on
+      # llvmpipe (same technique as build.yml's oracle-windows job).
+      - name: Build oracle CLI
+        working-directory: internal/oracle
+        run: |
+          mkdir -p bin
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            go build -o bin/oracle.exe ./cmd/oracle
+            if ls ../../mesa/*.dll > /dev/null 2>&1; then
+              cp ../../mesa/*.dll bin/
+            fi
+          else
+            go build -o bin/oracle ./cmd/oracle
+          fi
+      - name: Soak and bless every lane
+        working-directory: internal/oracle
+        env:
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          # This step inspects exit codes itself (oracle's exit 3 means "no GL context — skip the lane loudly"), so
+          # turn the shell's errexit/pipefail defaults off and keep nounset on.
+          set +e +o pipefail -u
+          ORACLE=./bin/oracle
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            ORACLE=./bin/oracle.exe
+          fi
+
+          # Run a command under the leg's pinned GL environment (see the header comment). Raster needs none of it, but
+          # the wrap is harmless there, so every lane runs uniformly.
+          wrap() {
+            if [ "$RUNNER_OS" = "Linux" ]; then
+              LIBGL_ALWAYS_SOFTWARE=1 CANVAS_GLTEST_RENDERER=software \
+                xvfb-run -a -s "-screen 0 1280x1024x24" "$@"
+            elif [ "$RUNNER_OS" = "Windows" ]; then
+              GALLIUM_DRIVER=llvmpipe "$@"
+            else
+              "$@"
+            fi
+          }
+
+          captured=""
+          skipped=""
+          failed=""
+
+          # capture_lane LANE [soak flags]: two independent soak processes (in-process determinism via three
+          # fresh-session passes each; cross-process determinism via comparing their corpus digests), then bless.
+          # oracle exit 3 = no GL context = loud skip; any other failure marks the lane (and the leg) failed.
+          #
+          # The cross-process digest comparison is strict only for raster. The GPU lanes' cold renders differ within
+          # the ±1 LSB driver envelope across processes on software-GL stacks (see the oracle soak command's doc
+          # comment), so digest equality there is expected to fail sometimes and a mismatch is reported but not fatal:
+          # each soak process has already enforced the envelope across its own three fresh sessions, bless's verify
+          # pass enforces it once more at capture, and every gate run against the blessed set is itself a cross-process
+          # comparison under the same envelope.
+          capture_lane() {
+            lane=$1
+            shift
+            for attempt in 1 2; do
+              echo "::group::lane $lane: soak process $attempt"
+              wrap "$ORACLE" soak -n 3 "$@" > "soak-$lane-$attempt.log" 2>&1
+              rc=$?
+              tail -5 "soak-$lane-$attempt.log"
+              echo "::endgroup::"
+              if [ "$rc" -eq 3 ]; then
+                echo "::warning title=Lane $lane SKIPPED on $PLATFORM::no GL context came up; this leg uploads no $lane set"
+                skipped="$skipped $lane"
+                return 0
+              elif [ "$rc" -ne 0 ]; then
+                echo "::error title=Lane $lane FAILED on $PLATFORM::soak process $attempt found nondeterminism (see the soak log group above)"
+                grep MISMATCH "soak-$lane-$attempt.log" || true
+                failed="$failed $lane"
+                return 0
+              fi
+            done
+            d1=$(awk '/^corpus digest/ { print $NF }' "soak-$lane-1.log")
+            d2=$(awk '/^corpus digest/ { print $NF }' "soak-$lane-2.log")
+            if [ -z "$d1" ]; then
+              echo "::error title=Lane $lane FAILED on $PLATFORM::soak process 1 produced no corpus digest"
+              failed="$failed $lane"
+              return 0
+            fi
+            if [ "$d1" != "$d2" ]; then
+              if [ "$lane" = "raster" ]; then
+                echo "::error title=Lane $lane FAILED on $PLATFORM::cross-process corpus digests differ ($d1 vs $d2)"
+                failed="$failed $lane"
+                return 0
+              fi
+              echo "::notice title=Lane $lane cold wobble on $PLATFORM::cross-process corpus digests differ ($d1 vs $d2) — expected within the ±1 envelope on software GL; bless's verify pass enforces the envelope"
+            else
+              echo "lane $lane: cross-process corpus digest confirmed: $d1"
+            fi
+            echo "::group::lane $lane: bless"
+            wrap "$ORACLE" bless -lane "$lane"
+            rc=$?
+            echo "::endgroup::"
+            if [ "$rc" -eq 3 ]; then
+              echo "::warning title=Lane $lane SKIPPED on $PLATFORM::GL context vanished between soak and bless; this leg uploads no $lane set"
+              skipped="$skipped $lane"
+            elif [ "$rc" -ne 0 ]; then
+              echo "::error title=Lane $lane FAILED on $PLATFORM::bless refused (see its output above)"
+              failed="$failed $lane"
+            else
+              captured="$captured $lane"
+            fi
+            return 0
+          }
+
+          capture_lane raster
+          capture_lane gpu -gpu
+          # The DMSAA lane is deliberately not captured on darwin_arm64: Apple's software renderer on arm64 renders
+          # MSAA-quantized edges in one of two bit-exact flavors per GL session (measured on clip-persp: every stripe
+          # edge shifts a whole pixel, max channel delta 209 — structural, far beyond the ±1 envelope), flipping
+          # between sessions at a machine-load-dependent rate. It is proven driver-internal: output is independent of
+          # all app-allocation content (poisoned textures/stencil/MSAA attachments) and the GL command stream is
+          # identical across flips, while llvmpipe and darwin_amd64 render the same code path deterministically. A
+          # capture that passed the guards by luck would bless one flavor and then intermittently fail every later
+          # gate, so the lane gates on the four deterministic legs instead and darwin_arm64 skips it by design.
+          if [ "$PLATFORM" = "darwin_arm64" ]; then
+            echo "::notice title=Lane gpudmsaa skipped by design on darwin_arm64::the Apple software renderer's MSAA edge quantization is bimodal per GL session on arm64 (driver-internal); the gpudmsaa lane is captured and gated on the llvmpipe and darwin_amd64 legs instead"
+            skipped="$skipped gpudmsaa"
+          else
+            capture_lane gpudmsaa -dmsaa
+          fi
+
+          echo "== capture summary for $PLATFORM =="
+          echo "captured:${captured:- (none)}"
+          echo "skipped: ${skipped:- (none)}"
+          echo "failed:  ${failed:- (none)}"
+          find goldens -name manifest.json | sort
+          if [ -n "$failed" ]; then
+            echo "::error title=Capture leg $PLATFORM failed::lane(s)$failed did not capture; see above"
+            exit 1
+          fi
+      # Upload whatever was captured even when a lane failed the leg — partial results are still reviewable, and the
+      # summary above says exactly which lanes are missing and why.
+      # Stage and upload only this platform's directories: the checkout's goldens/ also holds every other platform's
+      # committed sets, which are not this leg's output — and on Windows the checkout rewrites their text files to
+      # CRLF, so uploading the whole subtree would ship stale, mangled copies that a merge could mistake for capture
+      # output (capture.sh filters to the artifact's own platform as a second guard). Staging into export/ (rather
+      # than a glob path on the upload step) pins the artifact's internal layout to <lane>/<platform>/ regardless of
+      # how many lanes this leg captured — upload-artifact roots a glob at the least common ancestor of its matches,
+      # which would collapse the layout for a single-lane leg.
+      - name: Stage this platform's sets for upload
+        if: always()
+        working-directory: internal/oracle
+        env:
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          mkdir -p export
+          for lane in raster gpu gpudmsaa; do
+            if [ -d "goldens/$lane/$PLATFORM" ]; then
+              mkdir -p "export/$lane"
+              cp -R "goldens/$lane/$PLATFORM" "export/$lane/"
+            fi
+          done
+          find export -name manifest.json | sort
+      - name: Upload goldens artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: goldens-${{ matrix.platform }}
+          path: internal/oracle/export
+          if-no-files-found: error

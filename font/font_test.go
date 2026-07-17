@@ -1,0 +1,396 @@
+// Copyright (c) 2026 by Richard A. Wilkes. All rights reserved.
+//
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, version 2.0. If a copy of the MPL was not distributed with
+// this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+//
+// This Source Code Form is "Incompatible With Secondary Licenses", as
+// defined by the Mozilla Public License, version 2.0.
+
+// Expected values in this file were captured from a reference C oracle run over the same font files. The live oracle
+// probe that re-verified them against that oracle is gone with the C library; these frozen values are the record.
+
+package font
+
+import (
+	"math"
+	"os"
+	"testing"
+
+	"github.com/richardwilkes/canvas/geom"
+	"github.com/richardwilkes/canvas/stroke"
+)
+
+func loadTypeface(t *testing.T, name string, index int) *Typeface {
+	t.Helper()
+	data, err := os.ReadFile("testdata/" + name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tf, err := NewTypefaceFromData(data, index)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return tf
+}
+
+func TestTypefaceQueries(t *testing.T) {
+	cases := []struct {
+		file       string
+		family     string
+		index      int
+		weight     int
+		width      int
+		upem       int
+		nGlyphs    int
+		slant      Slant
+		fixedPitch bool
+	}{
+		{file: "Roboto-Regular.ttf", family: "Roboto", weight: 400, width: 5, upem: 2048, nGlyphs: 238},
+		{file: "DejaVuSans.subset.ttf", family: "DejaVu Sans", weight: 400, width: 5, upem: 2048, nGlyphs: 4},
+		{file: "test.ttc", family: "Test", weight: 400, width: 5, upem: 2048, nGlyphs: 12},
+		{file: "test.ttc", index: 1, family: "Test", weight: 700, width: 5, upem: 2048, nGlyphs: 12},
+	}
+	for _, c := range cases {
+		tf := loadTypeface(t, c.file, c.index)
+		if got := tf.FamilyName(); got != c.family {
+			t.Errorf("%s[%d]: family = %q, want %q", c.file, c.index, got, c.family)
+		}
+		st := tf.Style()
+		if st.Weight() != c.weight || st.Width() != c.width || st.Slant() != c.slant {
+			t.Errorf("%s[%d]: style = (%d,%d,%d), want (%d,%d,%d)", c.file, c.index,
+				st.Weight(), st.Width(), st.Slant(), c.weight, c.width, c.slant)
+		}
+		if got := tf.UnitsPerEm(); got != c.upem {
+			t.Errorf("%s[%d]: upem = %d, want %d", c.file, c.index, got, c.upem)
+		}
+		if got := tf.IsFixedPitch(); got != c.fixedPitch {
+			t.Errorf("%s[%d]: fixedPitch = %v", c.file, c.index, got)
+		}
+		if got := tf.CountGlyphs(); got != c.nGlyphs {
+			t.Errorf("%s[%d]: countGlyphs = %d, want %d", c.file, c.index, got, c.nGlyphs)
+		}
+	}
+}
+
+func TestTypefaceFromDataErrors(t *testing.T) {
+	data, err := os.ReadFile("testdata/test.ttc")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = NewTypefaceFromData(data, 2); err == nil {
+		t.Error("index 2 of a 2-face collection should fail")
+	}
+	if _, err = NewTypefaceFromData(data, -1); err == nil {
+		t.Error("negative index should fail")
+	}
+	if _, err = NewTypefaceFromData([]byte("not a font"), 0); err == nil {
+		t.Error("garbage data should fail")
+	}
+}
+
+func TestGlyphMapping(t *testing.T) {
+	tf := loadTypeface(t, "Roboto-Regular.ttf", 0)
+	f := NewFont(tf, 100, 1, 0)
+
+	text := []byte("Hxign AVW.!? o")
+	want := []uint16{44, 92, 77, 75, 82, 4, 37, 58, 59, 18, 5, 35, 4, 83}
+	if n := f.TextToGlyphs(text, TextEncodingUTF8, nil); n != len(want) {
+		t.Fatalf("count = %d, want %d", n, len(want))
+	}
+	glyphs := make([]uint16, len(want))
+	f.TextToGlyphs(text, TextEncodingUTF8, glyphs)
+	for i := range want {
+		if glyphs[i] != want[i] {
+			t.Fatalf("glyphs = %v, want %v", glyphs, want)
+		}
+	}
+	if got := f.UnicharToGlyph(0x20AC); got != 159 { // euro sign
+		t.Errorf("euro glyph = %d, want 159", got)
+	}
+	if got := f.UnicharToGlyph(0x1F600); got != 0 { // unmapped
+		t.Errorf("unmapped glyph = %d, want 0", got)
+	}
+	if got := f.UnicharToGlyph(-1); got != 0 {
+		t.Errorf("negative unichar glyph = %d, want 0", got)
+	}
+
+	// UTF-16 with a surrogate pair (H + U+1F600).
+	utf16 := []byte{0x48, 0x00, 0x3D, 0xD8, 0x00, 0xDE}
+	g16 := make([]uint16, 2)
+	if n := f.TextToGlyphs(utf16, TextEncodingUTF16, g16); n != 2 || g16[0] != 44 || g16[1] != 0 {
+		t.Errorf("utf16 = %d %v", n, g16)
+	}
+	// UTF-32.
+	utf32 := []byte{0x48, 0, 0, 0, 0xAC, 0x20, 0, 0}
+	g32 := make([]uint16, 2)
+	if n := f.TextToGlyphs(utf32, TextEncodingUTF32, g32); n != 2 || g32[0] != 44 || g32[1] != 159 {
+		t.Errorf("utf32 = %d %v", n, g32)
+	}
+	// Glyph IDs pass through.
+	gid := []byte{44, 0, 159, 0}
+	gg := make([]uint16, 2)
+	if n := f.TextToGlyphs(gid, TextEncodingGlyphID, gg); n != 2 || gg[0] != 44 || gg[1] != 159 {
+		t.Errorf("glyphid = %d %v", n, gg)
+	}
+	// Invalid UTF-8 reports -1 without writing.
+	if n := f.TextToGlyphs([]byte{0x48, 0xC0, 0x20}, TextEncodingUTF8, gg); n != -1 {
+		t.Errorf("invalid utf8 count = %d, want -1", n)
+	}
+	// Insufficient output space returns the count without writing.
+	small := make([]uint16, 2)
+	if n := f.TextToGlyphs(text, TextEncodingUTF8, small); n != len(want) || small[0] != 0 {
+		t.Errorf("small buffer: n=%d small=%v", n, small)
+	}
+	// UnicharsToGlyphs.
+	out := make([]uint16, 3)
+	f.UnicharsToGlyphs([]int32{'H', 0x20AC, 0x1F600}, out)
+	if out[0] != 44 || out[1] != 159 || out[2] != 0 {
+		t.Errorf("unicharsToGlyphs = %v", out)
+	}
+}
+
+func near(a, b, tol float32) bool {
+	return float32(math.Abs(float64(a)-float64(b))) <= tol
+}
+
+func TestAdvancesAndPositions(t *testing.T) {
+	tf := loadTypeface(t, "Roboto-Regular.ttf", 0)
+	f := NewFont(tf, 100, 1, 0)
+
+	glyphs := []uint16{44, 92, 75, 5} // H x g !
+	wantWidths := []float32{71.28906, 49.560547, 56.103516, 25.732422}
+	widths := make([]float32, len(glyphs))
+	f.GlyphWidths(glyphs, widths)
+	for i := range wantWidths {
+		if !near(widths[i], wantWidths[i], 1e-4) {
+			t.Errorf("width[%d] = %v, want %v", i, widths[i], wantWidths[i])
+		}
+	}
+
+	xpos := make([]float32, len(glyphs))
+	f.GetXPos(glyphs, xpos, 10.5)
+	wantX := []float32{10.5, 81.78906, 131.34961, 187.45312}
+	for i := range wantX {
+		if !near(xpos[i], wantX[i], 1e-3) {
+			t.Errorf("xpos[%d] = %v, want %v", i, xpos[i], wantX[i])
+		}
+	}
+
+	// Out-of-range glyph IDs measure as zero (the failed-load behavior).
+	f.GlyphWidths([]uint16{9999}, widths[:1])
+	if widths[0] != 0 {
+		t.Errorf("out-of-range width = %v", widths[0])
+	}
+
+	// scaleX and skewX: advances scale by scaleX; skew leaves advances unchanged.
+	f2 := NewFont(tf, 50, 1.5, -0.25)
+	f2.GlyphWidths(glyphs[:1], widths[:1])
+	if !near(widths[0], 71.28906*0.75, 1e-3) {
+		t.Errorf("scaled width = %v", widths[0])
+	}
+}
+
+func TestMeasureText(t *testing.T) {
+	tf := loadTypeface(t, "Roboto-Regular.ttf", 0)
+	f := NewFont(tf, 100, 1, 0)
+	text := []byte("Hxg!")
+
+	var bounds geom.Rect
+	w := f.MeasureText(text, TextEncodingUTF8, &bounds, nil)
+	if !near(w, 202.68555, 1e-3) {
+		t.Errorf("measure = %v", w)
+	}
+	// Oracle (path-lane, which shares the raw outline bounds): {8 -72 195.95312 21}.
+	want := geom.RectLTRB(8, -72, 195.95312, 21)
+	if !near(bounds.Left, want.Left, 1e-3) || !near(bounds.Top, want.Top, 1e-3) ||
+		!near(bounds.Right, want.Right, 1e-3) || !near(bounds.Bottom, want.Bottom, 1e-3) {
+		t.Errorf("bounds = %v, want %v", bounds, want)
+	}
+	// Without bounds the width is identical.
+	if w2 := f.MeasureText(text, TextEncodingUTF8, nil, nil); w2 != w {
+		t.Errorf("width without bounds = %v", w2)
+	}
+	// Empty text.
+	bounds = geom.RectLTRB(1, 2, 3, 4)
+	if w2 := f.MeasureText(nil, TextEncodingUTF8, &bounds, nil); w2 != 0 || !bounds.IsEmpty() {
+		t.Errorf("empty text = %v %v", w2, bounds)
+	}
+
+	// Stroked bounds (oracle-verified): stroke width 2 outsets by 1, width 7.5 by 3.75 (pre-round).
+	p := &stroke.PaintSpec{Style: stroke.PaintStyleStroke, Width: 2, MiterLimit: 4}
+	w = f.MeasureText(text, TextEncodingUTF8, &bounds, p)
+	if !near(w, 202.68555, 1e-3) {
+		t.Errorf("stroked measure = %v", w)
+	}
+	wantStroke := geom.RectLTRB(7, -73, 196.95312, 22)
+	if bounds != wantStroke {
+		t.Errorf("stroked bounds = %v, want %v", bounds, wantStroke)
+	}
+	p.Width = 7.5
+	f.MeasureText(text, TextEncodingUTF8, &bounds, p)
+	wantStroke = geom.RectLTRB(4, -75, 199.95312, 25)
+	if bounds != wantStroke {
+		t.Errorf("stroked(7.5) bounds = %v, want %v", bounds, wantStroke)
+	}
+	// Stroke-and-fill with width 0 behaves as fill (a zero-width stroke collapses to nothing), through the path lane.
+	p.Style = stroke.PaintStyleStrokeAndFill
+	p.Width = 0
+	f.MeasureText(text, TextEncodingUTF8, &bounds, p)
+	if bounds != want {
+		t.Errorf("strokefill(0) bounds = %v, want %v", bounds, want)
+	}
+}
+
+func TestCanonicalization(t *testing.T) {
+	tf := loadTypeface(t, "Roboto-Regular.ttf", 0)
+	// Size 300 exceeds the 256 gate: the strike measures at 64 and scales by 300/64.
+	f := NewFont(tf, 300, 1, 0)
+	widths := make([]float32, 1)
+	f.GlyphWidths([]uint16{44}, widths)
+	if !near(widths[0], 213.86719, 1e-3) { // linear: 71.28906 * 3
+		t.Errorf("big width = %v", widths[0])
+	}
+	var bounds geom.Rect
+	f.MeasureText([]byte("Hxign"), TextEncodingUTF8, &bounds, nil)
+	// Vertical bounds quantize to the canonical strike: multiples of 300/64 = 4.6875 (the horizontal edges carry
+	// fractional advance offsets, so only top/bottom sit exactly on the grid).
+	for _, v := range []float32{bounds.Top, bounds.Bottom} {
+		q := v / 4.6875
+		if !near(q, float32(math.Round(float64(q))), 1e-4) {
+			t.Errorf("bounds edge %v not on the canonical grid", v)
+		}
+	}
+	// A hairline stroke paint also forces the canonical path lane, dropping the paint.
+	fSmall := NewFont(tf, 100, 1, 0)
+	p := &stroke.PaintSpec{Style: stroke.PaintStyleStroke, Width: 0, MiterLimit: 4}
+	fSmall.MeasureText([]byte("Hxg!"), TextEncodingUTF8, &bounds, p)
+	for _, v := range []float32{bounds.Top, bounds.Bottom} {
+		q := v / (100.0 / 64)
+		if !near(q, float32(math.Round(float64(q))), 1e-4) {
+			t.Errorf("hairline bounds edge %v not on the canonical grid", v)
+		}
+	}
+}
+
+func TestFontMetrics(t *testing.T) {
+	tf := loadTypeface(t, "Roboto-Regular.ttf", 0)
+	f := NewFont(tf, 100, 1, 0)
+	var m Metrics
+	spacing := f.Metrics(&m)
+	want := Metrics{
+		Flags:              15,
+		Top:                -105.615234,
+		Ascent:             -92.77344,
+		Descent:            24.414062,
+		Bottom:             27.09961,
+		Leading:            0,
+		AvgCharWidth:       56.54297, // OS/2 xAvgCharWidth (the FreeType recipe; CoreText reports the bbox width)
+		MaxCharWidth:       188.52539,
+		XMin:               -73.68164,
+		XMax:               114.84375,
+		XHeight:            52.83203,
+		CapHeight:          71.09375,
+		UnderlineThickness: 4.8828125,
+		UnderlinePosition:  7.3242188, // -post.underlinePosition (-150)/2048*100; the FT half-thickness bias cancels
+		StrikeoutThickness: 4.9804688,
+		StrikeoutPosition:  -25,
+	}
+	if m.Flags != want.Flags {
+		t.Errorf("flags = %d, want %d", m.Flags, want.Flags)
+	}
+	fields := []struct {
+		name string
+		got  float32
+		want float32
+	}{
+		{name: "Top", got: m.Top, want: want.Top},
+		{name: "Ascent", got: m.Ascent, want: want.Ascent},
+		{name: "Descent", got: m.Descent, want: want.Descent},
+		{name: "Bottom", got: m.Bottom, want: want.Bottom},
+		{name: "Leading", got: m.Leading, want: want.Leading},
+		{name: "AvgCharWidth", got: m.AvgCharWidth, want: want.AvgCharWidth},
+		{name: "MaxCharWidth", got: m.MaxCharWidth, want: want.MaxCharWidth},
+		{name: "XMin", got: m.XMin, want: want.XMin},
+		{name: "XMax", got: m.XMax, want: want.XMax},
+		{name: "XHeight", got: m.XHeight, want: want.XHeight},
+		{name: "CapHeight", got: m.CapHeight, want: want.CapHeight},
+		{name: "UnderlineThickness", got: m.UnderlineThickness, want: want.UnderlineThickness},
+		{name: "UnderlinePosition", got: m.UnderlinePosition, want: want.UnderlinePosition},
+		{name: "StrikeoutThickness", got: m.StrikeoutThickness, want: want.StrikeoutThickness},
+		{name: "StrikeoutPosition", got: m.StrikeoutPosition, want: want.StrikeoutPosition},
+	}
+	for _, fl := range fields {
+		if !near(fl.got, fl.want, 1e-3) {
+			t.Errorf("%s = %v, want %v", fl.name, fl.got, fl.want)
+		}
+	}
+	if !near(spacing, 117.1875, 1e-3) {
+		t.Errorf("spacing = %v", spacing)
+	}
+	// Metrics with a nil pointer still returns the spacing.
+	if got := f.Metrics(nil); got != spacing {
+		t.Errorf("nil metrics spacing = %v", got)
+	}
+}
+
+func TestDegenerateAndEmpty(t *testing.T) {
+	tf := loadTypeface(t, "Roboto-Regular.ttf", 0)
+	// Size 0: advances/bounds zero, metrics at scale 1 (the computeMatrices singular-matrix rule).
+	f := NewFont(tf, 0, 1, 0)
+	var m Metrics
+	spacing := f.Metrics(&m)
+	if !near(spacing, 1.171875, 1e-4) || !near(m.Ascent, -0.9277344, 1e-4) {
+		t.Errorf("size-0 metrics: spacing=%v ascent=%v", spacing, m.Ascent)
+	}
+	var bounds geom.Rect
+	if w := f.MeasureText([]byte("Hxg!"), TextEncodingUTF8, &bounds, nil); w != 0 || !bounds.IsEmpty() {
+		t.Errorf("size-0 measure = %v %v", w, bounds)
+	}
+	// Negative sizes clamp to 0.
+	fn := NewFont(tf, -10, 1, 0)
+	widths := make([]float32, 1)
+	fn.GlyphWidths([]uint16{44}, widths)
+	if widths[0] != 0 {
+		t.Errorf("negative-size width = %v", widths[0])
+	}
+	// The empty typeface: no glyphs, zero metrics, but text still counts.
+	fe := NewFont(nil, 20, 1, 0)
+	if fe.Typeface() != EmptyTypeface() {
+		t.Error("nil typeface should become the empty typeface")
+	}
+	if got := fe.Metrics(&m); got != 0 || m != (Metrics{}) {
+		t.Errorf("empty metrics = %v %+v", got, m)
+	}
+	if n := fe.TextToGlyphs([]byte("Hxg!"), TextEncodingUTF8, nil); n != 4 {
+		t.Errorf("empty count = %d", n)
+	}
+	if g := fe.UnicharToGlyph('x'); g != 0 {
+		t.Errorf("empty glyph = %d", g)
+	}
+	if !EmptyTypeface().IsFixedPitch() {
+		t.Error("empty typeface should be fixed pitch")
+	}
+	if EmptyTypeface().Style() != NormalStyle() {
+		t.Error("empty typeface style should be normal")
+	}
+}
+
+func TestStylePacking(t *testing.T) {
+	s := NewStyle(WeightBold, WidthCondensed, SlantItalic)
+	if s.Weight() != 700 || s.Width() != 3 || s.Slant() != SlantItalic {
+		t.Errorf("style = (%d,%d,%d)", s.Weight(), s.Width(), s.Slant())
+	}
+	// Pins.
+	s = NewStyle(2000, 100, Slant(9))
+	if s.Weight() != 1000 || s.Width() != 9 || s.Slant() != SlantOblique {
+		t.Errorf("pinned = (%d,%d,%d)", s.Weight(), s.Width(), s.Slant())
+	}
+	s = NewStyle(-5, -5, Slant(-1))
+	if s.Weight() != 0 || s.Width() != 1 || s.Slant() != SlantUpright {
+		t.Errorf("pinned low = (%d,%d,%d)", s.Weight(), s.Width(), s.Slant())
+	}
+	if int32(NormalStyle()) != 400+5<<16 {
+		t.Errorf("packing = %#x", int32(NormalStyle()))
+	}
+}

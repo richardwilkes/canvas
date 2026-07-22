@@ -26,7 +26,7 @@ type SweepGradient struct {
 
 // NewSweepGradient builds a sweep gradient shader from byte colors; angles are in degrees, localMatrix may be nil.
 func NewSweepGradient(center geom.Point, colors []colorcore.Color, pos []float32, tileMode TileMode, startAngle, endAngle float32, localMatrix *geom.Matrix) Shader {
-	if !validGradient(colors, tileMode) {
+	if !validGradient(colors, pos, tileMode) {
 		return nil
 	}
 	c4f := colors4f(colors)

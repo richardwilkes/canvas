@@ -168,7 +168,7 @@ func NewTwoPointConicalGradient(start geom.Point, startRadius float32, end geom.
 	if startRadius < 0 || endRadius < 0 {
 		return nil
 	}
-	if !validGradient(colors, tileMode) {
+	if !validGradient(colors, pos, tileMode) {
 		return nil
 	}
 	c4f := colors4f(colors)

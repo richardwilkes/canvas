@@ -46,7 +46,7 @@ func NewLinearGradient(p0, p1 geom.Point, colors []colorcore.Color, pos []float3
 	if !geom.IsFinite(d.Length()) {
 		return nil
 	}
-	if !validGradient(colors, tileMode) {
+	if !validGradient(colors, pos, tileMode) {
 		return nil
 	}
 	c4f := colors4f(colors)

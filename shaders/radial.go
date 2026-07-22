@@ -37,7 +37,7 @@ func NewRadialGradient(center geom.Point, radius float32, colors []colorcore.Col
 	if radius < 0 {
 		return nil
 	}
-	if !validGradient(colors, tileMode) {
+	if !validGradient(colors, pos, tileMode) {
 		return nil
 	}
 	c4f := colors4f(colors)

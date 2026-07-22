@@ -375,6 +375,43 @@ func TestDegenerateGradients(t *testing.T) {
 	}
 }
 
+// TestGradientMismatchedPositions checks that every public gradient constructor rejects (returns nil rather than
+// panicking) a position slice whose length does not match the color count. A short slice would otherwise index past the
+// end of positions during stop preprocessing (and in the degenerate-geometry average path).
+func TestGradientMismatchedPositions(t *testing.T) {
+	colors := []colorcore.Color{0xFFFF0000, 0xFF00FF00, 0xFF0000FF}
+	shortPos := []float32{0, 1} // one offset short of the three colors
+	longPos := []float32{0, 0.5, 0.75, 1}
+	p0, p1 := geom.Point{}, geom.Point{X: 100}
+	center := geom.Point{X: 5, Y: 5}
+
+	for _, pos := range [][]float32{shortPos, longPos} {
+		if s := NewLinearGradient(p0, p1, colors, pos, TileClamp, nil); s != nil {
+			t.Fatalf("linear gradient with %d positions for %d colors should be nil", len(pos), len(colors))
+		}
+		if s := NewRadialGradient(center, 20, colors, pos, TileClamp, nil); s != nil {
+			t.Fatalf("radial gradient with %d positions for %d colors should be nil", len(pos), len(colors))
+		}
+		if s := NewSweepGradient(center, colors, pos, TileClamp, 0, 360, nil); s != nil {
+			t.Fatalf("sweep gradient with %d positions for %d colors should be nil", len(pos), len(colors))
+		}
+		if s := NewTwoPointConicalGradient(center, 10, geom.Point{X: 50, Y: 5}, 20,
+			colors, pos, TileClamp, nil); s != nil {
+			t.Fatalf("conical gradient with %d positions for %d colors should be nil", len(pos), len(colors))
+		}
+		// Degenerate geometry (coincident endpoints/radii) reaches the average-color path, which also indexes
+		// positions per color.
+		if s := NewLinearGradient(center, center, colors, pos, TileRepeat, nil); s != nil {
+			t.Fatalf("degenerate linear gradient with %d positions for %d colors should be nil", len(pos), len(colors))
+		}
+	}
+
+	// A matched-length position slice still succeeds, confirming the guard is not over-broad.
+	if s := NewLinearGradient(p0, p1, colors, []float32{0, 0.5, 1}, TileClamp, nil); s == nil {
+		t.Fatal("linear gradient with matching positions should succeed")
+	}
+}
+
 func TestBlendShader(t *testing.T) {
 	red := NewColor(0xFFFF0000)
 	green := NewColor(0xFF00FF00)

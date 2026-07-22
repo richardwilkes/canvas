@@ -23,10 +23,11 @@ import (
 // gradDegenerateThreshold is the tolerance below which a gradient's geometry is treated as degenerate.
 const gradDegenerateThreshold = float32(1.0) / (1 << 15)
 
-// validGradient reports whether the given colors and tile mode form a valid gradient (the interpolation enums are fixed
-// at their defaults).
-func validGradient(colors []colorcore.Color, tileMode TileMode) bool {
-	return len(colors) >= 1 && tileMode < tileModeCount
+// validGradient reports whether the given colors, positions, and tile mode form a valid gradient (the interpolation
+// enums are fixed at their defaults). An explicit position slice, when supplied, must carry exactly one offset per color;
+// a mismatched length is rejected here so the downstream stop preprocessing never indexes past the end of positions.
+func validGradient(colors []colorcore.Color, pos []float32, tileMode TileMode) bool {
+	return len(colors) >= 1 && tileMode < tileModeCount && (pos == nil || len(pos) == len(colors))
 }
 
 // colors4f converts byte colors to unpremultiplied float colors.

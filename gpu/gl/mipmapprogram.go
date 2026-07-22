@@ -153,6 +153,9 @@ func (g *Gpu) createMipmapProgram(progIdx int) bool {
 		return false
 	}
 
+	// Attribute locations must be bound before linking to take effect on the linked program.
+	g.fns().BindAttribLocationString(programID, 0, "a_vertex")
+
 	g.fns().LinkProgram(programID)
 	var linked int32
 	g.fns().GetProgramiv(programID, LINK_STATUS, &linked)
@@ -166,7 +169,6 @@ func (g *Gpu) createMipmapProgram(progIdx int) bool {
 	g.mipmapPrograms[progIdx].program = programID
 	g.mipmapPrograms[progIdx].textureUniform = g.fns().GetUniformLocationString(programID, "u_texture")
 	g.mipmapPrograms[progIdx].texCoordXformUniform = g.fns().GetUniformLocationString(programID, "u_texCoordXform")
-	g.fns().BindAttribLocationString(programID, 0, "a_vertex")
 
 	g.fns().DeleteShader(vshader)
 	g.fns().DeleteShader(fshader)

@@ -21,6 +21,18 @@ func (i *Interface) ZeroRequiredProcForTest() {
 	i.Functions.drawBuffer = 0
 }
 
+// RegenerateMipmapLevelsByDrawsForTest forces the manual draw-based mipmap regeneration lane (the createMipmapProgram
+// path in mipmapprogram.go), regardless of the driver's DoManualMipmapping caps, so the lane is exercised on any
+// context. It handles the dirty context and marks the mips clean on success, mirroring RegenerateMipmapLevels.
+func (g *Gpu) RegenerateMipmapLevelsByDrawsForTest(texture *Texture) bool {
+	g.handleDirtyContext()
+	if !g.regenerateMipmapLevelsByDraws(texture) {
+		return false
+	}
+	texture.MarkMipmapsClean()
+	return true
+}
+
 // NewSurfaceContextForTesting builds a bare SurfaceContext over a proxy so live tests can read back proxies that have
 // no draw context of their own (e.g. copy destinations).
 func NewSurfaceContextForTesting(ctx *DirectContext, proxy *SurfaceProxy, origin gpu.SurfaceOrigin, colorType gpu.ColorType) *SurfaceContext {

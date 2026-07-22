@@ -350,6 +350,65 @@ func TestGpuLiveMipmapRegen(t *testing.T) {
 	g.ResourceCache().PurgeUnlockedResources(gpu.PurgeAllResources)
 }
 
+// TestGpuLiveMipmapManualDrawLane forces the manual draw-based mipmap regeneration lane (createMipmapProgram +
+// downsample draws) regardless of the driver's DoManualMipmapping caps, and verifies the produced level-1 is a correct
+// 2x2 box average. The downsample draws read vertex positions from a_vertex; the box-average correctness confirms the
+// fullscreen quad geometry flowed through the attribute the program binds to array location 0, which requires the
+// attribute binding to be established before LinkProgram.
+func TestGpuLiveMipmapManualDrawLane(t *testing.T) {
+	g := newLiveGpu(t)
+	if !g.GLCaps().IsFormatRenderable(gl.FormatRGBA8, 1) {
+		t.Skip("RGBA8 not single-sample renderable; manual mipmap lane needs a renderable format")
+	}
+	dims := geom.ISize{Width: 16, Height: 16}
+	levels := gpu.ComputeMipLevelCount(dims.Width, dims.Height) + 1
+	texels := make([]gpu.MipLevel, levels)
+	texels[0] = gpu.MipLevel{Pixels: testPattern(dims, 5), RowBytes: int(dims.Width) * 4}
+
+	surf := g.CreateTexture(dims, gl.FormatRGBA8, gpu.TextureType2D, gpu.RenderableYes, 1,
+		gpu.BudgetedYes, levels, gpu.ColorTypeRGBA8888, gpu.ColorTypeRGBA8888, texels, "manualmips")
+	if surf == nil {
+		t.Fatal("CreateTexture failed")
+	}
+	tex := surf.AsTexture()
+	if !g.RegenerateMipmapLevelsByDrawsForTest(tex) {
+		t.Fatal("manual mipmap draw lane failed")
+	}
+	sweepGLErrors(t, g, "manual mipmap draw lane")
+
+	base := texels[0].Pixels
+	half := dims.Width / 2
+	fns := g.Functions()
+	var fbo uint32
+	fns.GenFramebuffers(1, &fbo)
+	g.BindFramebuffer(gl.FRAMEBUFFER, fbo)
+	fns.FramebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex.TextureID(), 1)
+	level1 := make([]byte, int(half)*int(half)*4)
+	fns.PixelStorei(gl.PACK_ALIGNMENT, 1)
+	fns.ReadPixels(0, 0, half, half, gl.RGBA, gl.UNSIGNED_BYTE, uintptr(unsafe.Pointer(&level1[0])))
+	sweepGLErrors(t, g, "manual mip level 1 readback")
+	const tolerance = 2
+	for y := int32(0); y < half; y++ {
+		for x := int32(0); x < half; x++ {
+			for c := 0; c < 4; c++ {
+				idx := func(px, py int32) int { return (int(py)*int(dims.Width) + int(px)) * 4 }
+				want := (int(base[idx(2*x, 2*y)+c]) + int(base[idx(2*x+1, 2*y)+c]) +
+					int(base[idx(2*x, 2*y+1)+c]) + int(base[idx(2*x+1, 2*y+1)+c]) + 2) / 4
+				got := int(level1[(int(y)*int(half)+int(x))*4+c])
+				if got < want-tolerance || got > want+tolerance {
+					t.Fatalf("manual mip level 1 (%d,%d) channel %d = %d, want %d +/- %d", x, y, c,
+						got, want, tolerance)
+				}
+			}
+		}
+	}
+	fns.FramebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, 0, 0)
+	g.DeleteFramebuffer(fbo)
+
+	surf.Unref()
+	g.ResourceCache().PurgeUnlockedResources(gpu.PurgeAllResources)
+}
+
 // TestGpuLiveCapsDump logs the resource-layer-relevant caps for the running context, for parity with the checked-in
 // driver dumps.
 func TestGpuLiveCapsDump(t *testing.T) {

@@ -110,6 +110,9 @@ func (c *samplerObjectCache) bindSampler(unitIdx int, state gpu.SamplerState) {
 
 // unbindSampler binds sampler 0 to unitIdx if a non-zero sampler is currently bound there.
 func (c *samplerObjectCache) unbindSampler(unitIdx int) {
+	if unitIdx >= c.numTextureUnits {
+		return
+	}
 	if !c.textureUnitStates[unitIdx].known ||
 		c.textureUnitStates[unitIdx].samplerIDIfKnown != 0 {
 		c.g.fns().BindSampler(uint32(unitIdx), 0)

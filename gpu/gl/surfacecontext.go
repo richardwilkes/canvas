@@ -302,13 +302,12 @@ func CopySurfaceProxy(ctx *DirectContext, src *SurfaceProxy, origin gpu.SurfaceO
 	if src.IsFullyLazy() {
 		panic("cannot copy a fully lazy proxy")
 	}
-	width := srcRect.Width()
-	height := srcRect.Height()
 	if !srcRect.Intersect(geom.IRectSize(src.Dimensions())) {
 		return nil, nil
 	}
+	// Size the dst proxy from the intersected rect so an oversized srcRect doesn't leave an uncopied border.
 	dstProxy := ctx.ProxyProvider().CreateProxy(src.Format(),
-		geom.ISize{Width: width, Height: height}, gpu.RenderableNo, 1, mipmapped, fit, budgeted,
+		geom.ISize{Width: srcRect.Width(), Height: srcRect.Height()}, gpu.RenderableNo, 1, mipmapped, fit, budgeted,
 		label, 0, UseAllocatorYes)
 	if dstProxy == nil {
 		return nil, nil

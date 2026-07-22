@@ -488,6 +488,10 @@ func (rt *RenderTarget) EnsureDynamicMSAAAttachment(rp *ResourceProvider) bool {
 	rt.dynamicMSAAAttachment = rp.GetDiscardableMSAAAttachment(rt.surf.dims, rt.format,
 		internalSampleCount)
 	if rt.dynamicMSAAAttachment == nil {
+		// Drop the just-created FBO so a later retry doesn't short-circuit on the multisampleFBOID != 0 guard and
+		// report success on a framebuffer that never got its color attachment.
+		g.DeleteFramebuffer(rt.multisampleFBOID)
+		rt.multisampleFBOID = 0
 		return false
 	}
 

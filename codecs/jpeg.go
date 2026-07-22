@@ -123,20 +123,20 @@ func exifOrientation(seg []byte) int {
 }
 
 // orientPixels applies an EXIF origin to decoded pixels. The returned pixels' info carries the (possibly swapped)
-// upright dimensions.
+// upright dimensions. Both the RGBA_8888 (Words) and Gray8 (Bytes) storage the JPEG decoder produces are handled; any
+// other storage is returned unchanged.
 func orientPixels(p *imagecore.Pixels, origin int) *imagecore.Pixels {
-	if origin <= 1 || origin > 8 || p.Words == nil {
+	if origin <= 1 || origin > 8 || (p.Words == nil && p.Bytes == nil) {
 		return p
 	}
 	w, h := int(p.Info.Width), int(p.Info.Height)
 	outInfo := p.Info
-	swap := origin >= 5
-	if swap {
+	if origin >= 5 { // origins 5..8 transpose, swapping width and height
 		outInfo.Width, outInfo.Height = p.Info.Height, p.Info.Width
 	}
 	out := imagecore.NewPixels(outInfo)
+	srcStride, dstStride := int(p.RowElems), int(out.RowElems)
 	for y := range h {
-		src := p.Words[y*int(p.RowElems):]
 		for x := range w {
 			var dx, dy int
 			switch origin {
@@ -155,7 +155,12 @@ func orientPixels(p *imagecore.Pixels, origin int) *imagecore.Pixels {
 			case 8: // left-bottom: rotate 270 CW
 				dx, dy = y, w-1-x
 			}
-			out.Words[dy*int(out.RowElems)+dx] = src[x]
+			si, di := y*srcStride+x, dy*dstStride+dx
+			if p.Words != nil {
+				out.Words[di] = p.Words[si]
+			} else {
+				out.Bytes[di] = p.Bytes[si]
+			}
 		}
 	}
 	return out

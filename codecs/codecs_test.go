@@ -185,6 +185,59 @@ func TestJPEGEXIFOrientation(t *testing.T) {
 	}
 }
 
+func TestJPEGGrayEXIFOrientation(t *testing.T) {
+	// A grayscale JPEG decodes to Gray8 (Bytes-backed). With a transposing orientation, DecodeInfo swaps the
+	// dimensions; Decode must return pixels at those same swapped dimensions (and actually rotated), not the original.
+	src := image.NewGray(image.Rect(0, 0, 4, 2))
+	for x := range 4 {
+		src.SetGray(x, 0, color.Gray{Y: uint8(40 + 50*x)})
+		src.SetGray(x, 1, color.Gray{Y: 20})
+	}
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, src, &jpeg.Options{Quality: 100}); err != nil {
+		t.Fatal(err)
+	}
+	plain := buf.Bytes()
+
+	// Minimal EXIF payload: "Exif\0\0" + TIFF LE header + one IFD entry (0x0112 SHORT 1 value 6 = rotate 90 CW).
+	tiff := []byte{
+		'I', 'I', 42, 0, 8, 0, 0, 0, // header, IFD at offset 8
+		1, 0, // one entry
+		0x12, 0x01, 3, 0, 1, 0, 0, 0, 6, 0, 0, 0, // orientation = 6
+		0, 0, 0, 0, // next IFD
+	}
+	payload := append([]byte("Exif\x00\x00"), tiff...)
+	app1 := append([]byte{0xFF, 0xE1, byte((len(payload) + 2) >> 8), byte(len(payload) + 2)}, payload...)
+	withEXIF := append(append(append([]byte{}, plain[:2]...), app1...), plain[2:]...)
+
+	codec := jpegCodec()
+	info, ok := codec.DecodeInfo(withEXIF)
+	if !ok || info.ColorType != imagecore.ColorTypeGray8 {
+		t.Fatalf("DecodeInfo gray=%v ok=%v", info.ColorType, ok)
+	}
+	if info.Width != 2 || info.Height != 4 {
+		t.Fatalf("DecodeInfo dims %dx%d, want 2x4", info.Width, info.Height)
+	}
+	p, err := codec.Decode(withEXIF)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Bytes == nil {
+		t.Fatal("expected Bytes-backed Gray8 pixels")
+	}
+	// Decode dims must match DecodeInfo dims (the mismatch this test guards against).
+	if p.Info.Width != info.Width || p.Info.Height != info.Height {
+		t.Fatalf("Decode dims %dx%d != DecodeInfo %dx%d", p.Info.Width, p.Info.Height, info.Width, info.Height)
+	}
+	// Rotate 90 CW: src(3,0) (brightest, ~190) → dst(1,3); src(0,0) (~40) → dst(1,0); row 1 (dark ~20) → column 0.
+	bright := p.Bytes[3*int(p.RowElems)+1]
+	dim := p.Bytes[0*int(p.RowElems)+1]
+	dark := p.Bytes[3*int(p.RowElems)+0]
+	if bright < 150 || dim > 90 || dark > 90 {
+		t.Fatalf("rotated gray bright=%d dim=%d dark=%d", bright, dim, dark)
+	}
+}
+
 func TestOrientPixelsMappings(t *testing.T) {
 	info, _ := imagecore.MakeInfo(3, 2, imagecore.ColorTypeRGBA8888, imagecore.AlphaTypePremul)
 	src := imagecore.NewPixels(info)
@@ -203,6 +256,31 @@ func TestOrientPixelsMappings(t *testing.T) {
 	}
 	if out.Words[1] != 1 || out.Words[0] != 4 {
 		t.Fatalf("rot90: %v", out.Words)
+	}
+}
+
+func TestOrientPixelsGray8(t *testing.T) {
+	// Gray8 pixels are Bytes-backed (Words == nil); orientation must still be applied.
+	info, _ := imagecore.MakeInfo(3, 2, imagecore.ColorTypeGray8, imagecore.AlphaTypeOpaque)
+	src := imagecore.NewPixels(info)
+	if src.Words != nil || src.Bytes == nil {
+		t.Fatal("expected Bytes-backed Gray8 pixels")
+	}
+	for i := range 6 {
+		src.Bytes[i] = byte(i + 1)
+	}
+	// origin 3 = rotate 180: first and last swap ends.
+	out := orientPixels(src, 3)
+	if out.Words != nil || out.Bytes[0] != 6 || out.Bytes[5] != 1 {
+		t.Fatalf("rot180: %v", out.Bytes)
+	}
+	// origin 6 = rotate 90 CW: dst is 2x3; src(0,0)=1 → dst(1,0), src(0,1)=4 → dst(0,0).
+	out = orientPixels(src, 6)
+	if out.Info.Width != 2 || out.Info.Height != 3 {
+		t.Fatalf("rot90 dims %dx%d", out.Info.Width, out.Info.Height)
+	}
+	if out.Bytes[1] != 1 || out.Bytes[0] != 4 {
+		t.Fatalf("rot90: %v", out.Bytes)
 	}
 }
 

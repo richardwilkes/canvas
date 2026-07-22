@@ -52,6 +52,38 @@ func TestPrepareLevelsShortPixelsRejected(t *testing.T) {
 	}
 }
 
+// TestPrepareLevelsBaseOnlyMipmapped verifies that supplying only the base level (len(texels) == 1) while requesting a
+// mipmapped upload (mipLevelCount > 1) does not index-panic on the absent upper levels; the missing levels are simply
+// left empty for later generation.
+func TestPrepareLevelsBaseOnlyMipmapped(t *testing.T) {
+	rp := newTightenCapsResourceProvider(t)
+	const (
+		colorType = gpu.ColorTypeBGRA8888
+		format    = FormatRGBA8
+	)
+	baseSize := geom.ISize{Width: 4, Height: 4}
+	minRB := int(baseSize.Width) * colorType.BytesPerPixel() // 16
+	// A single, base-level-only slice with a tight stride, but ask for a full mip chain (4x4 -> 3 levels).
+	texels := []gpu.MipLevel{{Pixels: make([]byte, minRB*int(baseSize.Height)), RowBytes: minRB}}
+
+	// Must not panic reading texels[1]/texels[2]; must succeed with only the base level populated.
+	_, out, ok := rp.prepareLevels(format, colorType, baseSize, texels, 3)
+	if !ok {
+		t.Fatal("prepareLevels rejected a valid base-only mipmapped request")
+	}
+	if len(out) != 3 {
+		t.Fatalf("expected 3 levels, got %d", len(out))
+	}
+	if out[0].Pixels == nil {
+		t.Error("base level Pixels was not populated")
+	}
+	for i := 1; i < len(out); i++ {
+		if out[i].Pixels != nil {
+			t.Errorf("upper level %d unexpectedly populated: %v", i, out[i])
+		}
+	}
+}
+
 // TestPrepareLevelsTightCopy verifies the tight-copy lane still produces correctly tightened level data when the Pixels
 // buffer fully covers its declared stride.
 func TestPrepareLevelsTightCopy(t *testing.T) {

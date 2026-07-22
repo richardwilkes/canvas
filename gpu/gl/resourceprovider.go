@@ -527,7 +527,7 @@ func (rp *ResourceProvider) prepareLevels(format Format, colorType gpu.ColorType
 	out := make([]gpu.MipLevel, mipLevelCount)
 	size := baseSize
 	for i := 0; i < mipLevelCount; i++ {
-		if texels[i].Pixels != nil {
+		if i < len(texels) && texels[i].Pixels != nil {
 			minRB := int(size.Width) * colorType.BytesPerPixel()
 			actualRB := texels[i].RowBytes
 			if actualRB == 0 {

@@ -3,7 +3,7 @@
 	"lane": "gpu",
 	"gl_renderer": "llvmpipe (LLVM 15.0.7, 128 bits)",
 	"gl_version": "4.5 (Core Profile) Mesa 23.2.1-1ubuntu3.1~22.04.4",
-	"captured_at": "2026-07-17",
+	"captured_at": "2026-07-22",
 	"entries": [
 		{
 			"name": "arcs",
@@ -121,7 +121,7 @@
 		},
 		{
 			"name": "clip-rotated-rect",
-			"sha256": "086b0c23c64d0dc721afcd609db24a6501f3b7815d8f581696665a589c0eef24",
+			"sha256": "0ba865eb0733341f8da522986a2584b56d063613085695326e60191d4196c553",
 			"width": 256,
 			"height": 256
 		},

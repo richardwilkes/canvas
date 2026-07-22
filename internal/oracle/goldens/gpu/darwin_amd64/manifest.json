@@ -3,7 +3,7 @@
 	"lane": "gpu",
 	"gl_renderer": "Apple Software Renderer",
 	"gl_version": "4.1 APPLE-23.1.1",
-	"captured_at": "2026-07-17",
+	"captured_at": "2026-07-22",
 	"entries": [
 		{
 			"name": "arcs",
@@ -121,7 +121,7 @@
 		},
 		{
 			"name": "clip-rotated-rect",
-			"sha256": "086b0c23c64d0dc721afcd609db24a6501f3b7815d8f581696665a589c0eef24",
+			"sha256": "63cb5201cc4395d6d2bec5b5ce15a980a73c4f23f297ca1c5d7c5afc959c0c81",
 			"width": 256,
 			"height": 256
 		},

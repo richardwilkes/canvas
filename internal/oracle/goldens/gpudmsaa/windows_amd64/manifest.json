@@ -3,7 +3,7 @@
 	"lane": "gpudmsaa",
 	"gl_renderer": "llvmpipe (LLVM 22.1.8, 256 bits)",
 	"gl_version": "4.6 (Core Profile) Mesa 26.1.3 (git-bfce4dd45a)",
-	"captured_at": "2026-07-17",
+	"captured_at": "2026-07-22",
 	"entries": [
 		{
 			"name": "arcs",
@@ -121,7 +121,7 @@
 		},
 		{
 			"name": "clip-rotated-rect",
-			"sha256": "086b0c23c64d0dc721afcd609db24a6501f3b7815d8f581696665a589c0eef24",
+			"sha256": "3a68a6052e3429450860ad03e491158641fb08cd75eb8e0e0853a46aca42707c",
 			"width": 256,
 			"height": 256
 		},

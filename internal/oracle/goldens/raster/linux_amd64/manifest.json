@@ -1,7 +1,7 @@
 {
 	"platform": "linux_amd64",
 	"lane": "raster",
-	"captured_at": "2026-07-17",
+	"captured_at": "2026-07-22",
 	"entries": [
 		{
 			"name": "arcs",
@@ -119,7 +119,7 @@
 		},
 		{
 			"name": "clip-rotated-rect",
-			"sha256": "086b0c23c64d0dc721afcd609db24a6501f3b7815d8f581696665a589c0eef24",
+			"sha256": "650ac98ed78c520678e3b90d6dc9e298208e13b5e5cc43ea63a9bb4b5c8f1f85",
 			"width": 256,
 			"height": 256
 		},

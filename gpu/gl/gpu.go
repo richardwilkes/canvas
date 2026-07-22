@@ -667,6 +667,7 @@ func (g *Gpu) BindTexture(unitIdx int, samplerState gpu.SamplerState, texture *T
 		}
 		if g.Caps().AnisoSupport {
 			if setAll || oldSamplerState.MaxAniso != newSamplerState.MaxAniso {
+				g.setTextureUnit(unitIdx)
 				g.fns().TexParameterf(target, TEXTURE_MAX_ANISOTROPY, newSamplerState.MaxAniso)
 			}
 		}

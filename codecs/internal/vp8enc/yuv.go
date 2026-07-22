@@ -102,13 +102,30 @@ func fillRGB(img image.Image, rgb []uint8, w, h int) {
 			}
 		}
 	case *image.RGBA:
-		for y := 0; y < h; y++ {
+		// image.RGBA is alpha-premultiplied, so un-premultiply to recover the true RGB, matching the generic
+		// color.NRGBAModel path below. Doing a straight byte copy would emit darkened (premultiplied) color.
+		for y := range h {
 			s := src.Pix[src.PixOffset(b.Min.X, b.Min.Y+y):]
 			d := rgb[3*w*y:]
-			for x := 0; x < w; x++ {
-				d[3*x] = s[4*x]
-				d[3*x+1] = s[4*x+1]
-				d[3*x+2] = s[4*x+2]
+			for x := range w {
+				a := s[4*x+3]
+				switch a {
+				case 0xff:
+					d[3*x] = s[4*x]
+					d[3*x+1] = s[4*x+1]
+					d[3*x+2] = s[4*x+2]
+				case 0:
+					d[3*x] = 0
+					d[3*x+1] = 0
+					d[3*x+2] = 0
+				default:
+					// Replicate color.NRGBAModel's 16-bit division: expand each channel to 16 bits, scale by
+					// 0xffff/a, then truncate back to 8 bits.
+					a16 := uint32(a) | uint32(a)<<8
+					d[3*x] = uint8(((uint32(s[4*x]) | uint32(s[4*x])<<8) * 0xffff / a16) >> 8)
+					d[3*x+1] = uint8(((uint32(s[4*x+1]) | uint32(s[4*x+1])<<8) * 0xffff / a16) >> 8)
+					d[3*x+2] = uint8(((uint32(s[4*x+2]) | uint32(s[4*x+2])<<8) * 0xffff / a16) >> 8)
+				}
 			}
 		}
 	case *image.Gray:

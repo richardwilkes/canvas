@@ -296,6 +296,36 @@ func runCoincidenceResolution(t *testing.T, co *opCoincidence) {
 	}
 }
 
+// TestAddOrOverlapEndOutOfRange drives addOrOverlap down the ce/oe branch with a coinTe that lies outside [0,1], so
+// coinSeg.addT(coinTe) returns nil. The segment pair is a short edge (segA, t in [0,1] over x in [0,10]) coincident with
+// a longer collinear one (segB, x in [-5,15]): the interior samples coincidentRunIsReal takes at 0.25/0.5/0.75 of
+// [0.5, 1.2] still land on segB, so the run is believed, yet coinTe=1.2 extrapolates past segA's tail and addT yields
+// nil. The mirror nil check must make addOrOverlap return false rather than nil-panic dereferencing ceWritable.span.
+func TestAddOrOverlapEndOutOfRange(t *testing.T) {
+	head, state := newTestContourHead()
+	segA := head.addLine([]geom.Point{pt(0, 0), pt(10, 0)})
+	segB := head.addLine([]geom.Point{pt(-5, 0), pt(15, 0)})
+	co := newOpCoincidence(state)
+
+	// Populate co.top with an unrelated run so the required non-nil precondition holds; checkOverlap skips it because
+	// its segments differ from segA/segB.
+	segC := head.addLine([]geom.Point{pt(0, 100), pt(10, 100)})
+	segD := head.addLine([]geom.Point{pt(0, 100), pt(10, 100)})
+	co.add(&segC.head.ptT, &segC.tail.ptT, &segD.head.ptT, &segD.tail.ptT)
+	co.top = co.head
+	co.head = nil
+
+	// coinTe=1.2 on segA extrapolates to (12,0), which addT can't place (past the tail) -> nil; oppTe=0.85 on segB maps
+	// to the same (12,0) and does resolve. Interior samples of [0.5,1.2] stay within segB, so the run is real.
+	added := false
+	if got := co.addOrOverlap(segA, segB, 0.5, 1.2, 0.5, 0.85, &added); got {
+		t.Fatalf("addOrOverlap with an out-of-range coinTe = %v, want false", got)
+	}
+	if added {
+		t.Fatal("addOrOverlap should not report an addition when the end span can't be placed")
+	}
+}
+
 // allSpans returns every non-terminal span across the model's real contours.
 func allSpans(head *opContourHead) []*opSpan {
 	var out []*opSpan

@@ -771,6 +771,9 @@ func (co *opCoincidence) addOrOverlap(coinSeg, oppSeg *opSegment, coinTs, coinTe
 		if oeWritable == nil {
 			oeWritable = oppSeg.addT(oppTe)
 		}
+		if ceWritable == nil || oeWritable == nil {
+			return false
+		}
 		if !ceWritable.span.addOpp(oeWritable.span) {
 			return false
 		}

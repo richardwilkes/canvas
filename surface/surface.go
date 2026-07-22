@@ -90,7 +90,13 @@ func NewRasterN32Premul(width, height int32, props *Props) *Surface {
 // WrapPixels creates a surface rendering into caller-provided pixels. The pixmap's backing store is the caller's;
 // snapshots always deep-copy.
 func WrapPixels(pix *raster.Pixmap, props *Props) *Surface {
-	if pix == nil || pix.Width <= 0 || pix.Height <= 0 || len(pix.Pix) < int(pix.Width)*int(pix.Height) {
+	// The backing slice must hold every pixel the strided layout can address. Rendering computes a pixel's index as
+	// y*RowPixels+x, so the last valid pixel (Width-1, Height-1) lives at word (Height-1)*RowPixels+Width-1; the slice
+	// must therefore span at least (Height-1)*RowPixels+Width words. Validating against Width*Height instead would let a
+	// caller-built pixmap with RowPixels > Width pass yet write out of bounds. RowPixels < Width is likewise rejected as
+	// a malformed stride.
+	if pix == nil || pix.Width <= 0 || pix.Height <= 0 || pix.RowPixels < pix.Width ||
+		len(pix.Pix) < int(pix.Height-1)*int(pix.RowPixels)+int(pix.Width) {
 		return nil
 	}
 	return newSurface(pix, props, false)

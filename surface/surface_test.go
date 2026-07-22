@@ -49,6 +49,41 @@ func TestSurfaceInvalidSizes(t *testing.T) {
 	}
 }
 
+// TestWrapPixelsStrideValidation verifies WrapPixels honors RowPixels when validating the backing slice, rejecting
+// pixmaps whose stride would make rendering read or write past the buffer.
+func TestWrapPixelsStrideValidation(t *testing.T) {
+	// A Width*Height-sized buffer with RowPixels > Width would overflow at y*RowPixels+x; it must be rejected even
+	// though len(Pix) >= Width*Height.
+	understrided := &raster.Pixmap{Pix: make([]uint32, 8*8), Width: 8, Height: 8, RowPixels: 16}
+	if WrapPixels(understrided, nil) != nil {
+		t.Fatalf("pixmap with RowPixels > Width and a Width*Height buffer must be rejected")
+	}
+
+	// One word short of the strided requirement ((Height-1)*RowPixels+Width) must still be rejected.
+	const w, h, stride = 8, 8, 16
+	short := &raster.Pixmap{Pix: make([]uint32, (h-1)*stride+w-1), Width: w, Height: h, RowPixels: stride}
+	if WrapPixels(short, nil) != nil {
+		t.Fatalf("pixmap one word short of the strided size must be rejected")
+	}
+
+	// Exactly the strided requirement must be accepted, and drawing must reach the last row without overflowing.
+	ok := &raster.Pixmap{Pix: make([]uint32, (h-1)*stride+w), Width: w, Height: h, RowPixels: stride}
+	s := WrapPixels(ok, nil)
+	if s == nil {
+		t.Fatalf("pixmap sized exactly for the strided layout must be accepted")
+	}
+	s.Canvas().Clear(0xFF00FF00)
+	if ok.Pix[(h-1)*stride+w-1] == 0 {
+		t.Fatalf("clear did not reach the last strided pixel")
+	}
+
+	// RowPixels < Width is a malformed stride and must be rejected.
+	narrow := &raster.Pixmap{Pix: make([]uint32, 8*8), Width: 8, Height: 8, RowPixels: 4}
+	if WrapPixels(narrow, nil) != nil {
+		t.Fatalf("pixmap with RowPixels < Width must be rejected")
+	}
+}
+
 // TestSnapshotCopyOnWrite verifies the surface's snapshot semantics: the image's pixels are frozen at snapshot time;
 // the surface keeps its content and mutates a copy.
 func TestSnapshotCopyOnWrite(t *testing.T) {

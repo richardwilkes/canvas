@@ -11,6 +11,7 @@ package font
 
 import (
 	"bytes"
+	"math"
 	"testing"
 
 	"github.com/richardwilkes/canvas/geom"
@@ -53,6 +54,35 @@ func TestPackedGlyphID(t *testing.T) {
 	p = PackGlyphIDPoint(7, geom.Pt(-9.74, 0), mask) // fractional part 0.26
 	if got := p.SubXOffset(); got != 0.25 {
 		t.Errorf("negative pos: sub-x %v, want 0.25", got)
+	}
+}
+
+func TestGlyphImageTooLarge(t *testing.T) {
+	// imageTooLarge must gate both dimensions so an extreme height cannot drive an outsized mask allocation. Height is
+	// otherwise saturated only to the 16-bit satUint16 ceiling (65535).
+	cases := []struct {
+		name          string
+		width, height int32
+		format        MaskFormat
+		wantTooLarge  bool
+		wantImageSize int
+	}{
+		{name: "small", width: 100, height: 100, format: MaskA8, wantTooLarge: false, wantImageSize: 100 * 100},
+		{name: "wide-boundary", width: maxGlyphWidth, height: 10, format: MaskA8, wantTooLarge: true, wantImageSize: 0},
+		{name: "wide-just-under", width: maxGlyphWidth - 1, height: 10, format: MaskA8, wantTooLarge: false, wantImageSize: (maxGlyphWidth - 1) * 10},
+		{name: "tall-boundary", width: 10, height: maxGlyphHeight, format: MaskA8, wantTooLarge: true, wantImageSize: 0},
+		{name: "tall-just-under", width: 10, height: maxGlyphHeight - 1, format: MaskA8, wantTooLarge: false, wantImageSize: 10 * (maxGlyphHeight - 1)},
+		// Regression: an ~8191 wide × 65535 tall A8 glyph must be rejected rather than allocating ≈0.5 GB.
+		{name: "extreme-height", width: maxGlyphWidth - 1, height: math.MaxUint16, format: MaskA8, wantTooLarge: true, wantImageSize: 0},
+	}
+	for _, c := range cases {
+		g := &Glyph{Width: c.width, Height: c.height, Format: c.format}
+		if got := g.imageTooLarge(); got != c.wantTooLarge {
+			t.Errorf("%s: imageTooLarge()=%v, want %v", c.name, got, c.wantTooLarge)
+		}
+		if got := g.ImageSize(); got != c.wantImageSize {
+			t.Errorf("%s: ImageSize()=%d, want %d", c.name, got, c.wantImageSize)
+		}
 	}
 }
 

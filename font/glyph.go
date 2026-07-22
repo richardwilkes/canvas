@@ -145,8 +145,11 @@ func roundingIgnorePositionFieldMask(isSubpixel bool, axisAlignment AxisAlignmen
 	return geom.IPoint{X: mask.X & packedXYFieldMask.X, Y: mask.Y & packedXYFieldMask.Y}
 }
 
-// maxGlyphWidth is the largest glyph width that gets an allocated image; the image stays nil above this.
+// maxGlyphWidth is the largest glyph width that gets an allocated image; the image stays nil at or above this.
 const maxGlyphWidth = 1 << 13
+
+// maxGlyphHeight is the largest glyph height that gets an allocated image; the image stays nil at or above this.
+const maxGlyphHeight = 1 << 13
 
 // MaskFormat identifies a glyph mask's pixel layout.
 type MaskFormat uint8
@@ -216,8 +219,8 @@ func (g *Glyph) PackedID() PackedGlyphID { return g.packedID }
 // IsEmpty reports whether the glyph has zero width or height.
 func (g *Glyph) IsEmpty() bool { return g.Width == 0 || g.Height == 0 }
 
-// imageTooLarge reports whether the glyph is too wide to allocate an image.
-func (g *Glyph) imageTooLarge() bool { return g.Width >= maxGlyphWidth }
+// imageTooLarge reports whether the glyph is too large in either dimension to allocate an image.
+func (g *Glyph) imageTooLarge() bool { return g.Width >= maxGlyphWidth || g.Height >= maxGlyphHeight }
 
 // RowBytes returns the byte stride of one mask row for the glyph's format.
 func (g *Glyph) RowBytes() int32 { return g.Width * g.Format.bytesPerPixel() }

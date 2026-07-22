@@ -295,7 +295,13 @@ func ConvertPixels(dstInfo ImageInfo, dst []byte, dstRowBytes int, src *Pixels) 
 			case ColorTypeRGBAF16:
 				s := src.U16s[y*int(src.RowElems):]
 				for x := range w {
-					row[x] = byte(255.0 * halfToFloat(s[4*x+3]))
+					// convert_to_alpha8's F16 lane is (uint8_t)(255 * half): faithful to Skia, it truncates
+					// toward zero (no round-to-nearest) and does not clamp, so out-of-range extended F16 alphas
+					// wrap mod 256. The int32 intermediate reproduces that truncate-then-low-8-bits semantics
+					// deterministically instead of relying on Go's implementation-defined out-of-range
+					// float→uint8 conversion; 255*half always fits int32 (|half| <= 65504), so this preserves
+					// the oracle-exact byte on every target.
+					row[x] = byte(int32(255.0 * halfToFloat(s[4*x+3])))
 				}
 			}
 		}

@@ -101,6 +101,31 @@ func TestConvertToAlpha8(t *testing.T) {
 	}
 }
 
+func TestConvertF16ToAlpha8FaithfulTruncation(t *testing.T) {
+	// convert_to_alpha8's F16 lane is (uint8_t)(255 * half): truncate toward zero, no clamp. This pins that
+	// oracle-exact behavior (a Skia fidelity requirement, not a rounding bug) and the deterministic mod-256 wrap
+	// for out-of-range extended-range F16 alphas.
+	info, _ := MakeInfo(4, 1, ColorTypeRGBAF16, AlphaTypePremul)
+	src := NewPixels(info)
+	// alphas: 0.5, 1.0, 2.0 (out of range high), -1.0 (out of range low).
+	for i, a := range []float32{0.5, 1.0, 2.0, -1.0} {
+		src.U16s[4*i+3] = floatToHalf(a)
+	}
+	a8, _ := MakeInfo(4, 1, ColorTypeAlpha8, AlphaTypePremul)
+	dst := make([]byte, 4)
+	if !ConvertPixels(a8, dst, 4, src) {
+		t.Fatal("convert failed")
+	}
+	// 255*0.5 = 127.5 -> truncates to 127 (round-to-nearest would give 128, proving the faithful truncation);
+	// 255*1.0 = 255; 255*2.0 = 510 -> low 8 bits = 254; 255*-1.0 = -255 -> low 8 bits = 1.
+	want := []byte{127, 255, 254, 1}
+	for i := range want {
+		if dst[i] != want[i] {
+			t.Fatalf("alpha %d: got %d, want %d (full % x)", i, dst[i], want[i], dst)
+		}
+	}
+}
+
 func TestConvertPremulToUnpremulRoundTrip(t *testing.T) {
 	// premul → unpremul pays the sRGB linearize/encode round trip; opaque pixels must survive it exactly (the
 	// inv(srgb(1)) == 1 invariant holds per channel for byte-exact 8-bit values).

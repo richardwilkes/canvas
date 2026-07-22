@@ -230,3 +230,29 @@ func TestPathOpsLineIntersectionExactOneOff(t *testing.T) {
 func TestPathOpsLineIntersectionOneCoincident(t *testing.T) {
 	testOneCoincidentLine(t, lineCoincidentTests[0][0], lineCoincidentTests[0][1])
 }
+
+// TestPathOpsIntersectRayLineCoincidentT verifies that the coincident-ray branch of intersectRayLine assigns the four
+// T values mirroring Skia's fT[0][0]=fT[0][1]=0; fT[1][0]=fT[1][1]=1, and that pts[1] is derived from ts[0][1] rather
+// than relying on it being left zero. The struct is deliberately preloaded with a nonzero ts[0][1] so a mis-transcribed
+// assignment (writing ts[1][0] twice and leaving ts[0][1] stale) would corrupt pts[1].
+func TestPathOpsIntersectRayLineCoincidentT(t *testing.T) {
+	a := dl(0, 0, 4, 0)
+	b := dl(3, 0, 7, 0) // same infinite line as a, offset along it, so the rays are coincident
+	in := newIntersections()
+	in.ts[0][1] = 0.75 // stale value that must be overwritten by the coincident branch
+	used := in.intersectRayLine(a, b)
+	if used != 2 {
+		t.Fatalf("expected 2 coincident T values, got %d", used)
+	}
+	if in.tVal(0, 0) != 0 || in.tVal(0, 1) != 0 {
+		t.Fatalf("ts[0] = {%v, %v}, want {0, 0}", in.tVal(0, 0), in.tVal(0, 1))
+	}
+	if in.tVal(1, 0) != 1 || in.tVal(1, 1) != 1 {
+		t.Fatalf("ts[1] = {%v, %v}, want {1, 1}", in.tVal(1, 0), in.tVal(1, 1))
+	}
+	// pts[1] is computed from ts[0][1]; with the fix it must be a.ptAtT(0) == a.pts[0], not a.ptAtT(0.75).
+	want := a.ptAtT(0)
+	if !in.pt(1).equals(want) {
+		t.Fatalf("pts[1] = %v, want %v (stale ts[0][1] leaked into computePoints)", in.pt(1), want)
+	}
+}

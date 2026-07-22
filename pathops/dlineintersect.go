@@ -75,11 +75,10 @@ func (in *intersections) intersectRayLine(a, b dLine) int {
 			in.used = 0
 			return 0
 		}
-		// There's no single correct intersection point for two coincident rays, so return a fixed choice: T on a is 0,
-		// T on b is 1 (note ts[1][0] is set to 0 below and then immediately overwritten to 1 — that odd assignment
-		// order is intentional, not a bug).
+		// There's no single correct intersection point for two coincident rays, so return a fixed choice mirroring
+		// Skia's fT[0][0]=fT[0][1]=0; fT[1][0]=fT[1][1]=1: T on a is 0 for both endpoints, T on b is 1 for both.
 		in.ts[0][0] = 0
-		in.ts[1][0] = 0
+		in.ts[0][1] = 0
 		in.ts[1][0] = 1
 		in.ts[1][1] = 1
 		used = 2

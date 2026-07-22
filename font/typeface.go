@@ -195,6 +195,11 @@ func (t *Typeface) faceBitmapGlyph(gid opentype.GID, ppem uint16) (tsfont.GlyphB
 	t.faceMu.Lock()
 	defer t.faceMu.Unlock()
 	t.facePpem(ppem)
+	// The bitmap lane is the only caller that changes the shared Face's ppem. Reset it to 0 before releasing the lock so
+	// the Face rests at ppem 0: go-text's GlyphExtents prefers ppem-scaled bitmap-strike extents, so a leaked non-zero
+	// ppem would make the design-unit extents readers (GlyphDesignBounds, glyphBounds, letterTop) return stale,
+	// cross-strike, ppem-scaled bounds for later glyphs on the same typeface.
+	defer t.facePpem(0)
 	bm, ok := t.face.GlyphDataBitmap(tables.GlyphID(gid))
 	if !ok {
 		return tsfont.GlyphBitmap{}, tsfont.GlyphExtents{}, false

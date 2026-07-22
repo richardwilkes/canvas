@@ -20,6 +20,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/go-text/typesetting/font/opentype"
 	"github.com/richardwilkes/canvas/colorcore"
 	"github.com/richardwilkes/canvas/geom"
 	"github.com/richardwilkes/canvas/maskfilter"
@@ -383,5 +384,46 @@ func TestBitmapFontMeasure(t *testing.T) {
 	}
 	if bounds.IsEmpty() {
 		t.Error("measure bounds empty")
+	}
+}
+
+func TestBitmapFacePpemDoesNotLeak(t *testing.T) {
+	// go-text's GlyphExtents prefers ppem-scaled bitmap-strike extents, so the bitmap lane must leave the shared Face at
+	// ppem 0. If it leaked a strike ppem, the design-unit extents readers (GlyphDesignBounds, glyphBounds, letterTop)
+	// would return stale, cross-strike, ppem-scaled bounds for later glyphs. sbix.ttf carries strikes at 16/64/128 ppem
+	// whose scaled-to-design-unit extents differ per strike, so a leak is observable.
+	tf := loadColorTypeface(t, "sbix.ttf")
+	gid := tf.UnicharToGlyph(smiley)
+	if gid == 0 {
+		t.Fatal("U+1F600 not mapped")
+	}
+
+	// Establish the resting (ppem 0) design bounds, then read them again after exercising every strike. They must not
+	// change: the readers see design units, independent of whatever ppem the bitmap lane last requested.
+	want := tf.GlyphDesignBounds(gid)
+	if want.IsEmpty() {
+		t.Fatal("design bounds empty")
+	}
+	for _, ppem := range []uint16{16, 64, 128} {
+		if _, _, ok := tf.faceBitmapGlyph(opentype.GID(gid), ppem); !ok {
+			t.Fatalf("no strike bitmap at ppem %d", ppem)
+		}
+		if x, y := tf.face.Ppem(); x != 0 || y != 0 {
+			t.Errorf("ppem %d leaked: Face left at (%d, %d), want (0, 0)", ppem, x, y)
+		}
+		if got := tf.GlyphDesignBounds(gid); got != want {
+			t.Errorf("after ppem %d: GlyphDesignBounds %+v, want stable %+v", ppem, got, want)
+		}
+	}
+
+	// letterTop (x-height/cap-height synthesis) reads the same extents; it too must stay ppem-independent.
+	st := &strike{t: tf, size: 100, scaleX: 1, frameWidth: -1}
+	baseTop, ok := st.letterTop(rune(smiley), 1)
+	if !ok {
+		t.Fatal("letterTop missing")
+	}
+	tf.faceBitmapGlyph(opentype.GID(gid), 16)
+	if got, _ := st.letterTop(rune(smiley), 1); got != baseTop {
+		t.Errorf("letterTop leaked after ppem 16: %v, want %v", got, baseTop)
 	}
 }

@@ -483,7 +483,7 @@ func taskClusterVisit(task RenderTask, llist *taskLList, lastTaskMap map[*Surfac
 	if base.NumTargets() != 1 {
 		// Tasks with 0 or multiple targets are treated as full barriers for all their targets.
 		for j := 0; j < base.NumTargets(); j++ {
-			delete(lastTaskMap, base.Target(0))
+			delete(lastTaskMap, base.Target(j))
 		}
 		return false
 	}

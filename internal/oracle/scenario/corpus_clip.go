@@ -77,11 +77,14 @@ func init() {
 
 	reg("clip-rotated-rect", func(c Canvas) {
 		c.Clear(white)
-		c.Save()
+		// Set a rotated CTM, clip under it, then unwind the CTM manually (no Save/Restore, which would pop the clip
+		// with the matrix). The rotated clip is baked into device space and persists while the bars draw axis-aligned.
+		angle := float32(math.Pi) / 5
 		c.Translate(128, 128)
-		c.RotateRadians(float32(math.Pi) / 5)
+		c.RotateRadians(angle)
 		c.ClipRect(geom.RectLTRB(-90, -90, 90, 90), ClipIntersect, true)
-		c.Restore() // restore the CTM but NOT the clip (no save around the clip): clip persists in device space
+		c.RotateRadians(-angle) // undo the rotation (transforms pre-concatenate, so reverse order)
+		c.Translate(-128, -128) // undo the translation: CTM back to identity, clip still in device space
 		for i := range 8 {
 			x := float32(i) * 32
 			c.DrawRect(geom.RectLTRB(x, 0, x+16, 256), Fill(blue))

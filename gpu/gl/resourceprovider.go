@@ -539,7 +539,12 @@ func (rp *ResourceProvider) prepareLevels(format Format, colorType gpu.ColorType
 			if actualRB == minRB || rowBytesSupport {
 				out[i] = gpu.MipLevel{Pixels: texels[i].Pixels, RowBytes: actualRB}
 			} else {
-				// Copy to a tight temporary.
+				// Copy to a tight temporary. The source must cover every row it declares: the last row starts at
+				// actualRB*(height-1) and spans minRB bytes, so a Pixels buffer shorter than that is an unsupported
+				// write rather than an out-of-range slice panic.
+				if len(texels[i].Pixels) < actualRB*(int(size.Height)-1)+minRB {
+					return gpu.ColorTypeUnknown, nil, false
+				}
 				tight := make([]byte, minRB*int(size.Height))
 				for y := 0; y < int(size.Height); y++ {
 					copy(tight[y*minRB:(y+1)*minRB], texels[i].Pixels[y*actualRB:])

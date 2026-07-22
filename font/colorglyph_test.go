@@ -70,6 +70,30 @@ func TestColorGlyphNeedsCurrentColor(t *testing.T) {
 	}
 }
 
+func TestFaceColorPaintMalformedCOLR(t *testing.T) {
+	// hasCOLR is set from the mere presence of nonempty COLR table bytes, but typesetting leaves face.COLR nil when
+	// ParseCOLR fails on a malformed table. Simulate that state (bytes present, parse failed) with a non-COLR face and a
+	// forced hasCOLR flag: the color lanes must report "no color glyph" instead of dereferencing a nil COLR table.
+	tf := loadColorTypeface(t, "Roboto-Regular.ttf")
+	if tf.face.COLR != nil {
+		t.Fatal("Roboto unexpectedly carries a parsed COLR table")
+	}
+	tf.hasCOLR = true
+	gid := tf.UnicharToGlyph('A')
+	if gid == 0 {
+		t.Fatal("'A' not mapped")
+	}
+	if paint, ok := tf.faceColorPaint(opentype.GID(gid)); ok || paint != nil {
+		t.Errorf("faceColorPaint = (%v, %v), want (nil, false)", paint, ok)
+	}
+	if layers, ok := tf.faceColorV0Layers(opentype.GID(gid)); ok || layers != nil {
+		t.Errorf("faceColorV0Layers = (%v, %v), want (nil, false)", layers, ok)
+	}
+	if tab := tf.colrTable(); tab != nil {
+		t.Errorf("colrTable = %v, want nil", tab)
+	}
+}
+
 func TestCOLRv0GlyphMetrics(t *testing.T) {
 	tf := loadColorTypeface(t, "colr.ttf")
 	g, action := smileyGlyph(t, tf, 50, nil)

@@ -133,7 +133,10 @@ func (t *Typeface) GlyphMaskNeedsCurrentColor() bool { return t.hasCOLR }
 // COLRv1 paint graph. typesetting's Search prefers a v1 BaseGlyphList record over a v0 baseGlyph record when both
 // exist, as the spec directs ("give preference to the version 1 color glyph").
 func (t *Typeface) faceColorPaint(gid opentype.GID) (tables.PaintTable, bool) {
-	if !t.hasCOLR {
+	// hasCOLR is set whenever the COLR table bytes are present, but typesetting leaves face.COLR nil when ParseCOLR
+	// fails on a malformed-but-present table; guard the deref so a crafted font returns "no color glyph" instead of
+	// nil-panicking (matching colrTable's nil-checking contract).
+	if !t.hasCOLR || t.face.COLR == nil {
 		return nil, false
 	}
 	t.faceMu.Lock()

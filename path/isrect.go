@@ -73,6 +73,11 @@ func isRectContour(points []geom.Point, verbs []Verb, allowPartial bool) (rectCo
 			if verb == VerbClose {
 				savePtsIdx = pi
 				autoClose = true
+				if insertClose {
+					// The close was synthesized in place of a Move that begins the next contour. Leave
+					// currVerb on that Move so the caller resumes there.
+					skipVerbAdvance = true
+				}
 				insertClose = false
 			}
 			var lineEnd geom.Point

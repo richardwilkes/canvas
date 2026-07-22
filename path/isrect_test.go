@@ -64,6 +64,44 @@ func TestIsNestedFillRects(t *testing.T) {
 	if p.IsNestedFillRects(&rects) {
 		t.Error("rect+triangle reported as nested")
 	}
+
+	// Two nested *unclosed* rects (each relying on its implicit closing edge). The synthetic close inserted at the
+	// second contour's leading Move must leave that Move for the second isRectContour pass, or it starts on a Line
+	// with firstPtIdx == -1 (misdetects, and on some geometry panics with index -1).
+	p = New()
+	p.MoveTo(0, 0)
+	p.LineTo(100, 0)
+	p.LineTo(100, 80)
+	p.LineTo(0, 80)
+	p.MoveTo(10, 10)
+	p.LineTo(90, 10)
+	p.LineTo(90, 70)
+	p.LineTo(10, 70)
+	if !p.IsNestedFillRects(&rects) {
+		t.Fatal("nested unclosed rects not detected")
+	}
+	if rects[0] != geom.RectLTRB(0, 0, 100, 80) || rects[1] != geom.RectLTRB(10, 10, 90, 70) {
+		t.Errorf("nested unclosed rects = %+v", rects)
+	}
+
+	// Unclosed outer with a *closed* inner: the synthetic close at the outer contour's trailing Move must still
+	// hand the inner Move to the second pass. Directions are reported outer-first.
+	p = New()
+	p.MoveTo(0, 0)
+	p.LineTo(100, 0)
+	p.LineTo(100, 80)
+	p.LineTo(0, 80)
+	p.AddRect(geom.RectLTRB(10, 10, 90, 70), geom.DirectionCCW)
+	var dirs [2]geom.PathDirection
+	if !p.IsNestedFillRectsWithDirections(&rects, &dirs) {
+		t.Fatal("unclosed outer + closed inner not detected")
+	}
+	if rects[0] != geom.RectLTRB(0, 0, 100, 80) || rects[1] != geom.RectLTRB(10, 10, 90, 70) {
+		t.Errorf("unclosed outer + closed inner = %+v", rects)
+	}
+	if dirs[0] != geom.DirectionCW || dirs[1] != geom.DirectionCCW {
+		t.Errorf("directions = %+v", dirs)
+	}
 }
 
 func TestIsRect(t *testing.T) {

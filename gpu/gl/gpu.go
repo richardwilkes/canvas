@@ -1178,16 +1178,13 @@ func (g *Gpu) didWriteToSurface(surface *Surface) {
 	}
 }
 
-// FlushProgram binds the given raw program ID if it is not already current. FlushGLProgram is the linked-program form.
+// FlushProgram binds the given raw program ID if it is not already current, clearing the linked-program shadow so it
+// stays consistent with the bound ID (the internal flushProgram, gpudraw.go, is the linked-*Program form).
 func (g *Gpu) FlushProgram(id uint32) {
 	if id == 0 {
 		panic("flushing program 0")
 	}
-	if g.hwProgramID == id {
-		return
-	}
-	g.fns().UseProgram(id)
-	g.hwProgramID = id
+	g.flushProgramID(id)
 }
 
 // renderbufferStorageMSAA allocates multisampled renderbuffer storage (desktop: only the MSFBOStandard lane is

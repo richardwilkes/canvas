@@ -57,6 +57,57 @@ func newDrawRecordingPass(t *testing.T, d *capsFakeDriver) (recGpu *Gpu, pass *O
 	return g, pass, vb, ib, instb
 }
 
+// TestFlushProgramClearsShadow pins the fix for the exported FlushProgram: binding a raw program ID must clear the
+// linked-*Program shadow (g.hwProgram) so the shadow-consistency invariant flushProgram asserts stays true. Before the
+// fix, FlushProgram set hwProgramID but left a stale hwProgram, so the next flushProgram panicked "program shadow out of
+// sync".
+func TestFlushProgramClearsShadow(t *testing.T) {
+	g := newRecordingGpuWithDriver(t, appleM4MaxDriver())
+
+	// Start with a linked program bound, as a real draw would leave things.
+	prog := &Program{gpu: g, programID: 1}
+	g.hwProgram = prog
+	g.hwProgramID = 1
+
+	// Bind a different raw program ID directly.
+	g.FlushProgram(2)
+	if g.hwProgramID != 2 {
+		t.Fatalf("FlushProgram left hwProgramID = %d, want 2", g.hwProgramID)
+	}
+	if g.hwProgram != nil {
+		t.Fatalf("FlushProgram left a stale linked-program shadow; want nil")
+	}
+	if got := counts("glUseProgram"); got != 1 {
+		t.Fatalf("FlushProgram issued %d glUseProgram calls, want 1", got)
+	}
+
+	// Re-binding the same ID must be a no-op (no extra GL call, shadow still consistent).
+	g.FlushProgram(2)
+	if got := counts("glUseProgram"); got != 1 {
+		t.Fatalf("redundant FlushProgram issued %d glUseProgram calls total, want 1", got)
+	}
+
+	// The invariant now holds: a subsequent flushProgram over a real *Program must not panic.
+	prog2 := &Program{gpu: g, programID: 3}
+	g.flushProgram(prog2)
+	if g.hwProgram != prog2 || g.hwProgramID != 3 {
+		t.Fatalf("flushProgram after FlushProgram left shadow = (%v, %d), want (prog2, 3)", g.hwProgram, g.hwProgramID)
+	}
+}
+
+// TestFlushProgramZeroPanics pins that FlushProgram rejects program 0 with its own message.
+func TestFlushProgramZeroPanics(t *testing.T) {
+	g := newRecordingGpuWithDriver(t, appleM4MaxDriver())
+	defer func() {
+		if r := recover(); r == nil {
+			t.Fatal("FlushProgram(0) did not panic")
+		} else if r != "flushing program 0" {
+			t.Fatalf("FlushProgram(0) panicked with %q, want \"flushing program 0\"", r)
+		}
+	}()
+	g.FlushProgram(0)
+}
+
 // TestDrawIndexedDeferredVertexBind covers the !baseVertexBaseInstanceSupport lane (the M4 Max profile): BindBuffers
 // must not touch the attrib pointers for an indexed mesh — each DrawIndexed performs the single glVertexAttribPointer
 // pass at its baseVertex offset, and the attrib-state shadow elides the pass entirely when the offset repeats.

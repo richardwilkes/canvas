@@ -199,6 +199,25 @@ func TestStrokePathAliased(t *testing.T) {
 	}
 }
 
+// A degenerate (zero/negative) stroke width must replace dst's previous contents with an empty path rather than
+// leaving stale geometry from a prior stroke behind, per StrokePath's documented contract.
+func TestStrokeZeroWidthClearsDst(t *testing.T) {
+	src := (&path.Path{}).MoveTo(10, 40).LineTo(90, 40)
+	for _, width := range []float32{0, -3} {
+		// Prime dst with real geometry from an ordinary stroke, then confirm the degenerate width wipes it.
+		dst := strokeWith(6, CapButt, JoinMiter, 4, src)
+		if dst.IsEmpty() {
+			t.Fatal("expected non-empty dst after a normal stroke")
+		}
+		st := NewStroke()
+		st.SetWidth(width)
+		st.StrokePath(src, dst)
+		if !dst.IsEmpty() {
+			t.Fatalf("width %v: dst not cleared, still holds %d verbs", width, dst.CountVerbs())
+		}
+	}
+}
+
 func TestStrokeRecStyles(t *testing.T) {
 	rec := NewStrokeRec(InitStyleFill)
 	if rec.Style() != StyleFill || rec.IsHairlineStyle() || !rec.IsFillStyle() {

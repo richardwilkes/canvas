@@ -1281,6 +1281,9 @@ func (st *Stroke) StrokePath(src, dst *path.Path) {
 
 	radius := st.width / 2
 	if radius <= 0 {
+		// A degenerate (zero/negative) width produces no stroke geometry, but the contract still requires dst's
+		// previous contents to be replaced, so clear it rather than leaving stale output behind.
+		dst.Reset()
 		return
 	}
 

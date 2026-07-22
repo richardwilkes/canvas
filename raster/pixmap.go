@@ -47,7 +47,7 @@ func NewPixmap(width, height int32) *Pixmap {
 // view requires uint32 alignment; Go-allocated pixel buffers always satisfy this, so the guard only rejects
 // deliberately misaligned sub-slices).
 func WrapBytes(pix []byte, width, height, rowBytes int32) *Pixmap {
-	if width <= 0 || height <= 0 || rowBytes < width*4 || rowBytes%4 != 0 {
+	if width <= 0 || height <= 0 || int64(rowBytes) < int64(width)*4 || rowBytes%4 != 0 {
 		return nil
 	}
 	rowPixels := rowBytes / 4

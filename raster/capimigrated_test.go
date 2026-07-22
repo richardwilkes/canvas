@@ -53,6 +53,11 @@ func TestWrapBytes(t *testing.T) {
 	if WrapBytes(buf[:w*h*4-4], w, h, w*4) != nil {
 		t.Error("too-small buffer: want nil")
 	}
+	// A width whose width*4 overflows int32 to a negative value must still be rejected: with a small rowBytes the
+	// row cannot actually hold the row, and the guard must not be fooled by the wrapped-around product.
+	if WrapBytes(buf, 1<<29, 1, 8) != nil {
+		t.Error("width*4 overflow with narrow rowBytes: want nil")
+	}
 }
 
 // TestAAFillCircleMaskLane AA-fills a circle sized for the additive-mask lane (the path the façade's 40x40 draw suite

@@ -420,6 +420,41 @@ func TestICO(t *testing.T) {
 	}
 }
 
+func TestICOOverflowRejected(t *testing.T) {
+	// A crafted ~62-byte ICO whose BITMAPINFOHEADER declares near-int32-max width/height with 32bpp used to overflow
+	// xorStride*h, bypassing the short-pixel-data guard and reaching make([]px, w*h) with a ~2.3e18 length (panic or
+	// memory exhaustion). The dimension cap in dibHeader must reject it before any of that arithmetic runs.
+	dib := make([]byte, 40)
+	binary.LittleEndian.PutUint32(dib, 40)
+	binary.LittleEndian.PutUint32(dib[4:], 2147483647) // w
+	binary.LittleEndian.PutUint32(dib[8:], 2147483646) // h2 (positive, even)
+	binary.LittleEndian.PutUint16(dib[12:], 1)         // planes
+	binary.LittleEndian.PutUint16(dib[14:], 32)        // bpp
+
+	// dibHeader must reject the oversized dimensions outright.
+	if _, _, _, ok := dibHeader(dib); ok {
+		t.Fatal("dibHeader accepted oversized dimensions")
+	}
+
+	// decodeDIB must fail cleanly rather than panic when handed the same payload directly.
+	info := makeDecodedInfo(2147483647, 1073741823, false, true)
+	if _, err := decodeDIB(dib, info); err == nil {
+		t.Fatal("decodeDIB accepted oversized DIB")
+	}
+
+	// The full decode path must return nil (not panic) for the crafted ICO.
+	var ico bytes.Buffer
+	ico.Write([]byte{0, 0, 1, 0, 1, 0}) // ICONDIR: 1 entry
+	ent := []byte{0, 0, 0, 0, 1, 0, 32, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+	binary.LittleEndian.PutUint32(ent[8:], uint32(len(dib))) // size
+	binary.LittleEndian.PutUint32(ent[12:], 6+16)            // offset
+	ico.Write(ent)
+	ico.Write(dib)
+	if im := imagecore.NewFromEncoded(ico.Bytes()); im != nil {
+		t.Fatal("oversized ICO should not decode")
+	}
+}
+
 func TestWBMP(t *testing.T) {
 	// 10x2: row0 = 0b1010101010......, row1 all black
 	data := []byte{0, 0, 10, 2, 0xAA, 0x80, 0x00, 0x00}

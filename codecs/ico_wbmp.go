@@ -26,6 +26,10 @@ import (
 ///////////////////////////////////////////////////////////////////////////////
 // ICO
 
+// maxICODimension bounds a DIB entry's declared width/height, keeping decodeDIB's stride and offset arithmetic within
+// int range (the WBMP decoder applies the same 0xFFFF cap to its multi-byte dimensions).
+const maxICODimension = 0xFFFF
+
 type icoEntry struct {
 	offset int
 	size   int
@@ -133,7 +137,10 @@ func dibHeader(data []byte) (w, h, bpp int, ok bool) {
 	h2 := int(int32(binary.LittleEndian.Uint32(data[8:])))
 	bpp = int(binary.LittleEndian.Uint16(data[14:]))
 	compression := binary.LittleEndian.Uint32(data[16:])
-	if w <= 0 || h2 <= 0 || h2%2 != 0 || compression != 0 {
+	// Cap the dimensions (matching the WBMP sibling) so the downstream stride/offset arithmetic in decodeDIB stays
+	// well within int range: an unbounded int32 width/height would overflow xorStride*h, bypassing the short-pixel-data
+	// guard and reaching an outsized make.
+	if w <= 0 || h2 <= 0 || h2%2 != 0 || compression != 0 || w > maxICODimension || h2 > maxICODimension {
 		return 0, 0, 0, false
 	}
 	switch bpp {

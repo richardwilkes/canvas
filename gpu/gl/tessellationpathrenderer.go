@@ -239,11 +239,14 @@ func (r *TessellationPathRenderer) OnStencilPath(args *StencilPathArgs) {
 
 	p := args.Shape.AsPath()
 
-	n4 := wangsWorstCaseCubicP4(tessPrecision, pathDevBounds.Width(), pathDevBounds.Height())
-	if n4 > tessMaxSegmentsPerCurveP4 {
-		viewport := args.ClipConservativeBounds.ToRect()
-		p = preChopPathCurves(tessPrecision, p, args.ViewMatrix, viewport)
-	}
+	// Pre-chop exactly as OnCanDrawPath/OnDrawPath do, via tessChopPathIfNecessary. That helper skips line-only paths
+	// (no curves to chop) and, when the conservative clip viewport is too large for preChopPathCurves to handle, leaves
+	// the path unchopped rather than crashing. A bare preChopPathCurves call here — lacking both guards — would panic
+	// ("preChopPathCurves viewport is too large") on a large straight-line-only non-convex stencil/clip element, which
+	// OnCanDrawPath happily accepts. Since OnStencilPath is always a simple fill, the helper's stroke-outset branch is
+	// inert and its return value (whether chopping was possible) is irrelevant here.
+	tessChopPathIfNecessary(args.ViewMatrix, args.Shape, args.ClipConservativeBounds,
+		args.Shape.Style().Rec(), &p)
 
 	// Make sure to check the chopped path for convexity (it may have been pre-chopped, unlike the shape).
 	if p.IsConvex() {

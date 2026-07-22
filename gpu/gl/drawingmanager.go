@@ -210,8 +210,10 @@ func (dm *DrawingManager) insertTaskBeforeLast(task RenderTask) RenderTask {
 		dm.dag = append(dm.dag, task)
 		return task
 	}
+	// If the current last task is a reorder blocker, the swap below moves it from index len(dm.dag)-1 to len(dm.dag), so
+	// its recorded blocker index must bump to match.
 	if n := len(dm.reorderBlockerTaskIndices); n > 0 &&
-		dm.reorderBlockerTaskIndices[n-1] == len(dm.dag) {
+		dm.reorderBlockerTaskIndices[n-1] == len(dm.dag)-1 {
 		dm.reorderBlockerTaskIndices[n-1]++
 	}
 	dm.dag = append(dm.dag, task)

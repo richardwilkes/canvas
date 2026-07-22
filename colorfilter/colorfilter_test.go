@@ -271,13 +271,13 @@ func TestSRGBTransferFunctionInverse(t *testing.T) {
 		t.Errorf("inv D = %v", srgbInvTF.D)
 	}
 	// The invariant the inversion preserves: inv(srgb(1)) == 1.
-	if got := evalTF(&srgbInvTF, evalTF(&srgbTF, 1)); got != 1 {
+	if got := colorcore.EvalSkcmsTF(&srgbInvTF, colorcore.EvalSkcmsTF(&srgbTF, 1)); got != 1 {
 		t.Errorf("inv(srgb(1)) = %v, want exactly 1", got)
 	}
 	// Round trips stay within a half step of 1/255 across the range.
 	for i := 0; i <= 255; i++ {
 		x := float32(i) / 255
-		rt := evalTF(&srgbInvTF, evalTF(&srgbTF, x))
+		rt := colorcore.EvalSkcmsTF(&srgbInvTF, colorcore.EvalSkcmsTF(&srgbTF, x))
 		if !near(rt, x, 0.5/255) {
 			t.Errorf("round trip %v -> %v", x, rt)
 		}

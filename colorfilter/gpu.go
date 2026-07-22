@@ -69,7 +69,7 @@ func SRGBInvTF() shaders.TransferFn { return srgbInvTF }
 
 // EvalTransferFn evaluates a parametric (sRGB-style) transfer function at x with the scalar approximation math — the
 // CPU reference the GPU FPs' constant folding uses.
-func EvalTransferFn(tf *shaders.TransferFn, x float32) float32 { return evalTF(tf, x) }
+func EvalTransferFn(tf *shaders.TransferFn, x float32) float32 { return colorcore.EvalSkcmsTF(tf, x) }
 
 // EvalHighContrast runs the high-contrast math (grayscale/invert/contrast, without the working-format sandwich) over
 // one unpremul linear color — the CPU reference for the GPU FP's constant folding.

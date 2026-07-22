@@ -16,8 +16,15 @@ package colorfilter
 import (
 	"math"
 
+	"github.com/richardwilkes/canvas/colorcore"
 	"github.com/richardwilkes/canvas/shaders"
 )
+
+// srgbTF is the parametric sRGB transfer function.
+var srgbTF = colorcore.SRGBTF
+
+// srgbInvTF is the inverse of srgbTF, computed at init.
+var srgbInvTF = colorcore.SRGBInvTF
 
 ///////////////////////////////////////////////////////////////////////////////
 // luma

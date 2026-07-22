@@ -84,8 +84,18 @@ func NewPixelsCopyFromBytes(info ImageInfo, data []byte, rowBytes int) (*Pixels,
 	}
 	h := int(info.Height)
 	w := int(info.Width)
-	if h > 0 && len(data) < rowBytes*(h-1)+w*bpp {
-		return nil, false
+	if h > 0 {
+		// Required length is rowBytes*(h-1)+w*bpp, computed so an attacker-large rowBytes cannot wrap the sum and
+		// bypass the check. A rowBytes big enough to overflow can never be backed by a real buffer, so any overflow
+		// is treated as a short buffer. w*bpp is bounded by MinRowBytes (already validated non-negative above).
+		lastRow := (h - 1) * rowBytes
+		if h > 1 && lastRow/(h-1) != rowBytes {
+			return nil, false
+		}
+		need := lastRow + w*bpp
+		if need < lastRow || len(data) < need {
+			return nil, false
+		}
 	}
 	p := NewPixels(info)
 	for y := 0; y < h; y++ {

@@ -275,17 +275,20 @@ func (im *Image) ReadPixels(dstInfo ImageInfo, dst []byte, dstRowBytes int, srcX
 		return false
 	}
 
-	// Trim the read rect to the image bounds.
+	// Trim the read rect to the image bounds, accumulating the dst pointer adjustment but deferring the reslice until
+	// the trimmed rect is known to be non-empty. A negative srcX/srcY beyond the destination extent leaves w/h <= 0, so
+	// applying the offset here would slice past len(dst) and panic instead of returning false.
 	x, y := srcX, srcY
 	w, h := dstInfo.Width, dstInfo.Height
+	var dstOff int
 	if x < 0 {
 		w += x
-		dst = dst[int(-x)*dstInfo.ColorType.BytesPerPixel():]
+		dstOff += int(-x) * dstInfo.ColorType.BytesPerPixel()
 		x = 0
 	}
 	if y < 0 {
 		h += y
-		dst = dst[int(-y)*dstRowBytes:]
+		dstOff += int(-y) * dstRowBytes
 		y = 0
 	}
 	if x+w > im.info.Width {
@@ -297,6 +300,7 @@ func (im *Image) ReadPixels(dstInfo ImageInfo, dst []byte, dstRowBytes int, srcX
 	if w <= 0 || h <= 0 {
 		return false
 	}
+	dst = dst[dstOff:]
 
 	sub := src.Subset(x, y, x+w, y+h)
 	outInfo := dstInfo

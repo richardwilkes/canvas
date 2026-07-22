@@ -231,6 +231,34 @@ func TestReadPixelsTrim(t *testing.T) {
 	if im.ReadPixels(dstInfo, dst, 8, 10, 10, CachingAllow) {
 		t.Fatal("outside read should fail")
 	}
+	// negative origin beyond the destination extent must return false, not panic slicing dst past its length
+	dst = make([]byte, 16)
+	if im.ReadPixels(dstInfo, dst, 8, -100, -100, CachingAllow) {
+		t.Fatal("far-negative read should fail")
+	}
+	if im.ReadPixels(dstInfo, dst, 8, -100, 0, CachingAllow) {
+		t.Fatal("far-negative x read should fail")
+	}
+	if im.ReadPixels(dstInfo, dst, 8, 0, -100, CachingAllow) {
+		t.Fatal("far-negative y read should fail")
+	}
+}
+
+func TestNewPixelsCopyFromBytesOverflow(t *testing.T) {
+	info := MakeN32Premul(4, 4)
+	// A rowBytes large enough to wrap int in rowBytes*(h-1)+w*bpp must be rejected, not slice data out of range.
+	huge := math.MaxInt/int(info.Height-1) + 2
+	if p, ok := NewPixelsCopyFromBytes(info, make([]byte, 64), huge); ok || p != nil {
+		t.Fatal("overflowing rowBytes accepted")
+	}
+	// A merely short buffer is still rejected with a normal rowBytes.
+	if p, ok := NewPixelsCopyFromBytes(info, make([]byte, 16), 16); ok || p != nil {
+		t.Fatal("short buffer accepted")
+	}
+	// An exactly-sized buffer is accepted (rowBytes*(h-1)+w*bpp = 16*3+16 = 64).
+	if p, ok := NewPixelsCopyFromBytes(info, make([]byte, 64), 16); !ok || p == nil {
+		t.Fatal("exact buffer rejected")
+	}
 }
 
 func TestNewRasterDataAndSubset(t *testing.T) {

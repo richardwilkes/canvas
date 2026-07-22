@@ -119,7 +119,7 @@ func (c *Canvas) DrawTextBlob(blob *textblob.Blob, x, y float32, paint *Paint) {
 		return
 	}
 	offsetBounds := blob.Bounds().Offset(x, y)
-	if !rectIsFinite(offsetBounds) {
+	if !offsetBounds.IsFinite() {
 		return
 	}
 	builder := textblob.AcquireGlyphRunBuilder()
@@ -143,11 +143,6 @@ func (c *Canvas) onDrawGlyphRunList(glyphRunList *textblob.GlyphRunList, paint *
 	if restore != nil {
 		restore()
 	}
-}
-
-func rectIsFinite(r geom.Rect) bool {
-	accum := r.Left * r.Top * r.Right * r.Bottom
-	return !math.IsNaN(float64(accum)) && !math.IsInf(float64(accum), 0)
 }
 
 // drawGlyphRunListForBitmapDevice partitions each run's glyphs into the path, direct-mask, and rescaled-bitmap stages
@@ -191,7 +186,7 @@ func drawGlyphRunListForBitmapDevice(canvas *Canvas, dr *draw, glyphRunList *tex
 			rejectedPositions = rejectedPositions[:0]
 			for i, gid := range sourceGlyphs {
 				pos := sourcePositions[i]
-				if !finitePoint(pos) {
+				if !pos.IsFinite() {
 					continue
 				}
 				g, action := strike.DigestFor(font.ActionPath, font.PackGlyphID(gid))
@@ -260,7 +255,7 @@ func drawGlyphRunListForBitmapDevice(canvas *Canvas, dr *draw, glyphRunList *tex
 			rejectedPositions = rejectedPositions[:0]
 			for i, gid := range sourceGlyphs {
 				pos := sourcePositions[i]
-				if !finitePoint(pos) {
+				if !pos.IsFinite() {
 					continue
 				}
 				mappedPos := positionMatrixWithRounding.MapPoint(pos)
@@ -343,7 +338,7 @@ func drawRescaledBitmaps(dr *draw, runFont *font.Font, scalerPaint *font.ScalerP
 	invMaxScale := 1.0 / maxScale
 	for i, gid := range sourceGlyphs {
 		srcPos := sourcePositions[i]
-		if !finitePoint(srcPos) {
+		if !srcPos.IsFinite() {
 			continue
 		}
 		mappedPos := creationMatrixWithRounding.MapPoint(srcPos)
@@ -377,11 +372,6 @@ func max32(a, b float32) float32 {
 		return a
 	}
 	return b
-}
-
-func finitePoint(p geom.Point) bool {
-	accum := p.X * p.Y
-	return !math.IsNaN(float64(accum)) && !math.IsInf(float64(accum), 0)
 }
 
 func floorScalar(v float32) float32 { return float32(math.Floor(float64(v))) }

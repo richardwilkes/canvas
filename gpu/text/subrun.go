@@ -480,18 +480,13 @@ func (a *glyphBoundsAccumulator) join(r geom.Rect) {
 	a.rect.Join(r)
 }
 
-func finitePoint(p geom.Point) bool {
-	accum := p.X * p.Y
-	return !math.IsNaN(float64(accum)) && !math.IsInf(float64(accum), 0)
-}
-
 // prepareForSDFTDrawing digests glyphIDs against the strike for distance-field-atlas drawing, splitting them into
 // accepted and rejected and computing the accepted glyphs' bounding rect.
 func prepareForSDFTDrawing(strike *font.Strike, creationMatrix *geom.Matrix, glyphIDs []uint16, positions []geom.Point, accepted []acceptedGlyph, rejected []rejectedGlyph) ([]acceptedGlyph, []rejectedGlyph, geom.Rect) {
 	var boundingRect glyphBoundsAccumulator
 	for i, gid := range glyphIDs {
 		pos := positions[i]
-		if !finitePoint(pos) {
+		if !pos.IsFinite() {
 			continue
 		}
 		packedID := font.PackGlyphID(gid)
@@ -562,7 +557,7 @@ func prepareForDirectMaskDrawing(strike *font.Strike, positionMatrix *geom.Matri
 	var boundingRect glyphBoundsAccumulator
 	for i, gid := range glyphIDs {
 		pos := positions[i]
-		if !finitePoint(pos) {
+		if !pos.IsFinite() {
 			continue
 		}
 		mappedPos := positionMatrixWithRounding.MapPoint(pos)
@@ -592,7 +587,7 @@ func prepareForMaskDrawing(strike *font.Strike, creationMatrix *geom.Matrix, gly
 	var boundingRect glyphBoundsAccumulator
 	for i, gid := range glyphIDs {
 		pos := positions[i]
-		if !finitePoint(pos) {
+		if !pos.IsFinite() {
 			continue
 		}
 		packedID := font.PackGlyphID(gid)
@@ -620,7 +615,7 @@ func prepareForMaskDrawing(strike *font.Strike, creationMatrix *geom.Matrix, gly
 func prepareForPathDrawing(strike *font.Strike, glyphIDs []uint16, positions []geom.Point, accepted []acceptedGlyph, rejected []rejectedGlyph) ([]acceptedGlyph, []rejectedGlyph) {
 	for i, gid := range glyphIDs {
 		pos := positions[i]
-		if !finitePoint(pos) {
+		if !pos.IsFinite() {
 			continue
 		}
 		_, action := strike.DigestFor(font.ActionPath, font.PackGlyphID(gid))

@@ -118,13 +118,13 @@ func (s SamplerState) IsAniso() bool { return s.MaxAniso > 1 }
 // AsKey packs the state into an integer key. How aniso participates depends on whether the underlying API defines aniso
 // as orthogonal to the other filter settings or as a replacement for them.
 func (s SamplerState) AsKey(anisoIsOrthogonal bool) uint32 {
-	// Bit widths sized to the value counts above: wrap 2, maxAniso 10, filter 1, mipmap 2.
+	// Bit widths sized to the value counts above: wrap 2, maxAniso 11, filter 1, mipmap 2.
 	const (
 		wrapXShift      = 0
 		wrapYShift      = 2
 		maxAnisoShift   = 4
-		filterShift     = 14
-		mipmapModeShift = 15
+		filterShift     = 15
+		mipmapModeShift = 16
 	)
 	key := uint32(s.WrapModeX)<<wrapXShift | uint32(s.WrapModeY)<<wrapYShift |
 		uint32(s.MaxAniso)<<maxAnisoShift

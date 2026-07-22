@@ -1488,7 +1488,7 @@ func (tri *triangulator) makeSortedVertex(p geom.Point, alpha uint8, mesh *triVe
 // triPin clamps x to [lo, hi], with NaN pinning to lo.
 func triPin(x, lo, hi float32) float32 {
 	m := x
-	if !(m < hi) {
+	if hi < m {
 		m = hi
 	}
 	if !(lo < m) {

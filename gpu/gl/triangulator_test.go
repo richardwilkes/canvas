@@ -831,3 +831,27 @@ func (g *testLCG) next() uint64 {
 	g.state = g.state*6364136223846793005 + 1442695040888963407
 	return g.state >> 33
 }
+
+// TestTriPin verifies triPin clamps to [lo, hi] and, per its documented intent (matching Skia's
+// std::max(lo, std::min(x, hi))), pins a NaN input to lo rather than hi.
+func TestTriPin(t *testing.T) {
+	nan := float32(math.NaN())
+	for _, tc := range []struct {
+		name      string
+		x, lo, hi float32
+		want      float32
+	}{
+		{"in-range", 5, 0, 10, 5},
+		{"below", -3, 0, 10, 0},
+		{"above", 42, 0, 10, 10},
+		{"at-lo", 0, 0, 10, 0},
+		{"at-hi", 10, 0, 10, 10},
+		{"negative-range", -5, -10, -1, -5},
+		{"nan-pins-to-lo", nan, 0, 10, 0},
+		{"nan-negative-lo", nan, -7, 3, -7},
+	} {
+		if got := triPin(tc.x, tc.lo, tc.hi); got != tc.want {
+			t.Errorf("%s: triPin(%v, %v, %v) = %v, want %v", tc.name, tc.x, tc.lo, tc.hi, got, tc.want)
+		}
+	}
+}

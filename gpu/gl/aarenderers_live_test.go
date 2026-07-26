@@ -279,7 +279,11 @@ func TestLiveAALinearizingStrokes(t *testing.T) {
 		}
 		gpuData, cpuPix := renderAAScene(t, dc, w, h, scene)
 		compareInk(t, gpuData, pixmapBytes(cpuPix), w, h, "aalinear stroke "+tc.name)
-		// The stroke band center on the top-right edge is solid.
+		// The stroke band center on the top-right edge is solid: (89,28)'s pixel center is the midpoint of the
+		// (64,10)-(115,47) edge, so the 5px-wide band covers it completely and it must be pure stroke color.
+		expectAAPixel(t, gpuData, w, 89, 28, [4]byte{0x00, 0x44, 0xCC, 0xFF},
+			"aalinear stroke "+tc.name+" band")
+		// The pentagon's unstroked interior stays background white.
 		expectAAPixel(t, gpuData, w, 64, 64, [4]byte{0xFF, 0xFF, 0xFF, 0xFF},
 			"aalinear stroke "+tc.name+" hole")
 	}

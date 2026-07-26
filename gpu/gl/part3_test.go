@@ -166,8 +166,35 @@ func TestCircleOpMerge(t *testing.T) {
 	if len(op.circles) != 2 {
 		t.Fatalf("expected 2 circles, got %d", len(op.circles))
 	}
-	if !op.helper.UsesMSAA() == false && op.helper.AAType() != gpu.AATypeCoverage {
-		t.Fatal("circle op must be coverage AA")
+	if !isCoverageAAHelper(&op.helper) {
+		t.Fatalf("circle op must be coverage AA, got aaType %d (usesMSAA %v)",
+			op.helper.AAType(), op.helper.UsesMSAA())
+	}
+}
+
+// isCoverageAAHelper reports whether the helper is doing fragment-coverage AA: not hardware MSAA, and carrying the
+// coverage AA type rather than AATypeNone.
+func isCoverageAAHelper(h *SimpleMeshDrawOpHelper) bool {
+	return !h.UsesMSAA() && h.AAType() == gpu.AATypeCoverage
+}
+
+func TestIsCoverageAAHelper(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		aaType gpu.AAType
+		want   bool
+	}{
+		{name: "none", aaType: gpu.AATypeNone, want: false},
+		{name: "coverage", aaType: gpu.AATypeCoverage, want: true},
+		{name: "msaa", aaType: gpu.AATypeMSAA, want: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var h SimpleMeshDrawOpHelper
+			h.SetAAType(tc.aaType)
+			if got := isCoverageAAHelper(&h); got != tc.want {
+				t.Fatalf("isCoverageAAHelper(%d) = %v, want %v", tc.aaType, got, tc.want)
+			}
+		})
 	}
 }
 

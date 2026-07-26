@@ -102,7 +102,11 @@ func MakeBuffer(g *Gpu, size uint64, intendedType gpu.BufferType, accessPattern 
 	}
 	b.RegisterWithCache(g.ResourceCache(), b, gpu.BudgetedYes, "MakeGlBuffer")
 	if b.bufferID == 0 {
+		// Drop the scratch key first so the dead resource isn't offered up for reuse, then release the ref
+		// InitResource took, which lets the cache free it. Without the unref it would stay registered forever, with
+		// its full requested size still counted against the cache's budget.
 		b.RemoveScratchKey()
+		b.Unref()
 		return nil
 	}
 	return b

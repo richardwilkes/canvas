@@ -18,8 +18,10 @@ import (
 	"github.com/richardwilkes/canvas/raster"
 )
 
-// doesCPUBlendImplMatchGPU reports whether the CPU implementation of mode differ from the GPU enough that
-// constantOutputForConstantInput can't use them.
+// doesCPUBlendImplMatchGPU reports whether the CPU implementation of mode agrees closely enough with the GPU's that
+// constantOutputForConstantInput may fold the blend on the CPU. The non-separable (HSL) modes are evaluated as scalar
+// floats rather than vectors, which introduces error relative to the GPU, and soft-light and color-burn are
+// hard-to-get-right enough that they are excluded as well.
 func doesCPUBlendImplMatchGPU(mode raster.BlendMode) bool {
 	return mode <= raster.BlendMultiply && mode != raster.BlendSoftLight &&
 		mode != raster.BlendColorBurn

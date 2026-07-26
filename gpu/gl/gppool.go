@@ -7,14 +7,16 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// Pooling for the geometry processors that the batchable oval-family and stroked-rect ops build during flush (the GPU
-// op-stream-arena series, continuing S112's ProgramInfo/Pipeline pooling). The factories heap-allocate a fresh &T{} per
-// executing op (MakeDefaultGeoProc, makeCircleGeometryProcessor, makeEllipseGeometryProcessor,
-// makeDIEllipseGeometryProcessor); S109's op-struct recycle then dropped that GP every frame, so after S112 pooled the
-// ProgramInfo/Pipeline pair the GP was the last un-pooled allocation left in the createProgramInfo path — the largest
-// in-our-code allocation tier the GPU-frame benchmarks measure (MakeDefaultGeoProc + makeCircleGeometryProcessor ≈ 12
-// allocs/frame in the panels frame). This pools each GP with per-concrete-type free lists, reusing the op free-list
-// machinery (oppool.go), so a steady-state frame allocates no GP storage.
+// Pooling for the geometry processors that the batchable geometry ops (oval-family, stroked-rect, and — since B.3 —
+// fillRect and fillRRect) build during flush (the GPU op-stream-arena series, continuing S112's ProgramInfo/Pipeline
+// pooling). The factories heap-allocate a fresh &T{} per executing op (MakeDefaultGeoProc,
+// makeCircleGeometryProcessor, makeEllipseGeometryProcessor, makeDIEllipseGeometryProcessor,
+// MakeQuadPerEdgeAAProcessor/MakeTexturedQuadProcessor, makeFillRRectProcessor); S109's op-struct recycle then dropped
+// that GP every frame, so after S112 pooled the ProgramInfo/Pipeline pair the GP was the last un-pooled allocation
+// left in the createProgramInfo path — the largest in-our-code allocation tier the GPU-frame benchmarks measure
+// (MakeDefaultGeoProc + makeCircleGeometryProcessor ≈ 12 allocs/frame in the panels frame). This pools each GP with
+// per-concrete-type free lists, reusing the op free-list machinery (oppool.go), so a steady-state frame allocates no
+// GP storage.
 //
 // Lifetime safety (the S112 argument, applied to the GP): a geometry processor is dead once the op that owns it (via
 // op.programInfo.geomProc) finishes OnExecute.
@@ -31,12 +33,14 @@
 //     merged-away op (nil programInfo — createProgramInfo runs at flush, strictly after all recording-time merging), so
 //     only the surviving op that actually executed reaches recycleGeomProc, carrying the unique GP it built. This is
 //     exactly the S112 ownership story for the ProgramInfo/Pipeline pair.
-//   - A plain full-zero recycle is complete — no capacity-preserving reset (S111) is needed. The only slice a pooled GP
-//     owns is its GPBase.vertexAttributes.attributes header, which points into the GP's *own* inline attrs array
-//     (setVertexAttributesWithImplicitOffsets(gp.attrs[:])); `*o = zero` drops no external heap backing, and the
-//     factory re-establishes the header on the next borrow, so a reused shell is byte-identical to a fresh &T{} (the
-//     guarantee opPool already gives the op structs, S109). No GP field pins a heap object that a preserved backing
-//     would need to carry.
+//   - A plain full-zero recycle is complete — no capacity-preserving reset (S111) is needed. Every slice header and
+//     pointer a pooled GP owns points into that same GP's *own* inline storage: GPBase.vertexAttributes.attributes into
+//     the inline attrs array (setVertexAttributesWithImplicitOffsets(gp.attrs[:])), and, for the two GPs that have
+//     them, GPBase.instanceAttributes.attributes into the fillRRect GP's instanceAttrs array, GPBase.textureSamplers
+//     into the quad-per-edge GP's samplerStorage array, and the fillRRect GP's colorAttrib at an element of its own
+//     instanceAttrs. So `*o = zero` drops no external heap backing, and the factory re-establishes every one of them on
+//     the next borrow, so a reused shell is byte-identical to a fresh &T{} (the guarantee opPool already gives the op
+//     structs, S109). No GP field pins a heap object that a preserved backing would need to carry.
 //
 // Non-pooled ops (the path renderers, atlas text, the tessellation renderers, textureOp) also build these GP types and
 // borrow from the same pools, but they never recycle (their ProgramInfos are GC'd, not routed through
@@ -48,10 +52,12 @@
 
 package gl
 
-// The per-concrete-type free lists for the batchable oval-family and stroked-rect geometry processors. Each of these
-// four is the GPBase-plus-inline-attrs POD shape that a plain full-zero recycle resets completely (see the file
-// comment); the differently-shaped fillRect/fillRRect GPs are deliberately excluded.
+// The per-concrete-type free lists for the batchable oval-family, stroked-rect, fillRect and fillRRect geometry
+// processors. Each of these six is a POD shape whose every slice header and pointer aims at its own inline storage, so
+// a plain full-zero recycle resets it completely and drops no external heap backing (see the file comment's
+// lifetime-safety bullets, which cover all six).
 var (
+	// The GPBase-plus-inline-attrs shapes, pooled from the start of the series.
 	defaultGeoProcPool opPool[defaultGeoProc]
 	circleGPPool       opPool[circleGeometryProcessor]
 	ellipseGPPool      opPool[ellipseGeometryProcessor]
@@ -66,10 +72,10 @@ var (
 
 // recycleGeomProc returns a dead geometry processor to its per-type free list. It is called only from
 // recycleProgramInfo, only on the GP of a ProgramInfo whose owning (pooled) op is dead, so the GP is provably dead and
-// uniquely owned (see the file comment). GP types other than the four pooled here — the fillRect/fillRRect GPs, and any
-// GP built only by non-recycling renderers — match no case and are left for the GC, exactly as before this pooling
-// existed. Nil-safe: a nil GP (which a non-nil ProgramInfo never carries, but which is cheap to tolerate) matches no
-// case.
+// uniquely owned (see the file comment). GP types other than the six pooled here — the path-renderer, tessellation,
+// atlas-text and distance-field GPs, built only by renderers that never route their ProgramInfo through
+// recycleProgramInfo — match no case and are left for the GC, exactly as before this pooling existed. Nil-safe: a nil
+// GP (which a non-nil ProgramInfo never carries, but which is cheap to tolerate) matches no case.
 func recycleGeomProc(gp GeometryProcessor) {
 	switch g := gp.(type) {
 	case *defaultGeoProc:

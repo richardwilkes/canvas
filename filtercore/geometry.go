@@ -106,13 +106,19 @@ func mapSize(m *geom.Matrix, s geom.Size) geom.Size {
 	return geom.Size{Width: xAxis.Length(), Height: yAxis.Length()}
 }
 
+// invertOrIdentity returns the inverse of m, or the identity matrix when m is not invertible. geom.Matrix's zero value
+// is the all-zeros matrix, which maps every coordinate to (0,0), so it must never stand in for a failed inversion.
+func invertOrIdentity(m *geom.Matrix) geom.Matrix {
+	if inv, ok := m.Invert(); ok {
+		return inv
+	}
+	return geom.IdentityMatrix()
+}
+
 // mapMatrix re-expresses a transform m (operating in space C1) in the space C2 that 'matrix' maps C1 into: matrix * m *
 // matrix^-1.
 func mapMatrix(transform, matrix *geom.Matrix) geom.Matrix {
-	inv, ok := matrix.Invert()
-	if !ok {
-		inv = geom.IdentityMatrix()
-	}
+	inv := invertOrIdentity(matrix)
 	inv.PostConcat(transform)
 	inv.PostConcat(matrix)
 	return inv

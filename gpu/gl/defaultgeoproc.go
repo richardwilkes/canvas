@@ -98,8 +98,7 @@ func MakeDefaultGeoProc(colorType DefaultGeoProcColorType, color colorcore.PMCol
 	}
 	localCoordsWillBeRead := localCoordsType != LocalCoordsTypeUnused
 
-	lm := geom.Matrix{}
-	lm.SetIdentity()
+	lm := geom.IdentityMatrix()
 	if localMatrix != nil {
 		lm = *localMatrix
 	}
@@ -133,8 +132,7 @@ func MakeDefaultGeoProc(colorType DefaultGeoProcColorType, color colorcore.PMCol
 // MakeDefaultGeoProcForDeviceSpace builds a defaultGeoProc whose local coords map device-space positions back to local
 // space via the inverse view matrix.
 func MakeDefaultGeoProcForDeviceSpace(colorType DefaultGeoProcColorType, color colorcore.PMColor4f, coverageType DefaultGeoProcCoverageType, coverage uint8, localCoordsType DefaultGeoProcLocalCoordsType, localMatrix, viewMatrix *geom.Matrix) GeometryProcessor {
-	inverted := geom.Matrix{}
-	inverted.SetIdentity()
+	inverted := geom.IdentityMatrix()
 	if localCoordsType != LocalCoordsTypeUnused {
 		if localCoordsType != LocalCoordsTypeUsePosition {
 			panic("device-space GP requires use-position local coords")
@@ -148,8 +146,7 @@ func MakeDefaultGeoProcForDeviceSpace(colorType DefaultGeoProcColorType, color c
 			inverted.PostConcat(localMatrix)
 		}
 	}
-	identity := geom.Matrix{}
-	identity.SetIdentity()
+	identity := geom.IdentityMatrix()
 	return MakeDefaultGeoProc(colorType, color, coverageType, coverage,
 		LocalCoordsTypeUsePosition, &inverted, &identity)
 }
@@ -170,8 +167,7 @@ func (g *defaultGeoProc) AddToKey(caps *gpu.ShaderCaps, b *gpu.KeyBuilder) {
 	}
 
 	usesLocalMatrix := g.localCoordsWillBeRead && !g.attrs[2].IsInitialized()
-	identity := geom.Matrix{}
-	identity.SetIdentity()
+	identity := geom.IdentityMatrix()
 	localForKey := &identity
 	if usesLocalMatrix {
 		localForKey = &g.localMatrix

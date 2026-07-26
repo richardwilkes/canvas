@@ -71,9 +71,7 @@ func (b *Builder) createInputShaders(outputBounds geom.IRect, evaluateInParamete
 	var layerToParam geom.Matrix
 	if evaluateInParameterSpace {
 		layerMatrix := b.ctx.Mapping().LayerMatrix()
-		if inv, ok := layerMatrix.Invert(); ok {
-			layerToParam = inv
-		}
+		layerToParam = invertOrIdentity(&layerMatrix)
 		if !isNearlyIntegerTranslation(&layerToParam, nil) {
 			xtraFlags |= ShaderFlagNonTrivialSampling
 		}

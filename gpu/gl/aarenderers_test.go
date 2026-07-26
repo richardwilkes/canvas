@@ -15,6 +15,7 @@
 package gl
 
 import (
+	"encoding/binary"
 	"math"
 	"testing"
 
@@ -383,6 +384,71 @@ func TestAAConvexTessellatorColinearRemoval(t *testing.T) {
 	// The colinear midpoint is removed, so the structure matches the plain square: 16 points.
 	if tess.numPts() != 16 {
 		t.Fatalf("point count %d want 16 (colinear point kept?)", tess.numPts())
+	}
+}
+
+//////////////////////////////////////////////////////////////////////////////
+// AALinearizing local coordinates
+
+// localCoordsInverse inverts an invertible view matrix and falls back to the identity matrix (not geom.Matrix's
+// all-zeros zero value) when the view matrix is singular.
+func TestAAFlatteningLocalCoordsInverse(t *testing.T) {
+	var scale geom.Matrix
+	scale.SetScale(2, 4)
+	scaleInv := localCoordsInverse(&scale)
+	if got := scaleInv.MapPoint(geom.Point{X: 2, Y: 4}); got != (geom.Point{X: 1, Y: 1}) {
+		t.Fatalf("inverse of scale(2,4) maps (2,4) to %v, want (1,1)", got)
+	}
+
+	var singular geom.Matrix
+	singular.SetScale(0, 0)
+	if _, ok := singular.Invert(); ok {
+		t.Fatal("zero-scale matrix reported itself invertible")
+	}
+	fallback := localCoordsInverse(&singular)
+	for _, p := range []geom.Point{{X: 3, Y: 7}, {X: -12, Y: 5}, {X: 0.25, Y: -0.5}} {
+		if got := fallback.MapPoint(p); got != p {
+			t.Fatalf("non-invertible fallback maps %v to %v, want %v (identity)", p, got, p)
+		}
+	}
+}
+
+// With a non-invertible view matrix, the extracted local coordinates track the vertex positions rather than collapsing
+// to (0,0).
+func TestAAFlatteningExtractVertsSingularViewMatrix(t *testing.T) {
+	var singular geom.Matrix
+	singular.SetScale(0, 0)
+	tess := newAAConvexTessellator(stroke.StyleFill, -1, stroke.JoinBevel, 0)
+	identity := geom.IdentityMatrix()
+	if !tess.tessellate(&identity, squarePath(10, 10, 50, 50)) {
+		t.Fatal("tessellate failed on a square")
+	}
+
+	const stride = 24 // pos(8) + color(4) + local coords(8) + coverage(4)
+	buf := make([]byte, tess.numPts()*stride)
+	idxs := make([]uint16, tess.numIndices())
+	ivm := localCoordsInverse(&singular)
+	aaFlatteningExtractVerts(tess, &ivm, &quadVertexWriter{buf: buf},
+		colorcore.PMColor4f{R: 1, A: 1}, false, 0, idxs)
+
+	readF32 := func(off int) float32 {
+		return math.Float32frombits(binary.LittleEndian.Uint32(buf[off:]))
+	}
+	nonZero := 0
+	for i := 0; i < tess.numPts(); i++ {
+		base := i * stride
+		pos := geom.Point{X: readF32(base), Y: readF32(base + 4)}
+		lc := geom.Point{X: readF32(base + 12), Y: readF32(base + 16)}
+		if lc != pos {
+			t.Fatalf("vertex %d local coords %v, want the position %v", i, lc, pos)
+		}
+		if lc != (geom.Point{}) {
+			nonZero++
+		}
+	}
+	if nonZero != tess.numPts() {
+		t.Fatalf("%d of %d local coords collapsed to (0,0)", tess.numPts()-nonZero,
+			tess.numPts())
 	}
 }
 

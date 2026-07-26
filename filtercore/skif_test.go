@@ -12,6 +12,7 @@ package filtercore
 import (
 	"testing"
 
+	"github.com/richardwilkes/canvas/colorcore"
 	"github.com/richardwilkes/canvas/geom"
 	"github.com/richardwilkes/canvas/raster"
 	"github.com/richardwilkes/canvas/shaders"
@@ -272,5 +273,39 @@ func TestBlendModeAffectsTransparentBlack(t *testing.T) {
 		if blendModeAffectsTransparentBlack(raster.BlendMode(m)) {
 			t.Fatalf("mode %d should not affect transparent black", m)
 		}
+	}
+}
+
+// invertOrIdentity falls back to the identity matrix — not geom.Matrix's all-zeros zero value — so the layer-to-
+// parameter matrix built by createInputShaders leaves sample coordinates alone when the layer matrix is singular.
+func TestInvertOrIdentityFallsBackToIdentity(t *testing.T) {
+	var scale geom.Matrix
+	scale.SetScale(2, 4)
+	scaleInv := invertOrIdentity(&scale)
+	if got := scaleInv.MapPoint(geom.Point{X: 2, Y: 4}); got != (geom.Point{X: 1, Y: 1}) {
+		t.Fatalf("inverse of scale(2,4) maps (2,4) to %v, want (1,1)", got)
+	}
+
+	var singular geom.Matrix
+	singular.SetScale(0, 0)
+	if _, ok := singular.Invert(); ok {
+		t.Fatal("zero-scale matrix reported itself invertible")
+	}
+	fallback := invertOrIdentity(&singular)
+	for _, p := range []geom.Point{{X: 3, Y: 7}, {X: -12, Y: 5}} {
+		if got := fallback.MapPoint(p); got != p {
+			t.Fatalf("non-invertible fallback maps %v to %v, want %v (identity)", p, got, p)
+		}
+	}
+
+	// The two downstream consumers in createInputShaders: an identity layer-to-parameter matrix is an integer
+	// translation (so no non-trivial-sampling flag is forced) and leaves the input shader unwrapped. The all-zeros
+	// matrix fails both.
+	if !isNearlyIntegerTranslation(&fallback, nil) {
+		t.Fatal("identity fallback is not an integer translation")
+	}
+	shader := shaders.NewColor4f(colorcore.Color4f{R: 1, A: 1})
+	if got := shaders.NewWithLocalMatrix(shader, fallback); got != shaders.Shader(shader) {
+		t.Fatalf("identity fallback wrapped the shader as %T, want it unchanged", got)
 	}
 }

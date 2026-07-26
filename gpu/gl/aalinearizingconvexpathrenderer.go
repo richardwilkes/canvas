@@ -49,6 +49,16 @@ func aaFlatteningExtractVerts(tess *aaConvexTessellator, localCoordsMatrix *geom
 	}
 }
 
+// localCoordsInverse returns the inverse of viewMatrix, for use as the local-coordinates matrix. A non-invertible view
+// matrix falls back to the identity matrix: geom.Matrix's zero value is the all-zeros matrix, which would map every
+// local coordinate to (0,0).
+func localCoordsInverse(viewMatrix *geom.Matrix) geom.Matrix {
+	if inv, ok := viewMatrix.Invert(); ok {
+		return inv
+	}
+	return geom.IdentityMatrix()
+}
+
 // createLinesOnlyGP builds the default geometry processor configured for per-vertex coverage.
 func createLinesOnlyGP(tweakAlphaForCoverage, usesLocalCoords, wideColor bool) GeometryProcessor {
 	coverageType := CoverageTypeAttribute
@@ -242,10 +252,7 @@ func (o *aaFlatteningConvexPathOp) OnPrepare(state *OpFlushState) {
 
 		var localCoordsMatrix *geom.Matrix
 		if o.helper.UsesLocalCoords() {
-			var ivm geom.Matrix
-			if inv, ok := args.viewMatrix.Invert(); ok {
-				ivm = inv
-			}
+			ivm := localCoordsInverse(&args.viewMatrix)
 			localCoordsMatrix = &ivm
 		}
 

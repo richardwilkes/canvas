@@ -340,6 +340,54 @@ func TestComputeSumBowtie(t *testing.T) {
 	}
 }
 
+// TestNextChaseBackwardToHeadSpan walks nextChase backward into a pt-t whose opposite span is its segment's head
+// (t==0, no prev). The chase has to stop there rather than dereference the missing predecessor.
+func TestNextChaseBackwardToHeadSpan(t *testing.T) {
+	head := buildContours(t, rectPath(0, 0, 10, 10, path.FillEvenOdd))
+	segs := segsOf(realContours(head)[0])
+	a, b := segs[0], segs[1]
+	segs[len(segs)-1].joinEnds(a) // the contour join the walk phase makes: a's head pt-t loop holds the prior tail
+	// Splice b's head pt-t (t==0) in as the first entry of a's head pt-t loop, the shape a coincident point landing on
+	// both segments' start points leaves behind.
+	a.head.ptT.insert(&b.head.ptT)
+	start := &a.tail // t==1, so its prev is a's head (t==0)
+	step := -1
+	var minSpan *opSpan
+	var last *opSpanBase
+	if got := a.nextChase(&start, &step, &minSpan, &last); got != nil {
+		t.Fatalf("nextChase should stop at a head-span pt-t, got segment %p", got)
+	}
+	if start != &a.tail || step != -1 || minSpan != nil || last != nil {
+		t.Fatal("nextChase should leave its outputs untouched when the chase stops")
+	}
+}
+
+// TestNextChaseBackwardToInteriorSpan is the companion to TestNextChaseBackwardToHeadSpan: when the opposite pt-t's
+// span does have a predecessor, the backward chase continues onto that segment.
+func TestNextChaseBackwardToInteriorSpan(t *testing.T) {
+	head := buildContours(t, rectPath(0, 0, 10, 10, path.FillEvenOdd))
+	segs := segsOf(realContours(head)[0])
+	a := segs[0]
+	// The contour join places the previous segment's tail (t==1, prev == its head) in a's head pt-t loop.
+	segs[len(segs)-1].joinEnds(a)
+	otherPtT := a.head.ptT.next
+	other := otherPtT.segment()
+	if otherPtT.span != &other.tail {
+		t.Fatalf("expected a's head pt-t loop to start at the previous segment's tail, t = %v", otherPtT.t)
+	}
+	start := &a.tail
+	step := -1
+	var minSpan *opSpan
+	var last *opSpanBase
+	got := a.nextChase(&start, &step, &minSpan, &last)
+	if got != other {
+		t.Fatalf("nextChase = %p, want the joined segment %p", got, other)
+	}
+	if start != &other.tail || step != -1 || minSpan != &other.head || last != nil {
+		t.Fatal("nextChase should hand back the joined segment's tail span and its starter")
+	}
+}
+
 // bowtieCrossAngle builds the self-crossing bow-tie, intersects and sorts it, and returns the toAngle at the (5,5)
 // crossing (a four-angle loop).
 func bowtieCrossAngle(t *testing.T) *opAngle {

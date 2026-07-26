@@ -614,14 +614,15 @@ func (s *opSegment) nextChase(startPtr **opSpanBase, stepPtr *int, minPtr **opSp
 		otherPtT := endSpan.ptT.next
 		other = otherPtT.segment()
 		foundSpan = otherPtT.span
+		// Either direction may run off the end of the opposite segment's span list: forward when the opposite pt-t is
+		// that segment's tail (t==1, not up-castable), backward when it is that segment's head (t==0, no prev). Both
+		// leave otherEnd nil for the check below to stop the chase.
 		if step > 0 {
 			if up := foundSpan.upCastable(); up != nil {
 				otherEnd = up.next
-			} else {
-				otherEnd = nil
 			}
-		} else {
-			otherEnd = &foundSpan.prev.opSpanBase
+		} else if prev := foundSpan.prev; prev != nil {
+			otherEnd = &prev.opSpanBase
 		}
 	} else {
 		if angle.loopCount() > 2 {

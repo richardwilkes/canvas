@@ -242,6 +242,35 @@ func TestReadPixelsTrim(t *testing.T) {
 	if im.ReadPixels(dstInfo, dst, 8, 0, -100, CachingAllow) {
 		t.Fatal("far-negative y read should fail")
 	}
+	// A srcX/srcY near MaxInt32 must trim to an empty rect and return false; computing x+w in int32 wraps the sum
+	// negative, skips the clamp, and leaves Subset with an out-of-range offset that panics.
+	dst = make([]byte, 16)
+	for _, tc := range []struct {
+		name       string
+		srcX, srcY int32
+	}{
+		{name: "x at max", srcX: math.MaxInt32, srcY: 0},
+		{name: "y at max", srcX: 0, srcY: math.MaxInt32},
+		{name: "both at max", srcX: math.MaxInt32, srcY: math.MaxInt32},
+		{name: "x one short of wrapping", srcX: math.MaxInt32 - dstInfo.Width, srcY: 0},
+		{name: "y one short of wrapping", srcX: 0, srcY: math.MaxInt32 - dstInfo.Height},
+	} {
+		if im.ReadPixels(dstInfo, dst, 8, tc.srcX, tc.srcY, CachingAllow) {
+			t.Fatalf("%s: far-positive read should fail", tc.name)
+		}
+	}
+	for i, b := range dst {
+		if b != 0 {
+			t.Fatalf("far-positive read wrote dst[%d] = %#x", i, b)
+		}
+	}
+	// The in-bounds edge case that abuts the clamp must still succeed and trim to a 1x1 rect.
+	if !im.ReadPixels(dstInfo, dst, 8, 3, 3, CachingAllow) {
+		t.Fatal("bottom-right corner read failed")
+	}
+	if dst[0] != 15 || dst[3] != 0xFF {
+		t.Fatalf("corner read: % x", dst)
+	}
 }
 
 func TestNewPixelsCopyFromBytesOverflow(t *testing.T) {

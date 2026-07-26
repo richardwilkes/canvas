@@ -291,10 +291,12 @@ func (im *Image) ReadPixels(dstInfo ImageInfo, dst []byte, dstRowBytes int, srcX
 		dstOff += int(-y) * dstRowBytes
 		y = 0
 	}
-	if x+w > im.info.Width {
+	// x and y are non-negative here, so widen the far edges to int64: a large positive srcX/srcY would otherwise wrap
+	// the int32 sum negative, skip the clamp entirely, and leave an out-of-range rect for Subset to slice.
+	if int64(x)+int64(w) > int64(im.info.Width) {
 		w = im.info.Width - x
 	}
-	if y+h > im.info.Height {
+	if int64(y)+int64(h) > int64(im.info.Height) {
 		h = im.info.Height - y
 	}
 	if w <= 0 || h <= 0 {

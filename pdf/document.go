@@ -388,12 +388,16 @@ func generatePageTree(doc *Document, pages []*Dict, pageRefs []IndirectReference
 	return doc.EmitAt(root.dict, root.reservedRef)
 }
 
-// Close builds the document catalog (page tree, viewer preferences, language), emits it, and writes the xref table and
-// trailer. Closing a document with no pages, or an already-closed/aborted document, writes nothing.
+// Close finishes any page left open by a BeginPage with no matching EndPage, builds the document catalog (page tree,
+// viewer preferences, language), emits it, and writes the xref table and trailer. Closing a document with no pages, or
+// an already-closed/aborted document, writes nothing.
 func (d *Document) Close() {
 	if d.closed {
 		return
 	}
+	// BeginPage already reserved the page's object number, so an unfinished page must still be emitted; leaving it out
+	// would put an in-use xref entry with offset 0 in the table and silently drop the page's content.
+	d.EndPage()
 	d.closed = true
 	if len(d.pages) == 0 {
 		return

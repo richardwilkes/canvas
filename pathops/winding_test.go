@@ -340,6 +340,83 @@ func TestComputeSumBowtie(t *testing.T) {
 	}
 }
 
+// TestWindingSentinelsDistinct pins the three winding sentinels to their upstream Skia values. skMinS32 ("not yet
+// computed") and skNaN32 ("degenerate angle loop") must not collide: computeSum returns either one, and its callers
+// treat them differently.
+func TestWindingSentinelsDistinct(t *testing.T) {
+	if skMaxS32 != math.MaxInt32 {
+		t.Fatalf("skMaxS32 = %d, want %d", skMaxS32, math.MaxInt32)
+	}
+	if skMinS32 != -math.MaxInt32 {
+		t.Fatalf("skMinS32 = %d, want %d (Skia's SK_MinS32 == -SK_MaxS32)", skMinS32, -math.MaxInt32)
+	}
+	if skNaN32 != math.MinInt32 {
+		t.Fatalf("skNaN32 = %d, want %d (Skia's SK_NaN32 == INT32_MIN)", skNaN32, math.MinInt32)
+	}
+	if skNaN32 == skMinS32 {
+		t.Fatal("skNaN32 and skMinS32 must be distinct sentinels")
+	}
+}
+
+// TestComputeSumUnsetIsNotNaN checks that a crossing whose angle loop carries no winding at all reports the
+// "not yet computed" sentinel rather than the "degenerate loop" one: nothing transfers, but the loop is still sortable
+// and updateWinding can re-seed it with a ray cast.
+func TestComputeSumUnsetIsNotNaN(t *testing.T) {
+	base := bowtieCrossAngle(t)
+	for i, a := range angleLoop(base) {
+		if a.starter().windSum != skMinS32 {
+			t.Fatalf("angle %d already has a winding before computeSum", i)
+		}
+	}
+	seg := base.segment()
+	got := seg.computeSum(base.end, base.start, includeUnaryWinding)
+	if got == skNaN32 {
+		t.Fatal("computeSum reported a degenerate angle loop for a sortable, merely unseeded crossing")
+	}
+	if got != skMinS32 {
+		t.Fatalf("computeSum = %d, want skMinS32 (%d)", got, skMinS32)
+	}
+	// The recovery the skNaN32 bail would have skipped: the ray cast seeds a real winding for the same span.
+	if seeded := seg.updateWinding(base.start, base.end); seeded == skMinS32 {
+		t.Fatal("updateWinding failed to re-seed the unset winding")
+	}
+}
+
+// TestComputeSumDegenerateLoopIsNaN is the companion to TestComputeSumUnsetIsNotNaN: a span with no angle loop at all
+// really is unsortable, and computeSum must say so with skNaN32.
+func TestComputeSumDegenerateLoopIsNaN(t *testing.T) {
+	head := buildContours(t, rectPath(0, 0, 10, 10, path.FillEvenOdd))
+	seg := &realContours(head)[0].head // angles were never calculated, so spanToAngle yields nil
+	if got := seg.computeSum(seg.head.next, &seg.head.opSpanBase, includeUnaryWinding); got != skNaN32 {
+		t.Fatalf("computeSum on an angle-less span = %d, want skNaN32 (%d)", got, skNaN32)
+	}
+}
+
+// TestFindNextWindingUnseededIsSortable walks the bow-tie crossing before any winding has been computed. computeSum
+// returns skMinS32 there, which is not the unsortable sentinel, so the walk must proceed into updateWinding's ray cast
+// instead of giving up and marking the span done.
+func TestFindNextWindingUnseededIsSortable(t *testing.T) {
+	base := bowtieCrossAngle(t)
+	seg := base.segment()
+	// Walk the crossing in the direction that has more than one candidate, so the trace has to measure angles (and
+	// therefore call computeSum) rather than take isSimple's shortcut.
+	probe := base.end
+	probeStep := base.end.step(base.start)
+	if seg.isSimple(&probe, &probeStep) != nil {
+		t.Fatal("the crossing has a single candidate, so findNextWinding never reaches computeSum")
+	}
+	nextStart, nextEnd := base.end, base.start
+	var chase []*opSpanBase
+	unsortable := false
+	next := seg.findNextWinding(&chase, &nextStart, &nextEnd, &unsortable)
+	if unsortable {
+		t.Fatal("findNextWinding marked an unseeded (but sortable) crossing unsortable")
+	}
+	if next == nil {
+		t.Fatal("findNextWinding found no next segment at the bow-tie crossing")
+	}
+}
+
 // TestNextChaseBackwardToHeadSpan walks nextChase backward into a pt-t whose opposite span is its segment's head
 // (t==0, no prev). The chase has to stop there rather than dereference the missing predecessor.
 func TestNextChaseBackwardToHeadSpan(t *testing.T) {

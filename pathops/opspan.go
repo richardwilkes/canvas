@@ -22,9 +22,12 @@ import (
 )
 
 const (
-	skMinS32 = math.MinInt32 // the sentinel used to mark a winding sum as not-yet-set
-	skMaxS32 = math.MaxInt32 // the largest representable 32-bit winding sum
-	skNaN32  = math.MinInt32 // sentinel for "not a number" in 32-bit winding arithmetic (equals skMinS32)
+	skMinS32 = -math.MaxInt32 // the sentinel used to mark a winding sum as not-yet-set
+	skMaxS32 = math.MaxInt32  // the largest representable 32-bit winding sum
+	// skNaN32 is the sentinel for "not a number" in 32-bit winding arithmetic. It must stay distinct from skMinS32:
+	// computeSum returns skNaN32 only for a degenerate angle loop, while a span whose winding was never transferred
+	// keeps skMinS32 and is still sortable (updateWinding re-seeds it with a ray cast).
+	skNaN32 = math.MinInt32
 )
 
 // opPtT is a point/t value on a segment, linked into a loop of coincident points across segments (or aliases on the

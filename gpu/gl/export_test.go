@@ -13,7 +13,31 @@ import (
 	"github.com/richardwilkes/canvas/colorcore"
 	"github.com/richardwilkes/canvas/geom"
 	"github.com/richardwilkes/canvas/gpu"
+	"github.com/richardwilkes/canvas/maskfilter"
 )
+
+// Mask-filter lane names reported by DrawShapeWithMaskFilterLaneForTest.
+const (
+	MaskFilterLaneNoneName   = "none"
+	MaskFilterLaneDirectName = "direct"
+	MaskFilterLaneHWName     = "hw"
+	MaskFilterLaneSWName     = "sw"
+)
+
+// DrawShapeWithMaskFilterLaneForTest draws exactly as DrawShapeWithMaskFilter does, but reports which lane the draw
+// took, so the live tests can pin the lane a given shape/filter combination is meant to exercise rather than assume it.
+func DrawShapeWithMaskFilterLaneForTest(sdc *SurfaceDrawContext, clip Clip, paint *Paint, viewMatrix *geom.Matrix, mf maskfilter.MaskFilter, shape *StyledShape) string {
+	switch drawShapeWithMaskFilter(sdc, clip, paint, viewMatrix, mf, shape) {
+	case maskFilterLaneDirect:
+		return MaskFilterLaneDirectName
+	case maskFilterLaneHW:
+		return MaskFilterLaneHWName
+	case maskFilterLaneSW:
+		return MaskFilterLaneSWName
+	default:
+		return MaskFilterLaneNoneName
+	}
+}
 
 // ZeroRequiredProcForTest clears an always-required proc (glDrawBuffer) so tests can confirm Validate notices missing
 // functions.

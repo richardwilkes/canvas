@@ -522,18 +522,39 @@ func computeKeyAndClipBounds(caps *Caps, viewMatrix *geom.Matrix, inverseFilled 
 	return maskKey, boundsForClip, true
 }
 
+// maskFilterLane identifies which lane a mask-filtered draw took. The exported entry point discards it; the live tests
+// (through export_test.go) assert the lane a given shape/filter combination actually exercises, since the analytic
+// direct lane silently absorbs many shapes the mask-generation lanes would otherwise handle.
+type maskFilterLane uint8
+
+const (
+	// maskFilterLaneNone means nothing was drawn: an empty or entirely clipped-out shape, or both mask lanes declined.
+	maskFilterLaneNone maskFilterLane = iota
+	// maskFilterLaneDirect means directFilterMask drew the shape through an analytic blur FP.
+	maskFilterLaneDirect
+	// maskFilterLaneHW means the mask was generated and blurred on the GPU (hwCreateFilteredMask).
+	maskFilterLaneHW
+	// maskFilterLaneSW means the filtered mask was rasterized on the CPU and uploaded (swCreateFilteredMask).
+	maskFilterLaneSW
+)
+
 // DrawShapeWithMaskFilter styles the shape, then draws it filtered through the GPU mask lane (large blurs) or the CPU
 // mask lane (small blurs and non-blur filters). The paint is consumed.
 func DrawShapeWithMaskFilter(sdc *SurfaceDrawContext, clip Clip, paint *Paint, viewMatrix *geom.Matrix, mf maskfilter.MaskFilter, origShape *StyledShape) {
+	drawShapeWithMaskFilter(sdc, clip, paint, viewMatrix, mf, origShape)
+}
+
+// drawShapeWithMaskFilter is DrawShapeWithMaskFilter's implementation, reporting the lane it took.
+func drawShapeWithMaskFilter(sdc *SurfaceDrawContext, clip Clip, paint *Paint, viewMatrix *geom.Matrix, mf maskfilter.MaskFilter, origShape *StyledShape) maskFilterLane {
 	shape := origShape
 	if origShape.Style().Applies() {
 		styleScale := MatrixToScaleFactor(viewMatrix)
 		if styleScale == 0 {
-			return
+			return maskFilterLaneNone
 		}
 		tmpShape := origShape.ApplyStyle(StyleApplyPathEffectAndStrokeRec, styleScale)
 		if tmpShape.IsEmpty() {
-			return
+			return maskFilterLaneNone
 		}
 		shape = &tmpShape
 	}
@@ -542,7 +563,7 @@ func DrawShapeWithMaskFilter(sdc *SurfaceDrawContext, clip Clip, paint *Paint, v
 	// Shapes that do not qualify fall through to the general filtered-mask path.
 	if directFilterMask(sdc, mf, clip, paint, viewMatrix, shape) {
 		// The mask filter drew itself directly, so there's nothing left to do.
-		return
+		return maskFilterLaneDirect
 	}
 
 	// If the path is hairline, ignore inverse fill.
@@ -551,13 +572,13 @@ func DrawShapeWithMaskFilter(sdc *SurfaceDrawContext, clip Clip, paint *Paint, v
 
 	unclippedDevShapeBounds, devClipBounds, ok := blurShapeAndClipBounds(sdc, clip, shape, viewMatrix)
 	if !ok && !inverseFilled {
-		return
+		return maskFilterLaneNone
 	}
 
 	maskKey, boundsForClip, ok := computeKeyAndClipBounds(sdc.Caps(), viewMatrix, inverseFilled, mf,
 		shape, unclippedDevShapeBounds, devClipBounds)
 	if !ok {
-		return // 'shape' was entirely clipped out
+		return maskFilterLaneNone // 'shape' was entirely clipped out
 	}
 
 	// GPU-filtered mask (direct context only; there is no DDL recording thread in the port).
@@ -565,14 +586,15 @@ func DrawShapeWithMaskFilter(sdc *SurfaceDrawContext, clip Clip, paint *Paint, v
 		unclippedDevShapeBounds, boundsForClip, &maskKey)
 	if hwOK {
 		if drawMask(sdc, clip, viewMatrix, maskRect, ClonePaint(paint), hwView) {
-			return
+			return maskFilterLaneHW
 		}
 	}
 
 	// Either the HW mask lane declined (small blur / non-blur filter) or it failed.
 	swView, drawRect, swOK := swCreateFilteredMask(sdc.Context(), viewMatrix, shape, mf,
 		unclippedDevShapeBounds, boundsForClip, &maskKey)
-	if swOK {
-		drawMask(sdc, clip, viewMatrix, drawRect, paint, swView)
+	if swOK && drawMask(sdc, clip, viewMatrix, drawRect, paint, swView) {
+		return maskFilterLaneSW
 	}
+	return maskFilterLaneNone
 }

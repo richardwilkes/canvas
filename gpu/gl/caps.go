@@ -659,6 +659,12 @@ func isFloatFP32(ctxInfo *ContextInfo, f *Functions, precision uint32) bool {
 		// We're on a desktop GL that doesn't have precision info. Assume they're all 32-bit float.
 		return true
 	}
+	if f.getShaderPrecisionFormat == 0 {
+		// The query entry point is only resolved for GL 4.3+ or GL_ARB_ES2_compatibility (see assembleGLInterface,
+		// which mirrors upstream), so a 4.1/4.2 context without that extension has no way to ask. Assume 32-bit float
+		// rather than calling through a null proc.
+		return true
+	}
 	// glGetShaderPrecisionFormat doesn't accept GL_GEOMETRY_SHADER as a shader type. Hopefully geometry shaders don't
 	// have lower precision than vertex and fragment.
 	for _, shader := range []uint32{FRAGMENT_SHADER, VERTEX_SHADER} {

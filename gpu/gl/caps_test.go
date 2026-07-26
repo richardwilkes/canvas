@@ -608,6 +608,49 @@ func TestCapsIntelWorkarounds(t *testing.T) {
 	}
 }
 
+// noPrecisionQueryDriver models a desktop GL 4.2 core context that doesn't advertise GL_ARB_ES2_compatibility. Such a
+// context sits above the 4.1 cutoff isFloatFP32 uses to decide precision info exists, yet assembleGLInterface never
+// resolves glGetShaderPrecisionFormat for it (that needs GL 4.3 or the extension), so the precision query has no proc
+// to call.
+func noPrecisionQueryDriver() *capsFakeDriver {
+	return &capsFakeDriver{
+		version:     "4.2.0 NVIDIA 390.157",
+		vendor:      "NVIDIA Corporation",
+		renderer:    "NVIDIA GeForce GT 750M/PCIe/SSE2",
+		glslVersion: "4.20",
+		extensions:  []string{"GL_ARB_texture_storage"},
+		integers: map[uint32]int32{
+			MAX_FRAGMENT_UNIFORM_COMPONENTS: 4096,
+			CONTEXT_PROFILE_MASK:            CONTEXT_CORE_PROFILE_BIT,
+			MAX_VERTEX_ATTRIBS:              16,
+			MAX_TEXTURE_IMAGE_UNITS:         16,
+			MAX_TEXTURE_SIZE:                16384,
+			MAX_RENDERBUFFER_SIZE:           16384,
+			MAX_SAMPLES:                     8,
+		},
+		sampleCounts: []int32{8, 4, 2},
+		// Never consulted: were the query somehow issued, this would report a non-fp32 precision, so the assertions
+		// below would fail rather than accidentally pass.
+		precisionBits: 10,
+	}
+}
+
+// Caps init must not call through the unresolved glGetShaderPrecisionFormat proc on a 4.1/4.2 context that lacks
+// GL_ARB_ES2_compatibility (a null call crashes the process); with no precision info available it assumes fp32.
+func TestCapsWithoutShaderPrecisionQuery(t *testing.T) {
+	ctxInfo := noPrecisionQueryDriver().newContextInfo(t, nil)
+	if ctxInfo.Interface.Functions.getShaderPrecisionFormat != 0 {
+		t.Fatal("this profile is meant to leave glGetShaderPrecisionFormat unresolved")
+	}
+	if ctxInfo.Version() < Ver(4, 1) {
+		t.Fatalf("version = %x, want >= 4.1 so the precision query is not skipped by version alone",
+			ctxInfo.Version())
+	}
+	if !ctxInfo.Caps.ShaderCaps.FloatIs32Bits || !ctxInfo.Caps.ShaderCaps.HalfIs32Bits {
+		t.Error("expected fp32 to be assumed when the precision query is unavailable")
+	}
+}
+
 func TestCapsOptionsOverrides(t *testing.T) {
 	options := gpu.DefaultContextOptions()
 	options.AvoidStencilBuffers = true

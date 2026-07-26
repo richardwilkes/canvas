@@ -12,6 +12,7 @@ package main
 import (
 	"bytes"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -360,6 +361,10 @@ func failRenamesFrom(t *testing.T, paths ...string) {
 	t.Cleanup(func() { renameDir = orig })
 }
 
+// stopFailingRenames puts the real renameDir back mid-test, so a test can drive a commit-swap failure and then re-run
+// bless against the disk state that failure left behind.
+func stopFailingRenames() { renameDir = os.Rename }
+
 // blessOverPrior blesses a prior set into dir, then returns a config that re-blesses over it with different pixels.
 func blessOverPrior(t *testing.T, dir string) *blessConfig {
 	t.Helper()
@@ -447,5 +452,100 @@ func TestBlessKeepsBothSetsWhenRestoreFails(t *testing.T) {
 	}
 	if m.Entries[0].SHA256 != golden.HashPixels(solidRender(20)(testScenarios()[0])) {
 		t.Fatalf("the retained staging set is not the freshly captured one")
+	}
+}
+
+// breakCommitSwap drives the worst-case commit-swap failure over a prior set in dir (the swap fails and the prior set
+// cannot be moved back), leaving dir gone and dir+".prior" holding the only copy of the prior set, then restores the
+// real renameDir. It returns a config for re-blessing into dir from that state.
+func breakCommitSwap(t *testing.T, dir string, out io.Writer) *blessConfig {
+	t.Helper()
+	cfg := blessOverPrior(t, dir)
+	failRenamesFrom(t, dir+".staging", dir+".prior")
+	if err := bless(cfg); err == nil || !strings.Contains(err.Error(), "could not restore the prior set") {
+		t.Fatalf("bless with a failing swap and restore: err = %v, want a both-sets-retained refusal", err)
+	}
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Fatalf("the failed swap left %s in place; the worst-case state was not reached", dir)
+	}
+	assertPriorSetIntact(t, dir+".prior")
+	stopFailingRenames()
+	cfg.out = out
+	return cfg
+}
+
+// TestBlessRerunAfterInterruptedSwapRestoresPriorSet checks that re-running bless after the worst-case swap failure
+// moves the preserved prior set back into place rather than destroying it: the re-run must see it as the prior set (so
+// the change summary is real) and end with the new set in place and no leftovers.
+func TestBlessRerunAfterInterruptedSwapRestoresPriorSet(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "goldens", "raster", "test_platform")
+	var out bytes.Buffer
+	cfg := breakCommitSwap(t, dir, &out)
+	if err := bless(cfg); err != nil {
+		t.Fatalf("re-bless after an interrupted commit swap: %v", err)
+	}
+	text := out.String()
+	if !strings.Contains(text, "restored the prior set") {
+		t.Fatalf("re-bless did not report recovering the preserved prior set:\n%s", text)
+	}
+	if !strings.Contains(text, "CHANGED   alpha") || !strings.Contains(text, "2 changed") {
+		t.Fatalf("re-bless did not compare against the recovered prior set:\n%s", text)
+	}
+	m, err := golden.ReadManifest(dir)
+	if err != nil {
+		t.Fatalf("ReadManifest after the re-bless: %v", err)
+	}
+	if m.Entries[0].SHA256 != golden.HashPixels(solidRender(20)(testScenarios()[0])) {
+		t.Fatalf("re-bless did not swap the new set into place")
+	}
+	for _, leftover := range []string{dir + ".prior", dir + ".staging"} {
+		if _, statErr := os.Stat(leftover); !os.IsNotExist(statErr) {
+			t.Fatalf("re-bless left %s behind", leftover)
+		}
+	}
+}
+
+// TestBlessRerunAfterInterruptedSwapSurvivesASecondFailure is the regression test for the destructive re-run: after the
+// worst-case failure, a re-run whose swap fails *again* must still leave a golden set on disk. The preserved prior set
+// may not be removed on the way in, and the run's own failure path has to be able to put it back.
+func TestBlessRerunAfterInterruptedSwapSurvivesASecondFailure(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "goldens", "raster", "test_platform")
+	cfg := breakCommitSwap(t, dir, &bytes.Buffer{})
+	failRenamesFrom(t, dir+".staging")
+	if err := bless(cfg); err == nil || !strings.Contains(err.Error(), "simulated rename failure") {
+		t.Fatalf("re-bless with a second failing swap: err = %v, want the rename failure", err)
+	}
+	assertPriorSetIntact(t, dir)
+	for _, leftover := range []string{dir + ".prior", dir + ".staging"} {
+		if _, statErr := os.Stat(leftover); !os.IsNotExist(statErr) {
+			t.Fatalf("the failed re-bless left %s behind", leftover)
+		}
+	}
+}
+
+// TestBlessRefusesWhenInterruptedSwapCannotBeRepaired checks that when the preserved prior set cannot be moved back,
+// bless refuses before touching anything: both the preserved prior set and the earlier run's staged capture survive and
+// the error names them.
+func TestBlessRefusesWhenInterruptedSwapCannotBeRepaired(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "goldens", "raster", "test_platform")
+	cfg := blessOverPrior(t, dir)
+	failRenamesFrom(t, dir+".staging", dir+".prior")
+	if err := bless(cfg); err == nil {
+		t.Fatal("bless with a failing swap and restore: want a both-sets-retained refusal")
+	}
+	err := bless(cfg)
+	if err == nil || !strings.Contains(err.Error(), "interrupted commit swap") {
+		t.Fatalf("re-bless with an unrepairable interrupted swap: err = %v, want a refusal to proceed", err)
+	}
+	if !strings.Contains(err.Error(), dir+".prior") {
+		t.Fatalf("error does not name the preserved prior set: %v", err)
+	}
+	assertPriorSetIntact(t, dir+".prior")
+	m, mErr := golden.ReadManifest(dir + ".staging")
+	if mErr != nil {
+		t.Fatalf("ReadManifest of the retained staging set: %v", mErr)
+	}
+	if m.Entries[0].SHA256 != golden.HashPixels(solidRender(20)(testScenarios()[0])) {
+		t.Fatalf("the refusal discarded the earlier run's captured set")
 	}
 }

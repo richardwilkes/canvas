@@ -66,7 +66,13 @@ type blessConfig struct {
 // It refuses to replace a schema-1 manifest: those are the frozen Skia-era archive sets, which live only under
 // goldens-skia/ and must never be silently overwritten — finding one under goldens/ means the working tree is in a
 // state bless should not touch.
+//
+// It also repairs the disk state a previously interrupted commit swap can leave behind before doing anything else (see
+// recoverInterruptedSwap), so re-running bless after that failure cannot destroy the preserved prior set.
 func bless(cfg *blessConfig) error {
+	if err := recoverInterruptedSwap(cfg); err != nil {
+		return err
+	}
 	prior, hasPrior, err := priorManifest(cfg.dir)
 	if err != nil {
 		return err
@@ -196,11 +202,15 @@ func bless(cfg *blessConfig) error {
 	// rename failure (an open handle on Windows, the target directory recreated concurrently) left the target gone and
 	// the deferred cleanup deleting the only remaining copy of the verified capture.
 	backup := cfg.dir + ".prior"
-	if err = os.RemoveAll(backup); err != nil {
-		return err
-	}
 	hasBackup := false
 	if _, err = os.Stat(cfg.dir); err == nil {
+		// Any backup still on disk here is stale: recoverInterruptedSwap has already moved a preserved prior set back,
+		// so a backup sitting beside an existing target can only be the residue of a successful swap whose backup
+		// removal failed below. Clearing it is gated on the target existing precisely so that a preserved prior set —
+		// which is only ever the last copy when the target is *missing* — can never be the thing removed here.
+		if err = os.RemoveAll(backup); err != nil {
+			return err
+		}
 		if err = renameDir(cfg.dir, backup); err != nil {
 			return err
 		}
@@ -228,6 +238,37 @@ func bless(cfg *blessConfig) error {
 	}
 	fmt.Fprintf(cfg.out, "blessed %d scenarios into %s (lane %s, platform %s, schema %d)\n",
 		len(m.Entries), cfg.dir, cfg.lane, cfg.platform, blessSchema)
+	return nil
+}
+
+// recoverInterruptedSwap repairs the disk state left by the commit swap's worst case: the staged set could not be
+// renamed into cfg.dir and the prior set could not be moved back either, so cfg.dir is gone and cfg.dir+".prior" holds
+// the only copy of the prior set. Moving it back turns that into an ordinary re-bless — the prior set is read for the
+// change summary and renamed aside again under the swap's normal protections — where leaving it would mean the next
+// run captured with no prior set to compare against and, worse, with no target directory to move aside, so a second
+// swap failure would find nothing to restore.
+//
+// A backup sitting beside a target directory that does exist is the harmless residue of a successful swap whose backup
+// removal failed; it is left alone here and cleared by the commit swap.
+func recoverInterruptedSwap(cfg *blessConfig) error {
+	backup := cfg.dir + ".prior"
+	if _, err := os.Stat(backup); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		return err
+	}
+	if _, err := os.Stat(cfg.dir); err == nil {
+		return nil
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	if err := renameDir(backup, cfg.dir); err != nil {
+		return fmt.Errorf("bless: %s is missing while a prior set is preserved in %s (an interrupted commit swap), but "+
+			"it could not be moved back (%w) — restore it by hand before re-running", cfg.dir, backup, err)
+	}
+	fmt.Fprintf(cfg.out, "note: restored the prior set from %s into %s (an earlier bless left its commit swap "+
+		"interrupted)\n", backup, cfg.dir)
 	return nil
 }
 

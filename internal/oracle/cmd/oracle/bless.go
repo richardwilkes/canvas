@@ -29,6 +29,10 @@ import (
 // blessSchema is the manifest schema version bless writes (see golden.Manifest).
 const blessSchema = 2
 
+// renameDir is os.Rename, indirected so tests can drive the commit-swap failure paths (a rename that fails after the
+// prior set has already been moved aside — an open handle on Windows, a cross-device staging directory, and so on).
+var renameDir = os.Rename
+
 // blessConfig carries one bless capture. The session factory and scenario list are injected so tests can drive bless
 // with a synthetic corpus and a deliberately nondeterministic renderer.
 type blessConfig struct {
@@ -49,7 +53,8 @@ type blessConfig struct {
 // cross-pass divergence (the permanent capture-time determinism guard — this is the fresh-context corpus-pass
 // invariant the gates rely on; see laneSession), stages the PNGs + schema-2 manifest beside the target directory,
 // prints a per-scenario old-vs-new change summary when a prior set exists (the reviewable diff is generated at
-// capture time), and only then swaps the staged set into place. On any error the target directory is untouched.
+// capture time), and only then swaps the staged set into place — renaming the prior set aside rather than removing it,
+// so a failed swap puts it back. On any error the target directory is untouched.
 //
 // The guard is per-lane, mirroring soak: raster is strictly bit-exact (any hash difference refuses), while the gpu
 // and gpudmsaa lanes compare the verify pass per-pixel against the retained capture-pass buffers under the ±1 LSB
@@ -73,9 +78,13 @@ func bless(cfg *blessConfig) error {
 	if err = os.MkdirAll(staging, 0o755); err != nil {
 		return err
 	}
-	committed := false
+	// The staging directory is scratch space until the commit swap moves it into place, so it is removed on every error
+	// path. keepStaging turns that off for the two cases where staging is not scratch: the swap succeeded (staging no
+	// longer exists), or the swap failed *and* the prior set could not be restored, leaving the staged capture as the
+	// only copy of a verified render — deleting it there would throw away exactly what the operation produced.
+	keepStaging := false
 	defer func() {
-		if !committed {
+		if !keepStaging {
 			os.RemoveAll(staging) //nolint:errcheck // best-effort cleanup; the primary error is already on its way out
 		}
 	}()
@@ -182,13 +191,41 @@ func bless(cfg *blessConfig) error {
 		fmt.Fprintf(cfg.out, "no prior manifest in %s — capturing a new set (%d scenarios)\n", cfg.dir, len(m.Entries))
 	}
 
-	if err = os.RemoveAll(cfg.dir); err != nil {
+	// Commit swap. The prior set is renamed aside rather than removed, so a failed swap can put it back: there is no
+	// window in which both it and the freshly captured set are gone from the disk. Removing it first would mean a
+	// rename failure (an open handle on Windows, the target directory recreated concurrently) left the target gone and
+	// the deferred cleanup deleting the only remaining copy of the verified capture.
+	backup := cfg.dir + ".prior"
+	if err = os.RemoveAll(backup); err != nil {
 		return err
 	}
-	if err = os.Rename(staging, cfg.dir); err != nil {
+	hasBackup := false
+	if _, err = os.Stat(cfg.dir); err == nil {
+		if err = renameDir(cfg.dir, backup); err != nil {
+			return err
+		}
+		hasBackup = true
+	} else if !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
-	committed = true
+	if err = renameDir(staging, cfg.dir); err != nil {
+		if hasBackup {
+			if restoreErr := renameDir(backup, cfg.dir); restoreErr != nil {
+				keepStaging = true
+				return fmt.Errorf("bless: could not swap the staged set into %s (%w) and could not restore the prior "+
+					"set from %s (%v) — the prior set is in %s and the captured set is in %s", cfg.dir, err, backup,
+					restoreErr, backup, staging)
+			}
+		}
+		return err
+	}
+	keepStaging = true // the swap consumed the staging directory
+	if hasBackup {
+		if rmErr := os.RemoveAll(backup); rmErr != nil {
+			fmt.Fprintf(cfg.out, "note: the new set is in place, but the prior set could not be removed from %s: %v\n",
+				backup, rmErr)
+		}
+	}
 	fmt.Fprintf(cfg.out, "blessed %d scenarios into %s (lane %s, platform %s, schema %d)\n",
 		len(m.Entries), cfg.dir, cfg.lane, cfg.platform, blessSchema)
 	return nil

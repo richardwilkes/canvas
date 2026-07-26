@@ -11,6 +11,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -337,5 +338,114 @@ func TestBlessChangeSummary(t *testing.T) {
 	wantHash := golden.HashPixels(solidRender(20)(testScenarios()[0]))
 	if m.Entries[0].SHA256 != wantHash {
 		t.Fatalf("re-bless did not swap the new set into place")
+	}
+	if _, err = os.Stat(dir + ".prior"); !os.IsNotExist(err) {
+		t.Fatalf("re-bless left the prior set behind in %s", dir+".prior")
+	}
+}
+
+// failRenamesFrom stubs renameDir so that any rename whose source is one of the given paths fails, restoring the real
+// os.Rename when the test ends.
+func failRenamesFrom(t *testing.T, paths ...string) {
+	t.Helper()
+	orig := renameDir
+	renameDir = func(oldpath, newpath string) error {
+		for _, p := range paths {
+			if oldpath == p {
+				return errors.New("simulated rename failure")
+			}
+		}
+		return orig(oldpath, newpath)
+	}
+	t.Cleanup(func() { renameDir = orig })
+}
+
+// blessOverPrior blesses a prior set into dir, then returns a config that re-blesses over it with different pixels.
+func blessOverPrior(t *testing.T, dir string) *blessConfig {
+	t.Helper()
+	first := blessConfig{
+		out:        &bytes.Buffer{},
+		dir:        dir,
+		lane:       laneRaster,
+		platform:   "test_platform",
+		scenarios:  testScenarios(),
+		newSession: sessionFactory(solidRender(10), "", ""),
+	}
+	if err := bless(&first); err != nil {
+		t.Fatalf("first bless: %v", err)
+	}
+	return &blessConfig{
+		out:        &bytes.Buffer{},
+		dir:        dir,
+		lane:       laneRaster,
+		platform:   "test_platform",
+		scenarios:  testScenarios(),
+		newSession: sessionFactory(solidRender(20), "", ""),
+	}
+}
+
+// assertPriorSetIntact checks dir still holds the solidRender(10) set the first bless wrote.
+func assertPriorSetIntact(t *testing.T, dir string) {
+	t.Helper()
+	m, err := golden.ReadManifest(dir)
+	if err != nil {
+		t.Fatalf("ReadManifest: %v", err)
+	}
+	for i, s := range testScenarios() {
+		want := golden.HashPixels(solidRender(10)(s))
+		if m.Entries[i].SHA256 != want {
+			t.Fatalf("%s: manifest no longer describes the prior set", s.Name)
+		}
+		pixels, _, _, pngErr := golden.ReadPNG(filepath.Join(dir, s.Name+".png"))
+		if pngErr != nil {
+			t.Fatalf("ReadPNG %s: %v", s.Name, pngErr)
+		}
+		if golden.HashPixels(pixels) != want {
+			t.Fatalf("%s: PNG is no longer the prior set's render", s.Name)
+		}
+	}
+}
+
+// TestBlessRestoresPriorSetWhenSwapFails drives the commit swap's failure path: the staged set cannot be renamed into
+// place after the prior set has been moved aside. The prior set must come back in full — the documented "on any error
+// the target directory is untouched" guarantee — rather than being left destroyed alongside a deleted staging
+// directory.
+func TestBlessRestoresPriorSetWhenSwapFails(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "goldens", "raster", "test_platform")
+	cfg := blessOverPrior(t, dir)
+	failRenamesFrom(t, dir+".staging")
+	err := bless(cfg)
+	if err == nil || !strings.Contains(err.Error(), "simulated rename failure") {
+		t.Fatalf("bless with a failing commit swap: err = %v, want the rename failure", err)
+	}
+	assertPriorSetIntact(t, dir)
+	if _, statErr := os.Stat(dir + ".staging"); !os.IsNotExist(statErr) {
+		t.Fatalf("bless left its staging directory behind after a failed swap")
+	}
+	if _, statErr := os.Stat(dir + ".prior"); !os.IsNotExist(statErr) {
+		t.Fatalf("bless left the moved-aside prior set behind after restoring it")
+	}
+}
+
+// TestBlessKeepsBothSetsWhenRestoreFails covers the worst case: the swap fails and the prior set cannot be moved back
+// either. Neither set may be deleted — the error has to point at both directories so the operator can recover by hand.
+func TestBlessKeepsBothSetsWhenRestoreFails(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "goldens", "raster", "test_platform")
+	cfg := blessOverPrior(t, dir)
+	failRenamesFrom(t, dir+".staging", dir+".prior")
+	err := bless(cfg)
+	if err == nil || !strings.Contains(err.Error(), "could not restore the prior set") {
+		t.Fatalf("bless with a failing swap and restore: err = %v, want a both-sets-retained refusal", err)
+	}
+	if !strings.Contains(err.Error(), dir+".prior") || !strings.Contains(err.Error(), dir+".staging") {
+		t.Fatalf("error does not name both surviving directories: %v", err)
+	}
+	assertPriorSetIntact(t, dir+".prior")
+	m, err := golden.ReadManifest(dir + ".staging")
+	if err != nil {
+		t.Fatalf("ReadManifest of the retained staging set: %v", err)
+	}
+	if m.Entries[0].SHA256 != golden.HashPixels(solidRender(20)(testScenarios()[0])) {
+		t.Fatalf("the retained staging set is not the freshly captured one")
 	}
 }

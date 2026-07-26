@@ -138,6 +138,19 @@ func TestJPEGAndEncode(t *testing.T) {
 	}
 }
 
+// exifAPP1 builds an APP1 segment holding a minimal EXIF payload: "Exif\0\0" + TIFF LE header + one IFD entry
+// (0x0112 SHORT 1 value orientation).
+func exifAPP1(orientation byte) []byte {
+	tiff := []byte{
+		'I', 'I', 42, 0, 8, 0, 0, 0, // header, IFD at offset 8
+		1, 0, // one entry
+		0x12, 0x01, 3, 0, 1, 0, 0, 0, orientation, 0, 0, 0,
+		0, 0, 0, 0, // next IFD
+	}
+	payload := append([]byte("Exif\x00\x00"), tiff...)
+	return append([]byte{0xFF, 0xE1, byte((len(payload) + 2) >> 8), byte(len(payload) + 2)}, payload...)
+}
+
 func TestJPEGEXIFOrientation(t *testing.T) {
 	// Encode a 4x2 luminance gradient (chroma subsampling would smear color channels at this size), splice in an EXIF
 	// APP1 with orientation 6 (rotate 90 CW).
@@ -153,15 +166,7 @@ func TestJPEGEXIFOrientation(t *testing.T) {
 	}
 	plain := buf.Bytes()
 
-	// Minimal EXIF payload: "Exif\0\0" + TIFF LE header + one IFD entry (0x0112 SHORT 1 value 6).
-	tiff := []byte{
-		'I', 'I', 42, 0, 8, 0, 0, 0, // header, IFD at offset 8
-		1, 0, // one entry
-		0x12, 0x01, 3, 0, 1, 0, 0, 0, 6, 0, 0, 0, // orientation = 6
-		0, 0, 0, 0, // next IFD
-	}
-	payload := append([]byte("Exif\x00\x00"), tiff...)
-	app1 := append([]byte{0xFF, 0xE1, byte((len(payload) + 2) >> 8), byte(len(payload) + 2)}, payload...)
+	app1 := exifAPP1(6) // orientation 6 = rotate 90 CW
 	withEXIF := append(append(append([]byte{}, plain[:2]...), app1...), plain[2:]...)
 
 	if got := jpegOrigin(withEXIF); got != 6 {
@@ -199,15 +204,7 @@ func TestJPEGGrayEXIFOrientation(t *testing.T) {
 	}
 	plain := buf.Bytes()
 
-	// Minimal EXIF payload: "Exif\0\0" + TIFF LE header + one IFD entry (0x0112 SHORT 1 value 6 = rotate 90 CW).
-	tiff := []byte{
-		'I', 'I', 42, 0, 8, 0, 0, 0, // header, IFD at offset 8
-		1, 0, // one entry
-		0x12, 0x01, 3, 0, 1, 0, 0, 0, 6, 0, 0, 0, // orientation = 6
-		0, 0, 0, 0, // next IFD
-	}
-	payload := append([]byte("Exif\x00\x00"), tiff...)
-	app1 := append([]byte{0xFF, 0xE1, byte((len(payload) + 2) >> 8), byte(len(payload) + 2)}, payload...)
+	app1 := exifAPP1(6) // orientation 6 = rotate 90 CW
 	withEXIF := append(append(append([]byte{}, plain[:2]...), app1...), plain[2:]...)
 
 	codec := jpegCodec()
@@ -235,6 +232,74 @@ func TestJPEGGrayEXIFOrientation(t *testing.T) {
 	dark := p.Bytes[3*int(p.RowElems)+0]
 	if bright < 150 || dim > 90 || dark > 90 {
 		t.Fatalf("rotated gray bright=%d dim=%d dark=%d", bright, dim, dark)
+	}
+}
+
+func TestJPEGEXIFOrientationWithFillBytes(t *testing.T) {
+	// ITU T.81 §B.1.1.2 permits any number of 0xFF fill bytes ahead of any marker, and image/jpeg accepts them, so the
+	// segment walk must skip them rather than mistake a fill byte for the marker and give up.
+	src := image.NewGray(image.Rect(0, 0, 4, 2))
+	for x := range 4 {
+		src.SetGray(x, 0, color.Gray{Y: uint8(40 + 50*x)})
+		src.SetGray(x, 1, color.Gray{Y: 20})
+	}
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, src, &jpeg.Options{Quality: 100}); err != nil {
+		t.Fatal(err)
+	}
+	plain := buf.Bytes()
+
+	// SOI, fill + a comment segment (so a fill run before a skipped segment is exercised too), fill + APP1 Exif.
+	withFill := append([]byte{}, plain[:2]...)
+	withFill = append(withFill, 0xFF, 0xFF, 0xFF, 0xFE, 0, 4, 'h', 'i', 0xFF, 0xFF)
+	withFill = append(withFill, exifAPP1(6)...) // orientation 6 = rotate 90 CW
+	withFill = append(withFill, plain[2:]...)
+
+	if got := jpegOrigin(withFill); got != 6 {
+		t.Fatalf("jpegOrigin = %d, want 6", got)
+	}
+	codec := jpegCodec()
+	info, ok := codec.DecodeInfo(withFill)
+	if !ok {
+		t.Fatal("DecodeInfo failed")
+	}
+	if info.Width != 2 || info.Height != 4 {
+		t.Fatalf("DecodeInfo dims %dx%d, want 2x4", info.Width, info.Height)
+	}
+	p, err := codec.Decode(withFill)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Info.Width != 2 || p.Info.Height != 4 {
+		t.Fatalf("Decode dims %dx%d, want 2x4", p.Info.Width, p.Info.Height)
+	}
+	// Rotate 90 CW: src(3,0) (brightest, ~190) → dst(1,3); src(0,0) (~40) → dst(1,0); row 1 (dark ~20) → column 0.
+	bright := p.Bytes[3*int(p.RowElems)+1]
+	dim := p.Bytes[0*int(p.RowElems)+1]
+	dark := p.Bytes[3*int(p.RowElems)+0]
+	if bright < 150 || dim > 90 || dark > 90 {
+		t.Fatalf("rotated gray bright=%d dim=%d dark=%d", bright, dim, dark)
+	}
+}
+
+func TestJPEGOriginMalformed(t *testing.T) {
+	// Truncated and fill-only tails must fall back to orientation 1 rather than panic or read out of bounds.
+	for i, data := range [][]byte{
+		{0xFF, 0xD8},
+		{0xFF, 0xD8, 0xFF},
+		{0xFF, 0xD8, 0xFF, 0xFF},
+		{0xFF, 0xD8, 0xFF, 0xFF, 0xFF, 0xFF},
+		{0xFF, 0xD8, 0xFF, 0xFF, 0xE1},
+		{0xFF, 0xD8, 0xFF, 0xE1, 0x00},
+		{0xFF, 0xD8, 0xFF, 0xE1, 0x00, 0x01}, // segLen < 2
+		{0xFF, 0xD8, 0xFF, 0xE1, 0xFF, 0xFF}, // segLen past the end
+		{0xFF, 0xD8, 0xFF, 0xD0, 0xFF, 0xD9}, // standalone markers only
+		{0xFF, 0xD8, 0x00, 0xE1, 0x00, 0x08}, // missing marker prefix
+		{0xFF, 0xD8, 0xFF, 0xDA, 0x00, 0x02}, // SOS: stop scanning
+	} {
+		if got := jpegOrigin(data); got != 1 {
+			t.Fatalf("case %d: jpegOrigin = %d, want 1", i, got)
+		}
 	}
 }
 

@@ -50,24 +50,33 @@ func jpegCodec() imagecore.Codec {
 func jpegOrigin(data []byte) int {
 	// Walk JPEG segments looking for APP1 "Exif\0\0".
 	i := 2 // skip SOI
-	for i+4 <= len(data) {
+	for i+1 < len(data) {
 		if data[i] != 0xFF {
 			return 1
 		}
-		marker := data[i+1]
-		if marker == 0xD8 || (marker >= 0xD0 && marker <= 0xD9) { // standalone markers
-			i += 2
-			continue
+		// ITU T.81 §B.1.1.2 permits any number of 0xFF fill bytes before a marker, so the marker is the first
+		// non-0xFF byte after the marker prefix.
+		m := i + 1
+		for m < len(data) && data[m] == 0xFF {
+			m++
 		}
-		if i+4 > len(data) {
+		if m >= len(data) {
 			return 1
 		}
-		segLen := int(binary.BigEndian.Uint16(data[i+2:]))
-		if segLen < 2 || i+2+segLen > len(data) {
+		marker := data[m]
+		if marker >= 0xD0 && marker <= 0xD9 { // standalone markers (RSTn, SOI, EOI)
+			i = m + 1
+			continue
+		}
+		if m+3 > len(data) {
+			return 1
+		}
+		segLen := int(binary.BigEndian.Uint16(data[m+1:]))
+		if segLen < 2 || m+1+segLen > len(data) {
 			return 1
 		}
 		if marker == 0xE1 { // APP1
-			seg := data[i+4 : i+2+segLen]
+			seg := data[m+3 : m+1+segLen]
 			if o := exifOrientation(seg); o != 0 {
 				return o
 			}
@@ -75,7 +84,7 @@ func jpegOrigin(data []byte) int {
 		if marker == 0xDA { // start of scan: no more headers
 			return 1
 		}
-		i += 2 + segLen
+		i = m + 1 + segLen
 	}
 	return 1
 }

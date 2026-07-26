@@ -302,7 +302,7 @@ func (d *BitmapDevice) DrawRRect(rrect geom.RRect, paint *Paint) {
 // DrawArc implements Device by lowering the arc to a path; the lowering routes through drawPathImpl so it tiles like
 // DrawPath.
 func (d *BitmapDevice) DrawArc(oval geom.Rect, startAngle, sweepAngle float32, useCenter bool, paint *Paint) {
-	isFillNoPathEffect := paint.Style == StyleFill // no path effects in this slice
+	isFillNoPathEffect := paint.Style == StyleFill && paint.PathEffect == nil
 	p := path.CreateDrawArcPath(oval, startAngle, sweepAngle, useCenter, isFillNoPathEffect)
 	d.drawPathImpl(p, paint, true)
 }

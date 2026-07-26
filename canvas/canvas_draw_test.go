@@ -17,6 +17,7 @@ import (
 	"github.com/richardwilkes/canvas/geom"
 	"github.com/richardwilkes/canvas/maskfilter"
 	"github.com/richardwilkes/canvas/path"
+	"github.com/richardwilkes/canvas/patheffect"
 	"github.com/richardwilkes/canvas/raster"
 	"github.com/richardwilkes/canvas/shaders"
 )
@@ -39,6 +40,15 @@ func pixmapsEqual(t *testing.T, a, b *raster.Pixmap, what string) {
 			t.Fatalf("%s: pixel (%d,%d): %08x vs %08x", what, int32(i)%a.Width, int32(i)/a.Width, a.Pix[i], b.Pix[i])
 		}
 	}
+}
+
+func equalPixmaps(a, b *raster.Pixmap) bool {
+	for i := range a.Pix {
+		if a.Pix[i] != b.Pix[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // TestDrawRectMatchesPathUnderRotation verifies the drawRect path-fallback lane (non-rect-stays-rect CTM) is identical
@@ -101,6 +111,34 @@ func TestDrawArcMatchesCreateDrawArcPath(t *testing.T) {
 		viaPath.DrawPath(p, paint)
 
 		pixmapsEqual(t, pixA, pixB, "drawArc vs CreateDrawArcPath")
+	}
+}
+
+// TestDrawArcFullSweepWithPathEffect verifies a fill-style paint carrying a path effect does not take the
+// convert-to-oval shortcut in the arc lowering: the effect must see the same arc geometry the PDF and GPU devices feed
+// it, not an AddOval replacement.
+func TestDrawArcFullSweepWithPathEffect(t *testing.T) {
+	oval := geom.RectLTRB(10, 10, 70, 60)
+	for _, useCenter := range []bool{false, true} {
+		paint := NewPaint()
+		paint.Color = colorcore.Color(0xFF157015)
+		paint.AntiAlias = true
+		paint.PathEffect = patheffect.MakeDash([]float32{9, 5}, 0)
+
+		viaArc, pixA := newWhiteCanvasWH(90, 80)
+		viaArc.DrawArc(oval, 30, 360, useCenter, paint)
+
+		viaPath, pixB := newWhiteCanvasWH(90, 80)
+		viaPath.DrawPath(path.CreateDrawArcPath(oval, 30, 360, useCenter, false), paint)
+
+		pixmapsEqual(t, pixA, pixB, "dashed full-sweep drawArc vs CreateDrawArcPath")
+
+		// Guard against the comparison being vacuous: the oval shortcut really does produce different pixels here.
+		viaOval, pixC := newWhiteCanvasWH(90, 80)
+		viaOval.DrawPath(path.CreateDrawArcPath(oval, 30, 360, useCenter, true), paint)
+		if equalPixmaps(pixB, pixC) {
+			t.Fatalf("useCenter=%v: oval shortcut is indistinguishable, test proves nothing", useCenter)
+		}
 	}
 }
 

@@ -418,14 +418,25 @@ func (o *triangulatingPathOp) OnPrepare(state *OpFlushState) {
 	}
 }
 
+// releaseVertexData drops the ref taken on the cached vertex data in createNonAAMesh, if it is still held.
+func (o *triangulatingPathOp) releaseVertexData() {
+	if o.vertexData != nil {
+		o.vertexData.Unref()
+		o.vertexData = nil
+	}
+}
+
+// recycle implements Op. This op has no free list, but the ref createNonAAMesh takes on the ThreadSafeCache's vertex
+// data must be dropped even when the op is never executed — a prepared task can be abandoned before its execute loop
+// (a failed AttachStencilAttachment, or a target that lost its instantiation between the prepare and execute passes),
+// and without this the cache entry could never become uniquely held, so DropUniqueRefs could never purge it and the GPU
+// vertex buffer would stay pinned for the context's lifetime. deleteOps calls this unconditionally, matching upstream's
+// release from the op's destructor.
+func (o *triangulatingPathOp) recycle() { o.releaseVertexData() }
+
 // OnExecute implements Op. It explicitly releases the op's vertex-data ref once the draw has been submitted.
 func (o *triangulatingPathOp) OnExecute(state *OpFlushState, chainBounds geom.Rect) {
-	defer func() {
-		if o.vertexData != nil {
-			o.vertexData.Unref()
-			o.vertexData = nil
-		}
-	}()
+	defer o.releaseVertexData()
 	if o.programInfo == nil || o.mesh == nil {
 		return
 	}

@@ -326,6 +326,90 @@ func TestBMP(t *testing.T) {
 	}
 }
 
+// makeV4BMP builds a 32bpp BMP with a BITMAPV4HEADER, the only 32bpp layout whose alpha channel x/image/bmp honors
+// (bmp.Encode always writes the 40-byte BITMAPINFOHEADER, whose alpha is forced opaque on decode). px holds
+// unpremultiplied RGBA in top-down row order.
+func makeV4BMP(w, h int, px []color.NRGBA) []byte {
+	const fileHeaderLen, v4InfoHeaderLen = 14, 108
+	stride := 4 * w
+	out := make([]byte, fileHeaderLen+v4InfoHeaderLen+stride*h)
+	copy(out, "BM")
+	binary.LittleEndian.PutUint32(out[2:], uint32(len(out)))
+	binary.LittleEndian.PutUint32(out[10:], fileHeaderLen+v4InfoHeaderLen) // pixel offset
+	binary.LittleEndian.PutUint32(out[14:], v4InfoHeaderLen)
+	binary.LittleEndian.PutUint32(out[18:], uint32(w))
+	binary.LittleEndian.PutUint32(out[22:], uint32(h))
+	binary.LittleEndian.PutUint16(out[26:], 1)  // planes
+	binary.LittleEndian.PutUint16(out[28:], 32) // bpp
+	binary.LittleEndian.PutUint32(out[34:], uint32(stride*h))
+	binary.LittleEndian.PutUint32(out[54:], 0x00FF0000) // red mask
+	binary.LittleEndian.PutUint32(out[58:], 0x0000FF00) // green mask
+	binary.LittleEndian.PutUint32(out[62:], 0x000000FF) // blue mask
+	binary.LittleEndian.PutUint32(out[66:], 0xFF000000) // alpha mask
+	for y := range h {
+		row := out[fileHeaderLen+v4InfoHeaderLen+(h-1-y)*stride:] // bottom-up
+		for x := range w {
+			c := px[y*w+x]
+			row[4*x], row[4*x+1], row[4*x+2], row[4*x+3] = c.B, c.G, c.R, c.A // BGRA
+		}
+	}
+	return out
+}
+
+func TestBMPAlpha(t *testing.T) {
+	// A 32bpp V4 BMP carries real transparency, so both the reported info and the decoded pixels must say premul.
+	px := []color.NRGBA{
+		{R: 10, G: 20, B: 30, A: 0},
+		{R: 40, G: 50, B: 60, A: 0xFF},
+		{R: 200, G: 100, B: 50, A: 128},
+		{R: 1, G: 2, B: 3, A: 0xFF},
+	}
+	im := decodeVia(t, makeV4BMP(2, 2, px))
+	if im.Width() != 2 || im.Height() != 2 {
+		t.Fatalf("v4 dims %dx%d", im.Width(), im.Height())
+	}
+	if im.AlphaType() != imagecore.AlphaTypePremul {
+		t.Fatalf("v4 alpha %v", im.AlphaType())
+	}
+	p := im.PeekPixels(imagecore.CachingAllow)
+	if p.Info.AlphaType != im.AlphaType() || p.Info.ColorType != im.ColorType() {
+		t.Fatalf("v4 decoded info %v/%v != reported %v/%v", p.Info.ColorType, p.Info.AlphaType, im.ColorType(),
+			im.AlphaType())
+	}
+	if p.Words[0] != 0 {
+		t.Fatalf("v4 transparent pixel %08x", p.Words[0])
+	}
+	if got := p.Words[2] >> 24; got != 128 {
+		t.Fatalf("v4 translucent alpha %d", got)
+	}
+	if got := p.Words[2] & 0xFF; got != uint32((200*128+128+(200*128+128)>>8)>>8) { // premul red, round-to-nearest
+		t.Fatalf("v4 translucent red %d", got)
+	}
+
+	// A 32bpp BITMAPINFOHEADER BMP (what bmp.Encode writes for a translucent image) has its alpha forced opaque by the
+	// decoder, so the reported info must say opaque rather than trusting the *image.NRGBA it decodes to.
+	var buf bytes.Buffer
+	if err := bmp.Encode(&buf, testNRGBA()); err != nil {
+		t.Fatal(err)
+	}
+	if bpp := binary.LittleEndian.Uint16(buf.Bytes()[28:]); bpp != 32 {
+		t.Fatalf("expected a 32bpp encode, got %dbpp", bpp)
+	}
+	im = decodeVia(t, buf.Bytes())
+	if im.AlphaType() != imagecore.AlphaTypeOpaque {
+		t.Fatalf("v3 alpha %v", im.AlphaType())
+	}
+	p = im.PeekPixels(imagecore.CachingAllow)
+	if p.Info.AlphaType != im.AlphaType() {
+		t.Fatalf("v3 decoded alpha %v != reported %v", p.Info.AlphaType, im.AlphaType())
+	}
+	for i, w := range p.Words {
+		if w>>24 != 0xFF {
+			t.Fatalf("v3 pixel %d not opaque: %08x", i, w)
+		}
+	}
+}
+
 func TestWebPEncodeDecode(t *testing.T) {
 	src := testNRGBA()
 	im0 := imagecore.NewRasterData(

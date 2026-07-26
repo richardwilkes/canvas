@@ -13,7 +13,6 @@ import (
 	"bytes"
 	"encoding/binary"
 	"image"
-	"image/color"
 	"image/draw"
 	"image/gif"
 
@@ -71,6 +70,19 @@ func gifCodec() imagecore.Codec {
 ///////////////////////////////////////////////////////////////////////////////
 // BMP
 
+// bmpAllowsAlpha sniffs the DIB header for the one layout whose alpha channel survives decoding: 32bpp with a header
+// larger than BITMAPINFOHEADER (a V4/V5 header). x/image/bmp forces alpha to 0xFF for every other layout, and neither
+// end of its API surfaces the distinction — DecodeConfig reports color.RGBAModel for both 24bpp and 32bpp (so an
+// NRGBAModel test is dead), while every 32bpp BMP decodes to an *image.NRGBA (so an image-type test over-reports). Both
+// DecodeInfo and Decode go through here so they agree, per the imagecore.Codec contract.
+func bmpAllowsAlpha(data []byte) bool {
+	const fileHeaderLen, infoHeaderLen = 14, 40
+	if len(data) < fileHeaderLen+infoHeaderLen {
+		return false
+	}
+	return binary.LittleEndian.Uint16(data[28:]) == 32 && binary.LittleEndian.Uint32(data[14:]) > infoHeaderLen
+}
+
 func bmpCodec() imagecore.Codec {
 	return imagecore.Codec{
 		Name:    "bmp",
@@ -80,7 +92,7 @@ func bmpCodec() imagecore.Codec {
 			if err != nil {
 				return imagecore.ImageInfo{}, false
 			}
-			return makeDecodedInfo(cfg.Width, cfg.Height, false, cfg.ColorModel == color.NRGBAModel), true
+			return makeDecodedInfo(cfg.Width, cfg.Height, false, bmpAllowsAlpha(data)), true
 		},
 		Decode: func(data []byte) (*imagecore.Pixels, error) {
 			m, err := bmp.Decode(bytes.NewReader(data))
@@ -88,8 +100,7 @@ func bmpCodec() imagecore.Codec {
 				return nil, err
 			}
 			b := m.Bounds()
-			_, isNRGBA := m.(*image.NRGBA)
-			return pixelsFromImage(m, makeDecodedInfo(b.Dx(), b.Dy(), false, isNRGBA)), nil
+			return pixelsFromImage(m, makeDecodedInfo(b.Dx(), b.Dy(), false, bmpAllowsAlpha(data))), nil
 		},
 	}
 }

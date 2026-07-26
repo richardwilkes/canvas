@@ -316,6 +316,69 @@ func TestManagerMatchFamilyStyleCharacter(t *testing.T) {
 	}
 }
 
+// langSetOf builds the fontscan language set for the given BCP-47 tags.
+func langSetOf(t *testing.T, langs ...string) fontscan.LangSet {
+	t.Helper()
+	var set fontscan.LangSet
+	for _, lang := range langs {
+		id, ok := language.NewLangID(language.NewLanguage(lang))
+		if !ok {
+			t.Fatalf("unknown test language %q", lang)
+		}
+		set.Add(id)
+	}
+	return set
+}
+
+func TestManagerMatchCharacterBCP47Fallthrough(t *testing.T) {
+	// A BCP-47 tag whose candidates all fail the cmap verification (or fail to load) must not fail closed: the search
+	// continues with the next less-significant tag and then the unrestricted scan, exactly as the named-family pass
+	// does. The contract promises nil only when no known font covers the character.
+	roboto := func() *faceRec { return newTestFaceRec(t, "Roboto-Regular.ttf", 0, "en") }
+	// A liar: the footprint claims NUL (as the fontconfig-leg CI machines' DejaVuSans-ExtraLight does) but its cmap
+	// maps NUL to glyph 0. Roboto maps NUL to a real glyph.
+	newLiar := func(langs ...string) *faceRec {
+		f := newTestFaceRec(t, "DejaVuSans.subset.ttf", 0, langs...)
+		f.runes.Add(0)
+		return f
+	}
+	m := newManager([]*faceRec{newLiar("fr"), roboto()})
+	if tf := m.MatchFamilyStyleCharacter("", font.NormalStyle(), []string{"en", "fr"}, 0); tf == nil ||
+		tf.FamilyName() != "Roboto" {
+		t.Errorf("bcp47 [en fr] with a lying fr candidate = %v, want Roboto (fall through to en)", tf)
+	}
+	// The genuinely covering face carries no language tag at all: the unrestricted scan must still find it.
+	m = newManager([]*faceRec{newLiar("fr"), newTestFaceRec(t, "Roboto-Regular.ttf", 0)})
+	if tf := m.MatchFamilyStyleCharacter("", font.NormalStyle(), []string{"fr"}, 0); tf == nil ||
+		tf.FamilyName() != "Roboto" {
+		t.Errorf("bcp47 [fr] with a lying fr candidate = %v, want Roboto (unrestricted scan)", tf)
+	}
+	// Same for a candidate that cannot be loaded: the footprint claims 'x' but the file has vanished.
+	ghost := &faceRec{
+		key:    "ghost",
+		path:   "../font/testdata/does-not-exist.ttf",
+		runes:  newTestFaceRec(t, "DejaVuSans.subset.ttf", 0).runes,
+		langs:  langSetOf(t, "fr"),
+		approx: font.NormalStyle(),
+	}
+	m = newManager([]*faceRec{ghost, roboto()})
+	if tf := m.MatchFamilyStyleCharacter("", font.NormalStyle(), []string{"en", "fr"}, 'x'); tf == nil ||
+		tf.FamilyName() != "Roboto" {
+		t.Errorf("bcp47 [en fr] with an unloadable fr candidate = %v, want Roboto (fall through to en)", tf)
+	}
+	// Falling through never invents coverage: when nothing genuinely covers the character the answer is still nil.
+	m = newManager([]*faceRec{newLiar("fr"), newTestFaceRec(t, "test.ttc", 0, "en")})
+	if tf := m.MatchFamilyStyleCharacter("", font.NormalStyle(), []string{"en", "fr"}, 0); tf != nil {
+		t.Errorf("bcp47 [en fr] with no genuine coverage = %v, want nil", tf)
+	}
+	// A tag with a genuinely covering candidate still wins over the less significant ones (no over-eager fall-through).
+	m = newManager([]*faceRec{newTestFaceRec(t, "DejaVuSans.subset.ttf", 0, "fr"), roboto()})
+	if tf := m.MatchFamilyStyleCharacter("", font.NormalStyle(), []string{"en", "fr"}, 'x'); tf == nil ||
+		tf.FamilyName() != "DejaVu Sans" {
+		t.Errorf("bcp47 [en fr] = %v, want DejaVu Sans (fr most significant and covering)", tf)
+	}
+}
+
 func TestManagerUnloadableFace(t *testing.T) {
 	// A face whose file has vanished since the scan: metadata falls back to the footprint aspect, typeface creation
 	// fails, and style matching skips it in rank order rather than failing.

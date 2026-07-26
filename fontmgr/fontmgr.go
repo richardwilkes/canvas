@@ -281,8 +281,11 @@ func (m *Manager) MatchFamilyStyleCharacter(familyName string, style font.Style,
 			}
 		}
 	}
-	// BCP-47 pass: most significant tag last. The first tag (scanning back to front) with covering fonts restricts the
-	// candidate set; if none match, any font with the character will do.
+	// BCP-47 pass: most significant tag last. Each tag (scanning back to front) restricts the candidate set to the fonts
+	// claiming both the rune and the language; the first tag whose restricted set yields a verified covering face wins.
+	// A tag with candidates that all fail verification (a lying footprint) or fail to load falls through to the next
+	// less-significant tag and finally to the unrestricted scan, as the named-family pass above does — the contract
+	// promises nil only when no known font covers the character.
 	for i := len(bcp47) - 1; i >= 0; i-- {
 		id, ok := language.NewLangID(language.NewLanguage(bcp47[i]))
 		if !ok {
@@ -295,7 +298,9 @@ func (m *Manager) MatchFamilyStyleCharacter(familyName string, style font.Style,
 			}
 		}
 		if len(candidates) != 0 {
-			return m.matchCoveringTiered(candidates, style, r)
+			if tf := m.matchCoveringTiered(candidates, style, r); tf != nil {
+				return tf
+			}
 		}
 	}
 	return m.matchCoveringTiered(m.all, style, r)

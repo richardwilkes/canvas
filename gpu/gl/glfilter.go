@@ -226,6 +226,10 @@ func (a *blurAlgorithm) Blur(sigma geom.Size, src *filtercore.SpecialImage, srcB
 		if uploaded == nil {
 			return nil
 		}
+		// The image's own proxy ref would pin the uploaded texture for the context's lifetime; the shared image-proxy
+		// cache and the blur's op stream keep it alive for as long as this blur needs it, so drop that ref once the
+		// blur has been recorded (a plain view, like every other lane here, does not ref).
+		defer uploaded.Release()
 		view = uploaded.View()
 		colorType = uploaded.ColorType()
 	}

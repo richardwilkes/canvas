@@ -29,6 +29,10 @@ func Borrow() *Path {
 // next Borrow. After Recycle the caller must treat p (and any slice previously obtained from it) as invalid.
 func Recycle(p *Path) {
 	p.Rewind()
+	// Rewind restores the fields tied to the geometry, but deliberately preserves the volatile flag (an attribute of
+	// the path object, not of its contents). The pool hands the object itself to an unrelated caller, so the flag has
+	// to be cleared here to honor Borrow's freshly-constructed contract.
+	p.isVolatile = false
 	pathPool.Put(p)
 }
 

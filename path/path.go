@@ -159,8 +159,10 @@ const (
 // Path is a sequence of verbs with associated points and conic weights, plus a fill type and lazily-computed bounds and
 // convexity caches. The zero value is an empty path with a winding fill.
 //
-// A Path is not safe for concurrent use unless it is immutable and its lazy caches have been primed (call Bounds
-// first).
+// A Path is not safe for concurrent use unless it is immutable and every one of its lazy caches has been primed, since
+// each is written by the first reader that needs it: the bounds and finiteness cache (call Bounds or IsFinite), the
+// convexity cache (call GetConvexity or IsConvex) and the generation ID (call GenerationID). Priming only some of them
+// leaves the rest to race.
 type Path struct {
 	points       []geom.Point
 	verbs        []Verb
@@ -386,8 +388,11 @@ func (p *Path) SetLastPt(x, y float32) {
 		p.MoveTo(x, y)
 	} else {
 		p.points[n-1] = geom.Pt(x, y)
+		// Moving a point changes the geometry, so the bounds, the simple-shape identity and everything dirtyAfterEdit
+		// covers (convexity, generation ID) must all be invalidated.
 		p.boundsValid = false
-		p.genID = 0
+		p.isa = isAGeneral
+		p.dirtyAfterEdit()
 	}
 }
 

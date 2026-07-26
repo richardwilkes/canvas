@@ -112,11 +112,10 @@ func (it *Iter) IsClosedContour() bool {
 		i++ // skip the initial moveto
 	}
 	for i < len(verbs) {
-		// verbs points one beyond the current verb, decrement first
 		v := verbs[i]
 		i++
 		if v == VerbMove {
-			break
+			break // the next contour started, so this one has no close
 		}
 		if v == VerbClose {
 			return true

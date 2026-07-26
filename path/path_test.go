@@ -11,6 +11,7 @@ package path
 
 import (
 	"math"
+	"sync"
 	"testing"
 
 	"github.com/richardwilkes/canvas/geom"
@@ -384,6 +385,90 @@ func TestLastPtAndSetLastPt(t *testing.T) {
 	p = New()
 	p.SetLastPt(1, 1)
 	checkVerbs(t, p, VerbMove)
+}
+
+// TestSetLastPtInvalidatesCaches covers the caches that moving the last point has to dirty: the bounds, the cached
+// convexity and the simple-shape (oval/rrect) identity.
+func TestSetLastPtInvalidatesCaches(t *testing.T) {
+	// A rect is convex; pulling its last corner into the middle makes it concave.
+	p := New().AddRect(geom.RectLTRB(0, 0, 10, 10), geom.DirectionCW)
+	if c := p.GetConvexity(); !c.IsConvex() {
+		t.Fatalf("rect convexity = %v, want convex", c)
+	}
+	p.SetLastPt(8, 3) // inside the triangle formed by the other three corners, making that vertex reflex
+	if c := p.GetConvexity(); c != ConvexityConcave {
+		t.Errorf("convexity after SetLastPt = %v, want concave (stale cache)", c)
+	}
+
+	// The bounds must shrink to match the moved point.
+	p = New().MoveTo(0, 0).LineTo(10, 0).LineTo(10, 10)
+	if got := p.Bounds(); got != geom.RectLTRB(0, 0, 10, 10) {
+		t.Fatalf("bounds = %v", got)
+	}
+	p.SetLastPt(2, 3)
+	if got := p.Bounds(); got != geom.RectLTRB(0, 0, 10, 3) {
+		t.Errorf("bounds after SetLastPt = %v, want (0,0,10,3)", got)
+	}
+
+	// An oval that has had a point moved is no longer an oval.
+	p = New().AddOval(geom.RectLTRB(0, 0, 10, 20), geom.DirectionCW)
+	if _, ok := p.IsOval(); !ok {
+		t.Fatal("AddOval did not record the oval identity")
+	}
+	p.SetLastPt(-5, -5)
+	if _, ok := p.IsOval(); ok {
+		t.Error("path is still reported as an oval after SetLastPt")
+	}
+
+	// A rrect that has had a point moved is no longer a rrect.
+	p = New().AddRRect(geom.MakeRRect(geom.RectLTRB(0, 0, 10, 20), 3, 3), geom.DirectionCW)
+	if p.isa != isARRect {
+		t.Fatal("AddRRect did not record the rrect identity")
+	}
+	p.SetLastPt(-5, -5)
+	if p.isa != isAGeneral {
+		t.Error("path is still reported as a rrect after SetLastPt")
+	}
+}
+
+// TestPrimedPathConcurrentReads exercises the concurrency contract on the Path doc: an immutable path is safe to share
+// only once every lazy cache has been primed. Under -race this fails if any of the reads below still writes to the
+// path, which is what a new lazy cache (or a missing entry in the documented priming sequence) would do.
+func TestPrimedPathConcurrentReads(t *testing.T) {
+	// Built vertex by vertex, so nothing pre-seeds the convexity the way AddRect does.
+	p := New().MoveTo(0, 0).LineTo(10, 0).LineTo(10, 10).LineTo(0, 10).Close()
+
+	// Bounds alone is not sufficient: it leaves the convexity and generation-ID caches unwritten.
+	p.Bounds()
+	if p.convexity != ConvexityUnknown {
+		t.Fatal("Bounds unexpectedly primed the convexity cache")
+	}
+	if p.genID != 0 {
+		t.Fatal("Bounds unexpectedly primed the generation ID")
+	}
+
+	// The full priming sequence named in the type doc.
+	p.Bounds()
+	p.IsFinite()
+	p.GetConvexity()
+	p.GenerationID()
+
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_ = p.Bounds()
+			_ = p.IsFinite()
+			_ = p.GetConvexity()
+			_ = p.IsConvex()
+			_ = p.GenerationID()
+			_, _ = p.IsOval()
+			_, _ = p.IsLine()
+			_, _ = p.IsRect()
+		}()
+	}
+	wg.Wait()
 }
 
 func TestIsLine(t *testing.T) {

@@ -72,10 +72,16 @@ var glyphRunBuilderPool = sync.Pool{New: func() any { return &GlyphRunBuilder{} 
 // backing arrays live on the builder and are overwritten by the next borrower.
 func AcquireGlyphRunBuilder() *GlyphRunBuilder { return glyphRunBuilderPool.Get().(*GlyphRunBuilder) }
 
-// ReleaseGlyphRunBuilder returns a builder to the pool, dropping the external references its retained list holds (the
-// source blob) so a pooled builder does not pin them while idle; the scratch backing arrays are kept for reuse.
+// ReleaseGlyphRunBuilder returns a builder to the pool, dropping the external references its retained list and run
+// scratch hold (the source blob, and each run's font and glyph slice) so a pooled builder does not pin them while idle;
+// the scratch backing arrays are kept for reuse.
 func ReleaseGlyphRunBuilder(b *GlyphRunBuilder) {
 	b.list = GlyphRunList{}
+	// Zero every run element, including those past the current length that an earlier, longer draw left behind, since
+	// each still points at a font and a glyph slice owned by whatever was last drawn.
+	runs := b.runs[:cap(b.runs)]
+	clear(runs)
+	b.runs = runs[:0]
 	glyphRunBuilderPool.Put(b)
 }
 

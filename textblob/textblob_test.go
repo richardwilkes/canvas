@@ -416,3 +416,51 @@ func TestGlyphRunBuilderPoolReuse(t *testing.T) {
 		t.Error("Release must clear the retained list's blob reference")
 	}
 }
+
+// TestReleaseGlyphRunBuilderClearsRuns verifies Release drops every external reference an idle pooled builder would
+// otherwise pin: not just the retained list's blob, but the run scratch's per-run font and glyph-slice pointers,
+// including the elements past the current length that an earlier, longer draw left stranded. The scratch capacity must
+// survive so reuse stays allocation-free.
+func TestReleaseGlyphRunBuilderClearsRuns(t *testing.T) {
+	f := loadFont(t, 24)
+	blobBig := mixedBlob(f, glyphsFor(f, "abcdef"), 50)
+
+	b := AcquireGlyphRunBuilder()
+	if n := len(b.BlobToGlyphRunList(blobBig, geom.Pt(1, 1)).Runs); n != 3 {
+		t.Fatalf("expected 3 runs from the big blob, got %d", n)
+	}
+	// A shorter draw strands the big blob's trailing runs past the slice length.
+	b.TextToGlyphRunList(f, nil, []byte("Hi"), font.TextEncodingUTF8, geom.Pt(0, 0))
+	capBefore := cap(b.runs)
+	if capBefore < 3 {
+		t.Fatalf("run scratch capacity %d, want at least 3", capBefore)
+	}
+	if stranded := b.runs[:capBefore][len(b.runs):]; len(stranded) == 0 || stranded[0].Font == nil {
+		t.Fatal("expected the big blob's runs to remain past the slice length")
+	}
+
+	ReleaseGlyphRunBuilder(b)
+
+	if b.list.Blob != nil {
+		t.Error("Release must clear the retained list's blob reference")
+	}
+	if cap(b.runs) != capBefore {
+		t.Errorf("run scratch capacity %d after Release, want %d (backing array must be kept)", cap(b.runs), capBefore)
+	}
+	if len(b.runs) != 0 {
+		t.Errorf("run scratch length %d after Release, want 0", len(b.runs))
+	}
+	for i, run := range b.runs[:cap(b.runs)] {
+		if run.Font != nil || run.Glyphs != nil || run.Positions != nil {
+			t.Errorf("run %d still holds references after Release: %+v", i, run)
+		}
+	}
+
+	// A released builder must still be usable, and reuse must not reallocate the kept scratch.
+	if n := len(b.BlobToGlyphRunList(blobBig, geom.Pt(1, 1)).Runs); n != 3 {
+		t.Fatalf("expected 3 runs after reuse, got %d", n)
+	}
+	if cap(b.runs) != capBefore {
+		t.Errorf("run scratch reallocated on reuse: capacity %d, want %d", cap(b.runs), capBefore)
+	}
+}

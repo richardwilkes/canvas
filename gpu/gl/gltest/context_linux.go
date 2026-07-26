@@ -28,6 +28,7 @@ import (
 	"errors"
 	"fmt"
 	"runtime"
+	"sync"
 	"unsafe"
 
 	"github.com/ebitengine/purego"
@@ -95,6 +96,23 @@ func ptrFromUintptr(p uintptr) unsafe.Pointer {
 	return *(*unsafe.Pointer)(unsafe.Pointer(&p))
 }
 
+// The X error handler installed during setup is stateless (it swallows the error and returns 0), so a single
+// process-wide callback is created once and shared by every context, rather than leaking a purego.NewCallback slot per
+// New(). purego never releases callback slots and hard-caps them at 2000, panicking once they are exhausted, so a
+// per-context callback would eventually take down a process that cycles New()/Destroy() enough times. This mirrors the
+// windows leg's shared window procedure.
+var (
+	xErrorHandlerOnce sync.Once
+	xErrorHandlerCB   uintptr
+)
+
+func xErrorHandlerCallback() uintptr {
+	xErrorHandlerOnce.Do(func() {
+		xErrorHandlerCB = purego.NewCallback(func(_ /* Display* */, _ /* XErrorEvent* */ uintptr) uintptr { return 0 })
+	})
+	return xErrorHandlerCB
+}
+
 func (p *platformContext) init() error {
 	runtime.LockOSThread()
 	p.locked = true
@@ -147,8 +165,7 @@ func (p *platformContext) init() error {
 	// Ignore X protocol errors during setup so an unsupported context/pbuffer request returns NULL instead of the
 	// default Xlib handler calling exit(). glXCreateContextAttribsARB is the classic offender: a rejected
 	// version/profile raises a GLXBadFBConfig/BadMatch X error, which would otherwise terminate the process.
-	handler := purego.NewCallback(func(_ /* Display* */, _ /* XErrorEvent* */ uintptr) uintptr { return 0 })
-	prevHandler := glxRawCall(p.xSetErrorHandler, handler)
+	prevHandler := glxRawCall(p.xSetErrorHandler, xErrorHandlerCallback())
 	defer glxRawCall(p.xSetErrorHandler, prevHandler)
 
 	// Open the default X display (Xvfb's in CI, via DISPLAY). No server => headless, so skip.

@@ -298,6 +298,65 @@ func TestClipToW0(t *testing.T) {
 	}
 }
 
+// TestClipToW0PerspectiveLocal verifies that clipping a perspective quad whose local coordinates also have perspective
+// keeps every output vertex's local coordinate consistent with the projective map that took device space to local
+// space in the unclipped quad. Because the clipped vertices are interpolated per-channel, an incorrectly rotated local
+// w (r) channel silently mispositions the texture without disturbing the device geometry, so the invariant is checked
+// on the projected (u/r, v/r) values rather than on the raw channels.
+func TestClipToW0PerspectiveLocal(t *testing.T) {
+	r := geom.Rect{Right: 15, Bottom: 15}
+
+	// Device transform: w = 1 - 0.05x - 0.05y, so only the (15, 15) corner falls behind the w = 0 plane.
+	devM := geom.IdentityMatrix()
+	devM.Set(geom.MPersp0, -0.05)
+	devM.Set(geom.MPersp1, -0.05)
+
+	// Local transform: a different perspective matrix, so the local w differs per lane (no splat) and each lane's
+	// value is distinct.
+	locM := geom.IdentityMatrix()
+	locM.SetAll(0.5, 0.125, 3, -0.25, 0.75, -2, 0.03, -0.017, 1)
+
+	quad := DrawQuad{
+		Device:    MakeQuadFromRect(r, &devM),
+		Local:     MakeQuadFromRect(r, &locM),
+		EdgeFlags: gpu.QuadAAFlagsAll,
+	}
+	if !quad.Local.HasPerspective() {
+		t.Fatal("the local quad must have perspective for this test to be meaningful")
+	}
+
+	// The composite map taking a device-space homogeneous point to its local-space homogeneous point.
+	devInv, ok := devM.Invert()
+	if !ok {
+		t.Fatal("the device matrix must be invertible")
+	}
+	var devToLocal geom.Matrix
+	devToLocal.SetConcat(&locM, &devInv)
+	m := devToLocal.As9()
+	project := func(x, y, w float32) (float32, float32) {
+		u := m[0]*x + m[1]*y + m[2]*w
+		v := m[3]*x + m[4]*y + m[5]*w
+		lw := m[6]*x + m[7]*y + m[8]*w
+		return u / lw, v / lw
+	}
+
+	var extra DrawQuad
+	if got := ClipToW0(&quad, &extra); got != 2 {
+		t.Fatalf("one vertex behind: got %d quads, want 2", got)
+	}
+
+	for _, q := range []*DrawQuad{&quad, &extra} {
+		for i := range 4 {
+			x, y, w := q.Device.Point3(i)
+			wantU, wantV := project(x, y, w)
+			got := q.Local.Point(i)
+			if math.Abs(float64(got.X-wantU)) > 1e-3 || math.Abs(float64(got.Y-wantV)) > 1e-3 {
+				t.Fatalf("vertex %d local = (%v, %v), want (%v, %v)", i, got.X, got.Y, wantU, wantV)
+			}
+		}
+	}
+}
+
 func TestWillUseHairline(t *testing.T) {
 	identity := geom.IdentityMatrix()
 	thin := MakeQuadFromRect(geom.Rect{Left: 10, Top: 10, Right: 10.4, Bottom: 20}, &identity)

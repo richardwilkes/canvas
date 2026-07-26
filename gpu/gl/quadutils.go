@@ -518,7 +518,7 @@ func ClipToW0(quad, extraVertices *DrawQuad) int {
 	v.w = f4IfThenElse(notValid, clip.w, f4IfThenElse(notCW, mid.w, v.w))
 	v.u = f4IfThenElse(notValid, nextCW(clip.u), f4IfThenElse(notCW, mid.u, v.u))
 	v.v = f4IfThenElse(notValid, nextCW(clip.v), f4IfThenElse(notCW, mid.v, v.v))
-	v.r = f4IfThenElse(notValid, clip.r, f4IfThenElse(notCW, mid.r, v.r))
+	v.r = f4IfThenElse(notValid, nextCW(clip.r), f4IfThenElse(notCW, mid.r, v.r))
 	// The non-AA edge for this quad is the clipped vertex's edge.
 	var v1EdgeFlag gpu.QuadAAFlags
 	switch {

@@ -230,10 +230,13 @@ func (d *Device) DrawPaint(paint *canvas.Paint) {
 	if d.hasEmptyClip() {
 		return
 	}
-	// Clip is in device space; the shader (if any) would be transformed into device space here.
+	// Clip is in device space, so the shader (if any) is transformed into device space too.
 	bbox := d.clipStack.bounds(d.bounds()).RoundOut().ToRect()
 	np := *paint
 	np.Style = canvas.StyleFill
+	if np.Shader != nil {
+		transformShader(&np, &d.localToDevice)
+	}
 	identity := geom.IdentityMatrix()
 	d.internalDrawPath(d.clipStack, &identity, rectPath(bbox), &np, true)
 }
@@ -869,6 +872,9 @@ func (d *Device) internalDrawPath(clipStack *ClipStack, ctm *geom.Matrix, origPa
 		}
 		transformed.Transform(&matrix)
 		pathPtr = transformed
+		if paint.Shader != nil {
+			transformShader(&paint, &matrix) // the content entry runs at identity below
+		}
 		matrix = geom.IdentityMatrix()
 	}
 
@@ -972,12 +978,16 @@ func (d *Device) handleInversePath(origPath *path.Path, srcPaint *canvas.Paint) 
 		}
 	}
 
+	// Clip is in device space, so both the path and the shader are transformed into device space.
 	bounds := d.clipStack.bounds(d.bounds())
 	modified := pathPtr.Clone()
 	modified.Transform(&d.localToDevice)
 	inv, ok := pathops.Op(rectPath(bounds), modified, pathops.Intersect)
 	if !ok {
 		return false
+	}
+	if paint.Shader != nil {
+		transformShader(&paint, &d.localToDevice)
 	}
 	identity := geom.IdentityMatrix()
 	d.internalDrawPath(d.clipStack, &identity, inv, &paint, true)

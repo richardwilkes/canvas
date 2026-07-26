@@ -202,9 +202,24 @@ func populateCommonFontDescriptor(descriptor *Dict, m *font.AdvancedMetrics, emS
 	}
 }
 
+// insertFontProgram inserts the /FontFile2 entry — the embedded font program stream, with its uncompressed size in
+// /Length1 — into a FontDescriptor. A typeface whose asset couldn't be read yields no bytes; the entry is then omitted
+// entirely rather than embedding an empty program with /Length1 0 that the CIDFontType2 descendant would still point
+// at. Reports whether the program was embedded.
+func insertFontProgram(doc *Document, descriptor *Dict, data []byte) bool {
+	if len(data) == 0 {
+		return false
+	}
+	streamDict := NewDict()
+	streamDict.InsertInt("Length1", int32(len(data)))
+	descriptor.InsertRef("FontFile2", doc.StreamOut(streamDict, data, true))
+	return true
+}
+
 // emitFont emits the full object graph for one CIDFontType2 (TrueType) font: the FontDescriptor with the full FontFile2
-// program, the CIDFontType2 descendant (Identity CIDToGIDMap, /W widths, /DW default), and the Type0 wrapper
-// (Identity-H, /ToUnicode). Called once per font at document close.
+// program (omitted when the font program is unavailable, as upstream does), the CIDFontType2 descendant (Identity
+// CIDToGIDMap, /W widths, /DW default), and the Type0 wrapper (Identity-H, /ToUnicode). Called once per font at
+// document close.
 func emitFont(doc *Document, f *pdfFont) {
 	tf := f.typeface
 	m := doc.getFontMetrics(tf)
@@ -217,9 +232,7 @@ func emitFont(doc *Document, f *pdfFont) {
 	populateCommonFontDescriptor(descriptor, m, emSize, 0)
 
 	data, _ := tf.FontData()
-	streamDict := NewDict()
-	streamDict.InsertInt("Length1", int32(len(data)))
-	descriptor.InsertRef("FontFile2", doc.StreamOut(streamDict, data, true))
+	insertFontProgram(doc, descriptor, data)
 
 	newCIDFont := NewTypedDict("Font")
 	newCIDFont.InsertRef("FontDescriptor", doc.Emit(descriptor))

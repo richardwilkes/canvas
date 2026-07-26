@@ -10,13 +10,16 @@
 package pdf
 
 import (
+	"bytes"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/richardwilkes/canvas/canvas"
 	"github.com/richardwilkes/canvas/colorcore"
 	"github.com/richardwilkes/canvas/font"
+	"github.com/richardwilkes/canvas/stream"
 )
 
 // loadTestTypeface loads the Roboto TrueType face shared with the font package's testdata.
@@ -106,6 +109,65 @@ func TestTextEmitsCIDFontType2(t *testing.T) {
 	// A /Font resource entry is present in some /Resources dict.
 	if dictContaining(data, "/Font") == "" {
 		t.Error("no /Resources /Font subdict")
+	}
+}
+
+func TestFontProgramOmittedWhenUnavailable(t *testing.T) {
+	var buf stream.MemoryWStream
+	doc := NewDocument(&buf, DefaultMetadata())
+	descriptor := NewTypedDict("FontDescriptor")
+	size := descriptor.Size()
+	written := buf.BytesWritten()
+	for _, data := range [][]byte{nil, {}} {
+		if insertFontProgram(doc, descriptor, data) {
+			t.Errorf("empty font program (%v) reported as embedded", data)
+		}
+	}
+	if descriptor.Size() != size {
+		t.Errorf("empty font program added an entry to the descriptor: %s", emitToString(descriptor))
+	}
+	if buf.BytesWritten() != written {
+		t.Errorf("empty font program emitted a stream object: %s", buf.Bytes()[written:])
+	}
+
+	// A real program is embedded, with its uncompressed length in /Length1.
+	program := []byte(strings.Repeat("font program bytes; ", 32))
+	if !insertFontProgram(doc, descriptor, program) {
+		t.Fatal("non-empty font program not embedded")
+	}
+	body := emitToString(descriptor)
+	mustContain(t, body, "/FontFile2")
+	if buf.BytesWritten() == written {
+		t.Error("non-empty font program emitted no stream object")
+	}
+	mustContain(t, string(buf.Bytes()[written:]), "/Length1 "+strconv.Itoa(len(program)))
+}
+
+// emitToString serializes an object to its PDF representation.
+func emitToString(o Object) string {
+	var buf stream.MemoryWStream
+	o.emit(&buf)
+	return string(buf.Bytes())
+}
+
+func TestTextEmbedsWholeFontProgram(t *testing.T) {
+	raw, err := os.ReadFile("../font/testdata/Roboto-Regular.ttf")
+	if err != nil {
+		t.Fatalf("read font: %v", err)
+	}
+	tf, err := font.NewTypefaceFromData(raw, 0)
+	if err != nil {
+		t.Fatalf("parse font: %v", err)
+	}
+	f := font.NewFont(tf, 20, 1, 0)
+	paint := canvas.NewPaint()
+	data := renderPDF(t, 200, 100, func(c *canvas.Canvas) {
+		c.DrawSimpleText([]byte("Hi"), font.TextEncodingUTF8, 10, 50, f, paint)
+	})
+	validatePDF(t, data)
+	// The FontFile2 stream carries the full (unsubsetted) font program, so /Length1 is the whole file's size.
+	if !bytes.Contains(data, []byte("/Length1 "+strconv.Itoa(len(raw)))) {
+		t.Errorf("no FontFile2 stream with /Length1 %d", len(raw))
 	}
 }
 

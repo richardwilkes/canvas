@@ -22,6 +22,7 @@ import (
 	"github.com/richardwilkes/canvas/geom"
 	"github.com/richardwilkes/canvas/gpu"
 	"github.com/richardwilkes/canvas/path"
+	"github.com/richardwilkes/canvas/raster"
 	"github.com/richardwilkes/canvas/surface"
 )
 
@@ -158,5 +159,104 @@ func TestDMSAAStencilEscalation(t *testing.T) {
 		geom.Rect{Right: 8, Bottom: 8}, nil)
 	if !sdc.GetOpsTask().UsesMSAASurface() {
 		t.Fatal("stencil-carrying draw did not escalate to the MSAA surface under DMSAA")
+	}
+}
+
+// newDMSAAClipTestSDC is newDMSAATestSDC at an explicit size, for the clip-lane tests below.
+func newDMSAAClipTestSDC(t *testing.T, dc *DirectContext, w, h int32, dynamicMSAA bool) *SurfaceDrawContext {
+	t.Helper()
+	var props *surface.Props
+	if dynamicMSAA {
+		props = &surface.Props{Flags: surface.DynamicMSAAFlag}
+	}
+	sdc := MakeSurfaceDrawContextWithProps(dc, gpu.ColorTypeRGBA8888,
+		geom.ISize{Width: w, Height: h}, gpu.BackingFitExact, 1, gpu.MipmappedNo,
+		gpu.OriginTopLeft, gpu.BudgetedYes, "dmsaa-clip-test", props)
+	if sdc == nil {
+		t.Fatal("MakeSurfaceDrawContextWithProps failed")
+	}
+	return sdc
+}
+
+// dmsaaConcaveClipPath is the concave AA path clip TestClipStackApplySWMask uses: too complex for an analytic coverage
+// FP, so it lands on either the SW mask lane or the stencil lane.
+func dmsaaConcaveClipPath() *path.Path {
+	p := &path.Path{}
+	p.MoveTo(10, 10)
+	p.LineTo(54, 10)
+	p.LineTo(32, 30) // notch back toward the center
+	p.LineTo(54, 54)
+	p.LineTo(10, 54)
+	p.Close()
+	return p
+}
+
+// TestDMSAAClipUsesStencilNotSWMask: on a DMSAA surface the mask-requiring clip elements belong in the stencil buffer
+// DMSAA is about to promote, not in a CPU-rasterized SW mask. The surface reports one sample, so a decision that looks
+// only at NumSamples() sees "1 sample + AA mask" and wrongly takes the SW mask lane for every such draw — changing the
+// coverage produced and paying a mask rasterization plus upload per draw.
+func TestDMSAAClipUsesStencilNotSWMask(t *testing.T) {
+	dc := newShaderRecordingContext(t)
+	sdc := newDMSAAClipTestSDC(t, dc, 64, 64, true)
+	defer sdc.Release()
+	if !sdc.CanUseDynamicMSAA() {
+		t.Fatal("DMSAA surface props did not enable dynamic MSAA")
+	}
+	if !sdc.AsRenderTargetProxy().CanUseStencil(sdc.Caps()) {
+		t.Skip("the fake driver's caps cannot attach a stencil buffer")
+	}
+
+	// forceAA mirrors what NewDevice does for a DMSAA target: every element carries AAYes.
+	cs := NewClipStack(deviceBounds64(), true)
+	identity := geom.IdentityMatrix()
+	cs.ClipPath(&identity, dmsaaConcaveClipPath(), gpu.AAYes, raster.ClipIntersect)
+
+	op, bounds := applyTestOp(geom.Rect{Left: 0, Top: 0, Right: 64, Bottom: 64})
+	out := MakeAppliedClip(sdc.Dimensions())
+	if effect := cs.Apply(sdc, op, gpu.AATypeMSAA, &out, &bounds); effect != ClipEffectClipped {
+		t.Fatalf("effect = %v, want clipped", effect)
+	}
+	if !out.HasStencilClip() {
+		t.Fatal("a DMSAA target must rasterize the remaining clip elements into the stencil buffer")
+	}
+	if len(cs.masks) != 0 {
+		t.Fatalf("SW masks recorded = %d, want 0 on a DMSAA target", len(cs.masks))
+	}
+
+	// The same clip on a plain 1-sample surface still takes the SW mask lane: the DMSAA term must not disable the
+	// software fallback where it is genuinely needed.
+	plain := newDMSAAClipTestSDC(t, dc, 64, 64, false)
+	defer plain.Release()
+	csPlain := NewClipStack(deviceBounds64(), false)
+	csPlain.ClipPath(&identity, dmsaaConcaveClipPath(), gpu.AAYes, raster.ClipIntersect)
+	op, bounds = applyTestOp(geom.Rect{Left: 0, Top: 0, Right: 64, Bottom: 64})
+	out = MakeAppliedClip(plain.Dimensions())
+	if effect := csPlain.Apply(plain, op, gpu.AATypeCoverage, &out, &bounds); effect != ClipEffectClipped {
+		t.Fatalf("plain effect = %v, want clipped", effect)
+	}
+	if len(csPlain.masks) != 1 {
+		t.Fatalf("plain SW masks = %d, want 1", len(csPlain.masks))
+	}
+	if out.HasStencilClip() {
+		t.Fatal("a 1-sample non-DMSAA target must use the SW mask, not the stencil")
+	}
+}
+
+// TestDMSAAStencilMaskHelperUsesMSAA: StencilMaskHelper.supportedAA reports the AA a stencil clip-mask draw may use.
+// A DMSAA target reports one sample but promotes stencil draws onto an MSAA attachment, so its clip-mask draws must be
+// issued AA; dropping the DMSAA term renders every stencil clip edge hard-aliased.
+func TestDMSAAStencilMaskHelperUsesMSAA(t *testing.T) {
+	dc := newShaderRecordingContext(t)
+
+	dmsaa := newDMSAAClipTestSDC(t, dc, 32, 32, true)
+	defer dmsaa.Release()
+	if got := NewStencilMaskHelper(dmsaa).supportedAA(gpu.AANo); got != gpu.AAYes {
+		t.Fatalf("DMSAA supportedAA = %v, want AAYes", got)
+	}
+
+	plain := newDMSAAClipTestSDC(t, dc, 32, 32, false)
+	defer plain.Release()
+	if got := NewStencilMaskHelper(plain).supportedAA(gpu.AAYes); got != gpu.AANo {
+		t.Fatalf("1-sample supportedAA = %v, want AANo (no MSAA available)", got)
 	}
 }

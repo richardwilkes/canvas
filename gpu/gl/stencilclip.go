@@ -230,9 +230,10 @@ func (h *StencilMaskHelper) drawStencilRect(clip Clip, ss *UserStencilSettings, 
 	h.sdc.StencilRect(clip, ss, paint, aa, matrix, rect, nil)
 }
 
-// supportedAA reports the AA to actually use: MSAA is the only type of AA possible on a stencil buffer.
+// supportedAA reports the AA to actually use: MSAA is the only type of AA possible on a stencil buffer. A DMSAA surface
+// reports one sample but promotes to an MSAA attachment for stencil draws, so it counts as MSAA-capable here.
 func (h *StencilMaskHelper) supportedAA(gpu.AA) gpu.AA {
-	return gpu.AA(h.sdc.NumSamples() > 1)
+	return gpu.AA(h.sdc.NumSamples() > 1 || h.sdc.canUseDynamicMSAA)
 }
 
 // DrawRect merges rect into the clip mask under op.

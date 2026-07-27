@@ -173,10 +173,17 @@ type platformContext struct {
 
 // winCall invokes a resolved Win32/WGL entry point with integer/pointer arguments only (no by-value floats), which
 // covers every function used here; syscall.SyscallN places every argument in the integer registers and has no way to
-// reach the float bank, the same constraint glxRawCall carries on the Linux leg. Because it wraps syscall.SyscallN
-// (rather than being syscall.SyscallN itself), the compiler's automatic pointer-liveness rule for syscall wrappers does
-// not apply, so callers must runtime.KeepAlive any object whose address is passed as a uintptr until after the call
-// returns (the Linux leg has the same requirement).
+// reach the float bank, the same constraint glxRawCall carries on the Linux leg.
+//
+// The //go:uintptrescapes tag is the GC-stack contract, matching the tag glxRawCall carries on the Linux leg and the
+// one gpu/gl puts on glCall: syscall.SyscallN's own //go:uintptrkeepalive only covers conversions written at its own
+// call site and needs an all-nosplit chain, and this splittable forwarder passes an already-built []uintptr with no
+// pointer provenance left. Without the tag, a Go pointer converted at a winCall call site (e.g.
+// uintptr(unsafe.Pointer(&wc)) below) could stay on the stack and be moved by a stack growth before the Win32 call
+// reads it, leaving the driver writing to a stale address; runtime.KeepAlive cannot substitute, since it keeps an
+// object alive without pinning it in place.
+//
+//go:uintptrescapes
 func winCall(fn uintptr, args ...uintptr) uintptr {
 	r, _, _ := syscall.SyscallN(fn, args...)
 	return r

@@ -280,11 +280,17 @@ func (c *ThreadSafeCache) FindVertsWithData(key *gpu.UniqueKey) (verts *VertexDa
 	return e.vertData, e.key.CustomData()
 }
 
-// AddVertsWithData adds vertData under key unless an entry already exists, in which case isNewerBetter decides whether
-// the existing payload is replaced (orphaning prior uses but keeping the best version in the cache). Returns a ref on
-// the cached vertex data plus the stored key's custom data; the caller's vertData ref is consumed.
+// AddVertsWithData adds vertData under key unless a vertex-data entry already exists, in which case isNewerBetter
+// decides whether the existing payload is replaced (orphaning prior uses but keeping the best version in the cache). A
+// collision with a view entry has no incumbent vertex data to compare against or hand back, so that entry is dropped in
+// favor of this one, mirroring internalAddView's handling of the opposite collision. Returns a ref on the cached vertex
+// data plus the stored key's custom data; the caller's vertData ref is consumed.
 func (c *ThreadSafeCache) AddVertsWithData(key *gpu.UniqueKey, vertData *VertexData, isNewerBetter IsNewerBetter) (verts *VertexData, data []byte) {
 	e := c.entries[key.MapKey()]
+	if e != nil && e.tag != tscTagVertData {
+		c.dropEntry(e)
+		e = nil
+	}
 	switch {
 	case e == nil:
 		e = &tscEntry{key: *key, tag: tscTagVertData, vertData: vertData}

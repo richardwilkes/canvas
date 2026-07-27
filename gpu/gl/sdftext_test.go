@@ -16,6 +16,7 @@
 package gl
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 
@@ -338,3 +339,46 @@ func TestSDFTextDFOpsDoNotMergeWithCoverage(t *testing.T) {
 	}
 	dc.FlushAndSubmit(false)
 }
+
+// TestSDFTextLCDLastPageLookupIsUnconditional: appendMultitextureLookupLCD must close the sampler chain with an
+// unconditional else, the way appendMultitextureLookup does for bitmap text. `distance` is declared uninitialized and
+// texIdx is an interpolated float varying, so an equality test on the last page leaves `distance` undefined on any
+// interpolation imprecision and produces garbage LCD-SDF text. With a single active atlas page the emitted lookup must
+// carry no tex-index comparison at all.
+func TestSDFTextLCDLastPageLookupIsUnconditional(t *testing.T) {
+	dc := newShaderRecordingContext(t)
+	sdc := lcdTestSDC(t, dc, 512, 512)
+	defer sdc.Release()
+
+	op := drawSDFTestText(t, sdc, 200, 30, font.EdgingSubpixelAntiAlias, "L")
+	if op.maskType != maskTypeLCDDistanceField {
+		t.Fatalf("mask type = %d, want LCD distance field", op.maskType)
+	}
+
+	frags := flushAndFragmentSources(dc)
+	// numActiveViews is filled in by OnPrepare, so it is only meaningful after the flush above.
+	if op.numActiveViews != 1 {
+		t.Fatalf("active atlas views = %d, want 1 (the single-page case this test pins)",
+			op.numActiveViews)
+	}
+	var df string
+	for _, src := range frags {
+		if strings.Contains(src, "DistanceAdjust") {
+			df = src
+			break
+		}
+	}
+	if df == "" {
+		t.Fatal("no fragment shader carries the LCD DistanceAdjust uniform")
+	}
+	if !strings.Contains(df, "vec3 distance;") {
+		t.Fatalf("expected the uninitialized distance declaration this test guards:\n%s", df)
+	}
+	if lcdTexIndexCompareRE.MatchString(df) {
+		t.Errorf("the last atlas page's lookup is guarded by a tex-index comparison, leaving "+
+			"distance undefined when the comparison fails:\n%s", df)
+	}
+}
+
+// lcdTexIndexCompareRE matches an equality test against the TexIndex varying (named by nameVariable('v', "TexIndex")).
+var lcdTexIndexCompareRE = regexp.MustCompile(`\w*TexIndex\w*\s*==`)

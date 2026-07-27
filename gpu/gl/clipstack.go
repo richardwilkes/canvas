@@ -1546,7 +1546,7 @@ func (cs *ClipStack) Apply(sdc *SurfaceDrawContext, op DrawOp, aa gpu.AAType, ou
 		stencilUnavailable := !sdc.AsRenderTargetProxy().CanUseStencil(caps)
 
 		hasSWMask := false
-		if (sdc.NumSamples() <= 1 && maskRequiresAA) || stencilUnavailable {
+		if (sdc.NumSamples() <= 1 && !sdc.canUseDynamicMSAA && maskRequiresAA) || stencilUnavailable {
 			// Must use a texture mask to represent the combined elements since the stencil cannot be used or cannot
 			// handle smooth clips.
 			clipFP, hasSWMask = cs.getSWMaskFP(ctx, current, scissorBounds, elementsForMask,

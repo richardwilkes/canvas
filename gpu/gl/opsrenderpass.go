@@ -214,7 +214,7 @@ func (g *Gpu) beginCommandBuffer(rt *RenderTarget, useMultisampleFBO bool, color
 		g.disableWindowRectangles()
 		g.fns().Clear(clearMask)
 		if clearMask&COLOR_BUFFER_BIT != 0 {
-			g.didWriteToSurface(rt.Surface())
+			g.didWriteToSurface(rt.Surface(), 1)
 		}
 	}
 }

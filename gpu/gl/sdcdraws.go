@@ -51,7 +51,7 @@ func (sdc *SurfaceDrawContext) DrawRect(clip Clip, paint *Paint, aa gpu.AA, view
 		sdc.FillRectToRect(clip, paint, aa, viewMatrix, rect, rect)
 		return
 	} else if (style.Style() == stroke.StyleStroke || style.Style() == stroke.StyleHairline) &&
-		rect.Width() != 0 && rect.Height() != 0 {
+		!sdc.Caps().ReducedShaderMode() && rect.Width() != 0 && rect.Height() != 0 {
 		// Only use the StrokeRectOp for non-empty rectangles. Empty rectangles will be processed by the styled-shape
 		// lane to handle stroke caps and dashing properly.
 		//
@@ -72,7 +72,9 @@ func (sdc *SurfaceDrawContext) DrawRect(clip Clip, paint *Paint, aa gpu.AA, view
 			return
 		}
 	}
-	styled := MakeStyledShapeRect(rect, MakeStyle(*style), DoSimplifyYes)
+	// Left unsimplified deliberately: drawShapeUsingPathRenderer simplifies itself, and only a simplification it
+	// performs sets StyledShape.Simplified, which is what lets it retry the dedicated ops.
+	styled := MakeStyledShapeRect(rect, MakeStyle(*style), DoSimplifyNo)
 	sdc.drawShapeUsingPathRenderer(clip, paint, aa, viewMatrix, &styled, false)
 }
 
@@ -120,7 +122,7 @@ func (sdc *SurfaceDrawContext) DrawRRect(clip Clip, paint *Paint, aa gpu.AA, vie
 		return
 	}
 
-	styled := MakeStyledShapeRRect(rrect, MakeStyle(*style), DoSimplifyYes)
+	styled := MakeStyledShapeRRect(rrect, MakeStyle(*style), DoSimplifyNo)
 	sdc.drawShapeUsingPathRenderer(clip, paint, aa, viewMatrix, &styled, false)
 }
 
@@ -172,7 +174,7 @@ func (sdc *SurfaceDrawContext) DrawOval(clip Clip, paint *Paint, aa gpu.AA, view
 	// specific starting point.
 	styled := MakeStyledShapeRRectWithWinding(
 		geom.MakeRRect(oval, oval.Width()/2, oval.Height()/2), geom.DirectionCW, 2, false,
-		MakeStyle(*style), DoSimplifyYes,
+		MakeStyle(*style), DoSimplifyNo,
 	)
 	sdc.drawShapeUsingPathRenderer(clip, paint, aa, viewMatrix, &styled, false)
 }
@@ -197,7 +199,7 @@ func (sdc *SurfaceDrawContext) DrawArc(clip Clip, paint *Paint, aa gpu.AA, viewM
 	}
 
 	styled := MakeStyledShapeArc(oval, startAngle, sweepAngle, useCenter, MakeStyle(*style),
-		DoSimplifyYes)
+		DoSimplifyNo)
 	sdc.drawShapeUsingPathRenderer(clip, paint, aa, viewMatrix, &styled, false)
 }
 

@@ -660,3 +660,33 @@ func TestProxyRefReleasesTarget(t *testing.T) {
 		t.Fatal("last proxy unref should make the surface purgeable")
 	}
 }
+
+// TestProxyDeinstantiateReleasesTarget: Deinstantiate drops the proxy's own ref on the backing surface, not just the
+// pointer to it. DrawOpAtlas.deactivateLastPage relies on this to let a retired atlas page's texture become purgeable;
+// leaving the ref behind pins that memory for the context's lifetime.
+func TestProxyDeinstantiateReleasesTarget(t *testing.T) {
+	dc := newFakeDirectContext(t)
+	dims := geom.ISize{Width: 8, Height: 8}
+	proxy := makeDeferredProxy(t, dc, dims, gpu.RenderableNo, gpu.BackingFitExact)
+	defer proxy.Unref()
+	if !proxy.Instantiate(dc.ResourceProvider()) {
+		t.Fatal("Instantiate failed")
+	}
+	surf := proxy.PeekSurface()
+	if surf.IsPurgeable() {
+		t.Fatal("surface should be held by the proxy's ref")
+	}
+
+	proxy.Deinstantiate()
+	if proxy.IsInstantiated() {
+		t.Fatal("Deinstantiate must leave the proxy uninstantiated")
+	}
+	if !surf.IsPurgeable() {
+		t.Fatal("Deinstantiate must drop the proxy's ref so the backing surface becomes purgeable")
+	}
+
+	// The proxy is reusable: it can be given a fresh backing surface again.
+	if !proxy.Instantiate(dc.ResourceProvider()) {
+		t.Fatal("re-Instantiate after Deinstantiate failed")
+	}
+}

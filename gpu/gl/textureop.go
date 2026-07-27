@@ -38,9 +38,9 @@ func axisAlignedQuadSize(quad *Quad) (w, h float32) {
 
 func scalarFraction(x float32) float32 { return float32(math.Mod(float64(x), 1)) }
 
-// FilterAndMipmapHaveNoEffect reports whether filtering and/or mipmapping would have no visible effect for the given
-// src/dst quad pair.
-func FilterAndMipmapHaveNoEffect(srcQuad, dstQuad *Quad) (filter, mm bool) {
+// FilterAndMipmapHaveEffect reports whether filtering and mipmapping would each have a visible effect for the given
+// src/dst quad pair. A false result means the corresponding mode can be safely downgraded to nearest / no mipmaps.
+func FilterAndMipmapHaveEffect(srcQuad, dstQuad *Quad) (filter, mm bool) {
 	// If not axis-aligned in src or dst, then always say it has an effect.
 	if srcQuad.QuadType() != QuadTypeAxisAligned ||
 		dstQuad.QuadType() != QuadTypeAxisAligned {
@@ -479,7 +479,7 @@ func NewTextureOp(caps *Caps, proxyView SurfaceProxyView, srcAlphaType gpu.Alpha
 	}
 
 	if filter != gpu.FilterModeNearest || mm != gpu.MipmapModeNone {
-		mustFilter, mustMM := FilterAndMipmapHaveNoEffect(&quad.Local, &quad.Device)
+		mustFilter, mustMM := FilterAndMipmapHaveEffect(&quad.Local, &quad.Device)
 		if !mustFilter {
 			filter = gpu.FilterModeNearest
 		}
@@ -525,7 +525,7 @@ func (sdc *SurfaceDrawContext) DrawTexture(clip Clip, view SurfaceProxyView, src
 		deviceQuad := MakeQuadFromRect(dstRect, viewMatrix)
 		srcQuad := MakeQuadFromRectNoTransform(srcRect)
 		// deviceQuad is passed first; only alignment matters here, not the direction of scaling.
-		mustFilter, _ := FilterAndMipmapHaveNoEffect(&deviceQuad, &srcQuad)
+		mustFilter, _ := FilterAndMipmapHaveEffect(&deviceQuad, &srcQuad)
 		if !mustFilter {
 			// Filtering that has no effect is dropped so a pixel-aligned blit stays exact.
 			filter = gpu.FilterModeNearest

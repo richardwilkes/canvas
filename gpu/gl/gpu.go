@@ -1166,16 +1166,24 @@ func (g *Gpu) Clear(scissor *gpu.ScissorState, color [4]float32, target *RenderT
 	g.flushColorWrite(true)
 	g.flushClearColor(color)
 	g.fns().Clear(COLOR_BUFFER_BIT)
-	g.didWriteToSurface(target.Surface())
+	g.didWriteToSurface(target.Surface(), 1)
 }
 
-// didWriteToSurface records that the surface was written to: writing to a texture dirties its mipmaps.
-func (g *Gpu) didWriteToSurface(surface *Surface) {
+// didWriteToSurface records that the surface was written to. Writing a single level to a texture dirties its mipmaps;
+// a write that supplied the whole chain (mipLevels > 1) leaves it clean, since the caller's levels are exactly what a
+// regeneration would have produced.
+func (g *Gpu) didWriteToSurface(surface *Surface, mipLevels int) {
 	if surface.ReadOnly() {
 		panic("wrote to read-only surface")
 	}
 	if tex := surface.AsTexture(); tex != nil {
-		tex.MarkMipmapsDirty()
+		// A texture with no mip storage cannot be marked clean (MarkMipmapsClean rejects that state), so the level
+		// count only matters once the chain exists.
+		if mipLevels > 1 && tex.MipmapStatus() != gpu.MipmapStatusNotAllocated {
+			tex.MarkMipmapsClean()
+		} else {
+			tex.MarkMipmapsDirty()
+		}
 	}
 }
 

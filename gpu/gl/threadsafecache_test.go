@@ -472,3 +472,47 @@ func TestThreadSafeCacheMixedTags(t *testing.T) {
 		v.Unref()
 	}
 }
+
+// TestAddVertsWithDataOverViewEntry pins the one exported add direction that used to be unguarded: a vertData add
+// colliding with a view entry. isNewerBetter would have been handed a view entry's (non-tess) custom data and both the
+// replace and the keep branch would then have nil-dereferenced e.vertData. The collision must instead drop the view
+// entry — releasing its adopted proxy ref — and install the vertex data, mirroring internalAddView's handling of the
+// opposite collision.
+func TestAddVertsWithDataOverViewEntry(t *testing.T) {
+	c := NewThreadSafeCache()
+	key := tscTestKey(9, nil)
+
+	view := tscTestView()
+	viewProxy := view.Proxy()
+	c.Add(&key, view)
+	if viewProxy.RefCnt() != 1 {
+		t.Fatalf("adopted proxy refCnt = %d, want 1", viewProxy.RefCnt())
+	}
+
+	vd := tscTestVerts(4)
+	vd.Ref() // the copy handed to the cache
+	// isNewerBetter must never be consulted for a cross-tag collision: there is no incumbent vertex data to compare.
+	got, _ := c.AddVertsWithData(&key, vd, func(_, _ []byte) bool {
+		t.Fatal("isNewerBetter must not be called on a view-entry collision")
+		return false
+	})
+	if got != vd {
+		t.Fatal("a view-entry collision must install the caller's vertex data")
+	}
+	got.Unref()
+	if viewProxy.RefCnt() != 0 {
+		t.Fatalf("dropped view proxy refCnt = %d, want 0", viewProxy.RefCnt())
+	}
+	if c.NumEntries() != 1 {
+		t.Fatalf("entries = %d, want 1", c.NumEntries())
+	}
+	// The entry now answers the vertData lane and no longer answers the view lane.
+	if v, _ := c.FindVertsWithData(&key); v == nil {
+		t.Fatal("FindVertsWithData must hit after the replacement")
+	} else {
+		v.Unref()
+	}
+	if v := c.Find(&key); v.IsValid() {
+		t.Fatal("Find must miss: the view entry was replaced")
+	}
+}

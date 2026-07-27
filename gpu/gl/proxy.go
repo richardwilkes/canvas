@@ -426,12 +426,15 @@ func (p *SurfaceProxy) CanSkipResourceAllocator() bool {
 	return !peek.ScratchKey().IsValid()
 }
 
-// Deinstantiate drops the proxy's assigned backing surface, returning it to an uninstantiated state.
+// Deinstantiate drops the proxy's assigned backing surface, returning it to an uninstantiated state. The proxy owns one
+// ref on that surface (see assign), so it is released here; without that the surface can never become purgeable.
 func (p *SurfaceProxy) Deinstantiate() {
 	if !p.IsInstantiated() {
 		panic("deinstantiating an uninstantiated proxy")
 	}
+	target := p.target
 	p.target = nil
+	target.Unref()
 }
 
 // assign gives the proxy its backing surface.

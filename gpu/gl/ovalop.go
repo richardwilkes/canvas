@@ -127,9 +127,14 @@ func makeQuadHelper(state *OpFlushState, vertexStride uint64, quadsToDraw int, m
 }
 
 // findOrCreatePatternedIndexBuffer returns the cached index buffer for the given pattern key, creating it if it doesn't
-// already exist.
+// already exist. The returned buffer is borrowed, not owned, matching RefNonAAQuadIndexBuffer: the creation ref is
+// retained for the context's lifetime, so exactly one ref exists no matter how many ops ask for it. Callers must not
+// unref it.
 func (rp *ResourceProvider) findOrCreatePatternedIndexBuffer(pattern []uint16, patternSize, reps, vertCount int, key *gpu.UniqueKey) *Buffer {
 	if buffer, ok := rp.FindByUniqueKey(key).(*Buffer); ok && buffer != nil {
+		// FindByUniqueKey hands back a caller-owned ref. The creation ref below keeps the buffer alive, so release this
+		// one immediately rather than accumulating one permanent ref per prepared op.
+		buffer.Unref()
 		return buffer
 	}
 	return rp.createPatternedIndexBuffer(pattern, patternSize, reps, vertCount, key)

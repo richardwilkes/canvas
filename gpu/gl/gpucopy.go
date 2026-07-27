@@ -108,7 +108,7 @@ func (g *Gpu) copySurfaceAsCopyTexSubImage(dst, src *Surface, srcRect geom.IRect
 		srcRect.Top, srcRect.Width(), srcRect.Height())
 	g.unbindSurfaceFBOForPixelOps(src, 0, FRAMEBUFFER)
 	// The rect is already in device space so no flip is done (top-left origin).
-	g.didWriteToSurface(dst)
+	g.didWriteToSurface(dst, 1)
 }
 
 // copySurfaceAsBlitFramebuffer copies srcRect in src to dstRect in dst via glBlitFramebuffer, scaling if the rects
@@ -137,6 +137,6 @@ func (g *Gpu) copySurfaceAsBlitFramebuffer(dst, src *Surface, srcRect, dstRect g
 	g.unbindSurfaceFBOForPixelOps(src, 0, READ_FRAMEBUFFER)
 
 	// The rect is already in device space so no flip is done (top-left origin).
-	g.didWriteToSurface(dst)
+	g.didWriteToSurface(dst, 1)
 	return true
 }

@@ -458,3 +458,44 @@ func TestTessellationHelperDegenerateInset(t *testing.T) {
 		}
 	}
 }
+
+// TestFilterAndMipmapHaveEffect pins the polarity of the predicate its two call sites bind as mustFilter/mustMM: it
+// reports whether filtering and mipmapping *do* have a visible effect, so false — not true — is what permits the
+// downgrade to nearest / no mipmaps.
+func TestFilterAndMipmapHaveEffect(t *testing.T) {
+	identity := geom.IdentityMatrix()
+	unit := func(l, t2, r, b float32) Quad {
+		return MakeQuadFromRect(geom.Rect{Left: l, Top: t2, Right: r, Bottom: b}, &identity)
+	}
+
+	// An integer-aligned 1:1 blit: neither filtering nor mipmapping changes a pixel.
+	src := unit(0, 0, 16, 16)
+	dst := unit(32, 48, 48, 64)
+	if filter, mm := FilterAndMipmapHaveEffect(&src, &dst); filter || mm {
+		t.Errorf("aligned 1:1 blit: filter = %v, mm = %v, want both false", filter, mm)
+	}
+
+	// A half-pixel shift breaks the pixel-grid alignment, so filtering matters; the scale is still 1:1, so mipmapping
+	// does not.
+	shifted := unit(32.5, 48.5, 48.5, 64.5)
+	if filter, mm := FilterAndMipmapHaveEffect(&src, &shifted); !filter || mm {
+		t.Errorf("half-pixel shift: filter = %v, mm = %v, want true/false", filter, mm)
+	}
+
+	// Minification: both matter.
+	small := unit(0, 0, 8, 8)
+	if filter, mm := FilterAndMipmapHaveEffect(&src, &small); !filter || !mm {
+		t.Errorf("2x minification: filter = %v, mm = %v, want both true", filter, mm)
+	}
+
+	// A non-axis-aligned quad cannot be reasoned about, so both are reported as having an effect.
+	rot := geom.IdentityMatrix()
+	rot.SetRotatePivot(30, 8, 8)
+	rotated := MakeQuadFromRect(geom.Rect{Right: 16, Bottom: 16}, &rot)
+	if rotated.QuadType() == QuadTypeAxisAligned {
+		t.Fatal("the rotated quad must not classify as axis aligned")
+	}
+	if filter, mm := FilterAndMipmapHaveEffect(&src, &rotated); !filter || !mm {
+		t.Errorf("rotated quad: filter = %v, mm = %v, want both true (conservative)", filter, mm)
+	}
+}

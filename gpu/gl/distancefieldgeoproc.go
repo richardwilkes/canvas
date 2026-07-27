@@ -551,7 +551,13 @@ func appendMultitextureLookupLCD(args *GPEmitArgs, numTextureSamplers int, texId
 		return
 	}
 	for i := 0; i < numTextureSamplers; i++ {
-		fb.CodeAppendf("if (%s == %d.0) {", texIdx.FsIn(), i)
+		if i < numTextureSamplers-1 {
+			fb.CodeAppendf("if (%s == %d.0) {", texIdx.FsIn(), i)
+		} else {
+			// The last page is the unconditional else: texIdx is an interpolated float, so an equality test here would
+			// leave the (uninitialized) distance untouched on any interpolation imprecision.
+			fb.CodeAppend("{")
+		}
 
 		// Green is the distance to the uv center.
 		fb.CodeAppendf("%s.y = %s.r;", distanceName,

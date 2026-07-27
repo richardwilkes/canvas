@@ -839,7 +839,9 @@ func (t *OpsTask) SetInitialStencilContent(initialContent StencilContent) {
 // discarded.
 func (t *OpsTask) SetMustPreserveStencil() { t.mustPreserveStencil = true }
 
-// SetCannotMergeBackward marks that no later task may be merged backward into this one.
+// SetCannotMergeBackward marks that this task may not be merged backward into an earlier one. CanMerge and MergeFrom
+// test the flag on the later of the two tasks, so it belongs on the newly created replacement task, not on the task
+// being protected from it.
 func (t *OpsTask) SetCannotMergeBackward() { t.cannotMergeBackward = true }
 
 // OnMakeSkippable implements RenderTask: clears the task down to a color no-op so it can be skipped entirely.

@@ -519,6 +519,11 @@ func (o *AtlasTextOp) OnPrepare(state *OpFlushState) {
 	flushInfo := atlasTextFlushInfo{
 		indexBuffer: state.ResourceProvider().RefNonAAQuadIndexBuffer(),
 	}
+	if flushInfo.indexBuffer == nil {
+		// The context was abandoned or the shared quad index buffer could not be created; skip the draw rather than
+		// crashing when createDrawForGeneratedGlyphs sizes the pattern from it.
+		return
+	}
 
 	if o.maskType.usesDistanceFields() {
 		o.gp = o.setupDfProcessor(state.Caps().ShaderCaps, &localMatrix, views[:],

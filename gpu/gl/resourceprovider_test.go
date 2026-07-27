@@ -159,3 +159,116 @@ func TestWritePixelsBackendFailureFailsCreation(t *testing.T) {
 		t.Fatalf("resources = %d after purge, want 0 (the failed texture's ref leaked)", n)
 	}
 }
+
+// TestPatternedIndexBuffersAreBorrowed pins the ownership contract of findOrCreatePatternedIndexBuffer: it hands back a
+// borrowed pointer, keeping exactly one ref (the creation ref) for the context's lifetime, exactly like
+// RefNonAAQuadIndexBuffer. The cache-hit path goes through FindAndRefUniqueResource, which takes a ref; none of the ops
+// that ask for these shared buffers ever unrefs, so a ref surviving the lookup accumulates once per prepared op and
+// pins the buffer permanently non-purgeable with an unbounded count.
+func TestPatternedIndexBuffersAreBorrowed(t *testing.T) {
+	dc := newFakeDirectContext(t)
+	defer dc.Destroy()
+	rp := dc.ResourceProvider()
+
+	for _, tc := range []struct {
+		get  func() *Buffer
+		name string
+	}{
+		{func() *Buffer { return getRRectIndexBuffer(rrectGeomFill, rp) }, "fill-rrect"},
+		{func() *Buffer { return getRRectIndexBuffer(rrectGeomStroke, rp) }, "stroke-rrect"},
+		{func() *Buffer { return getStrokeRectIndexBuffer(rp, true) }, "miter-stroke-rect"},
+		{func() *Buffer { return getStrokeRectIndexBuffer(rp, false) }, "bevel-stroke-rect"},
+		{func() *Buffer { return getQuadsIndexBuffer(rp) }, "aa-hairline-quads"},
+		{func() *Buffer { return getLinesIndexBuffer(rp) }, "aa-hairline-lines"},
+	} {
+		first := tc.get()
+		if first == nil {
+			t.Fatalf("%s: index buffer creation failed", tc.name)
+		}
+		if !first.Unique() {
+			t.Errorf("%s: fresh buffer is not uniquely held", tc.name)
+		}
+		// Every subsequent lookup is a cache hit; the shared buffer's ref count must not move.
+		for i := range 4 {
+			again := tc.get()
+			if again != first {
+				t.Fatalf("%s: lookup %d returned a different buffer", tc.name, i)
+			}
+			if !first.Unique() {
+				t.Fatalf("%s: lookup %d leaked a ref (the buffer is no longer uniquely held)",
+					tc.name, i)
+			}
+		}
+	}
+}
+
+// mipTexels builds a full mip chain of solid pixel data for a square power-of-two texture.
+func mipTexels(t *testing.T, side int32, colorType gpu.ColorType) []gpu.MipLevel {
+	t.Helper()
+	levels := make([]gpu.MipLevel, 0, gpu.ComputeMipLevelCount(side, side)+1)
+	bpp := colorType.BytesPerPixel()
+	for w, h := side, side; ; w, h = max(w/2, 1), max(h/2, 1) {
+		levels = append(levels, gpu.MipLevel{
+			Pixels:   make([]byte, int(w)*int(h)*bpp),
+			RowBytes: int(w) * bpp,
+		})
+		if w == 1 && h == 1 {
+			break
+		}
+	}
+	return levels
+}
+
+// TestCreateTextureWithDataFullChainStaysClean: a caller-supplied mip chain must leave the texture's mipmaps clean.
+// Reporting them dirty makes the next sample regenerate the chain with glGenerateMipmap, silently discarding the levels
+// the caller uploaded. CreateTexture compensates for this locally; ResourceProvider.writePixels — the lane
+// CreateTextureWithData takes with MippedYes — does not, so the contract has to hold in WritePixels itself.
+func TestCreateTextureWithDataFullChainStaysClean(t *testing.T) {
+	dc := newFakeDirectContext(t)
+	defer dc.Destroy()
+	rp := dc.ResourceProvider()
+	const (
+		side      = int32(8)
+		colorType = gpu.ColorTypeRGBA8888
+	)
+
+	// Seed a purgeable mipmapped scratch texture so the CreateTextureWithData calls below take the scratch-reuse lane
+	// (ResourceProvider.writePixels), not CreateTexture's own lane — CreateTexture compensates for the mip status
+	// locally, so only the scratch lane exercises the contract in WritePixels itself.
+	seedScratch := func() {
+		t.Helper()
+		seed := rp.CreateTexture(geom.ISize{Width: side, Height: side}, FormatRGBA8,
+			gpu.TextureType2D, gpu.RenderableNo, 1, gpu.MipmappedYes, gpu.BudgetedYes, "scratch-seed")
+		if seed == nil {
+			t.Fatal("scratch seed creation failed")
+		}
+		seed.AsTexture().MarkMipmapsClean() // a recycled texture carries whatever status its last user left
+		seed.Unref()                        // returns it to the cache as purgeable scratch
+	}
+
+	seedScratch()
+	full := rp.CreateTextureWithData(geom.ISize{Width: side, Height: side}, FormatRGBA8,
+		gpu.TextureType2D, colorType, gpu.RenderableNo, 1, gpu.BudgetedYes, gpu.MipmappedYes,
+		mipTexels(t, side, colorType), "full-chain")
+	if full == nil {
+		t.Fatal("CreateTextureWithData with a full mip chain failed")
+	}
+	defer full.Unref()
+	if full.AsTexture().MipmapsAreDirty() {
+		t.Error("a caller-supplied full mip chain must leave the mipmaps clean, not scheduled " +
+			"for regeneration")
+	}
+
+	// The base-only case is the opposite contract: the upper levels really do need generating.
+	seedScratch()
+	baseOnly := rp.CreateTextureWithData(geom.ISize{Width: side, Height: side}, FormatRGBA8,
+		gpu.TextureType2D, colorType, gpu.RenderableNo, 1, gpu.BudgetedYes, gpu.MipmappedYes,
+		mipTexels(t, side, colorType)[:1], "base-only")
+	if baseOnly == nil {
+		t.Fatal("CreateTextureWithData with base-level-only data failed")
+	}
+	defer baseOnly.Unref()
+	if !baseOnly.AsTexture().MipmapsAreDirty() {
+		t.Error("a base-level-only upload must leave the mipmaps dirty")
+	}
+}

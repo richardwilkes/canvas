@@ -146,7 +146,7 @@ func (g *Gpu) didDrawTo(rt *RenderTarget) {
 		panic("color write state must be known after a draw")
 	}
 	if g.hwWriteToColor == triYes {
-		g.didWriteToSurface(rt.Surface())
+		g.didWriteToSurface(rt.Surface(), 1)
 	}
 }
 

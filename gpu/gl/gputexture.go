@@ -459,7 +459,15 @@ func (g *Gpu) WritePixels(surface *Surface, rect geom.IRect, surfaceColorType, s
 		glTex.Target(), rect, srcColorType, texels) {
 		return false
 	}
-	g.didWriteToSurface(surface)
+	// Report how many levels actually carried pixels, not how many were offered: validateTexelLevels permits a
+	// base-only upload with a full-length texels slice, and only a genuinely complete chain leaves the mipmaps clean.
+	levelsWritten := 0
+	for i := range texels {
+		if texels[i].Pixels != nil {
+			levelsWritten++
+		}
+	}
+	g.didWriteToSurface(surface, levelsWritten)
 	return true
 }
 

@@ -146,6 +146,16 @@ func (g *Gpu) TransferPixelsTo(texture *Texture, rect geom.IRect, textureColorTy
 		panic("transfer buffer too small")
 	}
 
+	// External format and type come from the upload data. This is resolved before any GL state is touched so that a
+	// rejected transfer leaves the unpack row length alone, matching readOrTransferPixelsFrom's handling of
+	// PACK_ROW_LENGTH.
+	externalFormat, externalType := g.glCaps().TexSubImageExternalFormatAndType(
+		texture.GLFormat(), textureColorType, bufferColorType,
+	)
+	if externalFormat == 0 || externalType == 0 {
+		return false
+	}
+
 	f := g.fns()
 	restoreGLRowLength := false
 	if trimRowBytes != rowBytes {
@@ -157,14 +167,6 @@ func (g *Gpu) TransferPixelsTo(texture *Texture, rect geom.IRect, textureColorTy
 		restoreGLRowLength = true
 	}
 
-	// External format and type come from the upload data.
-	externalFormat, externalType := g.glCaps().TexSubImageExternalFormatAndType(
-		texture.GLFormat(), textureColorType, bufferColorType,
-	)
-	if externalFormat == 0 || externalType == 0 {
-		return false
-	}
-
 	f.PixelStorei(UNPACK_ALIGNMENT, 1)
 	f.TexSubImage2D(texture.Target(), 0, rect.Left, rect.Top, rect.Width(), rect.Height(),
 		externalFormat, externalType, uintptr(offset))
@@ -172,7 +174,7 @@ func (g *Gpu) TransferPixelsTo(texture *Texture, rect geom.IRect, textureColorTy
 	if restoreGLRowLength {
 		f.PixelStorei(UNPACK_ROW_LENGTH, 0)
 	}
-	g.didWriteToSurface(texture.Surface())
+	g.didWriteToSurface(texture.Surface(), 1)
 	return true
 }
 

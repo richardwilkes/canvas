@@ -690,3 +690,55 @@ func TestGpuResetTextureBindings(t *testing.T) {
 	surf.Unref()
 	g.ResourceCache().PurgeUnlockedResources(gpu.PurgeAllResources)
 }
+
+// TestTransferPixelsToRejectionLeavesRowLengthAlone: a transfer rejected for an unsupported format pairing must not
+// leave GL_UNPACK_ROW_LENGTH set. The rejection returns before the restoring PixelStorei(UNPACK_ROW_LENGTH, 0) the
+// success path performs, so setting it first corrupts every later TexSubImage2D upload on the context that assumes
+// tightly packed rows. The sibling readOrTransferPixelsFrom deliberately does all its early returns before touching
+// PACK_ROW_LENGTH.
+func TestTransferPixelsToRejectionLeavesRowLengthAlone(t *testing.T) {
+	g := newRecordingGpu(t)
+	g.ctx.Interface.Functions.pixelStorei = counterProc("glPixelStorei")
+	if !g.Caps().TransferPixelsToRowBytesSupport || !g.Caps().WritePixelsRowBytesSupport {
+		t.Skip("the fake driver's caps do not support non-tight transfer row bytes")
+	}
+
+	const (
+		side          = int32(4)
+		bufColorType  = gpu.ColorTypeRGBA8888
+		badColorType  = gpu.ColorTypeAlpha8 // not a valid surface color type for FormatRGBA8
+		goodColorType = gpu.ColorTypeRGBA8888
+	)
+	if f, ty := g.glCaps().TexSubImageExternalFormatAndType(FormatRGBA8, badColorType,
+		bufColorType); f != 0 || ty != 0 {
+		t.Skipf("expected an unsupported pairing to reject, got format %#x type %#x", f, ty)
+	}
+
+	surf := g.CreateTexture(geom.ISize{Width: side, Height: side}, FormatRGBA8, gpu.TextureType2D,
+		gpu.RenderableNo, 1, gpu.BudgetedYes, 1, goodColorType, goodColorType, nil, "xfer-dst")
+	if surf == nil {
+		t.Fatal("CreateTexture failed")
+	}
+	defer surf.Unref()
+
+	bpp := uint64(bufColorType.BytesPerPixel())
+	trimRowBytes := uint64(side) * bpp
+	rowBytes := trimRowBytes + 2*bpp // padded, so the transfer engages the UNPACK_ROW_LENGTH lane
+	rp := NewResourceProvider(g, g.ResourceCache())
+	buf := rp.CreateBuffer(rowBytes*uint64(side-1)+trimRowBytes, gpu.BufferTypeXferCpuToGpu,
+		gpu.AccessPatternDynamic, ZeroInitNo)
+	if buf == nil {
+		t.Fatal("CreateBuffer failed")
+	}
+	defer buf.Unref()
+
+	recCounts = map[string]int{}
+	if g.TransferPixelsTo(surf.AsTexture(), geom.IRectSize(geom.ISize{Width: side, Height: side}),
+		badColorType, bufColorType, buf, 0, rowBytes) {
+		t.Fatal("the unsupported pairing must be rejected")
+	}
+	if got := counts("glPixelStorei"); got != 0 {
+		t.Errorf("a rejected transfer issued %d glPixelStorei calls, want 0: the unpack row "+
+			"length must not be left set for the next upload", got)
+	}
+}

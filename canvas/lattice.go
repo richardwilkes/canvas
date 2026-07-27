@@ -21,7 +21,10 @@ type latticeSpec struct {
 	bounds geom.IRect
 }
 
-// validDivs reports whether the divs are strictly increasing and inside (start, end].
+// validDivs reports whether the divs are strictly increasing and inside [start, end]. The inclusive start is
+// deliberate: a first div equal to the bounds edge marks a degenerate leading patch, which is exactly what
+// latticeValid's zeroX/zeroY test and newLatticeIter's xIsScalable/yIsScalable test key off of, so rejecting it here
+// would make those cases unreachable.
 func validDivs(divs []int32, start, end int32) bool {
 	prev := start - 1
 	for _, d := range divs {

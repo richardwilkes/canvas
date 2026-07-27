@@ -59,6 +59,71 @@ func TestValidateAlphaType(t *testing.T) {
 	}
 }
 
+func TestBytesPerPixel(t *testing.T) {
+	// Every entry mirrors Skia's SkColorTypeBytesPerPixel for the equivalent SkColorType.
+	want := map[ColorType]int{
+		ColorTypeUnknown:           0,
+		ColorTypeAlpha8:            1,
+		ColorTypeRGB565:            2,
+		ColorTypeARGB4444:          2,
+		ColorTypeRGBA8888:          4,
+		ColorTypeRGB888x:           4,
+		ColorTypeBGRA8888:          4,
+		ColorTypeRGBA1010102:       4,
+		ColorTypeBGRA1010102:       4,
+		ColorTypeRGB101010x:        4,
+		ColorTypeBGR101010x:        4,
+		ColorTypeBGR101010xXR:      4,
+		ColorTypeBGRA10101010XR:    8,
+		ColorTypeRGBA10x6:          8,
+		ColorTypeGray8:             1,
+		ColorTypeRGBAF16Norm:       8,
+		ColorTypeRGBAF16:           8,
+		ColorTypeRGBF16F16F16x:     8,
+		ColorTypeRGBAF32:           16,
+		ColorTypeR8G8Unorm:         2,
+		ColorTypeA16Float:          2,
+		ColorTypeR16G16Float:       4,
+		ColorTypeA16Unorm:          2,
+		ColorTypeR16G16Unorm:       4,
+		ColorTypeR16G16B16A16Unorm: 8,
+		ColorTypeSRGBA8888:         4,
+		ColorTypeR8Unorm:           1,
+	}
+	for ct := ColorTypeUnknown; ct <= ColorTypeR8Unorm; ct++ {
+		expected, ok := want[ct]
+		if !ok {
+			t.Fatalf("color type %d is missing from the expected table", ct)
+		}
+		if got := ct.BytesPerPixel(); got != expected {
+			t.Errorf("BytesPerPixel(%d) = %d, want %d", ct, got, expected)
+		}
+	}
+}
+
+func TestR8G8UnormIsTwoBytesPerPixel(t *testing.T) {
+	info, ok := MakeInfo(3, 2, ColorTypeR8G8Unorm, AlphaTypeOpaque)
+	if !ok {
+		t.Fatal("MakeInfo rejected R8G8_unorm")
+	}
+	if got := info.MinRowBytes(); got != 6 {
+		t.Fatalf("MinRowBytes = %d, want 6", got)
+	}
+	if p := NewPixels(info); p.U16s == nil || p.Words != nil || p.Bytes != nil {
+		t.Fatalf("wrong storage lane: words=%v u16s=%v bytes=%v", p.Words != nil, p.U16s != nil, p.Bytes != nil)
+	}
+	// A minimally-strided caller buffer (2 bytes per pixel) must be accepted, not rejected as short.
+	p, ok := NewPixelsCopyFromBytes(info, []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}, 6)
+	if !ok {
+		t.Fatal("NewPixelsCopyFromBytes rejected a minimally-strided buffer")
+	}
+	for i, expected := range []uint16{0x0201, 0x0403, 0x0605, 0x0807, 0x0A09, 0x0C0B} {
+		if got := p.U16s[i]; got != expected {
+			t.Errorf("U16s[%d] = 0x%04x, want 0x%04x", i, got, expected)
+		}
+	}
+}
+
 func TestConvertMemcpyAndSwizzle(t *testing.T) {
 	info, _ := MakeInfo(2, 2, ColorTypeRGBA8888, AlphaTypePremul)
 	src := NewPixels(info)

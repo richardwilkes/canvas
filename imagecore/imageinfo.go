@@ -54,11 +54,11 @@ func (ct ColorType) BytesPerPixel() int {
 	switch ct {
 	case ColorTypeAlpha8, ColorTypeGray8, ColorTypeR8Unorm:
 		return 1
-	case ColorTypeRGB565, ColorTypeARGB4444, ColorTypeA16Unorm, ColorTypeA16Float:
+	case ColorTypeRGB565, ColorTypeARGB4444, ColorTypeA16Unorm, ColorTypeA16Float, ColorTypeR8G8Unorm:
 		return 2
 	case ColorTypeRGBA8888, ColorTypeRGB888x, ColorTypeBGRA8888, ColorTypeSRGBA8888,
 		ColorTypeRGBA1010102, ColorTypeBGRA1010102, ColorTypeRGB101010x, ColorTypeBGR101010x,
-		ColorTypeBGR101010xXR, ColorTypeR8G8Unorm, ColorTypeR16G16Unorm, ColorTypeR16G16Float:
+		ColorTypeBGR101010xXR, ColorTypeR16G16Unorm, ColorTypeR16G16Float:
 		return 4
 	case ColorTypeRGBAF16Norm, ColorTypeRGBAF16, ColorTypeRGBF16F16F16x, ColorTypeRGBA10x6,
 		ColorTypeR16G16B16A16Unorm, ColorTypeBGRA10101010XR:

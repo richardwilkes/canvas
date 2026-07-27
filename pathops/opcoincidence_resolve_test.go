@@ -338,3 +338,75 @@ func allSpans(head *opContourHead) []*opSpan {
 	}
 	return out
 }
+
+// TestAddIfMissingSwallowsAddOrOverlapFailure pins the deliberate discard in addIfMissing. addOrOverlap returns false
+// for "nothing to add" as well as for genuine trouble, and its two callers read that oppositely: addEndMovedSpans
+// aborts on false, addIfMissing must not, because addMissing turns any false from addIfMissing into a fatal abort of
+// the whole Op/Simplify. Upstream discards the result the same way (`(void) this->addOrOverlap(...)` in
+// SkOpCoincidence::addIfMissing), so propagating it here would fail operations Skia completes.
+//
+// The setup wires an "over" segment to two collinear segments through shared pt-t loops so trange maps a real range
+// onto each, then leaves co.top nil -- addOrOverlap's first check, and the one place a false cannot mean anything but
+// trouble. addIfMissing must still report success.
+func TestAddIfMissingSwallowsAddOrOverlapFailure(t *testing.T) {
+	head, state := newTestContourHead()
+	segO := head.addLine([]geom.Point{pt(0, 0), pt(20, 0)})
+	segA := head.addLine([]geom.Point{pt(0, 0), pt(10, 0)})
+	segB := head.addLine([]geom.Point{pt(0, 0), pt(10, 0)})
+
+	// addOpp reaches back into the global state's coincidence, so it has to exist before the wiring below.
+	co := newOpCoincidence(state)
+	if co.top != nil {
+		t.Fatal("a fresh opCoincidence should have a nil top")
+	}
+
+	// Join segO's t=0 and t=0.5 spans (points (0,0) and (10,0)) to both collinear segments' endpoints, so trange can
+	// map a t on segO onto segA and segB.
+	oMid := segO.addT(0.5)
+	if oMid == nil {
+		t.Fatal("addT(0.5) on the over segment returned nil")
+	}
+	for _, seg := range []*opSegment{segA, segB} {
+		if !segO.head.addOpp(&seg.head.opSpanBase) {
+			t.Fatal("addOpp for the run's start returned false")
+		}
+		if !oMid.span.addOpp(&seg.tail) {
+			t.Fatal("addOpp for the run's end returned false")
+		}
+	}
+
+	// tStart=0.25 and tEnd=0.4 on segO map to 0.5 and 0.8 on segA and segB. Confirm addOrOverlap really does decline
+	// this call, so the assertion below is about addIfMissing swallowing a false rather than never seeing one.
+	added := false
+	if co.addOrOverlap(segA, segB, 0.5, 0.8, 0.5, 0.8, &added) {
+		t.Fatal("addOrOverlap with a nil top should return false; the test no longer covers what it claims")
+	}
+
+	added = false
+	if !co.addIfMissing(&segO.head.ptT, &segO.head.ptT, 0.25, 0.4, segA, segB, &added) {
+		t.Fatal("addIfMissing must return true when addOrOverlap declines; a false aborts the entire operation")
+	}
+	if added {
+		t.Fatal("addIfMissing should not report an addition when addOrOverlap declined")
+	}
+}
+
+// TestAddMissingSurvivesDecliningAddIfMissing is the caller-side half: addMissing must run to completion over a model
+// whose coincident runs give addIfMissing nothing to add. A false from addIfMissing would abort at the first such run.
+func TestAddMissingSurvivesDecliningAddIfMissing(t *testing.T) {
+	a := path.New()
+	a.MoveTo(0, 0).LineTo(10, 0).LineTo(10, 10).LineTo(0, 10).Close()
+	b := path.New()
+	b.MoveTo(0, 0).LineTo(10, 0).LineTo(10, 10).LineTo(0, 10).Close()
+	head, state := buildOpModel(t, a, b)
+	co := newOpCoincidence(state)
+	addIntersections(head, co)
+	if coincidenceCount(co) == 0 {
+		t.Fatal("identical rectangles should record coincident runs")
+	}
+
+	var added bool
+	if !co.addMissing(&added) {
+		t.Fatal("addMissing aborted")
+	}
+}

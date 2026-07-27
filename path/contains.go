@@ -37,8 +37,11 @@ func evalCubicPts(c0, c1, c2, c3, t float32) float32 {
 	return polyEval4(a, b, c, c0, t)
 }
 
-// checkOnCurve reports whether (x, y) lies on the segment from start to end: for a horizontal segment it checks that x
-// lies strictly between the endpoints' X values, otherwise it requires an exact match with start.
+// checkOnCurve reports whether (x, y) lies on the segment from start to end. For a horizontal segment the X range it
+// accepts is half-open, inclusive of start.X but exclusive of end.X, in either direction; otherwise it requires an
+// exact match with start. That asymmetry is the point, not an oversight: Contains walks the segments in order, so each
+// shared endpoint is one segment's end and the next one's start, and accepting both ends would credit the same vertex
+// to onCurveCount twice and flip the parity Contains resolves ties with.
 func checkOnCurve(x, y float32, start, end geom.Point) bool {
 	if start.Y == end.Y {
 		return between(start.X, x, end.X) && x != end.X

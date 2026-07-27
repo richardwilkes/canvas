@@ -14,11 +14,28 @@ import (
 	"github.com/richardwilkes/canvas/geom"
 )
 
-// Corpus growth: blend-mode coverage. blend-modes-basic samples 8 modes; these grids cover all 28 sk_blend_mode_t
-// values, grouped by family, each cell compositing a translucent source circle over a translucent destination rect
-// inside its own clip cell (the blend-modes-basic cell recipe, kept so the grids read uniformly). A separate scenario
-// blends over a gradient destination to catch coefficient errors an axis-aligned flat dst would mask, and one drives
-// DrawColor's blend argument.
+// Corpus growth: blend-mode coverage. blend-modes-basic samples 8 modes; these grids cover all 29 sk_blend_mode_t
+// values (12 Porter-Duff, 13 separable, 4 HSL), grouped by family, each cell compositing a translucent source circle
+// over a translucent destination rect inside its own clip cell (the blend-modes-basic cell recipe, kept so the grids
+// read uniformly). A separate scenario blends over a gradient destination to catch coefficient errors an axis-aligned
+// flat dst would mask, and one drives DrawColor's blend argument.
+
+// The three grids' mode lists, split by family. Together they must name every BlendMode exactly once; see
+// TestBlendGridsCoverEveryMode.
+var (
+	porterDuffBlendModes = []BlendMode{
+		BlendClear, BlendSrc, BlendDst, BlendSrcOver,
+		BlendDstOver, BlendSrcIn, BlendDstIn, BlendSrcOut,
+		BlendDstOut, BlendSrcATop, BlendDstATop, BlendXor,
+	}
+	separableBlendModes = []BlendMode{
+		BlendPlus, BlendModulate, BlendScreen, BlendOverlay,
+		BlendDarken, BlendLighten, BlendColorDodge, BlendColorBurn,
+		BlendHardLight, BlendSoftLight, BlendDifference, BlendExclusion,
+		BlendMultiply,
+	}
+	hslBlendModes = []BlendMode{BlendHue, BlendSaturation, BlendColor, BlendLuminosity}
+)
 
 // blendGrid draws one mode per cell in a grid of 64x64 cells, 4 per row.
 func blendGrid(c Canvas, modes []BlendMode) {
@@ -39,28 +56,18 @@ func blendGrid(c Canvas, modes []BlendMode) {
 
 func init() {
 	reg("blend-modes-porterduff", func(c Canvas) {
-		blendGrid(c, []BlendMode{
-			BlendClear, BlendSrc, BlendDst, BlendSrcOver,
-			BlendDstOver, BlendSrcIn, BlendDstIn, BlendSrcOut,
-			BlendDstOut, BlendSrcATop, BlendDstATop, BlendXor,
-		})
+		blendGrid(c, porterDuffBlendModes)
 	})
 
 	reg("blend-modes-separable", func(c Canvas) {
-		blendGrid(c, []BlendMode{
-			BlendPlus, BlendModulate, BlendScreen, BlendOverlay,
-			BlendDarken, BlendLighten, BlendColorDodge, BlendColorBurn,
-			BlendHardLight, BlendSoftLight, BlendDifference, BlendExclusion,
-			BlendMultiply,
-		})
+		blendGrid(c, separableBlendModes)
 	})
 
 	reg("blend-modes-hsl", func(c Canvas) {
 		// The four non-separable HSL modes get bigger cells (128x128) — their per-pixel luminosity/ saturation math is
 		// where implementations drift, so give the gate more pixels.
 		c.Clear(white)
-		modes := []BlendMode{BlendHue, BlendSaturation, BlendColor, BlendLuminosity}
-		for i, mode := range modes {
+		for i, mode := range hslBlendModes {
 			x := float32(i%2) * 128
 			y := float32(i/2) * 128
 			c.Save()

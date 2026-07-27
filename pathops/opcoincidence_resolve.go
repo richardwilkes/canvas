@@ -590,7 +590,11 @@ func (co *opCoincidence) checkOverlap(check *coincidentSpans, coinSeg, oppSeg *o
 }
 
 // addIfMissing maps the (already ordered) tStart/tEnd range from over1s/over2s onto coinSeg and oppSeg and, unless the
-// mapped range collapses, adds or overlaps the pair.
+// mapped range collapses, adds or overlaps the pair. It returns false only for a collapsed range: addOrOverlap's own
+// result is deliberately discarded, because from here a false means "there was nothing to add", not "abort". The sole
+// caller, addMissing, treats a false as a fatal abort of the whole operation, so propagating one would turn every
+// nothing-to-add into a failed Op/Simplify. Upstream discards it the same way (an explicit `(void)` cast on the call in
+// SkOpCoincidence::addIfMissing); see addOrOverlap's own comment for the two callers' opposing conventions.
 func (co *opCoincidence) addIfMissing(over1s, over2s *opPtT, tStart, tEnd float64, coinSeg, oppSeg *opSegment, added *bool) bool {
 	coinTs := trange(over1s, tStart, coinSeg)
 	coinTe := trange(over1s, tEnd, coinSeg)
@@ -608,7 +612,8 @@ func (co *opCoincidence) addIfMissing(over1s, over2s *opPtT, tStart, tEnd float6
 		coinTs, coinTe = coinTe, coinTs
 		oppTs, oppTe = oppTe, oppTs
 	}
-	co.addOrOverlap(coinSeg, oppSeg, coinTs, coinTe, oppTs, oppTe, added)
+	// The discarded result is intentional; see the doc comment. *added still reports whether anything was recorded.
+	_ = co.addOrOverlap(coinSeg, oppSeg, coinTs, coinTe, oppTs, oppTe, added)
 	return true
 }
 
@@ -633,8 +638,11 @@ func coincidentRunIsReal(coinSeg, oppSeg *opSegment, coinTs, coinTe float64) boo
 	return true
 }
 
-// addOrOverlap adds a coincident pair, or extends an overlapping one. When called from addEndMovedSpans a false return
-// propagates to an abort; from addIfMissing a false return just means there was nothing to add.
+// addOrOverlap adds a coincident pair, or extends an overlapping one. Its two callers read a false return oppositely:
+// from addEndMovedSpans it propagates out to an abort, while addIfMissing discards it as "there was nothing to add".
+// Note that several of the false returns below fire after addT has already placed spans and span.addOpp has already
+// spliced pt-t loops, so a false does not imply the span graph was left untouched -- that is upstream's behavior too,
+// and the reason the abort/no-abort split is the caller's decision rather than this function's.
 func (co *opCoincidence) addOrOverlap(coinSeg, oppSeg *opSegment, coinTs, coinTe, oppTs, oppTe float64, added *bool) bool {
 	var overlaps []*coincidentSpans
 	if co.top == nil {

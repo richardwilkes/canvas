@@ -145,8 +145,8 @@ func (p *platformContext) init() error {
 	}
 	for _, proc := range []struct {
 		dst  *uintptr
-		lib  uintptr
 		name string
+		lib  uintptr
 	}{
 		{dst: &p.xOpenDisplay, lib: x11Lib, name: "XOpenDisplay"},
 		{dst: &p.xCloseDisplay, lib: x11Lib, name: "XCloseDisplay"},

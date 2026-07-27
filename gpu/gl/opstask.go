@@ -660,21 +660,17 @@ func (t *OpsTask) OnExecute(flushState *OpFlushState) bool {
 		if stencil == nil {
 			panic("kUserBitsCleared without a stencil attachment")
 		}
-		if caps.DiscardStencilValuesAfterRenderPass() {
-			// Always clear the stencil if it is being discarded after render passes: on a tiler this avoids loading the
-			// values from memory.
-			stencilLoadOp = gpu.LoadOpClear
-			break
-		}
-		if !stencil.HasPerformedInitialClear() {
-			stencilLoadOp = gpu.LoadOpClear
-			stencil.MarkHasPerformedInitialClear()
-			break
-		}
-		// SurfaceDrawContexts are required to leave the user stencil bits in a cleared state once finished, so the
-		// values always remain cleared after the initial clear. Just reload the existing (cleared) stencil values from
-		// memory.
-		stencilLoadOp = gpu.LoadOpLoad
+		// The request is always honored with a real clear. Upstream skips it after the attachment's first clear, on the
+		// stated invariant that a SurfaceDrawContext leaves the user stencil bits cleared once finished; that invariant
+		// does not hold here. Stencil attachments are shared between render targets under a unique key carrying only
+		// (caps, format, dims, usage, sampleCnt) and no render-target identity (ComputeSharedAttachmentUniqueKey), and
+		// a finished SurfaceDrawContext leaves both user-bit residue (the clip mask helper's cover passes only zero
+		// what they rasterize) and clip-bit residue (ClearStencilClip only ever clears within a scissor) behind. Under
+		// DMSAA — where the shared, port-allocated MSAA stencil attachment is the one in play rather than a wrapped
+		// FBO's own per-surface stencil — reloading that residue paints stray bands into a later render target that
+		// carries no clip at all. Skipping the clear could save at most one glClear per SurfaceDrawContext anyway:
+		// setNeedsStencil requests kUserBitsCleared once per context, and split tasks ask for kPreserved.
+		stencilLoadOp = gpu.LoadOpClear
 	case StencilContentPreserved:
 		if stencil == nil {
 			panic("kPreserved without a stencil attachment")

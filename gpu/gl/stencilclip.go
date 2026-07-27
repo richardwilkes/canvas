@@ -9,10 +9,10 @@
 
 // StencilClip is a hard clip carrying the currently-rendered stencil-clip contents plus a fixed clip, and
 // StencilMaskHelper renders merged clip elements into the stencil buffer's clip bit using the user-to-clip stencil
-// settings tables below. Window rectangles are not supported. The non-rect drawPath lane needs the path-renderer chain,
-// so ClipStack routes non-rect elements to the SW mask instead and the non-rect drawShape lane is unreachable until
-// then; the inverse-fill table rows are present as data but only the non-inverted Replace/Intersect/ Difference rows
-// are reachable from the clip stack.
+// settings tables below. Window rectangles are not supported. ClipStack diverts AA elements to a SW mask whenever the
+// target has no MSAA to resolve them with (a 1-sample target that is not running dynamic MSAA), so the drawPath lane is
+// reached only from multisample and dynamic-MSAA targets; the inverse-fill table rows are present as data but only the
+// non-inverted Replace/Intersect/Difference rows are reachable from the clip stack.
 
 package gl
 
@@ -230,9 +230,10 @@ func (h *StencilMaskHelper) drawStencilRect(clip Clip, ss *UserStencilSettings, 
 	h.sdc.StencilRect(clip, ss, paint, aa, matrix, rect, nil)
 }
 
-// supportedAA reports the AA to actually use: MSAA is the only type of AA possible on a stencil buffer.
+// supportedAA reports the AA to actually use: MSAA is the only type of AA possible on a stencil buffer. A DMSAA surface
+// reports one sample but promotes to an MSAA attachment for stencil draws, so it counts as MSAA-capable here.
 func (h *StencilMaskHelper) supportedAA(gpu.AA) gpu.AA {
-	return gpu.AA(h.sdc.NumSamples() > 1)
+	return gpu.AA(h.sdc.NumSamples() > 1 || h.sdc.canUseDynamicMSAA)
 }
 
 // DrawRect merges rect into the clip mask under op.

@@ -37,8 +37,6 @@ type Attachment struct {
 	format         Format
 	renderbufferID uint32 // may be zero for external stencil buffers on wrapped FBOs
 	usage          AttachmentUsage
-	// hasPerformedInitialClear tracks whether the stencil clear logic has run for this attachment.
-	hasPerformedInitialClear bool
 }
 
 // Dimensions returns the attachment's pixel dimensions.
@@ -55,12 +53,6 @@ func (a *Attachment) GLFormat() Format { return a.format }
 
 // RenderbufferID returns the underlying GL renderbuffer object name.
 func (a *Attachment) RenderbufferID() uint32 { return a.renderbufferID }
-
-// HasPerformedInitialClear reports whether the stencil clear logic has already run.
-func (a *Attachment) HasPerformedInitialClear() bool { return a.hasPerformedInitialClear }
-
-// MarkHasPerformedInitialClear records that the stencil clear logic has run.
-func (a *Attachment) MarkHasPerformedInitialClear() { a.hasPerformedInitialClear = true }
 
 // ResourceType implements gpu.Resource.
 func (a *Attachment) ResourceType() string {
@@ -127,7 +119,8 @@ func ComputeAttachmentScratchKey(caps *Caps, format Format, dims geom.ISize, usa
 }
 
 // ComputeSharedAttachmentUniqueKey computes the key under which stencil attachments of the same dimensions, usage, and
-// sample count are shared between render targets.
+// sample count are shared between render targets. The key carries no render-target identity, so a render pass can never
+// assume anything about the contents an attachment reaches it with — see OpsTask.OnExecute's kUserBitsCleared case.
 func ComputeSharedAttachmentUniqueKey(caps *Caps, format Format, dims geom.ISize, usage AttachmentUsage, sampleCnt int, key *gpu.UniqueKey) {
 	b := gpu.UniqueKeyBuilder(key, attachmentUniqueKeyDomain, 5, "SharedAttachment")
 	attachmentKeyData(caps, format, dims, usage, sampleCnt, b.Slice())

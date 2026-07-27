@@ -17,6 +17,7 @@ import (
 	"github.com/richardwilkes/canvas/colorfilter"
 	"github.com/richardwilkes/canvas/filtercore"
 	"github.com/richardwilkes/canvas/geom"
+	"github.com/richardwilkes/canvas/imagecore"
 	"github.com/richardwilkes/canvas/imagefilter"
 	"github.com/richardwilkes/canvas/raster"
 	"github.com/richardwilkes/canvas/shaders"
@@ -309,6 +310,76 @@ func TestLargeSigmaBlurRescales(t *testing.T) {
 	edge := alphaOf(pixel(pix, 10, 128))
 	if edge == 0 || edge >= center {
 		t.Fatalf("large blur edge alpha = %d (center %d), want 0 < edge < center", edge, center)
+	}
+}
+
+// solidTypedImage returns a dim x dim image of the given color type, every pixel set to the repeated pixel bytes.
+func solidTypedImage(t *testing.T, ct imagecore.ColorType, at imagecore.AlphaType, dim int32, px []byte) *imagecore.Image {
+	t.Helper()
+	info, ok := imagecore.MakeInfo(dim, dim, ct, at)
+	if !ok {
+		t.Fatalf("MakeInfo(%v, %v) rejected", ct, at)
+	}
+	data := make([]byte, int(dim)*int(dim)*len(px))
+	for i := range int(dim) * int(dim) {
+		copy(data[i*len(px):], px)
+	}
+	img := imagecore.NewRasterData(info, data, int(dim)*len(px))
+	if img == nil {
+		t.Fatalf("NewRasterData(%v) = nil", ct)
+	}
+	return img
+}
+
+// TestBlurNonN32SourceImage blurs an image-source leaf of every supported color type. The leaf hands its pixels to
+// FilterResult.rescale in their native form, so rescale must re-render anything that is not N32 into an N32 surface
+// before the raster blur engine reads pixel storage as 32-bit words: a 1- or 2-byte-per-pixel source (Gray8, Alpha8,
+// RGB565, RGBA_F16) has no word storage at all and used to panic, and a BGRA_8888 source used to blur through with its
+// R and B channels swapped. Every opaque-red source must therefore land on the same N32 result as the RGBA_8888
+// control, both in the blur's flat interior and in its falloff.
+func TestBlurNonN32SourceImage(t *testing.T) {
+	const dim = 32
+	for _, tc := range []struct {
+		name       string
+		px         []byte
+		ct         imagecore.ColorType
+		at         imagecore.AlphaType
+		wantCenter uint32
+		wantEdge   uint32
+	}{
+		// Opaque red in each type's own channel order/precision; all must produce the same N32 red.
+		{"RGBA8888", []byte{0xFF, 0, 0, 0xFF}, imagecore.ColorTypeRGBA8888, imagecore.AlphaTypePremul, 0xFF0000FF, 0xC60000C6},
+		{"BGRA8888", []byte{0, 0, 0xFF, 0xFF}, imagecore.ColorTypeBGRA8888, imagecore.AlphaTypePremul, 0xFF0000FF, 0xC60000C6},
+		{"RGB888x", []byte{0xFF, 0, 0, 0}, imagecore.ColorTypeRGB888x, imagecore.AlphaTypeOpaque, 0xFF0000FF, 0xC60000C6},
+		{"RGB565", []byte{0x00, 0xF8}, imagecore.ColorTypeRGB565, imagecore.AlphaTypeOpaque, 0xFF0000FF, 0xC60000C6},
+		{"RGBAF16", []byte{0x00, 0x3C, 0, 0, 0, 0, 0x00, 0x3C}, imagecore.ColorTypeRGBAF16, imagecore.AlphaTypePremul, 0xFF0000FF, 0xC60000C6},
+		// Gray8 expands to an opaque neutral; Alpha8 carries coverage only, so the paint's transparent black shows
+		// through as premultiplied black.
+		{"Gray8", []byte{0x80}, imagecore.ColorTypeGray8, imagecore.AlphaTypeOpaque, 0xFF808080, 0xC6646464},
+		{"Alpha8", []byte{0x80}, imagecore.ColorTypeAlpha8, imagecore.AlphaTypePremul, 0x80000000, 0x64000000},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			src := imagefilter.ImageDefault(solidTypedImage(t, tc.ct, tc.at, dim, tc.px),
+				shaders.SamplingOptions{Filter: shaders.FilterLinear})
+			pix := raster.NewPixmap(64, 64)
+			c := canvas.NewForPixmap(pix)
+			p := canvas.NewPaint()
+			p.ImageFilter = imagefilter.Blur(3, 3, shaders.TileDecal, src, nil)
+			c.DrawRect(geom.RectLTRB(0, 0, 64, 64), p)
+
+			// The center sits more than 3*sigma from every edge, so it holds the unattenuated source color.
+			if got := pixel(pix, dim/2, dim/2); got != tc.wantCenter {
+				t.Fatalf("center = %08x, want %08x", got, tc.wantCenter)
+			}
+			// Inside the left falloff, where the decal tiling has partially eaten the coverage.
+			if got := pixel(pix, 2, dim/2); got != tc.wantEdge {
+				t.Fatalf("edge = %08x, want %08x", got, tc.wantEdge)
+			}
+			// Beyond the blur radius the result stays transparent.
+			if got := pixel(pix, dim+12, dim/2); got != 0 {
+				t.Fatalf("outside = %08x, want transparent", got)
+			}
+		})
 	}
 }
 

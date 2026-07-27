@@ -128,6 +128,16 @@ func (s *SpecialImage) BackingStoreDimensions() geom.ISize {
 // UniqueID returns the image's generation ID, for cache keys.
 func (s *SpecialImage) UniqueID() uint32 { return s.id }
 
+// ColorType returns the backing store's color type. A drawable backing reports N32: the GPU backend's surfaces and
+// textures are N32, and it samples them through shaders rather than reading pixel storage, so there is nothing for a
+// caller to convert.
+func (s *SpecialImage) ColorType() imagecore.ColorType {
+	if s.pixels != nil {
+		return s.pixels.Info.ColorType
+	}
+	return imagecore.ColorTypeN32
+}
+
 // DrawableBacking returns the drawable backing store (the GPU texture image in practice), or nil for a raster-backed
 // view. The GPU device's drawSpecial lane samples it directly, avoiding the upload.
 func (s *SpecialImage) DrawableBacking() imagecore.DrawableImage { return s.drawable }

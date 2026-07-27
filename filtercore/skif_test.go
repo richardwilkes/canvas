@@ -14,6 +14,7 @@ import (
 
 	"github.com/richardwilkes/canvas/colorcore"
 	"github.com/richardwilkes/canvas/geom"
+	"github.com/richardwilkes/canvas/imagecore"
 	"github.com/richardwilkes/canvas/raster"
 	"github.com/richardwilkes/canvas/shaders"
 )
@@ -308,4 +309,48 @@ func TestInvertOrIdentityFallsBackToIdentity(t *testing.T) {
 	if got := shaders.NewWithLocalMatrix(shader, fallback); got != shaders.Shader(shader) {
 		t.Fatalf("identity fallback wrapped the shader as %T, want it unchanged", got)
 	}
+}
+
+// SpecialImage.ColorType reports the raster backing's own color type — rescale's hasEffectsToApply compares it against
+// N32 to decide whether the image must be re-rendered before the pipeline (and the raster blur engine, which reads
+// pixel storage as 32-bit words) touches it. A drawable backing reports N32 instead of resolving to CPU.
+func TestSpecialImageColorType(t *testing.T) {
+	for _, ct := range []imagecore.ColorType{
+		imagecore.ColorTypeRGBA8888, imagecore.ColorTypeBGRA8888, imagecore.ColorTypeRGB888x,
+		imagecore.ColorTypeGray8, imagecore.ColorTypeAlpha8, imagecore.ColorTypeRGB565,
+		imagecore.ColorTypeRGBAF16,
+	} {
+		info, ok := imagecore.MakeInfo(4, 4, ct, imagecore.AlphaTypePremul)
+		if !ok {
+			t.Fatalf("MakeInfo(%v) failed", ct)
+		}
+		si := NewSpecialImage(geom.IRectWH(4, 4), imagecore.NewPixels(info))
+		if si == nil {
+			t.Fatalf("NewSpecialImage(%v) = nil", ct)
+		}
+		if got := si.ColorType(); got != ct {
+			t.Fatalf("ColorType() = %v, want %v", got, ct)
+		}
+	}
+
+	si := NewSpecialImageDrawable(geom.IRectWH(4, 4), &fakeDrawable{})
+	if si == nil {
+		t.Fatal("NewSpecialImageDrawable = nil")
+	}
+	if got := si.ColorType(); got != imagecore.ColorTypeN32 {
+		t.Fatalf("drawable-backed ColorType() = %v, want N32", got)
+	}
+}
+
+// fakeDrawable is a non-*imagecore.Image DrawableImage, so NewSpecialImageDrawable keeps the drawable lane instead of
+// downgrading to the raster one. It never resolves to CPU pixels; ColorType must not need it to.
+type fakeDrawable struct{}
+
+func (*fakeDrawable) Width() int32                   { return 4 }
+func (*fakeDrawable) Height() int32                  { return 4 }
+func (*fakeDrawable) AlphaType() imagecore.AlphaType { return imagecore.AlphaTypePremul }
+func (*fakeDrawable) IsAlphaOnly() bool              { return false }
+func (*fakeDrawable) UniqueID() uint32               { return 1 }
+func (*fakeDrawable) MakeNonTextureImage() *imagecore.Image {
+	panic("ColorType must not resolve a drawable backing to CPU pixels")
 }

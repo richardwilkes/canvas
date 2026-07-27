@@ -18,6 +18,7 @@ import (
 
 	"github.com/richardwilkes/canvas/colorcore"
 	"github.com/richardwilkes/canvas/geom"
+	"github.com/richardwilkes/canvas/imagecore"
 	"github.com/richardwilkes/canvas/raster"
 	"github.com/richardwilkes/canvas/shaders"
 )
@@ -159,7 +160,11 @@ func (f *FilterResult) rescale(ctx *Context, scale geom.Size, enforceDecal, allo
 		analysis&boundsRequiresLayerCrop == 0 &&
 		(!enforceDecal || analysis&boundsHasLayerFillingEffect == 0)
 
-	hasEffectsToApply := !canDeferTiling || f.colorFilter != nil
+	// A non-N32 image counts as an effect to apply even when nothing else does: the pipeline runs on N32 premul only
+	// (specialimage.go's header), so the image must be re-rendered into an N32 surface here rather than handed to the
+	// blur engine, which reads raster pixel storage as 32-bit words. (There is no color-space term: everything is sRGB.)
+	hasEffectsToApply := !canDeferTiling || f.colorFilter != nil ||
+		f.image.ColorType() != imagecore.ColorTypeN32
 
 	xSteps := downscaleStepCount(scale.Width)
 	ySteps := downscaleStepCount(scale.Height)

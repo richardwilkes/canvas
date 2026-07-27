@@ -3,7 +3,7 @@
 	"lane": "gpu",
 	"gl_renderer": "llvmpipe (LLVM 15.0.7, 128 bits)",
 	"gl_version": "4.5 (Core Profile) Mesa 23.2.1-1ubuntu3.1~22.04.4",
-	"captured_at": "2026-07-22",
+	"captured_at": "2026-07-27",
 	"entries": [
 		{
 			"name": "arcs",
@@ -319,7 +319,7 @@
 		},
 		{
 			"name": "hairlines",
-			"sha256": "2e60fdbcf24d361c6670c1d4c4395d675f15217eeed89fca1be841fc6ef58da1",
+			"sha256": "a775a623f63ac62ac9d46cf75fe4c07b10ca3333a01e8f97ac8a92dcb40077df",
 			"width": 256,
 			"height": 256
 		},
@@ -643,7 +643,7 @@
 		},
 		{
 			"name": "stroke-degenerate",
-			"sha256": "533d65382dae4bc20faec5a0b5d13b46918f3053a1635109d3b9e7132e8948cb",
+			"sha256": "aec63055d1f8c0856d23468f349148d4c3317731ab9a963fe5f2f8f16331e39b",
 			"width": 256,
 			"height": 256
 		},
@@ -655,7 +655,7 @@
 		},
 		{
 			"name": "stroke-under-scale",
-			"sha256": "037f27c0c3fb1fafafde7bf86aa3e8e54e3fad39b1a01ce2a672efcc47cf0eae",
+			"sha256": "6235dea4db8856f923b8ccd5bd6892c8567e4e45739d40e5def209f121940c5d",
 			"width": 256,
 			"height": 256
 		},

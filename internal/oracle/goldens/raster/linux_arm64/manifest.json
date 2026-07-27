@@ -1,7 +1,7 @@
 {
 	"platform": "linux_arm64",
 	"lane": "raster",
-	"captured_at": "2026-07-22",
+	"captured_at": "2026-07-27",
 	"entries": [
 		{
 			"name": "arcs",
@@ -641,7 +641,7 @@
 		},
 		{
 			"name": "stroke-degenerate",
-			"sha256": "fd3a3dfd4112e81d55a412ddd7e761b975058133eba2bd99dbb489b28477717a",
+			"sha256": "e08fa85fa2adde9bfca748b289fd7ea8c43c8c46d74c0c0e1eade75d79dafa31",
 			"width": 256,
 			"height": 256
 		},
@@ -653,7 +653,7 @@
 		},
 		{
 			"name": "stroke-under-scale",
-			"sha256": "265f860dc89c532055b1f18d23509820c1997f214dc4a4b1173061044689ded2",
+			"sha256": "5f3be409eb71a7d0a42221c7519f30e7a6ed8e770de4818d952180ba953998f6",
 			"width": 256,
 			"height": 256
 		},

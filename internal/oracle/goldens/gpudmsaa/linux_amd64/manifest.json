@@ -3,7 +3,7 @@
 	"lane": "gpudmsaa",
 	"gl_renderer": "llvmpipe (LLVM 15.0.7, 256 bits)",
 	"gl_version": "4.5 (Core Profile) Mesa 23.2.1-1ubuntu3.1~22.04.4",
-	"captured_at": "2026-07-22",
+	"captured_at": "2026-07-27",
 	"entries": [
 		{
 			"name": "arcs",
@@ -229,7 +229,7 @@
 		},
 		{
 			"name": "draw-points",
-			"sha256": "30928f8889e70a928a0c56c68dfa7349adb30480d662b3035367f7b2bf8f9601",
+			"sha256": "8fd150e18ec7b16e018db191753abd683e9349e70c35a40842ff1a5c5c3a4bbb",
 			"width": 256,
 			"height": 256
 		},

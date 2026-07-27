@@ -3,7 +3,7 @@
 	"lane": "gpu",
 	"gl_renderer": "Apple Software Renderer",
 	"gl_version": "4.1 APPLE-23.1.1",
-	"captured_at": "2026-07-22",
+	"captured_at": "2026-07-27",
 	"entries": [
 		{
 			"name": "arcs",
@@ -643,7 +643,7 @@
 		},
 		{
 			"name": "stroke-degenerate",
-			"sha256": "53cf22399d6f8f45bdb1618c4bca41dad72f68d1990146ef9e9dbfde1f4fd0cd",
+			"sha256": "1bf68e2a1334d310fc4aba73fc7f13c891b4cc0f4928f4eedb87567774bcc427",
 			"width": 256,
 			"height": 256
 		},
@@ -655,7 +655,7 @@
 		},
 		{
 			"name": "stroke-under-scale",
-			"sha256": "240245f0d5063fd9ded74d5a5c812fd5542e3161fc2c611b54571d75d360f1bc",
+			"sha256": "867195fdb853fe42e01c3216f99950da2d1073b5ec8b9d3c6551a934a9c0e812",
 			"width": 256,
 			"height": 256
 		},

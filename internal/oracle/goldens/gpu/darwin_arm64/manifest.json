@@ -3,7 +3,7 @@
 	"lane": "gpu",
 	"gl_renderer": "Apple Software Renderer",
 	"gl_version": "4.1 APPLE-23.1.1",
-	"captured_at": "2026-07-17",
+	"captured_at": "2026-07-27",
 	"entries": [
 		{
 			"name": "arcs",
@@ -133,7 +133,7 @@
 		},
 		{
 			"name": "clip-stroke-interaction",
-			"sha256": "f27ab02a1aa5efdcfc5a476207b0f6a7bdb5ccc15f5f036afd470df1f1aead7f",
+			"sha256": "35156ec89bb50a98d3e48f8167c182b7de6095515692f24a79d41d5361069761",
 			"width": 256,
 			"height": 256
 		},
@@ -145,7 +145,7 @@
 		},
 		{
 			"name": "colorfilter-blend-tint",
-			"sha256": "b4b5b7cc0946534f905fd4b070f89c8ec2d220d3a12ae29f327095bbc635ed00",
+			"sha256": "907de23290ab3f08c6a5d70480284552db00ae72d8a07ee51a986d9281d9ecda",
 			"width": 256,
 			"height": 256
 		},
@@ -253,7 +253,7 @@
 		},
 		{
 			"name": "gradient-200-stops",
-			"sha256": "afb097a4ff3fdff874536e8a4e16436ee7522c7ef2f8063284337cbf0798c709",
+			"sha256": "ca59eb574e01b04e481259017a46096d7e15c8963aef949d8ba14c919c75f2d3",
 			"width": 256,
 			"height": 256
 		},
@@ -529,7 +529,7 @@
 		},
 		{
 			"name": "path-conics-weights",
-			"sha256": "e5b60aab5ea2c78366e17ec55942477456aa25964a8e6496a89b3caba099102f",
+			"sha256": "6e78a9ba96d0d9da31b3e9a47d9619a9bcf8c91704730a1a2237959f039b6529",
 			"width": 256,
 			"height": 256
 		},
@@ -637,13 +637,13 @@
 		},
 		{
 			"name": "stroke-curves",
-			"sha256": "9eae82560fcc4f13dc20726f14a1ba8b237f977fa1049af6ee551740a013ba20",
+			"sha256": "ccd70d0c91a6fb320967cc47f893a26f5b98d8e19476f035ac0817743f37eb20",
 			"width": 256,
 			"height": 256
 		},
 		{
 			"name": "stroke-degenerate",
-			"sha256": "53cf22399d6f8f45bdb1618c4bca41dad72f68d1990146ef9e9dbfde1f4fd0cd",
+			"sha256": "1bf68e2a1334d310fc4aba73fc7f13c891b4cc0f4928f4eedb87567774bcc427",
 			"width": 256,
 			"height": 256
 		},
@@ -655,7 +655,7 @@
 		},
 		{
 			"name": "stroke-under-scale",
-			"sha256": "240245f0d5063fd9ded74d5a5c812fd5542e3161fc2c611b54571d75d360f1bc",
+			"sha256": "ca1ee00720bd3fb37ae67012a9b71c8b8cd7ba22c22359075dfcfb6b3953790e",
 			"width": 256,
 			"height": 256
 		},

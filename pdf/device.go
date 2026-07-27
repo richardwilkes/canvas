@@ -1301,9 +1301,11 @@ func (d *Device) clearMaskOnGraphicState(content stream.WStream) {
 	d.setGraphicState(d.doc.noSmaskGraphicState, content)
 }
 
-// populateGraphicStateEntry fills entry from paint and the current matrix/clip (the reachable subset: solid color, a
-// color shader folded to a color, gradient shader patterns, alpha + blend + stroke state). Image-shader and
-// generic-fallback patterns are deferred: those non-color shaders still draw with the paint color.
+// populateGraphicStateEntry fills entry from paint and the current matrix/clip: solid color, a color shader folded to a
+// color, alpha + blend + stroke state, and — for every other shader — the /Pattern resource makeShader builds
+// (gradient, image, or the rasterized generic fallback), recorded in entry.shaderIndex. A shader that cannot be
+// represented as a pattern (empty surface bounds, or a non-invertible transform) leaves shaderIndex at -1, so the draw
+// falls back to the paint color.
 func (d *Device) populateGraphicStateEntry(matrix *geom.Matrix, clipStack *ClipStack, paint *canvas.Paint, textScale float32, entry *gsEntry) {
 	entry.matrix = *matrix
 	entry.clipStackGenID = wideOpenGenID

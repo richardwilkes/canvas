@@ -14,6 +14,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/richardwilkes/canvas/font"
 	"github.com/richardwilkes/canvas/stream"
 )
 
@@ -77,6 +78,49 @@ func TestFindModeOr0(t *testing.T) {
 		if got := findModeOr0(c.in); got != c.want {
 			t.Errorf("findModeOr0(%v) = %v, want %v", c.in, got, c.want)
 		}
+	}
+}
+
+// TestMakeCIDGlyphWidthsArrayNilVsEmpty pins the two "nothing to write" cases apart: a non-positive units-per-em is the
+// only one that yields a nil array, while a usable typeface with no glyphs drawn yields a non-nil but empty one.
+// emitFont's "widths != nil && widths.Size() > 0" guard needs both halves to hold.
+func TestMakeCIDGlyphWidthsArrayNilVsEmpty(t *testing.T) {
+	// The empty typeface has no units-per-em, so there is no glyph space to scale advances into: nil array, zero /DW.
+	empty := font.EmptyTypeface()
+	if empty.UnitsPerEm() > 0 {
+		t.Fatalf("test precondition failed: the empty typeface reports unitsPerEm %d", empty.UnitsPerEm())
+	}
+	used := newGlyphUse(1, 4)
+	used.set(1)
+	if w, dw := makeCIDGlyphWidthsArray(empty, &used); w != nil || dw != 0 {
+		t.Errorf("makeCIDGlyphWidthsArray(no unitsPerEm) = (%v, %d), want (nil, 0)", w, dw)
+	}
+
+	// A usable typeface with nothing drawn yields an empty array, not nil.
+	tf := loadTestTypeface(t)
+	unused := newGlyphUse(1, uint16(tf.CountGlyphs()-1))
+	w, dw := makeCIDGlyphWidthsArray(tf, &unused)
+	if w == nil {
+		t.Fatal("makeCIDGlyphWidthsArray(no glyphs used) = nil, want a non-nil empty array")
+	}
+	if w.Size() != 0 {
+		t.Errorf("makeCIDGlyphWidthsArray(no glyphs used).Size() = %d, want 0", w.Size())
+	}
+	if dw != 0 {
+		t.Errorf("makeCIDGlyphWidthsArray(no glyphs used) default advance = %d, want 0", dw)
+	}
+
+	// Two glyphs with distinct advances: at most one can match the mode, so the array is non-empty.
+	narrow := tf.UnicharToGlyph('i')
+	wide := tf.UnicharToGlyph('W')
+	if narrow == 0 || wide == 0 || tf.DesignAdvance(narrow) == tf.DesignAdvance(wide) {
+		t.Fatalf("test precondition failed: need two glyphs with distinct advances, got %d/%d", narrow, wide)
+	}
+	drawn := newGlyphUse(1, uint16(tf.CountGlyphs()-1))
+	drawn.set(narrow)
+	drawn.set(wide)
+	if w, _ = makeCIDGlyphWidthsArray(tf, &drawn); w == nil || w.Size() == 0 {
+		t.Errorf("makeCIDGlyphWidthsArray(2 distinct advances) = %v, want a non-empty array", w)
 	}
 }
 

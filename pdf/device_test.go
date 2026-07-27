@@ -21,6 +21,7 @@ import (
 	"github.com/richardwilkes/canvas/geom"
 	"github.com/richardwilkes/canvas/path"
 	"github.com/richardwilkes/canvas/raster"
+	"github.com/richardwilkes/canvas/shaders"
 	"github.com/richardwilkes/canvas/stream"
 )
 
@@ -86,6 +87,93 @@ func mustContain(t *testing.T, haystack, needle string) {
 	t.Helper()
 	if !strings.Contains(haystack, needle) {
 		t.Errorf("content missing %q\n--- content ---\n%s", needle, haystack)
+	}
+}
+
+// TestPopulateGraphicStateEntryShaderRouting pins which shaders populateGraphicStateEntry folds into entry.color and
+// which become a /Pattern resource in entry.shaderIndex. Only a ColorShader (and no shader at all) collapses to a
+// color; gradient, image, and generic-fallback shaders all route through makeShader and install a pattern.
+func TestPopulateGraphicStateEntryShaderRouting(t *testing.T) {
+	img := solidRGBAImage(t, 4, 4, 0x40, 0x80, 0xC0, 0xFF)
+	stops := []colorcore.Color{colorcore.ARGB(255, 255, 0, 0), colorcore.ARGB(255, 0, 0, 255)}
+	cases := []struct {
+		shader      shaders.Shader
+		name        string
+		wantPattern bool
+	}{
+		{name: "none", shader: nil, wantPattern: false},
+		{name: "color", shader: shaders.NewColor(colorcore.ARGB(255, 10, 20, 30)), wantPattern: false},
+		{
+			name:        "gradient",
+			shader:      shaders.NewLinearGradient(geom.Point{}, geom.Point{X: 32}, stops, nil, shaders.TileClamp, nil),
+			wantPattern: true,
+		},
+		{
+			name:        "image",
+			shader:      shaders.NewImage(img, shaders.TileClamp, shaders.TileClamp, shaders.SamplingOptions{}, nil),
+			wantPattern: true,
+		},
+		{
+			name: "fallback",
+			shader: shaders.NewBlend(raster.BlendPlus, shaders.NewColor(colorcore.ARGB(255, 200, 40, 40)),
+				shaders.NewColor(colorcore.ARGB(255, 40, 40, 200))),
+			wantPattern: true,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var buf stream.MemoryWStream
+			doc := NewDocument(&buf, DefaultMetadata())
+			d := newDevice(geom.ISize{Width: 32, Height: 32}, doc, geom.IdentityMatrix())
+			paint := canvas.NewPaint()
+			paint.Color = colorcore.ARGB(255, 200, 30, 40)
+			paint.Shader = c.shader
+			matrix := geom.IdentityMatrix()
+			entry := defaultGSEntry()
+			d.populateGraphicStateEntry(&matrix, nil, paint, 1, &entry)
+			if got := entry.shaderIndex >= 0; got != c.wantPattern {
+				t.Fatalf("shaderIndex = %d (pattern=%v), want pattern=%v", entry.shaderIndex, got, c.wantPattern)
+			}
+			if !c.wantPattern {
+				return
+			}
+			// The installed pattern is registered as a device shader resource, so the page's /Pattern dict names it.
+			if _, ok := d.shaderResources[IndirectReference{value: int32(entry.shaderIndex)}]; !ok {
+				t.Errorf("pattern object %d is not in the device's shader resources %v",
+					entry.shaderIndex, d.shaderResources)
+			}
+		})
+	}
+}
+
+// TestNonGradientShaderPaintsWithItsPattern proves an image shader's pattern (not the paint color) is what the page
+// content paints with: the paint color would have shown up as an "rg" fill.
+func TestNonGradientShaderPaintsWithItsPattern(t *testing.T) {
+	img := solidRGBAImage(t, 4, 4, 0x40, 0x80, 0xC0, 0xFF)
+	paint := canvas.NewPaint()
+	paint.Color = colorcore.ARGB(255, 200, 30, 40) // .7843 .1176 .1569
+	paint.Shader = shaders.NewImage(img, shaders.TileClamp, shaders.TileClamp, shaders.SamplingOptions{}, nil)
+	data := renderPDFUncompressed(t, 40, 40, func(c *canvas.Canvas) {
+		c.DrawRect(geom.RectLTRB(0, 0, 40, 40), paint)
+	})
+	validatePDF(t, data)
+
+	// The page content stream is the one carrying the page's top-left → bottom-left flip; the pattern cell's stream
+	// also holds a "cm", so it cannot be picked by that alone.
+	var content string
+	for _, s := range allStreamContents(data) {
+		if strings.Contains(s, "1 0 0 -1 0 40 cm\n") {
+			content = s
+			break
+		}
+	}
+	if content == "" {
+		t.Fatalf("no page content stream\nstreams=%v", allStreamContents(data))
+	}
+	mustContain(t, content, "/Pattern cs")
+	mustContain(t, content, " scn\n")
+	if strings.Contains(content, ".7843 .1176 .1569 rg") {
+		t.Errorf("the image shader's fill fell back to the paint color\n--- content ---\n%s", content)
 	}
 }
 

@@ -54,7 +54,9 @@ func findModeOr0(advances []float32) float32 {
 	return currentModeAdvance
 }
 
-// makeCIDGlyphWidthsArray returns the /W array (nil when no glyphs are used) and the default advance to write as /DW.
+// makeCIDGlyphWidthsArray returns the /W array and the default advance to write as /DW. The array is nil (with a zero
+// default) only when the typeface reports a non-positive units-per-em; when no glyphs are used it is non-nil but empty,
+// so callers must check both nil and Size() before emitting it.
 func makeCIDGlyphWidthsArray(tf *font.Typeface, subset *glyphUse) (w *Array, defaultAdvance int32) {
 	emSize := tf.UnitsPerEm()
 	if emSize <= 0 {

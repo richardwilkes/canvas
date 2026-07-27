@@ -14,8 +14,22 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/richardwilkes/canvas/internal/oracle/gorender"
 	"github.com/richardwilkes/canvas/internal/oracle/scenario"
 )
+
+// bimodalScenarioName is a scenario gorender.DriverBimodal lists for the Apple software renderer.
+// TestDriverBimodalTableCoversTestName asserts it really is listed, so these tests cannot silently degrade into
+// testing the ordinary path if the table changes.
+const bimodalScenarioName = "clip-persp"
+
+// TestDriverBimodalTableCoversTestName guards the assumption the bimodal soak/bless tests rest on.
+func TestDriverBimodalTableCoversTestName(t *testing.T) {
+	if !gorender.DriverBimodal(gorender.AppleSoftwareRenderer, bimodalScenarioName) {
+		t.Fatalf("gorender.DriverBimodal no longer lists %q for %q; update bimodalScenarioName to a listed scenario "+
+			"or drop the bimodal tests if the quirk is gone", bimodalScenarioName, gorender.AppleSoftwareRenderer)
+	}
+}
 
 // wobbleFactory returns a session factory whose first session renders solidRender(10) exactly and whose later
 // sessions offset the first channel of the first pixel by delta — a synthetic warm-context wobble for exercising the
@@ -34,6 +48,93 @@ func wobbleFactory(delta byte) func() (*laneSession, error) {
 			return pixels
 		}
 		return &laneSession{render: render, dispose: func() {}}, nil
+	}
+}
+
+// bimodalScenarios is testScenarios plus the driver-bimodal scenario name, so the bimodal exception can be exercised
+// alongside ordinary scenarios that must stay strictly guarded.
+func bimodalScenarios() []scenario.Scenario {
+	return append(testScenarios(), scenario.Scenario{Name: bimodalScenarioName, Width: 2, Height: 2})
+}
+
+// flipFactory returns a session factory whose later sessions offset the first channel of the named scenario by delta,
+// reproducing the driver's per-session flavor flip. glRenderer is stamped on every session so DriverBimodal can key on
+// it.
+func flipFactory(name string, delta byte, glRenderer string) func() (*laneSession, error) {
+	sessions := 0
+	base := solidRender(10)
+	return func() (*laneSession, error) {
+		sessions++
+		warm := sessions > 1
+		render := func(s scenario.Scenario) []byte {
+			pixels := base(s)
+			if warm && s.Name == name {
+				pixels[0] += delta
+			}
+			return pixels
+		}
+		return &laneSession{render: render, dispose: func() {}, glRenderer: glRenderer}, nil
+	}
+}
+
+// TestSoakAcceptsDriverBimodalFlip covers the darwin_arm64 capture failure of 2026-07-27: on the Apple software
+// renderer a listed scenario's beyond-envelope flavor flip is the driver's own behavior, so soak must report it
+// without calling the corpus nondeterministic. Without this, capturing that lane succeeds or fails by luck.
+func TestSoakAcceptsDriverBimodalFlip(t *testing.T) {
+	var out bytes.Buffer
+	cfg := soakConfig{
+		out:        &out,
+		n:          3,
+		lane:       laneGPU,
+		scenarios:  bimodalScenarios(),
+		newSession: flipFactory(bimodalScenarioName, 209, gorender.AppleSoftwareRenderer),
+	}
+	if err := soak(&cfg); err != nil {
+		t.Fatalf("soak with a driver-bimodal flip on the Apple software renderer: %v, want clean", err)
+	}
+	text := out.String()
+	if !strings.Contains(text, "bimodal  "+bimodalScenarioName) {
+		t.Fatalf("soak did not report the bimodal flip:\n%s", text)
+	}
+	if strings.Contains(text, "MISMATCH") {
+		t.Fatalf("soak reported a MISMATCH for a driver-bimodal flip:\n%s", text)
+	}
+	if !strings.Contains(text, "driver-bimodal flip(s)") {
+		t.Fatalf("soak summary did not count the bimodal flip:\n%s", text)
+	}
+}
+
+// TestSoakBimodalExceptionIsNarrow verifies the exception is keyed to both the renderer and the scenario: the same
+// beyond-envelope flip is still a hard mismatch on any other GL stack, and on the listed stack for any other
+// scenario. This is what keeps it from becoming a general tolerance.
+func TestSoakBimodalExceptionIsNarrow(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		scenario    string
+		glRenderer  string
+		description string
+	}{
+		{"other renderer", bimodalScenarioName, "llvmpipe (LLVM 15.0.7, 256 bits)", "listed scenario, unlisted stack"},
+		{"other scenario", "alpha", gorender.AppleSoftwareRenderer, "unlisted scenario, listed stack"},
+		{"no GL context", bimodalScenarioName, "", "raster-style empty renderer string"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var out bytes.Buffer
+			cfg := soakConfig{
+				out:        &out,
+				n:          2,
+				lane:       laneGPU,
+				scenarios:  bimodalScenarios(),
+				newSession: flipFactory(tc.scenario, 209, tc.glRenderer),
+			}
+			err := soak(&cfg)
+			if err == nil || !strings.Contains(err.Error(), "mismatch") {
+				t.Fatalf("%s: err = %v, want a mismatch failure", tc.description, err)
+			}
+			if !strings.Contains(out.String(), "MISMATCH "+tc.scenario) {
+				t.Fatalf("%s: soak did not report the mismatch:\n%s", tc.description, out.String())
+			}
+		})
 	}
 }
 

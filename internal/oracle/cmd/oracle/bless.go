@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/richardwilkes/canvas/internal/oracle/golden"
+	"github.com/richardwilkes/canvas/internal/oracle/gorender"
 	"github.com/richardwilkes/canvas/internal/oracle/imgdiff"
 	"github.com/richardwilkes/canvas/internal/oracle/scenario"
 )
@@ -59,9 +60,12 @@ type blessConfig struct {
 // The guard is per-lane, mirroring soak: raster is strictly bit-exact (any hash difference refuses), while the gpu
 // and gpudmsaa lanes compare the verify pass per-pixel against the retained capture-pass buffers under the ±1 LSB
 // envelope (imgdiff.Exact1) — software GL rasterizers wobble ±1 intermittently between GL sessions, proven
-// driver-internal (see the soak doc comment for the evidence). Any delta > 1 still hard-refuses; within-envelope
-// wobble is logged but accepted. What gets written is always the capture pass — the first context in a fresh process,
-// the most reproducible render available (cold renders of separate processes agree within the same envelope).
+// driver-internal (see the soak doc comment for the evidence). Any delta > 1 still hard-refuses, except for the
+// scenarios gorender.DriverBimodal names for the live GL stack, where a beyond-envelope difference is the driver
+// picking its other bit-exact flavor for the verify session; those are logged as `bimodal` and accepted for the same
+// reason soak excuses them and the gates do not pixel-gate them. Within-envelope wobble is logged but accepted. What
+// gets written is always the capture pass — the first context in a fresh process, the most reproducible render
+// available (cold renders of separate processes agree within the same envelope).
 //
 // It refuses to replace a schema-1 manifest: those are the frozen Skia-era archive sets, which live only under
 // goldens-skia/ and must never be silently overwritten — finding one under goldens/ means the working tree is in a
@@ -147,6 +151,7 @@ func bless(cfg *blessConfig) error {
 			m.GLRenderer, m.GLVersion, verify.glRenderer, verify.glVersion)
 	}
 	wobbles := 0
+	bimodals := 0
 	for i, s := range cfg.scenarios {
 		pixels := verify.render(s)
 		if !envelope {
@@ -164,6 +169,13 @@ func bless(cfg *blessConfig) error {
 			return cmpErr
 		}
 		switch {
+		case res.DiffPixels > 0 && gorender.DriverBimodal(verify.glRenderer, s.Name):
+			// The verify session drew the driver's other flavor of this scenario. Not a refusal: the flip is
+			// driver-internal (gorender.DriverBimodal) and the golden gates do not pixel-gate this scenario on this
+			// stack, so the capture pass stays canonical exactly as it does for within-envelope wobble.
+			fmt.Fprintf(cfg.out, "bimodal  %-32s verify pass: max channel delta %d on %d px (driver-internal flavor flip; capture pass is canonical)\n",
+				s.Name, res.MaxDelta, res.AnyDiffPixels)
+			bimodals++
 		case res.DiffPixels > 0:
 			verify.dispose()
 			return fmt.Errorf(
@@ -178,8 +190,8 @@ func bless(cfg *blessConfig) error {
 	verify.dispose()
 	if envelope {
 		fmt.Fprintf(cfg.out,
-			"verify pass: all %d scenarios reproduced the capture pass within the ±1 LSB envelope (%d within-envelope wobble(s))\n",
-			len(m.Entries), wobbles)
+			"verify pass: all %d scenarios reproduced the capture pass within the ±1 LSB envelope (%d within-envelope wobble(s), %d driver-bimodal flip(s))\n",
+			len(m.Entries), wobbles, bimodals)
 	} else {
 		fmt.Fprintf(cfg.out, "verify pass: all %d scenarios reproduced their capture-pass hashes\n", len(m.Entries))
 	}

@@ -44,12 +44,20 @@ for artifact in "$tmp"/goldens-*/; do
 	done
 done
 for artifact in "$tmp"/goldens-*/; do
-	# A goldens-<GOOS_GOARCH> artifact is the capture leg's whole goldens/ subtree, which includes checkout copies of
-	# every OTHER platform's committed sets (on Windows legs additionally CRLF-mangled by the runner's autocrlf
-	# checkout). Only the artifact's own platform directories are that leg's fresh bless output — merge exactly those
-	# and ignore the rest, so a later artifact can never clobber an earlier platform's fresh set with a stale copy.
+	# An artifact holds only the lanes its leg actually blessed, staged as <lane>/<GOOS_GOARCH>/ (the workflow's
+	# staging step filters on the captured-lane list, so a lane that skipped or failed contributes nothing rather than
+	# its stale committed set). The per-platform filter below is the second guard, against an artifact built before
+	# that filter existed or by a hand-run leg: only the artifact's own platform directories can be its bless output,
+	# so a later artifact can never clobber an earlier platform's fresh set with a stale copy.
 	platform=$(basename "$artifact")
 	platform=${platform#goldens-}
+	# Each leg records its own account of what it captured, skipped and failed. Print it: a leg missing a lane is the
+	# thing a reviewer most needs to notice before committing, and it is invisible in `git diff`.
+	if [ -f "$artifact/CAPTURED.txt" ]; then
+		echo "leg $(cat "$artifact/CAPTURED.txt")"
+	else
+		echo "leg $platform: no CAPTURED.txt (artifact predates the captured-lane filter; verify its lanes by hand)"
+	fi
 	for dir in "$artifact"*/*/; do
 		rel=${dir#"$artifact"}
 		rel=${rel%/}

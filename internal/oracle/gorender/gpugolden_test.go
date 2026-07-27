@@ -28,32 +28,11 @@ func gpuGoldenDir() string {
 	return filepath.Join("..", "goldens", "gpu", runtime.GOOS+"_"+runtime.GOARCH)
 }
 
-// appleSoftwareRenderer is the GL_RENDERER string of Apple's software GL stack, the capture stack of the darwin golden
-// sets.
-const appleSoftwareRenderer = "Apple Software Renderer"
-
 // The log labels of the two GPU golden lanes; labelWrappedFBO additionally selects the wrappedFBOKnifeEdge exclusions.
 const (
 	labelOwnedRT    = "owned-rt"
 	labelWrappedFBO = "wrapped-fbo"
 )
-
-// bimodalOnAppleSoftware lists scenarios the Apple software renderer draws in one of two bit-exact flavors per GL
-// session (sticky per session and per machine state, flipping between sessions/machines at a load-dependent rate, with
-// identical GL_RENDERER and GL_VERSION strings in both). Proven driver-internal: output is independent of all
-// app-allocation content, and the GL command stream is byte-identical across flips; llvmpipe renders the same
-// scenarios deterministically. The affected scenes put antialiased edges under a perspective divide, which distributes
-// edge/sample crossings essentially uniformly against the pixel grid — so whichever internal precision mode the
-// driver picks, the few percent of crossings within its epsilon flip wholesale (measured: ~1,000-4,000 px at channel
-// deltas up to 209), far beyond the ±1 envelope and unfixable by nudging geometry.
-//
-// On golden sets captured on that renderer these scenarios are reported but not pixel-gated; every other set (the
-// llvmpipe lanes) gates them fully, and the exact-cover check still requires their goldens to exist everywhere. The
-// same pathology under 4x MSAA is why darwin_arm64 has no DMSAA set at all (there the flip count made even capture
-// unreliable).
-var bimodalOnAppleSoftware = map[string]bool{
-	"clip-persp": true,
-}
 
 // wrappedFBOKnifeEdge lists scenarios whose wrapped-FBO render deterministically differs from the owned-RT render (and
 // therefore from the owned-RT-captured golden) beyond the ±1 envelope on a specific GL stack, keyed by the manifest's
@@ -144,7 +123,7 @@ func checkGPUGoldens(t *testing.T, label string, render func(*gorender.GPUContex
 			t.Errorf("%s: %v", sc.Name, readErr)
 			continue
 		}
-		if manifest.GLRenderer == appleSoftwareRenderer && bimodalOnAppleSoftware[sc.Name] {
+		if gorender.DriverBimodal(manifest.GLRenderer, sc.Name) {
 			t.Logf("%s %-32s bimodal on this renderer (reported, not gated): %s", label, sc.Name, res)
 			continue
 		}

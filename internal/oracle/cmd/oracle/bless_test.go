@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	"github.com/richardwilkes/canvas/internal/oracle/golden"
+	"github.com/richardwilkes/canvas/internal/oracle/gorender"
 	"github.com/richardwilkes/canvas/internal/oracle/scenario"
 )
 
@@ -177,6 +178,75 @@ func TestBlessGPUEnvelopeAcceptsDelta1(t *testing.T) {
 	}
 	if golden.HashPixels(pixels) != wantHash {
 		t.Fatalf("written PNG is not the capture-pass render")
+	}
+}
+
+// TestBlessAcceptsDriverBimodalFlip is the bless-side half of TestSoakAcceptsDriverBimodalFlip: fixing soak alone
+// would only move the darwin_arm64 capture failure to the verify pass, which refuses on the same comparison.
+func TestBlessAcceptsDriverBimodalFlip(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "goldens", "gpu", "test_platform")
+	var out bytes.Buffer
+	cfg := blessConfig{
+		out:        &out,
+		dir:        dir,
+		lane:       laneGPU,
+		platform:   "test_platform",
+		scenarios:  bimodalScenarios(),
+		newSession: flipFactory(bimodalScenarioName, 209, gorender.AppleSoftwareRenderer),
+	}
+	if err := bless(&cfg); err != nil {
+		t.Fatalf("bless with a driver-bimodal verify-pass flip: %v, want success", err)
+	}
+	text := out.String()
+	if !strings.Contains(text, "bimodal  "+bimodalScenarioName) {
+		t.Fatalf("bless did not report the bimodal flip:\n%s", text)
+	}
+	if !strings.Contains(text, "driver-bimodal flip(s)") {
+		t.Fatalf("bless summary did not count the bimodal flip:\n%s", text)
+	}
+	// The capture pass stays canonical, exactly as it does for within-envelope wobble.
+	m, err := golden.ReadManifest(dir)
+	if err != nil {
+		t.Fatalf("ReadManifest: %v", err)
+	}
+	var entry *golden.Entry
+	for i := range m.Entries {
+		if m.Entries[i].Name == bimodalScenarioName {
+			entry = &m.Entries[i]
+		}
+	}
+	if entry == nil {
+		t.Fatalf("bless did not write a %s entry", bimodalScenarioName)
+	}
+	var target scenario.Scenario
+	for _, s := range bimodalScenarios() {
+		if s.Name == bimodalScenarioName {
+			target = s
+		}
+	}
+	if want := golden.HashPixels(solidRender(10)(target)); entry.SHA256 != want {
+		t.Fatalf("bless wrote the flipped verify render rather than the capture pass")
+	}
+}
+
+// TestBlessBimodalExceptionIsNarrow verifies bless still hard-refuses the same beyond-envelope flip on an unlisted GL
+// stack, so the exception cannot mask a real capture-time divergence.
+func TestBlessBimodalExceptionIsNarrow(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "goldens", "gpu", "test_platform")
+	cfg := blessConfig{
+		out:        &bytes.Buffer{},
+		dir:        dir,
+		lane:       laneGPU,
+		platform:   "test_platform",
+		scenarios:  bimodalScenarios(),
+		newSession: flipFactory(bimodalScenarioName, 209, "llvmpipe (LLVM 15.0.7, 256 bits)"),
+	}
+	err := bless(&cfg)
+	if err == nil || !strings.Contains(err.Error(), "±1 envelope") {
+		t.Fatalf("bless with a bimodal-named flip on an unlisted stack: err = %v, want an over-envelope refusal", err)
+	}
+	if _, statErr := os.Stat(dir); !os.IsNotExist(statErr) {
+		t.Fatalf("bless wrote the target directory despite refusing")
 	}
 }
 

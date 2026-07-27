@@ -60,12 +60,16 @@ CI steps run `-v`.
 
 ### Report-not-gate exclusions
 
-Two narrow, renderer-keyed exclusion lists live in `gorender/gpugolden_test.go`, each with the full evidence in its
-comment. Listed scenarios are still rendered and logged, but their pixels are not gated:
+Two narrow, renderer-keyed exclusion lists exist, each with the full evidence in its comment. Listed scenarios are
+still rendered and logged, but their pixels are not gated:
 
-- `bimodalOnAppleSoftware` (`clip-persp`) — Apple's software renderer draws it in one of two bit-exact flavors per GL
-  session, far beyond the ±1 envelope; applies only to sets whose manifest records that renderer. The same pathology
-  under 4x MSAA is why darwin_arm64 has **no** gpudmsaa set at all.
+- `gorender.DriverBimodal` (`clip-persp` on Apple's software renderer, in `gorender/driverquirks.go`) — that stack
+  draws it in one of two bit-exact flavors per GL session, far beyond the ±1 envelope; applies only to sets whose
+  manifest records that renderer. The same pathology under 4x MSAA is why darwin_arm64 has **no** gpudmsaa set at all.
+  This one lives in a non-test file because **capture must agree with gating**: `oracle soak` and `oracle bless`
+  consult it too, reporting such a flip without counting it as nondeterminism. When only the gates knew about it,
+  capturing that lane succeeded or failed by luck depending on whether the flip landed mid-soak (darwin_arm64 gpu,
+  2026-07-27).
 - `wrappedFBOKnifeEdge` (`text-sdf-rotated` on one specific llvmpipe build) — a deterministic 1-pixel backing-type
   rasterization knife edge, wrapped-FBO lane only, keyed to the exact `GL_RENDERER` string so a driver bump forces
   re-evaluation.
@@ -94,7 +98,9 @@ Procedure:
    context fails to come up skips the lane loudly (bless exits 3, distinct from failure); a missing artifact must be
    obvious in the run log, not discovered at commit time.
 3. **Download and merge**: `internal/oracle/capture.sh RUN_ID` pulls the run's artifacts into the working tree, merging
-   only each leg's own platform directories. It never commits.
+   only the lanes each leg actually blessed, and only its own platform directories. It prints each leg's
+   captured/skipped/failed summary as it goes — a leg missing a lane is invisible in `git diff`, so read those lines.
+   It never commits.
 4. **Review**: the run logs carry bless's per-scenario old-vs-new change summaries (imgdiff stats); locally, `git diff`
    shows exactly which sets changed, and the PR shows GitHub's image diffs. Every changed image should be explained by
    the intended change.
@@ -105,7 +111,11 @@ What capture-time failures mean:
 - **soak/bless MISMATCH** (cross-pass divergence): the port rendered differently in two fresh sessions on the same
   machine — a nondeterminism bug. Fix it first; a golden set captured over nondeterminism gates nothing. `oracle soak`
   is the diagnostic tool (raster compares strict hashes; the GPU lanes compare per-pixel under the ±1 envelope, so a
-  MISMATCH there is already beyond the known driver wobble).
+  MISMATCH there is already beyond the known driver wobble). A `bimodal` line is *not* a MISMATCH: that is a
+  `gorender.DriverBimodal` scenario on its listed stack, reported and counted but not failed.
+- **A lane missing from a leg's artifact**: the leg skipped it (no GL context) or failed it. The artifact's
+  `CAPTURED.txt` and `capture.sh`'s per-leg summary line both say which; the lane's committed set is left untouched,
+  so its gates keep running against the old goldens until a later capture succeeds.
 - **GL-stack mismatch** (a gate failing on the `GL_RENDERER` string): the GL stack moved underneath the goldens — a
   runner-image driver bump, or a local run on the wrong stack. If the move is intentional, recapture; the new manifest
   records the new stack.

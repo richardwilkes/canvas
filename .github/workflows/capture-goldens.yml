@@ -213,19 +213,33 @@ jobs:
           echo "skipped: ${skipped:- (none)}"
           echo "failed:  ${failed:- (none)}"
           find goldens -name manifest.json | sort
+          # Hand the staging step the lanes that actually blessed. It must not infer this from the presence of
+          # goldens/<lane>/<platform>, because the checkout already contains every committed set: a lane that skipped
+          # or failed still has its directory there, holding the *prior* committed goldens, and exporting those ships
+          # a stale set that looks exactly like fresh capture output to a reviewer and to capture.sh.
+          echo "CAPTURED_LANES=$captured" >> "$GITHUB_ENV"
+          echo "CAPTURE_SUMMARY=captured:${captured:- (none)} | skipped:${skipped:- (none)} | failed:${failed:- (none)}" >> "$GITHUB_ENV"
           if [ -n "$failed" ]; then
             echo "::error title=Capture leg $PLATFORM failed::lane(s)$failed did not capture; see above"
             exit 1
           fi
       # Upload whatever was captured even when a lane failed the leg — partial results are still reviewable, and the
       # summary above says exactly which lanes are missing and why.
-      # Stage and upload only this platform's directories: the checkout's goldens/ also holds every other platform's
-      # committed sets, which are not this leg's output — and on Windows the checkout rewrites their text files to
-      # CRLF, so uploading the whole subtree would ship stale, mangled copies that a merge could mistake for capture
-      # output (capture.sh filters to the artifact's own platform as a second guard). Staging into export/ (rather
-      # than a glob path on the upload step) pins the artifact's internal layout to <lane>/<platform>/ regardless of
-      # how many lanes this leg captured — upload-artifact roots a glob at the least common ancestor of its matches,
-      # which would collapse the layout for a single-lane leg.
+      # Stage and upload only the lanes this leg actually blessed, and only this platform's directories. Two distinct
+      # filters, for two distinct ways a stale set can reach the artifact:
+      #   - CAPTURED_LANES (from the step above) excludes lanes that skipped or failed. Their goldens/<lane>/<platform>
+      #     directory still exists in the checkout holding the *prior committed* set, and exporting it would ship a
+      #     stale set indistinguishable from fresh capture output — capture.sh would report `merged <lane>/<platform>`
+      #     for a lane that never captured.
+      #   - The per-platform selection excludes every other platform's committed sets, which are not this leg's output
+      #     — and on Windows the checkout rewrites their text files to CRLF, so uploading the whole subtree would ship
+      #     mangled copies too (capture.sh filters to the artifact's own platform as a second guard).
+      # Staging into export/ (rather than a glob path on the upload step) pins the artifact's internal layout to
+      # <lane>/<platform>/ regardless of how many lanes this leg captured — upload-artifact roots a glob at the least
+      # common ancestor of its matches, which would collapse the layout for a single-lane leg.
+      # CAPTURED.txt records the leg's own account of what it did, so a downloaded artifact is self-describing and a
+      # leg that captured nothing still uploads something (keeping if-no-files-found: error meaningful for a genuinely
+      # broken upload rather than firing on an already-diagnosed capture failure).
       - name: Stage this platform's sets for upload
         if: always()
         working-directory: internal/oracle
@@ -233,12 +247,17 @@ jobs:
           PLATFORM: ${{ matrix.platform }}
         run: |
           mkdir -p export
-          for lane in raster gpu gpudmsaa; do
+          echo "$PLATFORM: ${CAPTURE_SUMMARY:-capture step did not run}" > export/CAPTURED.txt
+          for lane in ${CAPTURED_LANES:-}; do
             if [ -d "goldens/$lane/$PLATFORM" ]; then
               mkdir -p "export/$lane"
               cp -R "goldens/$lane/$PLATFORM" "export/$lane/"
+            else
+              echo "::error title=Staging inconsistency on $PLATFORM::lane $lane reported captured but goldens/$lane/$PLATFORM does not exist"
+              exit 1
             fi
           done
+          cat export/CAPTURED.txt
           find export -name manifest.json | sort
       - name: Upload goldens artifact
         if: always()

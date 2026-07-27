@@ -98,7 +98,7 @@ func TestGoGPUDMSAAvsSelfCapturedGolden(t *testing.T) {
 			t.Errorf("%s: %v", sc.Name, readErr)
 			continue
 		}
-		if manifest.GLRenderer == appleSoftwareRenderer && bimodalOnAppleSoftware[sc.Name] {
+		if gorender.DriverBimodal(manifest.GLRenderer, sc.Name) {
 			t.Logf("dmsaa %-32s bimodal on this renderer (reported, not gated): %s", sc.Name, res)
 			continue
 		}

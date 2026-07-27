@@ -16,6 +16,7 @@ import (
 	"io"
 
 	"github.com/richardwilkes/canvas/internal/oracle/golden"
+	"github.com/richardwilkes/canvas/internal/oracle/gorender"
 	"github.com/richardwilkes/canvas/internal/oracle/imgdiff"
 	"github.com/richardwilkes/canvas/internal/oracle/scenario"
 )
@@ -52,6 +53,14 @@ type soakConfig struct {
 // Within-envelope wobble is logged per scenario (max delta + differing-pixel count) but is informational, not a
 // failure; any delta > 1 is a MISMATCH failure exactly as a raster hash difference is.
 //
+// The one exception is a scenario gorender.DriverBimodal names for the live GL stack: there the driver picks one of
+// two bit-exact flavors per session, so a beyond-envelope difference is the stack's own behavior rather than
+// app-level nondeterminism. Those are logged as `bimodal` and counted separately. The exception exists so capture and
+// gating agree — the golden gates already report-not-gate exactly these scenario/renderer pairs, and without the
+// matching rule here a lane's capture succeeded or failed by luck depending on whether the flip happened to land
+// mid-soak (darwin_arm64 gpu, 2026-07-27). It is deliberately not a general tolerance: every other beyond-envelope
+// difference still fails.
+//
 // The full corpus soaks in every lane, including the text scenarios the Skia-era shared raster set excluded: the
 // self-captured raster sets are per-platform, so platform-scaler-dependent output is in scope for them too.
 //
@@ -66,6 +75,7 @@ func soak(cfg *soakConfig) error {
 	}
 	mismatches := 0
 	wobbles := 0
+	bimodals := 0
 	for iter := 1; iter <= cfg.n; iter++ {
 		session, err := cfg.newSession()
 		if err != nil {
@@ -101,6 +111,14 @@ func soak(cfg *soakConfig) error {
 				return cmpErr
 			}
 			switch {
+			case res.DiffPixels > 0 && gorender.DriverBimodal(session.glRenderer, s.Name):
+				// The driver picked its other internal precision mode for this session. Reported, not counted: it is
+				// not app-level nondeterminism and the golden gates do not pixel-gate this scenario on this stack
+				// either (gorender.DriverBimodal). Excusing it here is what keeps capture from succeeding or failing
+				// by luck on the Apple software renderer.
+				fmt.Fprintf(cfg.out, "bimodal  %-32s pass %d: max channel delta %d on %d px (driver-internal flavor flip; reported, not a mismatch)\n",
+					s.Name, iter, res.MaxDelta, res.AnyDiffPixels)
+				bimodals++
 			case res.DiffPixels > 0:
 				fmt.Fprintf(cfg.out, "MISMATCH %-32s pass %d: max channel delta %d, %d px beyond the ±1 envelope (%d px differ at all)\n",
 					s.Name, iter, res.MaxDelta, res.DiffPixels, res.AnyDiffPixels)
@@ -130,8 +148,8 @@ func soak(cfg *soakConfig) error {
 	}
 	if envelope {
 		fmt.Fprintf(cfg.out,
-			"soak: all %d scenarios stayed within the ±1 LSB envelope of pass 1 across %d fresh-session passes (%d within-envelope wobble(s))\n",
-			len(scens), cfg.n, wobbles)
+			"soak: all %d scenarios stayed within the ±1 LSB envelope of pass 1 across %d fresh-session passes (%d within-envelope wobble(s), %d driver-bimodal flip(s))\n",
+			len(scens), cfg.n, wobbles, bimodals)
 	} else {
 		fmt.Fprintf(cfg.out, "soak: all %d scenarios rendered bit-identically across %d fresh-session passes\n",
 			len(scens), cfg.n)

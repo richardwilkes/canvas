@@ -68,8 +68,9 @@ type BlurAlgorithm interface {
 	// SupportsOnlyDecalTiling reports whether this algorithm can only apply decal tiling directly (other tile modes
 	// must be applied via the crop machinery).
 	SupportsOnlyDecalTiling() bool
-	// Blur produces a blurred image filling dstBounds. srcBounds restricts the input pixels and both rects are relative
-	// to src's logical bounds; tileMode applies at srcBounds' boundary.
+	// Blur produces a blurred image filling dstBounds, or nil if it cannot (an unusable source: a failed readback of a
+	// drawable backing, a failed upload). srcBounds restricts the input pixels and both rects are relative to src's
+	// logical bounds; tileMode applies at srcBounds' boundary.
 	Blur(sigma geom.Size, src *SpecialImage, srcBounds geom.IRect, tileMode shaders.TileMode,
 		dstBounds geom.IRect) *SpecialImage
 }
@@ -490,7 +491,15 @@ func (raster8888BlurAlgorithm) Blur(sigma geom.Size, src *SpecialImage, srcBound
 		}
 		panic("sigma out of range")
 	}
+	// The passes read pixel storage as 32-bit words, so an N32 backing is a hard requirement (FilterResult.rescale
+	// re-renders anything else before the blur sees it), and a drawable backing whose readback failed resolves to nil
+	// pixels. Both are the BlurAlgorithm.Blur contract's failure signal — a nil result — rather than a panic, matching
+	// the GPU algorithm's failed-resolve/failed-upload lanes.
+	px := src.subsetPixels()
+	if px == nil || px.Info.ColorType != imagecore.ColorTypeN32 {
+		return nil
+	}
 	makerX := makeMaker(sigma.Width)
 	makerY := makeMaker(sigma.Height)
-	return evalBlurPasses(makerX, makerY, src.subsetPixels(), srcBounds, dstBounds)
+	return evalBlurPasses(makerX, makerY, px, srcBounds, dstBounds)
 }

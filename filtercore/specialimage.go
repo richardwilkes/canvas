@@ -8,11 +8,15 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // SpecialImage: a view of a subset of a backing store, used as filter inputs/outputs so that intermediate renders can
-// share buffers. The filter pipeline runs on N32 premul only (everything <= 32bpp upgrades to N32, and our surfaces are
-// N32). The backing store is polymorphic (the DrawableImage pattern): raster-backed views hold imagecore.Pixels in
-// RGBA8888 and drawable-backed views hold an imagecore.DrawableImage — in practice the GPU backend's texture-backed
-// image — resolving to CPU pixels only if a raster consumer demands them (a readback, counted by ResolveToRasterCount
-// so the visibility contract survives the GPU lane).
+// share buffers. Every surface the pipeline renders into is N32 premul, but a source image wrapped by Backend.MakeImage
+// keeps whatever supported color type it arrived with — the constructors validate the subset bounds, not the format —
+// so the N32 requirement is enforced by the consumers that actually depend on pixel storage rather than here:
+// FilterResult.rescale re-renders a non-N32 image into an N32 surface (rescale.go) and the raster blur algorithm, which
+// reads pixel storage as 32-bit words, rejects anything else (blurengine.go). The backing store is polymorphic (the
+// DrawableImage pattern): raster-backed views hold imagecore.Pixels in RGBA8888 and drawable-backed views hold an
+// imagecore.DrawableImage — in practice the GPU backend's texture-backed image — resolving to CPU pixels only if a
+// raster consumer demands them (a readback, counted by ResolveToRasterCount so the visibility contract survives the GPU
+// lane).
 
 package filtercore
 

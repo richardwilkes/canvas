@@ -261,6 +261,92 @@ func TestBoxBlurWindowAndKernel(t *testing.T) {
 	}
 }
 
+// The raster blur reads pixel storage as 32-bit words, so a source it cannot read that way must come back as the
+// contract's nil failure signal (Builder.Blur drops the whole result then) rather than panicking inside the passes.
+func TestRasterBlurRejectsUnusableSources(t *testing.T) {
+	algorithm := RasterBlurEngine().FindAlgorithm()
+	bounds := geom.IRectWH(4, 4)
+	sigma := geom.Size{Width: 1, Height: 1}
+	blur := func(src *SpecialImage) *SpecialImage {
+		return algorithm.Blur(sigma, src, bounds, shaders.TileDecal, bounds)
+	}
+
+	// Control: an N32 source blurs normally.
+	n32 := NewSpecialImage(bounds, imagecore.NewPixels(imagecore.MakeN32Premul(4, 4)))
+	if n32 == nil {
+		t.Fatal("NewSpecialImage(N32) = nil")
+	}
+	if blur(n32) == nil {
+		t.Fatal("Blur of an N32 source = nil, want a blurred image")
+	}
+
+	// A drawable backing whose CPU resolution fails (the GPU→CPU readback on the filter fallback lane).
+	unresolvable := NewSpecialImageDrawable(bounds, &failingDrawable{})
+	if unresolvable == nil {
+		t.Fatal("NewSpecialImageDrawable = nil")
+	}
+	if got := blur(unresolvable); got != nil {
+		t.Fatalf("Blur of a failed readback = %v, want nil", got)
+	}
+
+	// A non-N32 raster backing: rescale re-renders these before the blur, so reaching here is a failure, not garbage.
+	for _, ct := range []imagecore.ColorType{
+		imagecore.ColorTypeAlpha8, imagecore.ColorTypeRGB565, imagecore.ColorTypeRGBAF16,
+		imagecore.ColorTypeBGRA8888,
+	} {
+		info, ok := imagecore.MakeInfo(4, 4, ct, imagecore.AlphaTypePremul)
+		if !ok {
+			t.Fatalf("MakeInfo(%v) failed", ct)
+		}
+		si := NewSpecialImage(bounds, imagecore.NewPixels(info))
+		if si == nil {
+			t.Fatalf("NewSpecialImage(%v) = nil", ct)
+		}
+		if got := blur(si); got != nil {
+			t.Fatalf("Blur of a %v source = %v, want nil", ct, got)
+		}
+	}
+}
+
+// Only the destination half of each mode's Porter-Duff pair is transcribed (the source half multiplies a transparent
+// black source and cannot change the answer), so pin the transcription and the advanced-mode miss.
+func TestBlendModeDstCoeff(t *testing.T) {
+	want := map[raster.BlendMode]blendCoeff{
+		raster.BlendClear:    coeffZero,
+		raster.BlendSrc:      coeffZero,
+		raster.BlendDst:      coeffOne,
+		raster.BlendSrcOver:  coeffISA,
+		raster.BlendDstOver:  coeffOne,
+		raster.BlendSrcIn:    coeffZero,
+		raster.BlendDstIn:    coeffSA,
+		raster.BlendSrcOut:   coeffZero,
+		raster.BlendDstOut:   coeffISA,
+		raster.BlendSrcATop:  coeffISA,
+		raster.BlendDstATop:  coeffSA,
+		raster.BlendXor:      coeffISA,
+		raster.BlendPlus:     coeffOne,
+		raster.BlendModulate: coeffSC,
+		raster.BlendScreen:   coeffISC,
+	}
+	if len(want) != len(gDstCoeffs) {
+		t.Fatalf("table covers %d modes, want %d", len(gDstCoeffs), len(want))
+	}
+	for mode, coeff := range want {
+		got, ok := blendModeDstCoeff(mode)
+		if !ok {
+			t.Fatalf("mode %d not in the coefficient table", mode)
+		}
+		if got != coeff {
+			t.Fatalf("mode %d dst coefficient = %d, want %d", mode, got, coeff)
+		}
+	}
+	for _, mode := range []raster.BlendMode{raster.BlendOverlay, raster.BlendMultiply, raster.BlendLuminosity} {
+		if _, ok := blendModeDstCoeff(mode); ok {
+			t.Fatalf("advanced mode %d reported a coefficient", mode)
+		}
+	}
+}
+
 func TestBlendModeAffectsTransparentBlack(t *testing.T) {
 	// True unless the dst coefficient is One/ISA/ISC; advanced modes false.
 	trueModes := []int32{0 /*clear*/, 1 /*src*/, 5 /*srcIn*/, 6 /*dstIn*/, 7 /*srcOut*/, 10 /*dstATop*/, 13 /*modulate*/}
@@ -354,3 +440,9 @@ func (*fakeDrawable) UniqueID() uint32               { return 1 }
 func (*fakeDrawable) MakeNonTextureImage() *imagecore.Image {
 	panic("ColorType must not resolve a drawable backing to CPU pixels")
 }
+
+// failingDrawable is a drawable backing whose CPU resolution fails, the way a GPU→CPU readback does when the context is
+// abandoned; subsetPixels then reports nil pixels for it.
+type failingDrawable struct{ fakeDrawable }
+
+func (*failingDrawable) MakeNonTextureImage() *imagecore.Image { return nil }

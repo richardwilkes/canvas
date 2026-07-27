@@ -620,8 +620,7 @@ func (f *FilterResult) Draw(ctx *Context, target Device, blender *raster.BlendMo
 // transparent-black source modifies the dst: true unless the dst coefficient evaluates to 1 (One, ISA, ISC); advanced
 // modes never do.
 func blendModeAffectsTransparentBlack(mode raster.BlendMode) bool {
-	src, dst, ok := blendModeAsCoeff(mode)
-	_ = src
+	dst, ok := blendModeDstCoeff(mode)
 	if !ok {
 		return false // advanced blend modes do not affect transparent black
 	}

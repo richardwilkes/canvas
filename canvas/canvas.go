@@ -250,11 +250,13 @@ func (c *Canvas) internalSaveLayer(bounds *geom.Rect, paint *Paint) {
 		filter = paint.ImageFilter
 	}
 
-	// If the restorePaint has a transparency-affecting color filter, the output is unbounded during restore(); without
-	// an image filter the plain drawDevice would not apply effects beyond the layer's image, so such restores cannot
-	// use the trivial path either.
+	// If the restorePaint has a transparency-affecting color filter or blend mode, the output is unbounded during
+	// restore(); without an image filter the plain drawDevice would not apply effects beyond the layer's image, so such
+	// restores cannot use the trivial path either.
 	cf := restorePaint.ColorFilter
-	drawDeviceMustFillClip := filter == nil && cf != nil && filtercore.ColorFilterAffectsTransparentBlack(cf)
+	drawDeviceMustFillClip := filter == nil &&
+		((cf != nil && filtercore.ColorFilterAffectsTransparentBlack(cf)) ||
+			raster.BlendModeAffectsTransparentBlack(restorePaint.BlendMode))
 	trivialRestore := !drawDeviceMustFillClip
 
 	// Size the new layer relative to the prior device, which may already be aligned for filters.
@@ -300,6 +302,14 @@ func (c *Canvas) internalSaveLayer(bounds *geom.Rect, paint *Paint) {
 	}
 
 	newDevice := priorDevice.CreateDevice(layerBounds.Width(), layerBounds.Height(), paint)
+	if newDevice == nil {
+		// The layer's pixels could not be allocated — the GPU device returns nil for an abandoned context, an unknown
+		// format, or dimensions past Caps.MaxRenderTargetSize. Upstream substitutes a no-pixels device so the layer's
+		// draws are squashed while the state still unwinds normally; marking the layer empty does the same here and
+		// leaves the paired restore() a no-op.
+		c.abortLayer()
+		return
+	}
 
 	// Clip while the device coordinate space is the identity so it's easy to define the rect that excludes the added
 	// padding pixels, ensuring they remain transparent black.

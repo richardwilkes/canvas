@@ -61,17 +61,15 @@ type Device interface {
 	PushClipStack()
 	PopClipStack()
 
-	// ClipRect/ClipPath/ClipRegion/ReplaceClip mutate the device's clip.
+	// ClipRect/ClipPath/ClipRegion mutate the device's clip.
 	ClipRect(rect geom.Rect, op raster.ClipOp, aa bool)
 	ClipPath(p *path.Path, op raster.ClipOp, aa bool)
 	ClipRegion(rgn *raster.Region, op raster.ClipOp)
-	ReplaceClip(rect geom.IRect)
 
 	// Clip queries.
 	IsClipEmpty() bool
 	IsClipRect() bool
 	IsClipWideOpen() bool
-	IsClipAntiAliased() bool
 	DevClipBounds() geom.IRect
 
 	// Draw entry points.
@@ -211,11 +209,6 @@ func (d *BitmapDevice) ClipRegion(rgn *raster.Region, op raster.ClipOp) {
 	d.rcStack.ClipRegion(rgn, op)
 }
 
-// ReplaceClip implements Device.
-func (d *BitmapDevice) ReplaceClip(rect geom.IRect) {
-	d.rcStack.ReplaceClip(rect)
-}
-
 // IsClipEmpty implements Device.
 func (d *BitmapDevice) IsClipEmpty() bool { return d.rcStack.RC().IsEmpty() }
 
@@ -231,12 +224,6 @@ func (d *BitmapDevice) IsClipWideOpen() bool {
 	// If we're AA, we can't be wide-open (we would represent that as BW)
 	return rc.IsBW() && rc.BWRgn().IsRect() &&
 		rc.BWRgn().Bounds() == geom.IRectWH(d.pix.Width, d.pix.Height)
-}
-
-// IsClipAntiAliased implements Device.
-func (d *BitmapDevice) IsClipAntiAliased() bool {
-	rc := d.rcStack.RC()
-	return !rc.IsEmpty() && rc.IsAA()
 }
 
 // DevClipBounds implements Device.

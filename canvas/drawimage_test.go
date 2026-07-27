@@ -225,3 +225,47 @@ func TestDrawImageColorFilteredSpriteFallsToShader(t *testing.T) {
 		t.Fatalf("filtered image draw = %08x want FFFFFFFF", got)
 	}
 }
+
+// TestDrawImageNineInvalidCenterKeepsCallerPaint: the invalid-lattice fallback is a plain whole-image draw, not a set
+// of abutting lattice patches, so it must not run the paint through cleanPaintForLattice. That cleaning drops the mask
+// filter and forces AntiAlias off, which on a rotated fallback draw is the difference between a smoothed and a jagged
+// edge — a silent quality loss for a paint the caller never asked to have stripped.
+func TestDrawImageNineInvalidCenterKeepsCallerPaint(t *testing.T) {
+	img := gradientImage(4, 4)
+	// An empty center rect makes the lattice invalid, forcing the fallback.
+	invalidCenter := geom.IRect{Left: 2, Top: 2, Right: 2, Bottom: 2}
+	validCenter := geom.IRect{Left: 1, Top: 1, Right: 3, Bottom: 3}
+
+	drawNine := func(center geom.IRect, aa bool) *raster.Pixmap {
+		pix := raster.NewPixmap(24, 24)
+		c := NewForPixmap(pix)
+		c.Translate(12, 12)
+		c.Rotate(20) // a rotated draw: the image edges no longer land on pixel boundaries
+		c.Translate(-8, -8)
+		p := NewPaint()
+		p.AntiAlias = aa
+		c.DrawImageNine(img, center, geom.RectWH(16, 16), shaders.FilterNearest, p)
+		return pix
+	}
+
+	aaPix := drawNine(invalidCenter, true)
+	bwPix := drawNine(invalidCenter, false)
+	if equalPixmaps(aaPix, bwPix) {
+		t.Error("the invalid-lattice fallback ignored the paint's AntiAlias flag")
+	}
+	// Antialiasing shows up as edge pixels that are neither fully covered nor untouched.
+	partial := 0
+	for i := range aaPix.Pix {
+		if aaPix.Pix[i] != bwPix.Pix[i] && aaPix.Pix[i] != 0 {
+			partial++
+		}
+	}
+	if partial == 0 {
+		t.Error("the antialiased fallback produced no partially covered edge pixels")
+	}
+
+	// The lattice path proper still cleans the paint: those patches abut, and AA on their shared edges seams.
+	if !equalPixmaps(drawNine(validCenter, true), drawNine(validCenter, false)) {
+		t.Error("the lattice patch draws must still be cleaned of AntiAlias")
+	}
+}

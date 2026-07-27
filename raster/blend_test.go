@@ -154,3 +154,40 @@ func TestBlendBlitterDstIdentity(t *testing.T) {
 		}
 	}
 }
+
+// TestBlendModeAffectsTransparentBlackMatchesKernels derives the answer from the blend kernels themselves: feed a
+// transparent black source through blendHighpAll (which covers every mode, unlike blendLowp) and see whether the
+// destination survives untouched. The predicate must agree for all 29 modes — it is what decides whether a saveLayer
+// restore has to flood the whole clip instead of just the layer's bounds.
+func TestBlendModeAffectsTransparentBlackMatchesKernels(t *testing.T) {
+	dsts := []pmColor4f{
+		{r: 0.25, g: 0.5, b: 0.75, a: 1},
+		{r: 0.1, g: 0.2, b: 0.3, a: 0.4},
+		{r: 1, g: 1, b: 1, a: 1},
+		{r: 0, g: 0, b: 0, a: 0.5},
+	}
+	for mode := BlendClear; mode <= BlendLuminosity; mode++ {
+		preserved := true
+		for _, d := range dsts {
+			if got := blendHighpAll(mode, pmColor4f{}, d); got != d {
+				preserved = false
+				break
+			}
+		}
+		if got := BlendModeAffectsTransparentBlack(mode); got != !preserved {
+			t.Errorf("mode %d: BlendModeAffectsTransparentBlack = %v, but the kernel %s the destination",
+				mode, got, map[bool]string{true: "preserves", false: "modifies"}[preserved])
+		}
+	}
+	// The seven modes the coefficient rule (dst coeff not One/ISA/ISC) singles out, spelled out so a table edit that
+	// happens to agree with a broken kernel still fails.
+	want := map[BlendMode]bool{
+		BlendClear: true, BlendSrc: true, BlendSrcIn: true, BlendSrcOut: true,
+		BlendDstIn: true, BlendDstATop: true, BlendModulate: true,
+	}
+	for mode := BlendClear; mode <= BlendLuminosity; mode++ {
+		if got := BlendModeAffectsTransparentBlack(mode); got != want[mode] {
+			t.Errorf("BlendModeAffectsTransparentBlack(%d) = %v, want %v", mode, got, want[mode])
+		}
+	}
+}

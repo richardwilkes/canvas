@@ -449,14 +449,16 @@ func (c *Canvas) DrawImageNine(img *imagecore.Image, center geom.IRect, dst geom
 		yDivs:  []int32{center.Top, center.Bottom},
 		bounds: geom.IRectWH(img.Width(), img.Height()),
 	}
-	latticePaint := cleanPaintForLattice(paint)
 	if !latticeValid(img.Width(), img.Height(), &lattice) {
+		// The fallback is an ordinary whole-image draw, not a set of lattice patches, so it keeps the caller's paint:
+		// cleanPaintForLattice's mask-filter drop and AA clear exist only to keep adjoining patches from seaming.
 		c.DrawImageRect(img, geom.RectWH(float32(img.Width()), float32(img.Height())), dst,
-			shaders.SamplingOptions{Filter: filter}, &latticePaint, ConstraintStrict)
+			shaders.SamplingOptions{Filter: filter}, paint, ConstraintStrict)
 		return
 	}
 
 	// The lattice draw proper.
+	latticePaint := cleanPaintForLattice(paint)
 	realPaint := cleanPaintForDrawImage(&latticePaint)
 	if c.internalQuickReject(dst, &realPaint) {
 		return

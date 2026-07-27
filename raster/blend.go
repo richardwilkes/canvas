@@ -84,6 +84,26 @@ func BlendSupportsCoverageAsAlpha(mode BlendMode) bool {
 	return blendShouldPreScaleCoverage(mode)
 }
 
+// BlendModeAffectsTransparentBlack reports whether mode turns a transparent black source into something other than the
+// untouched destination. For the coefficient-based modes (BlendClear through BlendScreen) a source of (0,0,0,0) leaves
+// dst alone exactly when the dst coefficient evaluates to 1, which is true for One, ISA and ISC; the modes listed here
+// are the ones whose dst coefficient is Zero, SA or SC instead. The advanced (non-separable and separable-formula)
+// modes past BlendScreen all reduce to dst for a transparent black source, so they never affect it.
+func BlendModeAffectsTransparentBlack(mode BlendMode) bool {
+	switch mode {
+	case BlendClear, // dst coeff Zero
+		BlendSrc,      // dst coeff Zero
+		BlendSrcIn,    // dst coeff Zero
+		BlendSrcOut,   // dst coeff Zero
+		BlendDstIn,    // dst coeff SA
+		BlendDstATop,  // dst coeff SA
+		BlendModulate: // dst coeff SC
+		return true
+	default:
+		return false
+	}
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // lowp (8-bit in 16-bit lanes) kernels
 

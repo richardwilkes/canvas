@@ -191,12 +191,6 @@ func regionBoundaryPath(rgn *raster.Region) *path.Path {
 	return p
 }
 
-// ReplaceClip implements canvas.Device.
-func (d *Device) ReplaceClip(rect geom.IRect) {
-	deviceRect, _ := path.MapRect(&d.globalToDevice, rect.ToRect())
-	d.clipStack.ReplaceClip(deviceRect, false)
-}
-
 // IsClipEmpty implements canvas.Device.
 func (d *Device) IsClipEmpty() bool { return d.clipStack.isEmpty(d.bounds()) }
 
@@ -214,9 +208,6 @@ func (d *Device) IsClipRect() bool {
 	_, boundType, isIntersectionOfRects := d.clipStack.getBounds()
 	return isIntersectionOfRects && boundType == normalBounds
 }
-
-// IsClipAntiAliased implements canvas.Device.
-func (d *Device) IsClipAntiAliased() bool { return d.clipStack.isAnyAA() }
 
 // DevClipBounds implements canvas.Device.
 func (d *Device) DevClipBounds() geom.IRect { return d.clipStack.bounds(d.bounds()).RoundOut() }

@@ -154,9 +154,13 @@ func Color4fFromColor(c Color) Color4f {
 
 // toUnorm8 converts one float channel to a byte: v = x*255 + 0.5, pinned to [0, 255], then a truncating cast — the +0.5
 // makes the truncation round half away from zero for the expected positive inputs (a 76.5 tie goes to 77 where
-// round-to-even would give 76).
+// round-to-even would give 76). The explicit float32 conversion around the multiply keeps the two roundings the doc
+// describes from being contracted into one: without it arm64 emits FMADDS while amd64 emits a separate multiply and
+// add, so the executed arithmetic differs by platform. Both forms happen to agree on every one of the 2^32 float32
+// inputs (TestToUnorm8MatchesTwoStepRounding pins the contract), but the port pins goldens on bit-exact output, so the
+// arithmetic is written so that agreement does not depend on which instructions a back end chooses to emit.
 func toUnorm8(x float32) uint8 {
-	v := x*255 + 0.5
+	v := float32(x*255) + 0.5
 	if !(v > 0) { // handles NaN
 		return 0
 	}

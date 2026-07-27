@@ -150,16 +150,6 @@ func (d *Device) ClipRegion(rgn *raster.Region, op raster.ClipOp) {
 	}
 }
 
-// ReplaceClip implements canvas.Device: the rect is in device coordinates (the callers guarantee pixel-aligned
-// device-to-global when this is used).
-func (d *Device) ReplaceClip(rect geom.IRect) {
-	deviceRect := rect
-	if !deviceRect.Intersect(geom.IRectSize(d.sdc.Dimensions())) {
-		deviceRect = geom.IRect{}
-	}
-	d.clipStack.ReplaceClip(deviceRect)
-}
-
 // IsClipEmpty implements canvas.Device.
 func (d *Device) IsClipEmpty() bool { return d.clipStack.ClipState() == ClipStackEmpty }
 
@@ -171,15 +161,6 @@ func (d *Device) IsClipRect() bool {
 
 // IsClipWideOpen implements canvas.Device.
 func (d *Device) IsClipWideOpen() bool { return d.clipStack.ClipState() == ClipStackWideOpen }
-
-// IsClipAntiAliased implements canvas.Device.
-func (d *Device) IsClipAntiAliased() bool {
-	state := d.clipStack.ClipState()
-	if state == ClipStackEmpty || state == ClipStackWideOpen {
-		return false
-	}
-	return d.clipStack.AnyElementAA()
-}
 
 // DevClipBounds implements canvas.Device.
 func (d *Device) DevClipBounds() geom.IRect { return d.clipStack.GetConservativeBounds() }

@@ -143,3 +143,63 @@ func TestSRGBTransferRoundTrip(t *testing.T) {
 		t.Errorf("srgbToLinear(0.5) = %g", got)
 	}
 }
+
+// TestToUnorm8MatchesTwoStepRounding pins the arithmetic toUnorm8's doc describes: x*255 is rounded to float32, then the
+// +0.5 is rounded separately, then the result is truncated, with the pin and the NaN-to-0 behavior around it. The
+// reference computes both roundings in float64, where no contraction is possible, so any change to the rounding
+// discipline (round-to-even, math.Round, a different pin order) shows up here. It does not by itself catch a
+// reintroduced fused multiply-add: an exhaustive sweep of all 2^32 float32 inputs shows the fused and unfused forms
+// agree on every one of them, which is why the FMA in the pre-fix code was latent rather than a live golden divergence.
+func TestToUnorm8MatchesTwoStepRounding(t *testing.T) {
+	twoStep := func(x float32) uint8 {
+		v := float32(float64(float32(float64(x)*255)) + 0.5)
+		if !(v > 0) {
+			return 0
+		}
+		if v > 255 {
+			v = 255
+		}
+		return uint8(v)
+	}
+	check := func(x float32) {
+		t.Helper()
+		if got, want := toUnorm8(x), twoStep(x); got != want {
+			t.Fatalf("toUnorm8(%v) = %d, want %d (two-step rounding)", x, got, want)
+		}
+	}
+
+	// Every byte's round trip through Color4fFromColor's 1/255 scale.
+	const inv255 = float32(1.0 / 255)
+	for i := range 256 {
+		check(float32(i) * inv255)
+	}
+	// The neighborhood of each half-way product k+0.5, where a single rounding and a double rounding are most likely to
+	// land on different sides of the truncation boundary, plus the pin boundaries and the non-finite inputs.
+	for k := range 256 {
+		x := float32((float64(k) + 0.5) / 255)
+		for d := -4; d <= 4; d++ {
+			check(nextFloat32(x, d))
+		}
+	}
+	for _, x := range []float32{
+		0, -0, 1, -1, 2, 255, -0.001, 0.5, float32(math.Inf(1)),
+		float32(math.Inf(-1)), float32(math.NaN()),
+	} {
+		check(x)
+	}
+	// A dense stride over [0, 1]: 1 in every 4093 (prime, so it does not alias the exponent layout) representable value.
+	for u := uint32(0); u <= math.Float32bits(1); u += 4093 {
+		check(math.Float32frombits(u))
+	}
+}
+
+// nextFloat32 steps x by n representable float32 values (n may be negative).
+func nextFloat32(x float32, n int) float32 {
+	for ; n > 0; n-- {
+		x = float32(math.Nextafter32(x, float32(math.Inf(1))))
+	}
+	for ; n < 0; n++ {
+		x = float32(math.Nextafter32(x, float32(math.Inf(-1))))
+	}
+	return x
+}

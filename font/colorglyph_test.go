@@ -16,8 +16,10 @@ package font
 
 import (
 	"bytes"
+	"encoding/binary"
 	"image/png"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/go-text/typesetting/font/opentype"
@@ -373,6 +375,118 @@ func TestColorGlyphNonBlurMaskFilter(t *testing.T) {
 	cx, cy := int(g.Width)/2, int(g.Height)/2
 	if got := g.Image32[cy*int(g.Width)+cx]; got != faceCenterWord {
 		t.Errorf("center %#08x, want %#08x", got, faceCenterWord)
+	}
+}
+
+// retargetCOLRv0Layers rewrites every COLR v0 layer record in an sfnt to reference gid, leaving the base-glyph records
+// (and every other table) alone. It builds the "a layer glyph is itself a color glyph" font the COLR lanes must handle:
+// go-text's GlyphData prefers a glyph's COLR/bitmap/SVG entry over its outline, so a layer pointing at a COLR base
+// glyph only renders through the raw-outline accessor.
+func retargetCOLRv0Layers(t *testing.T, data []byte, gid uint16) []byte {
+	t.Helper()
+	out := bytes.Clone(data)
+	numTables := int(binary.BigEndian.Uint16(out[4:]))
+	colr := -1
+	for i := range numTables {
+		rec := 12 + i*16
+		if string(out[rec:rec+4]) == "COLR" {
+			colr = int(binary.BigEndian.Uint32(out[rec+8:]))
+			break
+		}
+	}
+	if colr < 0 {
+		t.Fatal("no COLR table")
+	}
+	// COLR v0 header: version, numBaseGlyphRecords, baseGlyphRecordsOffset, layerRecordsOffset, numLayerRecords.
+	layerRecords := colr + int(binary.BigEndian.Uint32(out[colr+8:]))
+	numLayerRecords := int(binary.BigEndian.Uint16(out[colr+12:]))
+	if numLayerRecords == 0 {
+		t.Fatal("no COLR v0 layer records")
+	}
+	for i := range numLayerRecords { // LayerRecord: glyphID, paletteIndex
+		binary.BigEndian.PutUint16(out[layerRecords+i*4:], gid)
+	}
+	return out
+}
+
+func TestCOLRv0LayerIsItselfAColorGlyph(t *testing.T) {
+	// A COLRv0 layer whose glyph carries its own COLR entry must still be filled with that glyph's outline. Loading it
+	// through the GlyphData preference order answers with the COLR entry instead, dropping the layer from both the
+	// bounds union and the mask.
+	const colorLayerGID = 2 // a COLR base glyph in colr.ttf that also has a real 'glyf' outline
+	data, err := os.ReadFile("testdata/colr.ttf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tf, err := NewTypefaceFromData(retargetCOLRv0Layers(t, data, colorLayerGID), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The hazard itself: the COLR-preferring lookup has no outline for this glyph, the raw accessor does. The mapping
+	// is mapDesignPoint for size 50 at upem 1000 with an identity device matrix.
+	mapPt := func(x, y float32) geom.Point { return geom.Pt(x/1000*50, -y/1000*50) }
+	if p := glyphOutlinePath(tf, colorLayerGID, mapPt); p != nil {
+		t.Fatalf("gid %d unexpectedly resolves an outline through GlyphData", colorLayerGID)
+	}
+	raw := glyphRawOutlinePath(tf, colorLayerGID, mapPt)
+	if raw == nil || raw.Bounds().IsEmpty() {
+		t.Fatalf("gid %d has no raw outline to fill", colorLayerGID)
+	}
+
+	g, action := smileyGlyph(t, tf, 50, nil)
+	if action != GlyphActionAccept {
+		t.Fatalf("action %v", action)
+	}
+	if g.Format != MaskARGB32 {
+		t.Fatalf("format %v, want ARGB32", g.Format)
+	}
+	// Metrics: the layer union is the retargeted layer's control box, rounded out.
+	want := saturateBounds(raw.Bounds()).RoundOut()
+	if g.IRect() != want {
+		t.Errorf("bounds %v, want %v (layer dropped from the bounds union?)", g.IRect(), want)
+	}
+	// Image: every layer paints the same outline, the last one opaque black (palette index 0xFFFF).
+	if g.Image32 == nil {
+		t.Fatal("no image")
+	}
+	painted := 0
+	for _, w := range g.Image32 {
+		if w != 0 {
+			painted++
+		}
+	}
+	if painted == 0 {
+		t.Error("no pixels painted; the layer was dropped from the mask")
+	}
+}
+
+func TestColorGlyphNoOpBlurMaskFilter(t *testing.T) {
+	// A blur whose CTM-adjusted sigma falls under the no-blur cutoff (1/3) reports "filter did nothing" for both the
+	// bounds pass and the image pass, so the glyph keeps its ARGB32 format and unfiltered bounds — and must keep the
+	// unfiltered color mask rather than rendering fully transparent.
+	tf := loadColorTypeface(t, "sbix.ttf")
+	blur := maskfilter.NewBlur(maskfilter.BlurNormal, 0.25, false) // device-space sigma: the CTM cannot scale it up
+	if blur == nil || !maskfilter.AcceptsColorMask(blur) {
+		t.Fatal("want a color-accepting blur filter")
+	}
+	g, action := smileyGlyph(t, tf, 64, &ScalerPaint{MaskFilter: blur})
+	if action != GlyphActionAccept {
+		t.Fatalf("action %v", action)
+	}
+	if g.Format != MaskARGB32 || g.Image32 == nil {
+		t.Fatalf("format %v, want unfiltered ARGB32", g.Format)
+	}
+	unfiltered, _ := smileyGlyph(t, tf, 64, nil)
+	if g.IRect() != unfiltered.IRect() {
+		t.Errorf("bounds %v changed vs unfiltered %v", g.IRect(), unfiltered.IRect())
+	}
+	cx, cy := int(g.Width)/2, int(g.Height)/2
+	if got := g.Image32[cy*int(g.Width)+cx]; got != faceCenterWord {
+		t.Errorf("center %#08x, want %#08x", got, faceCenterWord)
+	}
+	if !slices.Equal(g.Image32, unfiltered.Image32) {
+		t.Error("mask must be the unfiltered color mask")
 	}
 }
 

@@ -205,6 +205,19 @@ func glyphOutlinePath(t *Typeface, gid uint16, mapPt func(x, y float32) geom.Poi
 	return outlineToPath(outline, mapPt)
 }
 
+// glyphRawOutlinePath is glyphOutlinePath over gid's raw 'glyf'/'CFF ' outline, bypassing GlyphData's
+// COLR → bitmap → SVG → outline preference. The COLR lanes need this: a layer (or PaintGlyph) outline is frequently a
+// glyph that itself carries a COLR/sbix/CBDT/EBDT/SVG entry — often the base glyph's own gid — and GlyphData would then
+// answer with that entry instead of the outline the layer must be filled with, silently dropping the layer. Returns nil
+// when the glyph has no outline data.
+func glyphRawOutlinePath(t *Typeface, gid uint16, mapPt func(x, y float32) geom.Point) *path.Path {
+	outline, ok := t.faceGlyphOutline(opentype.GID(gid))
+	if !ok {
+		return nil
+	}
+	return outlineToPath(outline, mapPt)
+}
+
 // outlineToPath is glyphOutlinePath's segment walk over an already-fetched outline.
 func outlineToPath(outline tsfont.GlyphOutline, mapPt func(x, y float32) geom.Point) *path.Path {
 	p := path.New()
@@ -294,9 +307,11 @@ func (st *strike) fontMetrics() Metrics {
 	var underlineThickness, underlinePosition float32
 	if t.post != nil {
 		underlineThickness = float32(t.post.UnderlineThickness) / upem
-		// The post table's underline position is already a stroke-center position (top-of-stroke minus half the
-		// thickness), so the device-space underline position is simply its negation; no further half-thickness
-		// adjustment is needed. CoreText agrees: CTFontGetUnderlinePosition reports the post value directly.
+		// Per the OpenType spec the post table's underlinePosition is the distance from the baseline to the *top* of
+		// the underline stroke, y-up — exactly what Metrics.UnderlinePosition documents once flipped to y-down, so the
+		// device-space value is simply its negation with no half-thickness adjustment. (FreeType's derived
+		// underline_position is the stroke *center*, so it is not the value used here; CoreText's
+		// CTFontGetUnderlinePosition reports the post value directly, as this does.)
 		underlinePosition = -float32(t.post.UnderlinePosition) / upem
 	}
 	m.Flags |= MetricsFlagUnderlineThicknessIsValid | MetricsFlagUnderlinePositionIsValid

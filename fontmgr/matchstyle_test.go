@@ -7,8 +7,8 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// A 36-set / 277-case corpus exercising matchStyleCSS3 (style names camel-cased). The invalidFontStyle sentinel marks
-// cases expected to produce a null match (empty set).
+// A 36-set / 277-case corpus exercising the CSS3 style match (rankStylesCSS3's top-ranked candidate; style names
+// camel-cased). The invalidFontStyle sentinel marks cases expected to produce a null match (empty set).
 
 package fontmgr
 
@@ -42,12 +42,17 @@ var (
 	normalNormal900 = font.NewStyle(font.WeightBlack, font.WidthNormal, font.SlantUpright)
 )
 
-// TestMatchStyleCSS3 exercises matchStyleCSS3 against the corpus above.
+// TestMatchStyleCSS3 exercises the style match MatchStyle performs — the top-ranked rankStylesCSS3 candidate — against
+// the corpus above.
 func TestMatchStyleCSS3(t *testing.T) {
 	for ti, test := range matchStyleCSS3Tests {
 		for ci, c := range test.cases {
 			pattern, want := c[0], c[1]
-			idx := matchStyleCSS3(pattern, len(test.set), func(i int) font.Style { return test.set[i] })
+			idx := -1
+			if order := rankStylesCSS3(pattern, len(test.set),
+				func(i int) font.Style { return test.set[i] }); len(order) > 0 {
+				idx = order[0]
+			}
 			if idx < 0 {
 				if want != invalidFontStyle {
 					t.Errorf("test %d case %d: no match, want (%d,%d,%d)", ti, ci,

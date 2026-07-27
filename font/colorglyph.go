@@ -65,7 +65,7 @@ func (c *ScalerContext) renderCOLRv0(g *Glyph) {
 		if !colorOK {
 			continue
 		}
-		devPath := glyphOutlinePath(c.typeface, layer.GlyphID, c.mapDesignPoint)
+		devPath := glyphRawOutlinePath(c.typeface, layer.GlyphID, c.mapDesignPoint)
 		if devPath == nil {
 			continue
 		}

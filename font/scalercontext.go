@@ -445,7 +445,7 @@ func (c *ScalerContext) generateMetrics(packedID PackedGlyphID) glyphMetrics {
 		var bounds geom.Rect
 		if layers, isV0 := paint.(tables.PaintColrLayersResolved); isV0 {
 			for _, layer := range layers {
-				if layerPath := glyphOutlinePath(t, layer.GlyphID, c.mapDesignPoint); layerPath != nil {
+				if layerPath := glyphRawOutlinePath(t, layer.GlyphID, c.mapDesignPoint); layerPath != nil {
 					if b := layerPath.Bounds(); !b.IsEmpty() {
 						bounds.Join(b)
 					}
@@ -786,10 +786,18 @@ func (c *ScalerContext) getImage(g *Glyph) {
 		}
 		m := c.rec.matrixFrom2x2()
 		dst, _, ok := mf.FilterMask(&srcMask, &m)
-		clearBytes(g.Image)
-		if ok && dst != nil && dst.Image != nil {
-			copyMaskIntersection(g, dst)
+		if !ok || dst == nil || dst.Image == nil {
+			// Filter did nothing (a blur whose CTM-adjusted sigma falls under the no-blur cutoff returns false). The
+			// bounds pass failed the same way, so the glyph kept its ARGB32 format and unfiltered bounds: copy the
+			// unfiltered color mask, as the LCD16 and A8 lanes below do. Anything else leaves the freshly allocated
+			// (zeroed) plane.
+			if unfiltered.IRect() == g.IRect() && g.Format == MaskARGB32 {
+				copy(g.Image32, unfiltered.Image32)
+			}
+			return
 		}
+		clearBytes(g.Image)
+		copyMaskIntersection(g, dst)
 		return
 	}
 

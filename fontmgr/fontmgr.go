@@ -11,7 +11,7 @@
 // over go-text/typesetting's fontscan index. Font metadata is host-independent: footprints (file location, normalized
 // family, rune coverage, language coverage, aspect) group into families; per-face display names, style names, and font
 // styles come from a lightweight table read (font.DescribeFaceFile) on demand; style matching uses the CSS3
-// style-matching scoring in matchStyleCSS3; character fallback probes the footprints' cmap-derived rune coverage with
+// style-matching scoring in css3Score; character fallback probes the footprints' cmap-derived rune coverage with
 // BCP-47 hints ordered least-to-most significant, then verifies the chosen face really maps the character through its
 // own cmap before answering.
 //
@@ -20,7 +20,7 @@
 // single host byte-for-byte. The inventory is fontscan's on-disk scan, so it can include families a host has not
 // activated and miss host-virtual families; hidden (dot-prefixed) families are excluded from enumeration but stay
 // matchable by name and reachable through character fallback; enumeration is ordered by normalized family name; family
-// lookup is case- and space-insensitive with no fontconfig-style alias substitution; matchStyleCSS3 is the one
+// lookup is case- and space-insensitive with no fontconfig-style alias substitution; rankStylesCSS3 is the one
 // style-distance algorithm on every platform; and when nothing covers a character, matchFamilyStyleCharacter returns
 // nil per the documented contract.
 

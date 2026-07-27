@@ -394,3 +394,63 @@ func TestStylePacking(t *testing.T) {
 		t.Errorf("packing = %#x", int32(NormalStyle()))
 	}
 }
+
+func TestLinearMetricsFlag(t *testing.T) {
+	f := NewFont(loadTypeface(t, "Roboto-Regular.ttf", 0), 12, 1, 0)
+	if f.LinearMetrics() {
+		t.Error("linear metrics should default to off")
+	}
+	identity := geom.IdentityMatrix()
+	rec, _ := MakeRecAndEffects(f, nil, &identity, nil)
+	if rec.Flags&recFlagLinearMetrics != 0 {
+		t.Error("rec carries the linear-metrics flag with the request off")
+	}
+	f.SetLinearMetrics(true)
+	if !f.LinearMetrics() {
+		t.Error("SetLinearMetrics(true) did not take")
+	}
+	// The request reaches the scaler rec, so it keys the strike.
+	linear, _ := MakeRecAndEffects(f, nil, &identity, nil)
+	if linear.Flags&recFlagLinearMetrics == 0 {
+		t.Error("rec is missing the linear-metrics flag with the request on")
+	}
+	if linear == rec {
+		t.Error("linear-metrics recs must not collapse onto the default rec")
+	}
+	// setupForAsPaths keeps it (path measurement is already unhinted and linear); only these two are cleared.
+	f.SetForceAutoHinting(true)
+	pathFont := *f
+	pathFont.setupForAsPaths(nil)
+	if !pathFont.LinearMetrics() || pathFont.ForceAutoHinting() {
+		t.Errorf("setupForAsPaths flags = %#x", pathFont.flags)
+	}
+	f.SetLinearMetrics(false)
+	if f.LinearMetrics() {
+		t.Error("SetLinearMetrics(false) did not take")
+	}
+}
+
+func TestDrawTextPositionsShortOutput(t *testing.T) {
+	f := NewFont(loadTypeface(t, "Roboto-Regular.ttf", 0), 20, 1, 0)
+	glyphs := []uint16{44, 45, 46}
+	full := make([]geom.Point, len(glyphs))
+	DrawTextPositions(f, glyphs, geom.Pt(3, 7), full)
+	if full[0] != geom.Pt(3, 7) || full[1].X <= full[0].X || full[2].X <= full[1].X || full[1].Y != 7 {
+		t.Fatalf("positions = %v", full)
+	}
+	// A caller sizing out by capacity alone (or otherwise supplying a short slice) gets the origins that fit rather
+	// than a panic.
+	short := make([]geom.Point, 0, len(glyphs))
+	DrawTextPositions(f, glyphs, geom.Pt(3, 7), short)
+	partial := make([]geom.Point, 2)
+	DrawTextPositions(f, glyphs, geom.Pt(3, 7), partial)
+	if partial[0] != full[0] || partial[1] != full[1] {
+		t.Errorf("partial = %v, want the first 2 of %v", partial, full)
+	}
+	// An over-long out is left alone past the glyph count.
+	long := make([]geom.Point, len(glyphs)+2)
+	DrawTextPositions(f, glyphs, geom.Pt(3, 7), long)
+	if long[len(glyphs)] != (geom.Point{}) || long[len(glyphs)+1] != (geom.Point{}) {
+		t.Errorf("long tail written: %v", long)
+	}
+}

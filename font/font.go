@@ -123,6 +123,13 @@ func (f *Font) SetForceAutoHinting(on bool) { f.setFlag(flagForceAutoHinting, on
 // ForceAutoHinting reports whether auto-hinting is forced.
 func (f *Font) ForceAutoHinting() bool { return f.flags&flagForceAutoHinting != 0 }
 
+// SetLinearMetrics sets whether font and glyph metrics are requested to be linearly scalable. Rendering here is always
+// unhinted, so the request only enters the scaler rec (and therefore the strike key); it changes no metric.
+func (f *Font) SetLinearMetrics(on bool) { f.setFlag(flagLinearMetrics, on) }
+
+// LinearMetrics reports whether linearly scalable font and glyph metrics are requested.
+func (f *Font) LinearMetrics() bool { return f.flags&flagLinearMetrics != 0 }
+
 // SetSubpixel sets whether subpixel positioning is requested.
 func (f *Font) SetSubpixel(on bool) { f.setFlag(flagSubpixel, on) }
 
@@ -239,6 +246,8 @@ func (f *Font) GetXPos(glyphs []uint16, xpos []float32, origin float32) {
 // setupForAsPaths reconfigures the font (and optionally the paint) for canonical-size path measurement/drawing,
 // returning the strike-to-source scale.
 func (f *Font) setupForAsPaths(paint *ScalerPaint) float32 {
+	// flagLinearMetrics deliberately survives (upstream's flagsToIgnore covers only these two): path measurement is
+	// already unhinted and linear, so clearing it would only fragment the strike key.
 	const flagsToIgnore = flagEmbeddedBitmaps | flagForceAutoHinting
 	f.flags = (f.flags &^ uint8(flagsToIgnore)) | flagSubpixel
 	f.hinting = HintingNone
@@ -267,13 +276,14 @@ func GetFontBounds(f *Font) geom.Rect {
 }
 
 // DrawTextPositions fills out with successive glyph origins from a no-device strike (actual size, no canonicalization),
-// starting at origin. out must have len(glyphs) capacity.
+// starting at origin. It writes min(len(glyphs), len(out)) origins, as the sibling GetPos does.
 func DrawTextPositions(f *Font, glyphs []uint16, origin geom.Point, out []geom.Point) {
 	st := strike{t: f.typeface, size: f.size, scaleX: f.scaleX, skewX: f.skewX, frameWidth: -1}
 	sum := origin
-	for i, g := range glyphs {
+	n := min(len(glyphs), len(out))
+	for i := range n {
 		out[i] = sum
-		sum.X += st.glyphAdvance(g)
+		sum.X += st.glyphAdvance(glyphs[i])
 	}
 }
 

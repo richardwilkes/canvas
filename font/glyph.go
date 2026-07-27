@@ -39,11 +39,9 @@ const (
 	packedSubPixelXShift = 0
 	packedGlyphIDShift   = packedSubPixelLen
 	packedSubPixelYShift = packedGlyphIDLen + packedSubPixelLen
-	packedEndData        = packedGlyphIDLen + 2*packedSubPixelLen
 
 	packedGlyphIDMask     = 1<<packedGlyphIDLen - 1
 	packedSubPixelPosMask = 1<<packedSubPixelLen - 1
-	packedMaskAll         = 1<<packedEndData - 1
 )
 
 // SubpixelRound is the rounding constant for sub-pixel positioning (1/8).

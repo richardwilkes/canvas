@@ -449,11 +449,7 @@ func (w *colrV1Walker) traverseBounds(paint tables.PaintTable) bool {
 // untransformed at upem ppem. The raw-outline accessor bypasses the COLR-preferring lookup, since PaintGlyph outlines
 // frequently reuse the base glyph's own gid.
 func (w *colrV1Walker) glyphLayerPath(gid uint16) *path.Path {
-	outline, ok := w.t.faceGlyphOutline(opentype.GID(gid))
-	if !ok {
-		return nil
-	}
-	return outlineToPath(outline, colrPt)
+	return glyphRawOutlinePath(w.t, gid, colrPt)
 }
 
 // colrIsFillPaint reports whether p is one of the four fill formats eligible for the drawPath fast path.

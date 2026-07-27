@@ -7,9 +7,9 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// The per-family face list, with CSS3 style-matching scoring (matchStyleCSS3) used as the one style-distance algorithm
-// on every platform (the CoreText host's squared-metric variant agrees on exact matches, but can prefer a different
-// face at unequal distances).
+// The per-family face list, with CSS3 style-matching scoring (css3Score, ranked by rankStylesCSS3) used as the one
+// style-distance algorithm on every platform (the CoreText host's squared-metric variant agrees on exact matches, but
+// can prefer a different face at unequal distances).
 
 package fontmgr
 
@@ -119,23 +119,9 @@ func css3Score(pattern, current font.Style) int {
 	return score
 }
 
-// matchStyleCSS3 returns the index of the highest-scoring style (first of equals, via a strict `maxScore <
-// currentScore` update), -1 for an empty set.
-func matchStyleCSS3(pattern font.Style, count int, styleAt func(int) font.Style) int {
-	best := -1
-	bestScore := 0
-	for i := range count {
-		score := css3Score(pattern, styleAt(i))
-		if best < 0 || bestScore < score {
-			best, bestScore = i, score
-		}
-	}
-	return best
-}
-
 // rankStylesCSS3 returns candidate indices in descending css3Score order (stable, so equal scores keep first-wins
-// preference). MatchStyle walks it so an unloadable face falls back to the next-best style rather than failing the
-// match.
+// preference), empty for an empty set. It is the one style-distance algorithm: MatchStyle and matchCovering both walk
+// it, so an unloadable face falls back to the next-best style rather than failing the match.
 func rankStylesCSS3(pattern font.Style, count int, styleAt func(int) font.Style) []int {
 	type scored struct{ idx, score int }
 	list := make([]scored, count)

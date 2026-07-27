@@ -210,8 +210,8 @@ func (r Rect) ToQuad() [4]Point {
 	}
 }
 
-// SetBounds sets r to the bounds of pts, or to the empty rect (returning false) when pts is empty or contains a
-// non-finite value.
+// SetBounds sets r to the bounds of pts and returns true. An empty pts sets r to the empty rect and still returns true;
+// only a non-finite coordinate is a failure, setting r to the empty rect and returning false.
 func (r *Rect) SetBounds(pts []Point) bool {
 	if len(pts) == 0 {
 		*r = Rect{}

@@ -192,8 +192,10 @@ func CubicRootsReal(a, b, c, d float64, solution *[3]float64) int {
 	if doubleNearlyZero(d) { // 0 is one root
 		var quadSolution [2]float64
 		num := QuadRootsReal(a, b, c, &quadSolution)
+		// Every root must be copied out before any of them is tested, since the loop below returns early as soon as one
+		// of them is the already-known root and the caller still expects all num entries to be valid.
+		copy(solution[:num], quadSolution[:num])
 		for i := 0; i < num; i++ {
-			solution[i] = quadSolution[i]
 			if doubleNearlyZero(quadSolution[i]) {
 				return num
 			}
@@ -204,8 +206,8 @@ func CubicRootsReal(a, b, c, d float64, solution *[3]float64) int {
 	if doubleNearlyZero(a + b + c + d) { // 1 is one root
 		var quadSolution [2]float64
 		num := QuadRootsReal(a, a+b, -d, &quadSolution)
+		copy(solution[:num], quadSolution[:num])
 		for i := 0; i < num; i++ {
-			solution[i] = quadSolution[i]
 			if doublesNearlyEqualULPs(quadSolution[i], 1) {
 				return num
 			}

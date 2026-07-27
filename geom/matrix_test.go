@@ -320,3 +320,37 @@ func TestMatrixPreservesRightAngles(t *testing.T) {
 		}
 	}
 }
+
+func TestMatrixMaxScale(t *testing.T) {
+	const huge = float32(1e30) // squaring this overflows float32
+	cases := []struct {
+		name string
+		m    Matrix
+		want float32
+	}{
+		{name: "identity", m: IdentityMatrix(), want: 1},
+		{name: "translate", m: TranslateMatrix(3, 4), want: 1},
+		{name: "scale", m: ScaleMatrix(2, -5), want: 5},
+		{name: "rotate 45 scaled", m: func() Matrix {
+			m := RotateDegMatrix(45)
+			m.PostScale(2, 2)
+			return m
+		}(), want: 2},
+		// Perspective and anything that makes the squared singular value non-finite report the -1 sentinel, since the
+		// callers that fall back on it (stroke tessellation, path renderers) cannot use an infinite or NaN scale.
+		{name: "perspective", m: func() Matrix {
+			m := IdentityMatrix()
+			m.Set(MPersp0, 0.01)
+			return m
+		}(), want: -1},
+		{name: "overflowing skew", m: MatrixFrom9([9]float32{0, huge, 0, huge, 0, 0, 0, 0, 1}), want: -1},
+		{name: "overflowing affine", m: MatrixFrom9([9]float32{huge, huge, 0, huge, huge, 0, 0, 0, 1}), want: -1},
+		{name: "NaN affine", m: MatrixFrom9([9]float32{float32(math.NaN()), 1, 0, 1, 1, 0, 0, 0, 1}), want: -1},
+	}
+	for _, c := range cases {
+		// NaN has to be rejected explicitly, since every comparison against it is false.
+		if got := c.m.MaxScale(); ScalarIsNaN(got) || ScalarAbs(got-c.want) > 1e-4 {
+			t.Errorf("%s: MaxScale = %v, want %v", c.name, got, c.want)
+		}
+	}
+}

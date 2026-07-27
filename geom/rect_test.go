@@ -118,9 +118,21 @@ func TestRectSetBounds(t *testing.T) {
 	if ok || r != (Rect{}) {
 		t.Errorf("SetBounds with inf = %+v ok=%v", r, ok)
 	}
+	// NaN is a failure too.
+	ok = r.SetBounds([]Point{{X: 1, Y: 1}, {X: 2, Y: float32(math.NaN())}})
+	if ok || r != (Rect{}) {
+		t.Errorf("SetBounds with NaN = %+v ok=%v", r, ok)
+	}
+	// An empty point list is not a failure: it succeeds with the empty rect, replacing whatever r held.
+	r = RectLTRB(1, 2, 3, 4)
 	ok = r.SetBounds(nil)
 	if !ok || r != (Rect{}) {
 		t.Errorf("SetBounds(nil) = %+v ok=%v", r, ok)
+	}
+	r = RectLTRB(1, 2, 3, 4)
+	ok = r.SetBounds([]Point{})
+	if !ok || r != (Rect{}) {
+		t.Errorf("SetBounds(empty) = %+v ok=%v", r, ok)
 	}
 }
 

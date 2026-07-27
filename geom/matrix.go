@@ -886,8 +886,8 @@ func (m *Matrix) MapRect(src Rect) (Rect, bool) {
 	return dst, m.RectStaysRect()
 }
 
-// MaxScale returns the maximum singular value of the upper 2x2, or -1 for perspective matrices (the caller decides what
-// scale to substitute in that case).
+// MaxScale returns the maximum singular value of the upper 2x2, or -1 for perspective matrices and for matrices whose
+// 2x2 entries make the singular value non-finite (the caller decides what scale to substitute in those cases).
 func (m *Matrix) MaxScale() float32 {
 	typeMask := m.Type()
 	if typeMask&TypePerspective != 0 {
@@ -916,6 +916,14 @@ func (m *Matrix) MaxScale() float32 {
 		apluscdiv2 := 0.5 * (a + c)
 		x := 0.5 * ScalarSqrt(aminusc*aminusc+4*bSqd)
 		result = apluscdiv2 + x
+	}
+	if !IsFinite(result) {
+		return -1
+	}
+	// Float inaccuracy in the quadratic can push a nearly-zero eigenvalue negative; cap it rather than taking the square
+	// root of a negative and returning NaN.
+	if result < 0 {
+		result = 0
 	}
 	return ScalarSqrt(result)
 }

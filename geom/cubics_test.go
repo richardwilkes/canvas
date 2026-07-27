@@ -11,6 +11,7 @@ package geom
 
 import (
 	"math"
+	"slices"
 	"testing"
 )
 
@@ -69,6 +70,69 @@ func TestCubicRootsRealAndValidT(t *testing.T) {
 	n = CubicRootsValidT(1, -6, 11, -6, &roots)
 	if n != 1 || roots[0] != 1 { // root at 1 kept (pinned), 2 and 3 dropped
 		t.Errorf("validT drop: n=%d roots=%v", n, roots)
+	}
+}
+
+// TestCubicRootsRealKnownRootBranches covers the two branches that deflate a known root (0 or 1) away and solve the
+// remaining quadratic. Each returned entry must be written, even though the loop that spots the known root can return
+// before it has looked at every entry.
+func TestCubicRootsRealKnownRootBranches(t *testing.T) {
+	const sentinel = -12345.0
+	for _, tc := range []struct {
+		name       string
+		want       []float64
+		a, b, c, d float64
+	}{
+		// 6(t-1)^2(t-0.5): the deflated quadratic's roots are 1 and 0.5, with the known root 1 landing first, so the
+		// scan stops before reaching 0.5.
+		{name: "known 1 first", a: 6, b: -15, c: 12, d: -3, want: []float64{0.5, 1}},
+		// (t-1)^2(t-2): the deflated quadratic yields 2 first, then the known root 1.
+		{name: "known 1 second", a: 1, b: -4, c: 5, d: -2, want: []float64{1, 2}},
+		// t(t-1)(t-1.5): d is 0, and neither deflated root is the known root, so 0 is appended.
+		{name: "known 0 appended", a: 1, b: -2.5, c: 1.5, d: 0, want: []float64{0, 1, 1.5}},
+		// t^2(t-2): the deflated quadratic yields 2 and the known root 0.
+		{name: "known 0 in quadratic", a: 1, b: -2, c: 0, d: 0, want: []float64{0, 2}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			roots := [3]float64{sentinel, sentinel, sentinel}
+			n := CubicRootsReal(tc.a, tc.b, tc.c, tc.d, &roots)
+			if n != len(tc.want) {
+				t.Fatalf("root count = %d (%v), want %d", n, roots[:n], len(tc.want))
+			}
+			got := append([]float64(nil), roots[:n]...)
+			slices.Sort(got)
+			for i, w := range tc.want {
+				if got[i] == sentinel {
+					t.Fatalf("root %d was never written: %v", i, roots[:n])
+				}
+				if math.Abs(got[i]-w) > 1e-12 {
+					t.Errorf("roots = %v, want %v", got, tc.want)
+					break
+				}
+			}
+		})
+	}
+}
+
+// TestCubicBezierInterceptDeflatedRoot is the caller-level consequence of a deflated root that never made it into the
+// solution array: the curve crosses y=0 at t=0.5 and t=1, and reporting a stale t yields a bogus x.
+func TestCubicBezierInterceptDeflatedRoot(t *testing.T) {
+	// The Y polynomial is 6t^3 - 15t^2 + 12t - 3 = 6(t-1)^2(t-0.5); X is -2t^3 + 3t^2, so x(0.5) = 0.5 and x(1) = 1.
+	p0 := Point{X: 0, Y: -3}
+	p1 := Point{X: 0, Y: 1}
+	p2 := Point{X: 1, Y: 0}
+	p3 := Point{X: 1, Y: 0}
+	var scratch [3]float32
+	got := BezierCubicIntersectHorizontal(p0, p1, p2, p3, 0, scratch[:0])
+	slices.Sort(got)
+	want := []float32{0.5, 1}
+	if len(got) != len(want) {
+		t.Fatalf("intercepts = %v, want %v", got, want)
+	}
+	for i := range want {
+		if ScalarAbs(got[i]-want[i]) > 1e-5 {
+			t.Fatalf("intercepts = %v, want %v", got, want)
+		}
 	}
 }
 

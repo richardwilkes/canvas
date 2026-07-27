@@ -234,6 +234,65 @@ func TestMeasureGetMatrix(t *testing.T) {
 	nearly(t, got.Y, 50, 1e-5, "translate-only Y")
 }
 
+func TestMeasureEmptyQueries(t *testing.T) {
+	// A zero-valued Measure has no segments; every query must report failure rather than panic on segs[-1].
+	var m Measure
+	if m.Length() != 0 {
+		t.Errorf("zero measure length: got %v, want 0", m.Length())
+	}
+	for _, distance := range []float32{-1, 0, 1, float32(math.Inf(1)), float32(math.NaN())} {
+		if _, _, ok := m.GetPosTan(distance, true, true); ok {
+			t.Errorf("GetPosTan(%v) on an empty measure reported success", distance)
+		}
+		sentinel := geom.TranslateMatrix(7, 7) // an unsuccessful GetMatrix must not write through
+		mat := sentinel
+		if m.GetMatrix(distance, &mat, GetPosAndTanMatrixFlag) {
+			t.Errorf("GetMatrix(%v) on an empty measure reported success", distance)
+		}
+		if mat != sentinel {
+			t.Errorf("GetMatrix(%v) on an empty measure overwrote the matrix", distance)
+		}
+		dst := &path.Path{}
+		if m.GetSegment(distance, distance+10, dst, true) {
+			t.Errorf("GetSegment(%v) on an empty measure reported success", distance)
+		}
+		if !dst.IsEmpty() {
+			t.Errorf("GetSegment(%v) on an empty measure appended geometry", distance)
+		}
+	}
+}
+
+func TestIterResetToUnusablePath(t *testing.T) {
+	// Resetting onto a nil or non-finite path must leave the iterator exhausted rather than measuring the old path.
+	p := &path.Path{}
+	p.MoveTo(0, 0)
+	p.LineTo(30, 40)
+	it := NewIter(p, false, 1)
+
+	it.Reset(nil, false, 1)
+	if m := it.Next(); m != nil {
+		t.Errorf("nil path produced a contour of length %v", m.Length())
+	}
+
+	bad := &path.Path{}
+	bad.MoveTo(0, 0)
+	bad.LineTo(float32(math.Inf(1)), 0)
+	it.Reset(bad, false, 1)
+	if m := it.Next(); m != nil {
+		t.Errorf("non-finite path produced a contour of length %v", m.Length())
+	}
+
+	// ...and resetting back onto a usable path measures it again.
+	it.Reset(p, false, 1)
+	m := it.Next()
+	if m == nil {
+		t.Fatal("expected a contour after resetting onto a usable path")
+	}
+	if m.Length() != 50 {
+		t.Errorf("length after reset: got %v, want 50", m.Length())
+	}
+}
+
 func TestPathMeasureWrapper(t *testing.T) {
 	p := &path.Path{}
 	p.MoveTo(0, 0)

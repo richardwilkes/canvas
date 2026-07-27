@@ -208,7 +208,6 @@ const maxRecursionDepth = 8
 // Iter iterates the contours of a path, producing a Measure per non-empty contour. The path is not copied; it must not
 // be mutated while the Iter is in use.
 type Iter struct {
-	path *path.Path
 	iter *path.RawIter
 	// temporaries reused across buildSegments calls
 	segments    []segment
@@ -228,12 +227,10 @@ func NewIter(p *path.Path, forceClosed bool, resScale float32) *Iter {
 // Reset assigns a new path, restarting iteration.
 func (it *Iter) Reset(p *path.Path, forceClosed bool, resScale float32) {
 	if p != nil && p.IsFinite() {
-		it.path = p
 		it.iter = path.NewRawIter(p)
 		it.tolerance = cheapDistLimit * geom.IEEEFloatDivide(1, resScale)
 		it.forceClosed = forceClosed
 	} else {
-		it.path = nil
 		it.iter = nil
 	}
 }
@@ -499,10 +496,14 @@ func computePosTan(pts []geom.Point, seg segType, t float32, wantPos, wantTan bo
 }
 
 // distanceToSegment locates the segment containing the given distance, returning the segment index and the interpolated
-// t within it.
+// t within it. A Measure with no segments (e.g. the zero value) has nothing to locate, so it reports an index of -1 and
+// a NaN t; callers must reject that before indexing.
 func (m *Measure) distanceToSegment(distance float32) (segIndex int, t float32) {
 	segs := m.segments
 	count := len(segs)
+	if count == 0 {
+		return -1, float32(math.NaN())
+	}
 
 	// binary search over segment distances
 	lo, hi := 0, count-1
@@ -542,7 +543,7 @@ func (m *Measure) distanceToSegment(distance float32) (segIndex int, t float32) 
 }
 
 // GetPosTan pins distance to [0, length] and returns the corresponding position and tangent. wantPos/wantTan select the
-// outputs (both may be true).
+// outputs (both may be true). Reports false for a NaN distance or a Measure with no segments (e.g. the zero value).
 func (m *Measure) GetPosTan(distance float32, wantPos, wantTan bool) (pos, tangent geom.Point, ok bool) {
 	if scalarIsNaN(distance) {
 		return pos, tangent, false
@@ -558,7 +559,7 @@ func (m *Measure) GetPosTan(distance float32, wantPos, wantTan bool) (pos, tange
 	}
 
 	segIndex, t := m.distanceToSegment(distance)
-	if scalarIsNaN(t) {
+	if segIndex < 0 || scalarIsNaN(t) {
 		return pos, tangent, false
 	}
 
@@ -578,7 +579,7 @@ const (
 )
 
 // GetMatrix builds the matrix positioning (and optionally orienting, per flags) geometry at the given distance along
-// the contour.
+// the contour. Reports false, leaving matrix untouched, whenever GetPosTan does.
 func (m *Measure) GetMatrix(distance float32, matrix *geom.Matrix, flags MatrixFlags) bool {
 	position, tangent, ok := m.GetPosTan(distance, true, true)
 	if !ok {

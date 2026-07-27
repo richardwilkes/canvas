@@ -73,7 +73,10 @@ func (f *focalData) set(r0, r1 float32, matrix *geom.Matrix) bool {
 	return true
 }
 
-// poly2 returns the matrix mapping (0,0)-(1,0) to (p0, p1).
+// poly2 returns the similarity matrix mapping (0,0) to p0 and (0,1) to p1 — note the unit segment it maps is
+// (0,0)-(0,1), not (0,0)-(1,0), and (1,0) lands on p0 plus the perpendicular of p1-p0. Only polyToPoly2 uses this, and
+// it uses it for both the src and dst pair, so the composed src-to-pair-to-dst transform is a genuine (src0, src1) to
+// (dst0, dst1) map regardless of which unit segment the two halves agree on.
 func poly2(p0, p1 geom.Point) geom.Matrix {
 	var m geom.Matrix
 	m.SetAll(

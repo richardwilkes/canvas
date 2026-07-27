@@ -177,8 +177,9 @@ func borrowPipeline() *Pipeline {
 }
 
 // RecyclePipeline returns a Pipeline obtained from Compile to the shared pool. It drops the compiled stage closures
-// (they capture per-draw data) but retains the register-file, stages, and gradient scratch storage for reuse. After
-// RecyclePipeline the caller must treat p as invalid.
+// (they capture per-draw data) and every reference to per-draw external data the stages or their contexts held, so an
+// idle pooled pipeline pins nothing, but it retains the register-file, stages, and gradient scratch storage for reuse.
+// After RecyclePipeline the caller must treat p as invalid.
 func RecyclePipeline(p *Pipeline) {
 	if p == nil {
 		return
@@ -187,11 +188,20 @@ func RecyclePipeline(p *Pipeline) {
 	p.stages = p.stages[:0]
 	clear(p.postStages)
 	p.postStages = p.postStages[:0]
+	// The register file's ctx still points at the last-executed stage's context, which for a stage parameterized with
+	// external data (a *PerlinNoiseShader and its ~8KB tables, a color filter's *[20]float32 matrix, a *ConicalGradient)
+	// would outlive the draw. ShadeSpan rewrites it per stage, so dropping it costs nothing.
+	p.z.ctx = nil
 	p.paintColor = colorcore.Color4f{}
 	p.gradCtxN = 0
 	p.matrixCtxN = 0
 	p.laneMaskN = 0
 	p.blendCtxN = 0
+	// Drop the retained color-transform closures: a runtime-effect color filter's fn captures that filter's per-draw
+	// uniforms, so keeping it would pin them (the ctx storage itself is retained for reuse).
+	for _, c := range p.colorFuncCtxs {
+		c.fn = nil
+	}
 	p.colorFuncCtxN = 0
 	p.blendShaderCtxN = 0
 	p.constColorCtxN = 0

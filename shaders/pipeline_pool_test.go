@@ -375,6 +375,66 @@ func TestRecyclePipelineResetsNewCounters(t *testing.T) {
 	}
 }
 
+// TestRecyclePipelineClearsRegisterFileCtx locks that RecyclePipeline drops the register file's stage-context pointer.
+// ShadeSpan leaves z.ctx aimed at the last-executed stage's context, which for a stage parameterized with per-draw
+// external data — here a *PerlinNoiseShader and its painting-data tables — would keep that data alive for as long as the
+// pipeline sits idle in the pool, contrary to the documented no-pinning discipline.
+func TestRecyclePipelineClearsRegisterFileCtx(t *testing.T) {
+	sh := NewTurbulence(0.1, 0.1, 2, 3, 0, 0)
+	p := Compile(sh, geom.IdentityMatrix(), opaqueBlack)
+	if p == nil {
+		t.Fatal("Compile returned nil")
+	}
+	var junk [16]colorcore.PMColor4f
+	p.ShadeSpan(0, 0, junk[:])
+	if _, ok := p.z.ctx.(*PerlinNoiseShader); !ok {
+		t.Fatalf("expected the noise shader to be left in the register file's ctx, got %T", p.z.ctx)
+	}
+	RecyclePipeline(p)
+	if p.z.ctx != nil {
+		t.Fatalf("recycled pipeline still pins the last stage's context (%T)", p.z.ctx)
+	}
+}
+
+// TestRecyclePipelineClearsColorFuncs locks that RecyclePipeline drops the retained colorFuncCtx transforms. A
+// runtime-effect color filter's fn is a closure over that filter's per-draw uniforms, so a pooled pipeline that kept it
+// would pin them; the ctx storage itself must survive for reuse.
+func TestRecyclePipelineClearsColorFuncs(t *testing.T) {
+	p := borrowPipeline()
+	p.AppendConstantColor(colorcore.PMColor4f{R: 0.25, G: 0.5, B: 0.75, A: 1})
+	uniforms := &[4]float32{0.125, 0, 0, 0} // stand-in for a runtime effect's uniform block
+	p.AppendColorFunc(func(r, g, b, a float32) (float32, float32, float32, float32) {
+		return r + uniforms[0], g, b, a
+	})
+	if p.colorFuncCtxN != 1 || p.colorFuncCtxs[0].fn == nil {
+		t.Fatal("expected one color-func context holding a transform")
+	}
+	ctx := p.colorFuncCtxs[0]
+	RecyclePipeline(p)
+	if len(p.colorFuncCtxs) == 0 || p.colorFuncCtxs[0] != ctx {
+		t.Fatal("recycle dropped the retained color-func context storage")
+	}
+	for i, c := range p.colorFuncCtxs {
+		if c.fn != nil {
+			t.Fatalf("recycled pipeline still pins the transform on colorFuncCtxs[%d]", i)
+		}
+	}
+
+	// A cleared (or stale) retained context must still be usable: the next AppendColorFunc reuses it and overwrites fn.
+	stale := &colorFuncCtx{}
+	q := &Pipeline{colorFuncCtxs: []*colorFuncCtx{stale}}
+	q.AppendConstantColor(colorcore.PMColor4f{R: 0.25, G: 0.5, B: 0.75, A: 1})
+	q.AppendColorFunc(func(r, g, b, a float32) (float32, float32, float32, float32) {
+		return r, g + 0.25, b, a
+	})
+	if q.colorFuncCtxN != 1 || q.colorFuncCtxs[0] != stale || stale.fn == nil {
+		t.Fatal("expected the retained color-func context to be reused with a fresh transform")
+	}
+	var out [1]colorcore.PMColor4f
+	q.ShadeSpan(0, 0, out[:])
+	colorNear(t, out[0], colorcore.PMColor4f{R: 0.25, G: 0.75, B: 0.75, A: 1}, 0, "reused-color-func output")
+}
+
 // filterTestChild is an allocation-free, coordinate-dependent child shader for the image-filter runtime kernels: its
 // stage is a named (non-capturing) function, so it contributes no per-compile heap allocation (isolating a kernel's own
 // allocations in AllocsPerRun), and it reads z.r/z.g so a kernel that samples it at shifted coordinates produces

@@ -133,7 +133,7 @@
 		},
 		{
 			"name": "clip-stroke-interaction",
-			"sha256": "35156ec89bb50a98d3e48f8167c182b7de6095515692f24a79d41d5361069761",
+			"sha256": "f27ab02a1aa5efdcfc5a476207b0f6a7bdb5ccc15f5f036afd470df1f1aead7f",
 			"width": 256,
 			"height": 256
 		},
@@ -145,7 +145,7 @@
 		},
 		{
 			"name": "colorfilter-blend-tint",
-			"sha256": "907de23290ab3f08c6a5d70480284552db00ae72d8a07ee51a986d9281d9ecda",
+			"sha256": "b4b5b7cc0946534f905fd4b070f89c8ec2d220d3a12ae29f327095bbc635ed00",
 			"width": 256,
 			"height": 256
 		},
@@ -253,7 +253,7 @@
 		},
 		{
 			"name": "gradient-200-stops",
-			"sha256": "ca59eb574e01b04e481259017a46096d7e15c8963aef949d8ba14c919c75f2d3",
+			"sha256": "afb097a4ff3fdff874536e8a4e16436ee7522c7ef2f8063284337cbf0798c709",
 			"width": 256,
 			"height": 256
 		},
@@ -361,7 +361,7 @@
 		},
 		{
 			"name": "imagefilter-crop-rect",
-			"sha256": "ae9a7f5ae89ba1645b55882fa751b7aba68722390bfd72bbb98d274dec3c580b",
+			"sha256": "44c70e1af9413ba48fe5675ee3f52e29b95dd396967d9235bff4a184bb81851e",
 			"width": 256,
 			"height": 256
 		},
@@ -409,7 +409,7 @@
 		},
 		{
 			"name": "imagefilter-merge",
-			"sha256": "41da719c35058f4ebe23f040a2516ac21a9e7a144c94a4954ee3a94faec91a76",
+			"sha256": "b9001a7685fad11633a50c93fe3c24409f39dfce842bb8f44019785b05423d90",
 			"width": 256,
 			"height": 256
 		},
@@ -529,7 +529,7 @@
 		},
 		{
 			"name": "path-conics-weights",
-			"sha256": "6e78a9ba96d0d9da31b3e9a47d9619a9bcf8c91704730a1a2237959f039b6529",
+			"sha256": "e5b60aab5ea2c78366e17ec55942477456aa25964a8e6496a89b3caba099102f",
 			"width": 256,
 			"height": 256
 		},
@@ -631,7 +631,7 @@
 		},
 		{
 			"name": "stroke-and-fill-shapes",
-			"sha256": "27821eb9755f37e322f2f3fe1490a60066ed75581b0f93f3d9ba60e33f8fa429",
+			"sha256": "6d1fb609f626caeb0aaa1c85328a23d6fd673a102788540cda14a7b2f129d472",
 			"width": 256,
 			"height": 256
 		},

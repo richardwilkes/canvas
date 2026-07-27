@@ -476,3 +476,89 @@ func TestDitherStage(t *testing.T) {
 		}
 	}
 }
+
+// matrixNear reports whether every element of a and b matches within tol.
+func matrixNear(a, b *geom.Matrix, tol float32) bool {
+	for i := range 9 {
+		if !near(a.Get(i), b.Get(i), tol) {
+			return false
+		}
+	}
+	return true
+}
+
+// TestMatrixRecTotalInverseSurvivesApply pins the total matrix contract: totalInverse is the inverse of ctm * every
+// local matrix seen so far, including the ones apply already folded into the pipeline. A wrapper that applies the CTM
+// and then runs a child (FilterDecalShader, the displacement map, the lighting normal map) used to leave the child with
+// an identity total, which silently misreported the device transform.
+func TestMatrixRecTotalInverseSurvivesApply(t *testing.T) {
+	ctm := geom.ScaleMatrix(2, 4)
+	lm := geom.TranslateMatrix(3, 5)
+	rec := newMatrixRec(ctm)
+	rec = rec.concat(&lm)
+
+	var total geom.Matrix
+	total.SetConcat(&ctm, &lm)
+	want, ok := total.Invert()
+	if !ok {
+		t.Fatal("fixture matrix is not invertible")
+	}
+
+	got, ok := rec.totalInverse()
+	if !ok {
+		t.Fatal("totalInverse before apply returned ok=false")
+	}
+	if !matrixNear(&got, &want, 1e-6) {
+		t.Errorf("totalInverse before apply = %v, want %v", got.As9(), want.As9())
+	}
+
+	p := borrowPipeline()
+	defer RecyclePipeline(p)
+	identity := geom.IdentityMatrix()
+	applied, ok := rec.apply(p, &identity)
+	if !ok {
+		t.Fatal("apply returned ok=false")
+	}
+	if !applied.pendingLocal.IsIdentity() {
+		t.Error("apply left a pending local matrix behind")
+	}
+	got, ok = applied.totalInverse()
+	if !ok {
+		t.Fatal("totalInverse after apply returned ok=false")
+	}
+	if !matrixNear(&got, &want, 1e-6) {
+		t.Errorf("totalInverse after apply = %v, want %v", got.As9(), want.As9())
+	}
+
+	// A local matrix concatenated after the apply accumulates on top of the already-applied ones.
+	lm2 := geom.ScaleMatrix(0.5, 0.5)
+	nested := applied.concat(&lm2)
+	var total2 geom.Matrix
+	total2.SetConcat(&total, &lm2)
+	want2, ok := total2.Invert()
+	if !ok {
+		t.Fatal("nested fixture matrix is not invertible")
+	}
+	got, ok = nested.totalInverse()
+	if !ok {
+		t.Fatal("nested totalInverse returned ok=false")
+	}
+	if !matrixNear(&got, &want2, 1e-6) {
+		t.Errorf("nested totalInverse = %v, want %v", got.As9(), want2.As9())
+	}
+}
+
+// TestMatrixRecTotalInverseRejectsSingular keeps the not-invertible report on the total matrix rather than on whatever
+// is still pending.
+func TestMatrixRecTotalInverseRejectsSingular(t *testing.T) {
+	rec := newMatrixRec(geom.ScaleMatrix(0, 1))
+	if _, ok := rec.totalInverse(); ok {
+		t.Error("totalInverse on a singular ctm returned ok=true")
+	}
+	lm := geom.ScaleMatrix(0, 1)
+	rec = newMatrixRec(geom.IdentityMatrix())
+	rec = rec.concat(&lm)
+	if _, ok := rec.totalInverse(); ok {
+		t.Error("totalInverse on a singular local matrix returned ok=true")
+	}
+}

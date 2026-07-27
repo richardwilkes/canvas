@@ -28,8 +28,10 @@ type Pixels struct {
 	RowElems int32
 }
 
-// elemsPerPixel returns how many elements of the active slice make up one pixel.
-func elemsPerPixel(ct ColorType) int32 {
+// ElemsPerPixel returns how many elements of the active slice make up one pixel. Only F16 stores more than one (its
+// four 16-bit channels); every other supported type packs a pixel into a single element. RowElems already counts this
+// factor, so an element index is y*RowElems + x*ElemsPerPixel.
+func (ct ColorType) ElemsPerPixel() int32 {
 	if ct == ColorTypeRGBAF16 {
 		return 4
 	}
@@ -38,7 +40,7 @@ func elemsPerPixel(ct ColorType) int32 {
 
 // NewPixels returns zeroed pixel storage for info (which must be a supported color type).
 func NewPixels(info ImageInfo) *Pixels {
-	p := &Pixels{Info: info, RowElems: info.Width * elemsPerPixel(info.ColorType)}
+	p := &Pixels{Info: info, RowElems: info.Width * info.ColorType.ElemsPerPixel()}
 	n := int(p.RowElems) * int(info.Height)
 	switch info.ColorType.BytesPerPixel() {
 	case 1:
@@ -105,7 +107,7 @@ func NewPixelsCopyFromBytes(info ImageInfo, data []byte, rowBytes int) (*Pixels,
 			copy(p.Bytes[y*int(p.RowElems):(y*int(p.RowElems))+w], row)
 		case p.U16s != nil:
 			dst := p.U16s[y*int(p.RowElems):]
-			for i := 0; i < w*int(elemsPerPixel(info.ColorType)); i++ {
+			for i := 0; i < w*int(info.ColorType.ElemsPerPixel()); i++ {
 				dst[i] = binary.LittleEndian.Uint16(row[2*i:])
 			}
 		default:
@@ -121,7 +123,7 @@ func NewPixelsCopyFromBytes(info ImageInfo, data []byte, rowBytes int) (*Pixels,
 // Subset returns a view (shared storage) of the pixel rect [l, t, r, b), which must be contained in the pixel bounds.
 // Callers are expected to always pass an in-range rect.
 func (p *Pixels) Subset(l, t, r, b int32) *Pixels {
-	epp := elemsPerPixel(p.Info.ColorType)
+	epp := p.Info.ColorType.ElemsPerPixel()
 	off := int(t)*int(p.RowElems) + int(l)*int(epp)
 	sub := &Pixels{
 		Info:     p.Info,
@@ -144,7 +146,7 @@ func (p *Pixels) Subset(l, t, r, b int32) *Pixels {
 // writeToBytes serializes the pixel rows into dst as little-endian bytes with the given row stride (the inverse of
 // NewPixelsCopyFromBytes); used by the ReadPixels store path.
 func (p *Pixels) writeToBytes(dst []byte, dstRowBytes int) {
-	w := int(p.Info.Width) * int(elemsPerPixel(p.Info.ColorType))
+	w := int(p.Info.Width) * int(p.Info.ColorType.ElemsPerPixel())
 	for y := 0; y < int(p.Info.Height); y++ {
 		row := dst[y*dstRowBytes:]
 		src := y * int(p.RowElems)

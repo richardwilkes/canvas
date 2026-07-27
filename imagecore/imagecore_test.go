@@ -381,3 +381,32 @@ func TestNewRasterDataAndSubset(t *testing.T) {
 		t.Fatal("short rowBytes accepted")
 	}
 }
+
+func TestElemsPerPixel(t *testing.T) {
+	// Only F16 spreads a pixel across several elements of the active slice; everything else is one element per pixel.
+	for ct := ColorTypeUnknown; ct <= ColorTypeR8Unorm; ct++ {
+		want := int32(1)
+		if ct == ColorTypeRGBAF16 {
+			want = 4
+		}
+		if got := ct.ElemsPerPixel(); got != want {
+			t.Errorf("ElemsPerPixel(%d) = %d, want %d", ct, got, want)
+		}
+	}
+	// RowElems counts elements, so the stride of an F16 container is four per pixel and the element index of pixel
+	// (x, y) is y*RowElems + x*ElemsPerPixel.
+	info, ok := MakeInfo(3, 2, ColorTypeRGBAF16, AlphaTypePremul)
+	if !ok {
+		t.Fatal("MakeInfo rejected RGBA_F16")
+	}
+	p := NewPixels(info)
+	if p.RowElems != 12 {
+		t.Fatalf("F16 RowElems = %d, want 12", p.RowElems)
+	}
+	if len(p.U16s) != 24 {
+		t.Fatalf("F16 storage = %d elements, want 24", len(p.U16s))
+	}
+	if got := int(p.RowElems)*1 + 2*int(info.ColorType.ElemsPerPixel()); got != 20 {
+		t.Fatalf("element index of (2,1) = %d, want 20", got)
+	}
+}

@@ -443,3 +443,96 @@ func TestAsImage(t *testing.T) {
 		t.Error("AsImage on a color shader returned ok=true")
 	}
 }
+
+// f16TestImage builds a 2x4 premultiplied F16 image whose pixels are distinct per row and column: red steps 0.25 per
+// row, green is 0.25 in column 0 and 0.75 in column 1, blue is 0.5 everywhere, alpha 1. The half bits are written
+// directly (every value is exactly representable) so the test does not depend on a float-to-half converter.
+func f16TestImage(t *testing.T) *imagecore.Image {
+	t.Helper()
+	info, ok := imagecore.MakeInfo(2, 4, imagecore.ColorTypeRGBAF16, imagecore.AlphaTypePremul)
+	if !ok {
+		t.Fatal("bad info")
+	}
+	p := imagecore.NewPixels(info)
+	for y := range int32(4) {
+		for x := range int32(2) {
+			i := y*p.RowElems + 4*x
+			p.U16s[i] = f16Half(0.25 * float32(y+1))
+			p.U16s[i+1] = f16Half(0.25)
+			if x == 1 {
+				p.U16s[i+1] = f16Half(0.75)
+			}
+			p.U16s[i+2] = f16Half(0.5)
+			p.U16s[i+3] = f16Half(1)
+		}
+	}
+	return imagecore.FromPixels(p)
+}
+
+// f16Half returns the half bits for the quarter-step values the F16 fixtures use (0.25, 0.5, 0.75, 1).
+func f16Half(v float32) uint16 {
+	switch v {
+	case 0.25:
+		return 0x3400
+	case 0.5:
+		return 0x3800
+	case 0.75:
+		return 0x3A00
+	case 1:
+		return 0x3C00
+	default:
+		panic("unexpected half value")
+	}
+}
+
+// TestImageShaderF16Gather covers the F16 gather's element addressing: RowElems already counts the four elements per
+// pixel, so the row term must not be scaled a second time. Before the fix every row but the first read the wrong pixels
+// and rows at or past height/4 indexed past the end of the storage.
+func TestImageShaderF16Gather(t *testing.T) {
+	s := NewImage(f16TestImage(t), TileClamp, TileClamp, SamplingOptions{}, nil)
+	for y := range int32(4) {
+		for x := range int32(2) {
+			wantG := float32(0.25)
+			if x == 1 {
+				wantG = 0.75
+			}
+			got := shadePixel(t, s, geom.IdentityMatrix(), 0xFF000000, x, y)
+			if !near1(got.R, 0.25*float32(y+1)) || !near1(got.G, wantG) ||
+				!near1(got.B, 0.5) || !near1(got.A, 1) {
+				t.Errorf("f16 (%d,%d) = %+v, want rgb %v %v 0.5", x, y, got, 0.25*float32(y+1), wantG)
+			}
+		}
+	}
+}
+
+// TestImageShaderF16BilerpSpansRows checks the F16 gather through the (unfused) bilinear sampler, whose four taps land
+// on two different rows — the row stride has to be right for the vertical pair to blend the neighboring rows.
+func TestImageShaderF16BilerpSpansRows(t *testing.T) {
+	s := NewImage(f16TestImage(t), TileClamp, TileClamp, SamplingOptions{Filter: FilterLinear}, nil)
+	// Device pixel (0,1) has center (0.5,1.5), so fx = fract(1.0) = 0 (column 0 only, clamped) and fy = fract(2.0) = 0,
+	// which weights rows 0 and 1 evenly: R = (0.25+0.5)/2 = 0.375.
+	var ctm geom.Matrix
+	ctm.SetTranslate(0, 0.5)
+	got := shadePixel(t, s, ctm, 0xFF000000, 0, 1)
+	if !near1(got.R, 0.375) || !near1(got.G, 0.25) || !near1(got.B, 0.5) || !near1(got.A, 1) {
+		t.Errorf("f16 bilerp across rows = %+v, want r 0.375", got)
+	}
+}
+
+// TestFilterDecalKeepsChildSampling covers the nested-image sampling decision: FilterDecalShader applies the CTM before
+// running its child, and the child's tweakSampling must still see the real device transform. With the total matrix
+// dropped to identity the child downgraded linear filtering to nearest, so a 2x upscale returned the source texel
+// instead of the bilerp of the four neighbors.
+func TestFilterDecalKeepsChildSampling(t *testing.T) {
+	img := testImage(t)
+	inner := NewImage(img, TileClamp, TileClamp, SamplingOptions{Filter: FilterLinear}, nil)
+	// Bounds wide enough that every decal weight saturates to 1, leaving the child's color untouched.
+	s := NewFilterDecal(inner, geom.Rect{Left: -10, Top: -10, Right: 10, Bottom: 10})
+	var ctm geom.Matrix
+	ctm.SetScale(2, 2)
+	// Same expectation as TestImageShaderBilerpMidpoint: the decal wrapper must not change the sampling.
+	got := shadePixel(t, s, ctm, 0xFF000000, 1, 1)
+	if !near1(got.R, 0.625) || !near1(got.G, 0.25) || !near1(got.B, 0.25) || !near1(got.A, 1) {
+		t.Errorf("decal-wrapped bilerp = %+v, want rgb 0.625 0.25 0.25", got)
+	}
+}

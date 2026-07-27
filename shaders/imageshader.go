@@ -211,7 +211,7 @@ func (s *ImageShader) appendStages(p *Pipeline, mRec MatrixRec) bool { //nolint:
 	// the gatherCtx's px is dropped on recycle so an idle pooled pipeline does not pin the source pixels — see
 	// RecyclePipeline) rather than a fresh allocation per compile.
 	g := p.nextGatherCtx()
-	g.px = px
+	g.setPixels(px)
 	g.width = float32(px.Info.Width)
 	g.height = float32(px.Info.Height)
 	if sampling.UseCubic {

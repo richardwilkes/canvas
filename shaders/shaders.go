@@ -51,8 +51,11 @@ type Shader interface {
 // MatrixRec tracks, for the raster-pipeline leg, the CTM and the local matrices accumulated by wrapper shaders between
 // the root and the point where a shader consumes coordinates, plus whether the total matrix still describes the
 // coordinates in the registers (a runtime-effect kernel sampling a child at computed coordinates invalidates it).
+// totalLocal holds every local matrix, including those apply has already folded into the pipeline, so the total matrix
+// stays ctm * totalLocal for a child that is reached after an apply; pendingLocal holds only the ones not yet folded in.
 type MatrixRec struct {
 	ctm          geom.Matrix
+	totalLocal   geom.Matrix
 	pendingLocal geom.Matrix
 	ctmApplied   bool
 	totalInvalid bool
@@ -60,14 +63,17 @@ type MatrixRec struct {
 
 // newMatrixRec builds a MatrixRec seeded with ctm.
 func newMatrixRec(ctm geom.Matrix) MatrixRec {
-	return MatrixRec{ctm: ctm, pendingLocal: geom.IdentityMatrix()}
+	return MatrixRec{ctm: ctm, totalLocal: geom.IdentityMatrix(), pendingLocal: geom.IdentityMatrix()}
 }
 
-// concat returns a copy with an additional local matrix folded into pendingLocal: pendingLocal' = pendingLocal * lm.
+// concat returns a copy with an additional local matrix folded into both accumulations: totalLocal' = totalLocal * lm
+// and pendingLocal' = pendingLocal * lm.
 func (m *MatrixRec) concat(lm *geom.Matrix) MatrixRec {
 	out := *m
-	var pending geom.Matrix
+	var total, pending geom.Matrix
+	total.SetConcat(&m.totalLocal, lm)
 	pending.SetConcat(&m.pendingLocal, lm)
+	out.totalLocal = total
 	out.pendingLocal = pending
 	return out
 }
@@ -88,7 +94,9 @@ func (m *MatrixRec) markTotalMatrixInvalid() MatrixRec {
 func (m *MatrixRec) totalMatrixValid() bool { return !m.totalInvalid }
 
 // apply appends seed_shader (if the coords are not yet seeded) and a matrix stage for postInv * (ctm *
-// pendingLocal)^-1, returning the updated copy. Returns ok=false when the total matrix is not invertible.
+// pendingLocal)^-1, returning the updated copy: pendingLocal resets to identity (it is now in the pipeline) while
+// totalLocal carries over untouched, so totalInverse keeps reporting the full transform. Returns ok=false when the
+// total matrix is not invertible.
 func (m *MatrixRec) apply(p *Pipeline, postInv *geom.Matrix) (MatrixRec, bool) {
 	total := m.pendingLocal
 	if !m.ctmApplied {
@@ -112,15 +120,14 @@ func (m *MatrixRec) apply(p *Pipeline, postInv *geom.Matrix) (MatrixRec, bool) {
 	return out, true
 }
 
-// totalInverse returns the inverse of ctm * pendingLocal. Callers must check totalMatrixValid first — a shader kernel
-// sampling a child at explicit coordinates invalidates the tracked total.
+// totalInverse returns the inverse of the total matrix, ctm * totalLocal — the full shader-space-to-device transform,
+// which is why it reads totalLocal rather than pendingLocal: a parent that already applied the CTM (and its own local
+// matrices) leaves pendingLocal identity, but the coordinates it hands down are still described by the whole chain.
+// Callers must check totalMatrixValid first — a shader kernel sampling a child at explicit coordinates invalidates the
+// tracked total.
 func (m *MatrixRec) totalInverse() (geom.Matrix, bool) {
-	total := m.pendingLocal
-	if !m.ctmApplied {
-		var t geom.Matrix
-		t.SetConcat(&m.ctm, &total)
-		total = t
-	}
+	var total geom.Matrix
+	total.SetConcat(&m.ctm, &m.totalLocal)
 	return total.Invert()
 }
 

@@ -29,10 +29,19 @@ type gatherCtx struct {
 	px                 *imagecore.Pixels
 	width              float32
 	height             float32
+	pixelElems         int         // elements of px's active slice per pixel; set with px by setPixels
 	weights            [16]float32 // for bicubic_clamp_8888
 	tileX, tileY       tileCtx
 	setRGB             [3]float32
 	roundDownAtInteger bool
+}
+
+// setPixels homes the source pixels on the ctx along with their per-pixel element count, which index needs to scale the
+// column term (F16 stores four elements per pixel, every other gathered type one). The two travel together so a gather
+// can never read a stale or unset factor against a fresh container.
+func (g *gatherCtx) setPixels(px *imagecore.Pixels) {
+	g.px = px
+	g.pixelElems = int(px.Info.ColorType.ElemsPerPixel())
 }
 
 // setTileLimits fills tileX/tileY from the already-set width/height/roundDownAtInteger: scale/invScale from the
@@ -104,7 +113,9 @@ func clampEx(v, limit float32) float32 {
 	return v
 }
 
-// index clamps the sample coordinates into bounds and returns the element index.
+// index clamps the sample coordinates into bounds and returns the element index of the pixel's first element. RowElems
+// is a stride in elements, which already counts the per-pixel element factor, so only the column term scales by it (4
+// for F16, 1 for every other gathered type) — the same y*RowElems + x*ElemsPerPixel form imagecore's own loads use.
 func (g *gatherCtx) index(x, y float32) int {
 	x = clampEx(x, g.width)
 	y = clampEx(y, g.height)
@@ -112,7 +123,7 @@ func (g *gatherCtx) index(x, y float32) int {
 		x = math.Float32frombits(math.Float32bits(x) - 1)
 		y = math.Float32frombits(math.Float32bits(y) - 1)
 	}
-	return int(int32(y))*int(g.px.RowElems) + int(int32(x))
+	return int(int32(y))*int(g.px.RowElems) + int(int32(x))*g.pixelElems
 }
 
 // gatherPixel loads one pixel as unpremultiplied-channel floats, covering every color type the image shader can gather
@@ -147,10 +158,10 @@ func (g *gatherCtx) gatherPixel(x, y float32) (r, gg, b, a float32) {
 		b = float32(v&31) * (1.0 / 31)
 		a = 1
 	case imagecore.ColorTypeRGBAF16:
-		r = halfBitsToFloat(g.px.U16s[4*i])
-		gg = halfBitsToFloat(g.px.U16s[4*i+1])
-		b = halfBitsToFloat(g.px.U16s[4*i+2])
-		a = halfBitsToFloat(g.px.U16s[4*i+3])
+		r = halfBitsToFloat(g.px.U16s[i])
+		gg = halfBitsToFloat(g.px.U16s[i+1])
+		b = halfBitsToFloat(g.px.U16s[i+2])
+		a = halfBitsToFloat(g.px.U16s[i+3])
 	}
 	return r, gg, b, a
 }

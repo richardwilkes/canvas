@@ -209,22 +209,47 @@ func TestGetIntercepts(t *testing.T) {
 	if blob == nil {
 		t.Fatal("blob should exist")
 	}
-	count := blob.GetIntercepts([2]float32{4, 8}, nil, nil)
+	nilSlice, count := blob.GetIntercepts([2]float32{4, 8}, nil, nil)
 	if count != 2 {
 		t.Fatalf("intercept count = %d, want 2", count)
 	}
-	intervals := make([]float32, 0, count)
-	intervals = intervals[:0]
-	got := blob.GetIntercepts([2]float32{4, 8}, intervals[:0:cap(intervals)], nil)
+	if nilSlice != nil {
+		t.Errorf("count-only pass must not allocate, got %v", nilSlice)
+	}
+	intervals, got := blob.GetIntercepts([2]float32{4, 8}, make([]float32, 0, count), nil)
 	if got != 2 {
 		t.Fatalf("second pass count = %d", got)
 	}
+	if len(intervals) != 2 {
+		t.Fatalf("second pass returned %d scalars, want 2", len(intervals))
+	}
+
+	// A slice that must grow (no spare capacity, or too little) still reaches the caller via the returned slice.
+	for _, in := range [][]float32{make([]float32, 0), make([]float32, 0, 1), make([]float32, 0, 2)} {
+		out, n := blob.GetIntercepts([2]float32{4, 8}, in, nil)
+		if n != 2 || len(out) != 2 {
+			t.Errorf("grown slice: count = %d, len = %d, want 2 and 2", n, len(out))
+			continue
+		}
+		if out[0] != intervals[0] || out[1] != intervals[1] {
+			t.Errorf("grown slice: got %v, want %v", out, intervals)
+		}
+	}
+
+	// A slice with a non-zero length is appended to, leaving the caller's existing contents alone.
+	prefix := []float32{-1, -2, -3}
+	appended, appendedCount := blob.GetIntercepts([2]float32{4, 8}, prefix, nil)
+	if appendedCount != 2 || len(appended) != 5 {
+		t.Fatalf("append to len-3 slice: count = %d, len = %d, want 2 and 5", appendedCount, len(appended))
+	}
+	if appended[0] != -1 || appended[1] != -2 || appended[2] != -3 {
+		t.Errorf("append clobbered the prefix: %v", appended)
+	}
+	if appended[3] != intervals[0] || appended[4] != intervals[1] {
+		t.Errorf("appended %v, want %v", appended[3:], intervals)
+	}
 
 	// The interval must lie inside the glyph's horizontal extent and be non-empty.
-	buf := make([]float32, 2)
-	res := blob.GetIntercepts([2]float32{4, 8}, buf[:0:2], nil)
-	_ = res
-	// Re-run through the slice-returning path to read values.
 	vals := interceptsValues(t, blob, [2]float32{4, 8}, nil)
 	if len(vals) != 2 || vals[0] >= vals[1] {
 		t.Fatalf("bad interval: %v", vals)
@@ -236,19 +261,22 @@ func TestGetIntercepts(t *testing.T) {
 	}
 
 	// A band above the glyph has no intercepts.
-	if blob.GetIntercepts([2]float32{-100, -90}, nil, nil) != 0 {
+	if _, n := blob.GetIntercepts([2]float32{-100, -90}, nil, nil); n != 0 {
 		t.Error("band above the glyph should be clear")
 	}
 
 	// Multiple glyphs accumulate pairs.
 	blob2 := MakeFromText([]byte("pq"), f, font.TextEncodingUTF8)
-	if n := blob2.GetIntercepts([2]float32{4, 8}, nil, nil); n != 4 {
+	if _, n := blob2.GetIntercepts([2]float32{4, 8}, nil, nil); n != 4 {
 		t.Errorf("two descenders: count = %d, want 4", n)
+	}
+	if pairs, n := blob2.GetIntercepts([2]float32{4, 8}, make([]float32, 0), nil); n != 4 || len(pairs) != 4 {
+		t.Errorf("two descenders into a grown slice: count = %d, len = %d, want 4 and 4", n, len(pairs))
 	}
 
 	// A stroked paint still reports fill-outline intercepts (intercepts always force fill style).
 	paint := &stroke.PaintSpec{Style: stroke.PaintStyleStroke, Width: 3}
-	if n := blob2.GetIntercepts([2]float32{4, 8}, nil, paint); n != 4 {
+	if _, n := blob2.GetIntercepts([2]float32{4, 8}, nil, paint); n != 4 {
 		t.Errorf("stroked paint: count = %d, want 4", n)
 	}
 }
@@ -256,13 +284,15 @@ func TestGetIntercepts(t *testing.T) {
 // interceptsValues fetches intercepts into a fresh slice.
 func interceptsValues(t *testing.T, blob *Blob, bounds [2]float32, paint *stroke.PaintSpec) []float32 {
 	t.Helper()
-	n := blob.GetIntercepts(bounds, nil, paint)
+	_, n := blob.GetIntercepts(bounds, nil, paint)
 	if n == 0 {
 		return nil
 	}
-	out := make([]float32, 0, n)
-	blob.GetIntercepts(bounds, out, paint)
-	return out[:n]
+	out, got := blob.GetIntercepts(bounds, make([]float32, 0, n), paint)
+	if got != n {
+		t.Fatalf("count-only pass reported %d scalars, second pass reported %d", n, got)
+	}
+	return out
 }
 
 func TestGlyphRunBuilderText(t *testing.T) {

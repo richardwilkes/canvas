@@ -19,9 +19,11 @@ import (
 )
 
 // GetIntercepts computes the intercepts of the blob's glyph outlines against a horizontal band: bounds is the [top,
-// bottom] band relative to the blob origin; intervals (may be nil to count only) receives (entry, exit) pairs; paint
-// may be nil. Returns the number of scalars that were (or would be) written.
-func (b *Blob) GetIntercepts(bounds [2]float32, intervals []float32, paint *stroke.PaintSpec) int {
+// bottom] band relative to the blob origin; paint may be nil. The (entry, exit) pairs are appended to intervals, which
+// is returned along with the number of scalars appended. Pass a nil intervals to count only: nothing is appended (not
+// even to a fresh slice) and the returned slice is nil, but the count still reports how many scalars a non-nil
+// intervals would have received.
+func (b *Blob) GetIntercepts(bounds [2]float32, intervals []float32, paint *stroke.PaintSpec) (result []float32, count int) {
 	builder := NewGlyphRunBuilder()
 	glyphRunList := builder.BlobToGlyphRunList(b, geom.Pt(0, 0))
 
@@ -29,7 +31,7 @@ func (b *Blob) GetIntercepts(bounds [2]float32, intervals []float32, paint *stro
 	for i := range glyphRunList.Runs {
 		intervals = getGlyphRunIntercepts(&glyphRunList.Runs[i], paint, bounds, intervals, &intervalCount)
 	}
-	return intervalCount
+	return intervals, intervalCount
 }
 
 // getGlyphRunIntercepts computes the intercepts for one glyph run.

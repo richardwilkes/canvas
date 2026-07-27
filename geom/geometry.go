@@ -254,49 +254,57 @@ func uncheckedMix(a, b Point, t float32) Point {
 	return Point{X: (b.X-a.X)*t + a.X, Y: (b.Y-a.Y)*t + a.Y}
 }
 
-// ChopCubicAt splits the cubic at t into two cubics sharing dst[3]. dst must hold 7 points.
+// ChopCubicAt splits the cubic at t into two cubics sharing dst[3]. dst must hold 7 points. src and dst may alias each
+// other (ChopCubicAtList deliberately overlaps them), so all four source points are loaded before anything is stored.
 func ChopCubicAt(src, dst []Point, t float32) {
+	p0, p1, p2, p3 := src[0], src[1], src[2], src[3]
 	if t == 1 {
-		copy(dst[:4], src[:4])
-		dst[4] = src[3]
-		dst[5] = src[3]
-		dst[6] = src[3]
+		dst[0] = p0
+		dst[1] = p1
+		dst[2] = p2
+		dst[3] = p3
+		dst[4] = p3
+		dst[5] = p3
+		dst[6] = p3
 		return
 	}
-	ab := uncheckedMix(src[0], src[1], t)
-	bc := uncheckedMix(src[1], src[2], t)
-	cd := uncheckedMix(src[2], src[3], t)
+	ab := uncheckedMix(p0, p1, t)
+	bc := uncheckedMix(p1, p2, t)
+	cd := uncheckedMix(p2, p3, t)
 	abc := uncheckedMix(ab, bc, t)
 	bcd := uncheckedMix(bc, cd, t)
 	abcd := uncheckedMix(abc, bcd, t)
-	dst[0] = src[0]
+	dst[0] = p0
 	dst[1] = ab
 	dst[2] = abc
 	dst[3] = abcd
 	dst[4] = bcd
 	dst[5] = cd
-	dst[6] = src[3]
+	dst[6] = p3
 }
 
-// ChopCubicAt2 splits the cubic at both t0 and t1, producing three cubics. dst must hold 10 points.
+// ChopCubicAt2 splits the cubic at both t0 and t1, producing three cubics. dst must hold 10 points. src and dst may
+// alias each other (ChopCubicAtList deliberately overlaps them), so all four source points are loaded before anything
+// is stored.
 func ChopCubicAt2(src, dst []Point, t0, t1 float32) {
+	p0, p1, p2, p3 := src[0], src[1], src[2], src[3]
 	if t1 == 1 {
 		ChopCubicAt(src, dst, t0)
-		dst[7] = src[3]
-		dst[8] = src[3]
-		dst[9] = src[3]
+		dst[7] = p3
+		dst[8] = p3
+		dst[9] = p3
 		return
 	}
 	// Both chops are computed from the original curve, matching what a SIMD dual evaluation would produce.
-	ab0 := uncheckedMix(src[0], src[1], t0)
-	bc0 := uncheckedMix(src[1], src[2], t0)
-	cd0 := uncheckedMix(src[2], src[3], t0)
+	ab0 := uncheckedMix(p0, p1, t0)
+	bc0 := uncheckedMix(p1, p2, t0)
+	cd0 := uncheckedMix(p2, p3, t0)
 	abc0 := uncheckedMix(ab0, bc0, t0)
 	bcd0 := uncheckedMix(bc0, cd0, t0)
 	abcd0 := uncheckedMix(abc0, bcd0, t0)
-	ab1 := uncheckedMix(src[0], src[1], t1)
-	bc1 := uncheckedMix(src[1], src[2], t1)
-	cd1 := uncheckedMix(src[2], src[3], t1)
+	ab1 := uncheckedMix(p0, p1, t1)
+	bc1 := uncheckedMix(p1, p2, t1)
+	cd1 := uncheckedMix(p2, p3, t1)
 	abc1 := uncheckedMix(ab1, bc1, t1)
 	bcd1 := uncheckedMix(bc1, cd1, t1)
 	abcd1 := uncheckedMix(abc1, bcd1, t1)
@@ -304,7 +312,7 @@ func ChopCubicAt2(src, dst []Point, t0, t1 float32) {
 	// evaluated at t1 and abc1..bcd1 evaluated at t0.
 	mid0 := uncheckedMix(abc0, bcd0, t1)
 	mid1 := uncheckedMix(abc1, bcd1, t0)
-	dst[0] = src[0]
+	dst[0] = p0
 	dst[1] = ab0
 	dst[2] = abc0
 	dst[3] = abcd0
@@ -313,7 +321,7 @@ func ChopCubicAt2(src, dst []Point, t0, t1 float32) {
 	dst[6] = abcd1
 	dst[7] = bcd1
 	dst[8] = cd1
-	dst[9] = src[3]
+	dst[9] = p3
 }
 
 // ChopCubicAtHalf splits the cubic src at its midpoint.

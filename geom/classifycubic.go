@@ -39,7 +39,8 @@ func calcDotCrossCubic(p0, p1, p2 Point) float64 {
 }
 
 // previousInversePow2 returns a positive power of two that, when multiplied by n, shifts the exponent of n so its
-// magnitude falls in [1, 2). Returns 2^1023 if abs(n) < 2^-1022 (including 0), and NaN if n is Inf or NaN.
+// magnitude falls in [1, 2). Returns 2^1023 if abs(n) < 2^-1022 (including 0), and +Inf if n is Inf or NaN (the
+// exponent subtraction borrows, and the mantissa mask leaves an all-ones exponent field).
 func previousInversePow2(n float64) float64 {
 	bits := math.Float64bits(n)
 	bits = ((uint64(1023) * 2 << 52) + ((uint64(1) << 52) - 1)) - bits // exp = -exp

@@ -96,8 +96,10 @@ func setPointLength(pt *Point, x, y, length float32, orig *float32) bool {
 	yy := float64(y)
 	dmag := math.Sqrt(xx*xx + yy*yy)
 	dscale := float64(length) / dmag
-	x *= float32(dscale)
-	y *= float32(dscale)
+	// Scale in double and round once. Rounding dscale to float32 first and then multiplying costs an extra rounding
+	// step, which lands 1 ulp away from the true double-precision result for a large fraction of inputs.
+	x = DoubleToScalar(xx * dscale)
+	y = DoubleToScalar(yy * dscale)
 	if !IsFinite(x, y) || (x == 0 && y == 0) {
 		*pt = Point{}
 		return false

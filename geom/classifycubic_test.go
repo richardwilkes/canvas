@@ -9,7 +9,40 @@
 
 package geom
 
-import "testing"
+import (
+	"math"
+	"testing"
+)
+
+// previousInversePow2's documented contract: the product with n lands in [1, 2), abs(n) < 2^-1022 (including 0) gives
+// 2^1023, and Inf/NaN give +Inf.
+func TestPreviousInversePow2(t *testing.T) {
+	for _, n := range []float64{1, 1.5, 2, 3, -7.25, 1e300, -1e-300, math.Ldexp(1, -1022)} {
+		got := previousInversePow2(n)
+		if got <= 0 || math.Log2(got) != math.Trunc(math.Log2(got)) {
+			t.Fatalf("previousInversePow2(%g) = %g, want a positive power of two", n, got)
+		}
+		if mag := math.Abs(n * got); mag < 1 || mag >= 2 {
+			t.Fatalf("previousInversePow2(%g) = %g scales to %g, want [1, 2)", n, got, mag)
+		}
+	}
+	for _, n := range []float64{
+		0,
+		math.Copysign(0, -1),
+		math.SmallestNonzeroFloat64,
+		math.SmallestNonzeroFloat64 * 4,
+		-math.Ldexp(1, -1023),
+	} {
+		if got := previousInversePow2(n); got != math.Ldexp(1, 1023) {
+			t.Fatalf("previousInversePow2(%g) = %g, want 2^1023", n, got)
+		}
+	}
+	for _, n := range []float64{math.Inf(1), math.Inf(-1), math.NaN(), -math.NaN()} {
+		if got := previousInversePow2(n); !math.IsInf(got, 1) {
+			t.Fatalf("previousInversePow2(%g) = %g, want +Inf", n, got)
+		}
+	}
+}
 
 // The cubic corpora and their expected classifications exercise every branch of ClassifyCubic.
 

@@ -121,6 +121,80 @@ func TestChopCubicAt(t *testing.T) {
 	}
 }
 
+// ChopCubicAt/ChopCubicAt2 must be safe when src and dst are the same storage, because ChopCubicAtList deliberately
+// aliases them (src = dst[6:]; dst = dst[6:]) to chop the remaining tail in place.
+func TestChopCubicAliasing(t *testing.T) {
+	c := []Point{{X: 0, Y: 0}, {X: 10, Y: 30}, {X: 20, Y: -30}, {X: 40, Y: 0}}
+	for _, tt := range []float32{0, 0.25, 0.5, 0.75, 1} {
+		want := make([]Point, 7)
+		ChopCubicAt(c, want, tt)
+		buf := make([]Point, 7)
+		copy(buf, c)
+		ChopCubicAt(buf, buf, tt) // fully aliased
+		for i := range want {
+			if buf[i] != want[i] {
+				t.Fatalf("ChopCubicAt(t=%v) aliased[%d]=%v want %v", tt, i, buf[i], want[i])
+			}
+		}
+	}
+	for _, pair := range [][2]float32{{0.25, 0.75}, {0.1, 0.9}, {0.5, 1}} {
+		want := make([]Point, 10)
+		ChopCubicAt2(c, want, pair[0], pair[1])
+		buf := make([]Point, 10)
+		copy(buf, c)
+		ChopCubicAt2(buf, buf, pair[0], pair[1]) // fully aliased
+		for i := range want {
+			if buf[i] != want[i] {
+				t.Fatalf("ChopCubicAt2(t=%v,%v) aliased[%d]=%v want %v", pair[0], pair[1], i, buf[i], want[i])
+			}
+		}
+	}
+}
+
+// Every sub-cubic ChopCubicAtList emits must keep the original curve's end point as its final point, and each shared
+// point must be the true position at the corresponding t. The odd-tail (ChopCubicAt) and the i >= 2 pair
+// (ChopCubicAt2) both run against an aliased src/dst.
+func TestChopCubicAtListEndpoints(t *testing.T) {
+	c := []Point{{X: 0, Y: 0}, {X: 10, Y: 30}, {X: 20, Y: -30}, {X: 40, Y: 0}}
+	for _, tValues := range [][]float32{
+		{0.5},
+		{0.25, 0.75},
+		{0.25, 0.5, 0.75},
+		{0.2, 0.4, 0.6, 0.8},
+		{0.1, 0.3, 0.5, 0.7, 0.9},
+	} {
+		dst := make([]Point, 3*len(tValues)+4)
+		ChopCubicAtList(c, dst, tValues)
+		if dst[0] != c[0] {
+			t.Fatalf("tValues=%v: start %v want %v", tValues, dst[0], c[0])
+		}
+		if last := dst[len(dst)-1]; last != c[3] {
+			t.Fatalf("tValues=%v: end %v want %v", tValues, last, c[3])
+		}
+		for i, tt := range tValues {
+			got := dst[3*(i+1)]
+			wx, wy := evalCubicRef(c[0], c[1], c[2], c[3], float64(tt))
+			if math.Abs(float64(got.X)-wx) > 1e-3 || math.Abs(float64(got.Y)-wy) > 1e-3 {
+				t.Fatalf("tValues=%v: split %d at t=%v is %v want (%g,%g)", tValues, i, tt, got, wx, wy)
+			}
+		}
+	}
+}
+
+// A wiggly cubic with three max-curvature roots in (0, 1) exercises the odd-tail aliased chop that
+// raster/scan_hairline.go feeds straight into hairCubicSubdivide.
+func TestChopCubicAtMaxCurvatureEndpoint(t *testing.T) {
+	c := []Point{{X: 0, Y: 0}, {X: 10, Y: 30}, {X: 20, Y: -30}, {X: 40, Y: 0}}
+	dst := make([]Point, 13)
+	count := ChopCubicAtMaxCurvature(c, dst)
+	if count != 4 {
+		t.Fatalf("expected 4 sub-cubics for a 3-root cubic, got %d", count)
+	}
+	if got := dst[3*count]; got != c[3] {
+		t.Fatalf("final sub-cubic ends at %v want %v", got, c[3])
+	}
+}
+
 func TestFindUnitQuadRoots(t *testing.T) {
 	var roots [2]float32
 	// (t - 0.25)(t - 0.75) = t^2 - t + 0.1875

@@ -879,7 +879,7 @@ func (g *Gpu) disableWindowRectangles() {
 	if g.Caps().MaxWindowRectanglesCap == 0 || g.hwWindowRectsDisabledKnown {
 		return
 	}
-	g.fns().WindowRectangles(EXCLUSIVE, 0, 0)
+	g.fns().WindowRectangles(EXCLUSIVE, 0, nil)
 	g.hwWindowRectsDisabledKnown = true
 }
 

@@ -189,7 +189,9 @@ func (x *pdLCDXP) onAddToKey(*gpu.ShaderCaps, *gpu.KeyBuilder) {}
 func (x *pdLCDXP) onGetBlendInfo() gpu.BlendInfo {
 	blendInfo := gpu.MakeBlendInfo()
 	blendInfo.SrcBlend = gpu.BlendCoeffConstC
-	blendInfo.DstBlend = gpu.BlendCoeffIConstC
+	// The trick needs constColor*src + (1 - src)*dst: src carries the per-channel coverage times alpha, so the dst has
+	// to be attenuated by coverage (one minus src color), not by the text color in the blend constant.
+	blendInfo.DstBlend = gpu.BlendCoeffISC
 	blendInfo.BlendConstant = [4]float32{
 		x.blendConstant.R, x.blendConstant.G, x.blendConstant.B, x.blendConstant.A,
 	}

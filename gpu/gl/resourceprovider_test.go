@@ -127,3 +127,35 @@ func TestPrepareLevelsTightCopy(t *testing.T) {
 		}
 	}
 }
+
+// TestWritePixelsBackendFailureFailsCreation pins the recoverable-failure contract of the scratch-texture upload lane:
+// a backend upload failure unrefs the texture and fails the creation, exactly like the prepareLevels failure path,
+// rather than aborting the process.
+func TestWritePixelsBackendFailureFailsCreation(t *testing.T) {
+	dc := newFakeDirectContext(t)
+	defer dc.Destroy()
+	rp := dc.ResourceProvider()
+	texture := rp.CreateTexture(geom.ISize{Width: 4, Height: 4}, FormatRGBA8, gpu.TextureType2D,
+		gpu.RenderableNo, 1, gpu.MipmappedNo, gpu.BudgetedYes, "write-pixels-failure")
+	if texture == nil {
+		t.Fatal("CreateTexture failed")
+	}
+	if dc.ResourceCache().ResourceCount() != 1 {
+		t.Fatalf("resources = %d, want 1", dc.ResourceCache().ResourceCount())
+	}
+
+	// An 8x8 base level into a 4x4 texture: prepareLevels accepts it (the stride is tight), then the backend rejects a
+	// single-level write that is not contained in the surface.
+	baseSize := geom.ISize{Width: 8, Height: 8}
+	rowBytes := int(baseSize.Width) * gpu.ColorTypeRGBA8888.BytesPerPixel()
+	texels := []gpu.MipLevel{{Pixels: make([]byte, rowBytes*int(baseSize.Height)), RowBytes: rowBytes}}
+	if got := rp.writePixels(texture, gpu.ColorTypeRGBA8888, baseSize, texels, 1); got != nil {
+		t.Fatal("writePixels must return nil when the backend upload fails")
+	}
+
+	// The texture's ref was dropped, so it purges like any other unreferenced scratch texture.
+	dc.ResourceCache().PurgeUnlockedResources(gpu.PurgeAllResources)
+	if n := dc.ResourceCache().ResourceCount(); n != 0 {
+		t.Fatalf("resources = %d after purge, want 0 (the failed texture's ref leaked)", n)
+	}
+}

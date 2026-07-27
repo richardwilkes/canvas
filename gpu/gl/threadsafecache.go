@@ -345,15 +345,21 @@ func (c *ThreadSafeCache) FindWithData(key *gpu.UniqueKey) (v SurfaceProxyView, 
 }
 
 // internalAddView adds view under key: on a new key the cache adopts the caller's single ref on the view's proxy
-// (becoming the long-lived owner); on a key collision the incumbent stays and the caller's redundant ref is dropped.
-// Returns the stored view plus the stored key's custom data. The collision path cannot occur in this package's
-// single-threaded find-then-add flow, but is handled anyway.
+// (becoming the long-lived owner). A collision with an existing view entry keeps the incumbent and drops the caller's
+// now-redundant ref — whether or not the two views name the same proxy, since either way the cache already holds the
+// ref that entry needs, and a surviving extra one would keep it from ever being uniquely held (so unpurgeable by
+// DropUniqueRefs). A collision with a vertData entry has no incumbent view to hand back, so that entry is dropped in
+// favor of this one, which orphans any existing uses of the vertex data exactly as the is-newer-better replacement in
+// AddVertsWithData does; the caller's ref is adopted as usual and the returned view is always usable. Returns the
+// stored view plus the stored key's custom data. Neither collision path can occur in this package's single-threaded
+// find-then-add flow, but both are handled anyway.
 func (c *ThreadSafeCache) internalAddView(key *gpu.UniqueKey, view SurfaceProxyView) (v SurfaceProxyView, data []byte) {
 	if e := c.entries[key.MapKey()]; e != nil {
-		if e.tag == tscTagView && e.view.Proxy() != view.Proxy() {
+		if e.tag == tscTagView {
 			view.Proxy().Unref()
+			return e.view, e.key.CustomData()
 		}
-		return e.view, e.key.CustomData()
+		c.dropEntry(e)
 	}
 	e := &tscEntry{key: *key, tag: tscTagView, view: view}
 	c.entries[key.MapKey()] = e

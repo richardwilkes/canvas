@@ -354,7 +354,10 @@ func (p *BufferAllocPool) createBlock(requestSize uint64) bool {
 		size > uint64(p.gpu.Caps().BufferMapThreshold) {
 		gpuBuffer := block.buffer.(*Buffer)
 		if mapPtr := gpuBuffer.Map(); mapPtr != nil {
-			p.bufferPtr = unsafe.Slice((*byte)(mapPtr), size)
+			// The window spans the whole buffer, not the requested size: CreateBuffer bins dynamic buffers upward
+			// (a 40000-byte request yields 49152 bytes) and Map maps all of it, while MakeSpace/MakeSpaceAtLeast
+			// index this slice by block.bytesFree, which starts at the buffer's real size.
+			p.bufferPtr = unsafe.Slice((*byte)(mapPtr), block.bytesFree)
 		}
 	}
 	if p.bufferPtr == nil {

@@ -84,6 +84,14 @@ type platformContext struct {
 // into both the integer and the float register banks, which is only ABI-correct when no float argument needs a
 // different bank position, so it cannot call a mixed integer/float signature. Such a signature has to be bound through
 // purego.RegisterFunc instead, as gpu/gl does for its float-carrying entry points.
+//
+// The //go:uintptrescapes tag is the GC-stack contract, matching the tag gpu/gl puts on glCall and its uintptr-taking
+// wrappers: purego.SyscallN carries the tag itself, but it only covers conversions written at its own call site, and
+// this forwarder passes an already-built []uintptr with no pointer provenance left. Without the tag here, a Go pointer
+// converted at a glxRawCall call site (e.g. uintptr(unsafe.Pointer(&nConfigs)) below) could stay on the stack and be
+// moved by a stack growth before the C call reads it, leaving the driver writing to a stale address.
+//
+//go:uintptrescapes
 func glxRawCall(fn uintptr, args ...uintptr) uintptr {
 	r, _, _ := purego.SyscallN(fn, args...)
 	return r
@@ -189,6 +197,7 @@ func (p *platformContext) init() error {
 	configs := glxRawCall(p.chooseFBConfig, p.display, screen,
 		uintptr(unsafe.Pointer(&fbAttribs[0])), uintptr(unsafe.Pointer(&nConfigs)))
 	runtime.KeepAlive(fbAttribs)
+	runtime.KeepAlive(&nConfigs)
 	if configs == 0 || nConfigs == 0 {
 		return errors.New("gltest: glXChooseFBConfig found no pbuffer-capable RGBA config")
 	}

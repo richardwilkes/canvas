@@ -556,6 +556,50 @@ func TestBufferAllocPool(t *testing.T) {
 	}
 }
 
+// TestBufferAllocPoolMappedWindowSpansBuffer pins the mapped write window to the buffer the provider actually handed
+// back, not to the requested size: CreateBuffer bins dynamic buffers upward (40000 bytes yields 49152), and
+// MakeSpaceAtLeast hands out every free byte of the block, so a window sized to the request would be indexed past its
+// length. The default -1 buffer-map threshold becomes MaxInt32 and never maps, so the threshold is set explicitly here
+// to reach the mapped lane.
+func TestBufferAllocPoolMappedWindowSpansBuffer(t *testing.T) {
+	options := gpu.DefaultContextOptions()
+	options.BufferMapThreshold = 0
+	dc := NewDirectContext(newRecordingGpuWithDriverOptions(t, appleM4MaxDriver(), options))
+	if dc == nil {
+		t.Fatal("NewDirectContext returned nil")
+	}
+	defer dc.Destroy()
+	pool := NewVertexBufferAllocPool(dc.Gpu(), MakeCpuBufferCache(2), dc.ResourceProvider())
+	defer pool.Reset()
+
+	const vertexSize = 8
+	const fallbackVertexCount = 5000 // 40000 bytes, which bins up to 49152
+	ptr, buffer, _, actualVertexCount := pool.MakeVertexSpaceAtLeast(vertexSize, 1,
+		fallbackVertexCount)
+	if ptr == nil || buffer == nil {
+		t.Fatal("MakeVertexSpaceAtLeast failed")
+	}
+	if counts("glMapBufferRange") == 0 {
+		t.Fatal("the block was staged through CPU memory; this test must cover the mapped lane")
+	}
+	if buffer.Size() <= vertexSize*fallbackVertexCount {
+		t.Fatalf("buffer size = %d, want more than the requested %d (the binning this test needs)",
+			buffer.Size(), vertexSize*fallbackVertexCount)
+	}
+	if uint64(len(ptr)) != buffer.Size() {
+		t.Fatalf("window = %d bytes, want the buffer's full %d", len(ptr), buffer.Size())
+	}
+	if uint64(actualVertexCount)*vertexSize != buffer.Size() {
+		t.Fatalf("actual vertex count %d covers %d bytes, want the buffer's full %d",
+			actualVertexCount, uint64(actualVertexCount)*vertexSize, buffer.Size())
+	}
+	// Every handed-out byte must be writable through the window.
+	for i := range ptr {
+		ptr[i] = byte(i)
+	}
+	pool.Unmap()
+}
+
 // TestProxyProviderUniqueKeys covers assign/find/invalidate on the uniquely keyed proxy map.
 func TestProxyProviderUniqueKeys(t *testing.T) {
 	dc := newFakeDirectContext(t)

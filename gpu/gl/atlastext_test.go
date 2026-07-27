@@ -360,7 +360,9 @@ func TestLCDXferProcessorLanes(t *testing.T) {
 	}
 
 	// Dual source unavailable with a constant color: the PDLCD constant-color trick (the color folded into the blend
-	// constant with (ConstC, IConstC)), still no dst read.
+	// constant with (ConstC, ISC)), still no dst read. The dst coefficient is one-minus-*src*-color, since the shader's
+	// src output carries the per-channel coverage times alpha and the dst must be attenuated by that coverage;
+	// attenuating by the blend constant (IConstC) instead would scale the destination by the text color.
 	noDual := *caps
 	shaderCapsCopy := *caps.ShaderCaps
 	shaderCapsCopy.DualSourceBlendingSupport = false
@@ -372,8 +374,12 @@ func TestLCDXferProcessorLanes(t *testing.T) {
 		t.Fatalf("fallback XP is %T, want *pdLCDXP", xp)
 	}
 	info = xpGetBlendInfo(xp)
-	if info.SrcBlend != gpu.BlendCoeffConstC || info.DstBlend != gpu.BlendCoeffIConstC {
-		t.Fatalf("PDLCD blend = %+v, want (ConstC, IConstC)", info)
+	if info.SrcBlend != gpu.BlendCoeffConstC || info.DstBlend != gpu.BlendCoeffISC {
+		t.Fatalf("PDLCD blend = %+v, want (ConstC, ISC)", info)
+	}
+	if info.BlendConstant != [4]float32{0.1, 0.2, 0.3, 1} {
+		t.Fatalf("PDLCD blend constant = %v, want the unpremultiplied color with opaque alpha",
+			info.BlendConstant)
 	}
 
 	// Dual source unavailable with a non-constant color: the dst-read fallback.

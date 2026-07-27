@@ -218,9 +218,13 @@ func executeOp(op Op, state *OpFlushState, chainBounds geom.Rect) {
 
 // Rect helpers for bounds arithmetic used throughout the op pipeline.
 
-// rectsOverlap reports whether a and b overlap. Invalid (NaN) rects report overlapping everything.
+// rectsOverlap reports whether a and b overlap. Rects may be infinitely small but not inverted. Invalid (NaN) rects are
+// treated conservatively: the test is written as the negation of "disjoint", so a comparison involving a NaN — false
+// either way round — can never conclude disjoint, and an all-NaN rect therefore overlaps everything. That keeps
+// canReorder (opstask.go) from hoisting a draw past one it may cover. For ordered coordinates this is exactly the
+// four-way strict test.
 func rectsOverlap(a, b geom.Rect) bool {
-	return a.Right > b.Left && a.Bottom > b.Top && b.Right > a.Left && b.Bottom > a.Top
+	return !(a.Right <= b.Left || a.Bottom <= b.Top || b.Right <= a.Left || b.Bottom <= a.Top)
 }
 
 // rectsTouchOrOverlap reports whether a and b overlap or share an edge.

@@ -36,8 +36,9 @@ const (
 func (c *Caps) SurfaceSupportsReadPixels(surface *Surface) SurfaceReadPixelsSupport {
 	if surface.AsTexture() == nil {
 		if rt := surface.AsRenderTarget(); rt != nil {
-			// glReadPixels does not allow reading back from a MSAA framebuffer. If the underlying surface doesn't have
-			// a second FBO to resolve to then we must make a copy.
+			// glReadPixels does not allow reading back from a MSAA framebuffer, and the resolve FBO a multisampled
+			// render target reads back through targets its resolve texture — which a surface that is not a texture
+			// (the enclosing test) does not have. So a multisampled non-texture render target must be copied.
 			if rt.NumSamples() > 1 {
 				return SurfaceReadPixelsCopyToTexture2D
 			}

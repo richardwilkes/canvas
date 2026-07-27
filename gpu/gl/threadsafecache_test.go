@@ -373,6 +373,75 @@ func TestThreadSafeCacheViewRemoveAndDropAll(t *testing.T) {
 	}
 }
 
+// TestThreadSafeCacheViewSameProxyCollision covers the collision flavor where the incumbent entry already holds the
+// very proxy being added: the caller's ref is still redundant (the cache owns the one the entry needs), so it has to be
+// dropped, or the entry can never become uniquely held and DropUniqueRefs can never purge it.
+func TestThreadSafeCacheViewSameProxyCollision(t *testing.T) {
+	c := NewThreadSafeCache()
+	key := tscTestKey(11, nil)
+	view := tscTestView()
+	proxy := view.Proxy()
+	c.Add(&key, view) // the cache adopts the constructor's ref
+
+	// A second caller arrives with its own ref on the same proxy.
+	proxy.Ref()
+	got := c.Add(&key, MakeSurfaceProxyView(proxy, gpu.OriginTopLeft, gpu.SwizzleRGBA))
+	if got.Proxy() != proxy {
+		t.Fatal("colliding add must return the incumbent")
+	}
+	if proxy.RefCnt() != 1 {
+		t.Fatalf("same-proxy collision must drop the caller's redundant ref: refCnt = %d, want 1",
+			proxy.RefCnt())
+	}
+	if c.NumEntries() != 1 {
+		t.Fatalf("entries = %d, want 1", c.NumEntries())
+	}
+
+	// With no leaked ref the entry is uniquely held, so it purges normally.
+	c.DropUniqueRefs(nil)
+	if c.NumEntries() != 0 {
+		t.Fatalf("entries = %d, want 0 (a leaked ref would pin the entry forever)", c.NumEntries())
+	}
+	if proxy.RefCnt() != 0 {
+		t.Fatalf("purged proxy refCnt = %d, want 0", proxy.RefCnt())
+	}
+}
+
+// TestThreadSafeCacheViewOverVertDataCollision covers a view added over a key already held by a vertex-data entry.
+// There is no incumbent view to hand back, so the vertData entry gives way (orphaning its payload exactly as the
+// is-newer-better replacement does) and the caller gets a usable view rather than the zero one.
+func TestThreadSafeCacheViewOverVertDataCollision(t *testing.T) {
+	c := NewThreadSafeCache()
+	key := tscTestKey(12, nil)
+	vd := tscTestVerts(3)
+	vd.Ref()
+	r, _ := c.AddVertsWithData(&key, vd, func(_, _ []byte) bool { return false })
+	r.Unref()
+
+	view := tscTestView()
+	proxy := view.Proxy()
+	got, _ := c.AddWithData(&key, view)
+	if !got.IsValid() || got.Proxy() != proxy {
+		t.Fatal("a vertData collision must still hand back a usable view")
+	}
+	if proxy.RefCnt() != 1 {
+		t.Fatalf("adopted proxy refCnt = %d, want 1 (the cache owns the single ref)", proxy.RefCnt())
+	}
+	if c.NumEntries() != 1 {
+		t.Fatalf("entries = %d, want 1", c.NumEntries())
+	}
+	if v := c.Find(&key); !v.IsValid() || v.Proxy() != proxy {
+		t.Fatal("the view must be the entry stored under the key")
+	}
+	if v, _ := c.FindVertsWithData(&key); v != nil {
+		v.Unref()
+		t.Fatal("the displaced vertData entry must be gone")
+	}
+	if vd.refCnt != 1 {
+		t.Fatalf("displaced vertData refCnt = %d, want 1 (only the creator's ref remains)", vd.refCnt)
+	}
+}
+
 // TestThreadSafeCacheMixedTags guards the tagged union: a view key and a vertData key coexist, and a cross-tag lookup
 // misses (the payload accessors are tag-specific).
 func TestThreadSafeCacheMixedTags(t *testing.T) {

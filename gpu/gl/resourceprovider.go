@@ -570,7 +570,10 @@ func (rp *ResourceProvider) writePixels(texture *Surface, colorType gpu.ColorTyp
 	}
 	if !rp.gpu.WritePixels(texture, geom.IRectSize(baseSize), colorType, tempColorType, tmpTexels,
 		false) {
-		panic("writePixels failed")
+		// A backend upload failure is recoverable: fail the texture creation the same way the prepareLevels failure
+		// above does, rather than aborting the process.
+		texture.Unref()
+		return nil
 	}
 	return texture
 }

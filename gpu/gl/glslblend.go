@@ -127,7 +127,9 @@ func glslBlendFuncBody(mode raster.BlendMode) string {
 			"result.rgb += dst.rgb*(1.0 - src.a) + src.rgb*(1.0 - dst.a);\n" +
 			"return result;"
 	case raster.BlendDarken:
-		return "return blend_darken_mode(1.0, src, dst);"
+		// blend_darken_mode is the registry key; ensureBlendHelper emits it under the name blend_darken, so the
+		// three-argument overload has to be called by that name (as blend_overlay_flip's body does for blend_overlay).
+		return "return blend_darken(1.0, src, dst);"
 	case raster.BlendLighten:
 		return "vec4 result = blend_src_over(src, dst);\n" +
 			"result.rgb = max(result.rgb, (1.0 - dst.a)*src.rgb + dst.rgb);\n" +

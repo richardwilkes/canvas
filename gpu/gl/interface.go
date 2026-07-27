@@ -2889,8 +2889,8 @@ func (f *Functions) WaitSync(sync Sync, flags uint32, timeout uint64) {
 	glCall(f.waitSync, uintptr(sync), uintptr(flags), uintptr(timeout), 0, 0, 0, 0, 0, 0)
 }
 
-// WindowRectangles calls glWindowRectangles.
-func (f *Functions) WindowRectangles(mode uint32, count, box int32) {
+// WindowRectangles calls glWindowRectangles. box points at count four-int32 rectangles (nil when count is 0).
+func (f *Functions) WindowRectangles(mode uint32, count int32, box *int32) {
 	f.callCounts[idxWindowRectangles]++
-	glCall(f.windowRectangles, uintptr(mode), uintptr(count), uintptr(box), 0, 0, 0, 0, 0, 0)
+	glCall(f.windowRectangles, uintptr(mode), uintptr(count), uintptr(unsafe.Pointer(box)), 0, 0, 0, 0, 0, 0)
 }

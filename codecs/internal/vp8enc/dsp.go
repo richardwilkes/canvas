@@ -619,8 +619,8 @@ type matrix struct {
 	sharpen [16]uint16 // frequency boosters for slight sharpening
 }
 
-// expandMatrix fills the derived fields from q[0]/q[1] and returns the average quantizer. mType is 0 for luma-1 (AC), 1
-// for Y2, 2 for chroma.
+// expand fills the derived fields from q[0]/q[1] and returns the average quantizer. mType is 0 for luma-1 (AC), 1 for
+// Y2, 2 for chroma. (libwebp's ExpandMatrix.)
 func (m *matrix) expand(mType int) int {
 	for i := 0; i < 2; i++ {
 		isAC := 0

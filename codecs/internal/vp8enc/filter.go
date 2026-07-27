@@ -44,24 +44,6 @@ func clamp255(x int) uint8 {
 	return uint8(x)
 }
 
-// filter2 modifies a 2-pixel wide or high band along an edge (the simple filter, §15.2).
-func filter2(pix []uint8, n, level, index, iStep, jStep int) {
-	for ; n > 0; n, index = n-1, index+iStep {
-		p1 := int(pix[index-2*jStep])
-		p0 := int(pix[index-1*jStep])
-		q0 := int(pix[index+0*jStep])
-		q1 := int(pix[index+1*jStep])
-		if absInt(p0-q0)<<1+absInt(p1-q1)>>1 > level {
-			continue
-		}
-		a := 3*(q0-p0) + clamp127(p1-q1)
-		a1 := clamp15((a + 4) >> 3)
-		a2 := clamp15((a + 3) >> 3)
-		pix[index-1*jStep] = clamp255(p0 + a2)
-		pix[index+0*jStep] = clamp255(q0 - a1)
-	}
-}
-
 // filter246 modifies a 2-, 4- or 6-pixel wide or high band along an edge (the normal filter, §15.3).
 func filter246(pix []uint8, n, level, ilevel, hlevel, index, iStep, jStep int, fourNotSix bool) {
 	for ; n > 0; n, index = n-1, index+iStep {
@@ -152,7 +134,9 @@ func (e *encoder) filterParams() (level2, ilevel, hlevel int) {
 }
 
 // applyLoopFilter runs the deblocking filter over the reconstruction planes, exactly as the decoder does after
-// reconstructing all macroblocks.
+// reconstructing all macroblocks. Only the normal filter (§15.3) is ported: setupFilterStrength hard-codes
+// e.filterSimple to false and nothing else assigns it, so putFilterHeader always writes filter_type 0 and the spec's
+// simple filter (§15.2) is unreachable.
 func (e *encoder) applyLoopFilter() {
 	if e.filterLevel == 0 {
 		return
@@ -161,33 +145,8 @@ func (e *encoder) applyLoopFilter() {
 	for mby := 0; mby < e.mbH; mby++ {
 		for mbx := 0; mbx < e.mbW; mbx++ {
 			mb := &e.mbInfo[mby*e.mbW+mbx]
-			inner := mb.typ == 0 || !mb.noCoeffs
-			if e.filterSimple {
-				e.filterMBSimple(mbx, mby, level2, inner)
-			} else {
-				e.filterMBNormal(mbx, mby, level2, ilevel, hlevel, inner)
-			}
+			e.filterMBNormal(mbx, mby, level2, ilevel, hlevel, mb.typ == 0 || !mb.noCoeffs)
 		}
-	}
-}
-
-func (e *encoder) filterMBSimple(mbx, mby, l int, inner bool) {
-	yIndex := (mby*e.reconYStride + mbx) * 16
-	if mbx > 0 {
-		filter2(e.reconY, 16, l+4, yIndex, e.reconYStride, 1)
-	}
-	if inner {
-		filter2(e.reconY, 16, l, yIndex+0x4, e.reconYStride, 1)
-		filter2(e.reconY, 16, l, yIndex+0x8, e.reconYStride, 1)
-		filter2(e.reconY, 16, l, yIndex+0xc, e.reconYStride, 1)
-	}
-	if mby > 0 {
-		filter2(e.reconY, 16, l+4, yIndex, 1, e.reconYStride)
-	}
-	if inner {
-		filter2(e.reconY, 16, l, yIndex+e.reconYStride*0x4, 1, e.reconYStride)
-		filter2(e.reconY, 16, l, yIndex+e.reconYStride*0x8, 1, e.reconYStride)
-		filter2(e.reconY, 16, l, yIndex+e.reconYStride*0xc, 1, e.reconYStride)
 	}
 }
 

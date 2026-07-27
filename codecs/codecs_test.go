@@ -12,6 +12,7 @@ package codecs
 import (
 	"bytes"
 	"encoding/binary"
+	"hash/crc32"
 	"image"
 	"image/color"
 	"image/gif"
@@ -620,5 +621,185 @@ func TestWBMP(t *testing.T) {
 func TestUnregisteredReturnsNil(t *testing.T) {
 	if imagecore.NewFromEncoded([]byte{1, 2, 3, 4}) != nil {
 		t.Fatal("garbage should not decode")
+	}
+}
+
+// insertPNGChunk splices a chunk into a stdlib-encoded PNG immediately ahead of the first IDAT, which is where tRNS
+// belongs (after IHDR, and after PLTE for a paletted image). png.Encode never emits tRNS for the non-paletted color
+// types, so hand-splicing is the only way to build one.
+func insertPNGChunk(t *testing.T, data []byte, typ string, payload []byte) []byte {
+	t.Helper()
+	idat := bytes.Index(data, []byte("IDAT"))
+	if idat < 4 {
+		t.Fatal("no IDAT chunk found")
+	}
+	chunk := binary.BigEndian.AppendUint32(make([]byte, 0, 12+len(payload)), uint32(len(payload)))
+	chunk = append(chunk, typ...)
+	chunk = append(chunk, payload...)
+	chunk = binary.BigEndian.AppendUint32(chunk, crc32.ChecksumIEEE(chunk[4:]))
+	out := make([]byte, 0, len(data)+len(chunk))
+	out = append(out, data[:idat-4]...) // the chunk's 4-byte length precedes its type
+	out = append(out, chunk...)
+	return append(out, data[idat-4:]...)
+}
+
+// checkPNGTRNS decodes data through the png codec and asserts both lanes agree on N32/premul and produce want.
+func checkPNGTRNS(t *testing.T, data []byte, want []uint32) {
+	t.Helper()
+	codec := pngCodec()
+	info, ok := codec.DecodeInfo(data)
+	if !ok {
+		t.Fatal("DecodeInfo failed")
+	}
+	if info.ColorType != imagecore.ColorTypeRGBA8888 || info.AlphaType != imagecore.AlphaTypePremul {
+		t.Fatalf("DecodeInfo reported %v/%v, want RGBA8888/premul", info.ColorType, info.AlphaType)
+	}
+	p, err := codec.Decode(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Info.ColorType != info.ColorType || p.Info.AlphaType != info.AlphaType {
+		t.Fatalf("Decode info %v/%v disagrees with DecodeInfo %v/%v", p.Info.ColorType, p.Info.AlphaType,
+			info.ColorType, info.AlphaType)
+	}
+	for i, w := range want {
+		if p.Words[i] != w {
+			t.Fatalf("pixel %d = %08x, want %08x", i, p.Words[i], w)
+		}
+	}
+	im := decodeVia(t, data)
+	if im.IsOpaque() {
+		t.Fatal("IsOpaque() is true for an image holding transparent pixels")
+	}
+}
+
+// TestPNGGrayWithTRNS covers the tRNS chunk on a grayscale PNG: png.DecodeConfig stops at IHDR and reports
+// color.GrayModel, but png.Decode honors tRNS and returns an *image.NRGBA. Reporting Gray8/opaque from the config
+// alone ran every pixel through color.GrayModel.Convert, whose RGBA() premultiplies, so a transparent pixel decoded to
+// opaque black and the alpha vanished.
+func TestPNGGrayWithTRNS(t *testing.T) {
+	g := image.NewGray(image.Rect(0, 0, 2, 1))
+	g.Pix[0] = 0x00
+	g.Pix[1] = 0xFF
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, g); err != nil {
+		t.Fatal(err)
+	}
+	// tRNS for 8-bit grayscale is one 16-bit sample; gray level 0 becomes fully transparent.
+	data := insertPNGChunk(t, buf.Bytes(), "tRNS", []byte{0x00, 0x00})
+	checkPNGTRNS(t, data, []uint32{0x00000000, 0xFFFFFFFF})
+}
+
+// TestPNGTruecolorWithTRNS covers the same defect on the truecolor lane, where DecodeConfig reports color.RGBAModel
+// and png.Decode again returns an *image.NRGBA.
+func TestPNGTruecolorWithTRNS(t *testing.T) {
+	m := image.NewRGBA(image.Rect(0, 0, 2, 1))
+	m.SetRGBA(0, 0, color.RGBA{R: 0x11, G: 0x22, B: 0x33, A: 0xFF})
+	m.SetRGBA(1, 0, color.RGBA{R: 0x44, G: 0x55, B: 0x66, A: 0xFF})
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, m); err != nil { // opaque, so png.Encode picks truecolor with no alpha channel
+		t.Fatal(err)
+	}
+	// tRNS for 8-bit truecolor is three 16-bit samples; color 0x112233 becomes fully transparent.
+	data := insertPNGChunk(t, buf.Bytes(), "tRNS", []byte{0, 0x11, 0, 0x22, 0, 0x33})
+	checkPNGTRNS(t, data, []uint32{0x00000000, 0xFF665544})
+}
+
+// TestPNGPalettedTRNSUnaffected guards the other direction: DecodeConfig does parse tRNS for paletted PNGs, so the
+// palette it reports already carries the alpha and an all-opaque tRNS must not force a premul alpha type.
+func TestPNGPalettedTRNSUnaffected(t *testing.T) {
+	pal := image.NewPaletted(image.Rect(0, 0, 2, 1), color.Palette{
+		color.RGBA{R: 0xFF, A: 0xFF},
+		color.RGBA{B: 0xFF, A: 0xFF},
+	})
+	pal.Pix[1] = 1
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, pal); err != nil {
+		t.Fatal(err)
+	}
+	data := insertPNGChunk(t, buf.Bytes(), "tRNS", []byte{0xFF, 0xFF}) // both entries fully opaque
+	info, ok := pngCodec().DecodeInfo(data)
+	if !ok {
+		t.Fatal("DecodeInfo failed")
+	}
+	if info.ColorType != imagecore.ColorTypeRGBA8888 || info.AlphaType != imagecore.AlphaTypeOpaque {
+		t.Fatalf("DecodeInfo reported %v/%v, want RGBA8888/opaque", info.ColorType, info.AlphaType)
+	}
+}
+
+// TestICOPNGEntryWithTRNS covers the PNG-compressed ICO directory entry, which shares pngModelInfo with the PNG codec
+// and inherited the same tRNS defect.
+func TestICOPNGEntryWithTRNS(t *testing.T) {
+	g := image.NewGray(image.Rect(0, 0, 2, 2))
+	for i := range g.Pix {
+		g.Pix[i] = 0xFF
+	}
+	g.Pix[0] = 0x00
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, g); err != nil {
+		t.Fatal(err)
+	}
+	sub := insertPNGChunk(t, buf.Bytes(), "tRNS", []byte{0x00, 0x00})
+
+	var ico bytes.Buffer
+	ico.Write([]byte{0, 0, 1, 0, 1, 0}) // ICONDIR: 1 entry
+	ent := []byte{2, 2, 0, 0, 1, 0, 32, 0, 0, 0, 0, 0, 0, 0, 0, 0}
+	binary.LittleEndian.PutUint32(ent[8:], uint32(len(sub)))
+	binary.LittleEndian.PutUint32(ent[12:], 6+16)
+	ico.Write(ent)
+	ico.Write(sub)
+
+	im := decodeVia(t, ico.Bytes())
+	if im.ColorType() != imagecore.ColorTypeRGBA8888 || im.IsOpaque() {
+		t.Fatalf("ico png entry %v opaque=%v", im.ColorType(), im.IsOpaque())
+	}
+	if p := im.PeekPixels(imagecore.CachingAllow); p.Words[0] != 0 || p.Words[1] != 0xFFFFFFFF {
+		t.Fatalf("ico png entry pixels %08x %08x", p.Words[0], p.Words[1])
+	}
+}
+
+// TestGIFAnimationFirstFrameOnly pins that only frame 0 is decoded: the payload is truncated right after the first
+// frame's data, which gif.DecodeAll rejects (it keeps reading for more frames) but gif.Decode accepts.
+func TestGIFAnimationFirstFrameOnly(t *testing.T) {
+	pal := color.Palette{color.NRGBA{A: 0}, color.NRGBA{R: 255, A: 255}, color.NRGBA{B: 255, A: 255}}
+	frames := make([]*image.Paletted, 3)
+	for i := range frames {
+		f := image.NewPaletted(image.Rect(0, 0, 4, 4), pal)
+		for j := range f.Pix {
+			f.Pix[j] = uint8(1 + i%2)
+		}
+		f.Pix[0] = 0 // transparent
+		frames[i] = f
+	}
+	var buf bytes.Buffer
+	if err := gif.EncodeAll(&buf, &gif.GIF{Image: frames, Delay: []int{0, 0, 0}}); err != nil {
+		t.Fatal(err)
+	}
+	full := buf.Bytes()
+
+	// The whole animation still decodes to frame 0.
+	im := decodeVia(t, full)
+	p := im.PeekPixels(imagecore.CachingAllow)
+	if p.Words[0] != 0 || p.Words[1] != 0xFF0000FF {
+		t.Fatalf("frame 0 pixels %08x %08x", p.Words[0], p.Words[1])
+	}
+
+	// Cutting the stream short of frame 1's image descriptor leaves frame 0 intact and decodable.
+	second := bytes.IndexByte(full[13:], 0x2C) // first image descriptor
+	if second < 0 {
+		t.Fatal("no image descriptor found")
+	}
+	third := bytes.IndexByte(full[13+second+1:], 0x2C)
+	if third < 0 {
+		t.Fatal("only one image descriptor found")
+	}
+	truncated := full[:13+second+1+third]
+	if _, err := gif.DecodeAll(bytes.NewReader(truncated)); err == nil {
+		t.Fatal("truncation is not past the first frame; the test no longer proves anything")
+	}
+	tim := decodeVia(t, truncated)
+	tp := tim.PeekPixels(imagecore.CachingAllow)
+	if tp.Words[0] != 0 || tp.Words[1] != 0xFF0000FF {
+		t.Fatalf("truncated frame 0 pixels %08x %08x", tp.Words[0], tp.Words[1])
 	}
 }

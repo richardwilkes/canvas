@@ -64,7 +64,7 @@ func icoEntries(data []byte) []icoEntry {
 			}
 			pal, _ := cfg.ColorModel.(color.Palette)
 			e.isPNG = true
-			e.info = pngModelInfo(cfg.Width, cfg.Height, cfg.ColorModel, pal)
+			e.info = pngModelInfo(cfg.Width, cfg.Height, cfg.ColorModel, pal, pngHasTRNS(sub))
 		default:
 			w, h, _, ok := dibHeader(sub)
 			if !ok {

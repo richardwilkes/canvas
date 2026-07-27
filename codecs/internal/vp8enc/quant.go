@@ -160,6 +160,7 @@ func (e *encoder) setupFilterStrength() {
 	}
 	e.filterLevel = e.dqm.fstrength
 	e.filterSharpness = 0
+	// Always the normal filter: this is the only assignment to filterSimple, and applyLoopFilter ports §15.3 alone.
 	e.filterSimple = false
 }
 

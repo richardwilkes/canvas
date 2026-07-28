@@ -1160,6 +1160,25 @@ func NewClipStack(deviceBounds geom.IRect, forceAA bool) *ClipStack {
 	return cs
 }
 
+// Release invalidates every SW mask the stack still holds, standing in for the destructor upstream's ClipStack has. Masks
+// are registered with the proxy provider under a unique key when they are rendered and are otherwise only evicted by
+// Restore/ReplaceClip/clip, so a stack dropped with a clip still set would leave its mask textures unique-keyed in the
+// resource cache — where they are excluded from scratch reuse — until budget pressure or context teardown. The stack is
+// left usable but empty of masks (a mask is re-rendered on demand), and Release is safe to call more than once.
+func (cs *ClipStack) Release() {
+	if cs.proxyProvider == nil {
+		if len(cs.masks) > 0 {
+			panic("masks without a proxy provider")
+		}
+		return
+	}
+	for i := range cs.masks {
+		cs.masks[i].invalidate(cs.proxyProvider)
+	}
+	clear(cs.masks)
+	cs.masks = cs.masks[:0]
+}
+
 // currentSaveRecord returns the topmost (active) save record.
 func (cs *ClipStack) currentSaveRecord() *clipStackSaveRecord {
 	return &cs.saves[len(cs.saves)-1]

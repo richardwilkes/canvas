@@ -313,6 +313,8 @@ func (c *Canvas) internalDrawDeviceWithFilter(src, dst Device, filter filtercore
 		// contract.
 		return
 	}
+	// The backend lives only for this evaluation, so its intermediate devices are released with it (see releasable).
+	defer release(backend)
 	outputBounds := dst.DevClipBounds()
 
 	// The filter parameters respect the current matrix, which is not necessarily the local matrix set on src (it has

@@ -135,6 +135,8 @@ func (im *TextureImage) MakeSubsetDrawable(subset geom.IRect) imagecore.Drawable
 type filterBackend struct {
 	dev   *Device
 	cache *filtercore.FilterCache
+	// intermediates are the devices MakeDevice handed out; they are released with the backend (see Release).
+	intermediates []*Device
 }
 
 var _ filtercore.Backend = (*filterBackend)(nil)
@@ -153,7 +155,19 @@ func (b *filterBackend) MakeDevice(size geom.ISize) filtercore.Device {
 	}
 	dev := NewDevice(sdc)
 	dev.clearAll()
+	b.intermediates = append(b.intermediates, dev)
 	return dev.AsFilterDevice()
+}
+
+// Release tears down the intermediate devices this backend created, once the filter evaluation that owns it is done (the
+// canvas calls it there). Their clip stacks are the reason: a mask left live in one would sit in the resource cache under
+// a unique key with nothing left to invalidate it. Safe to call more than once.
+func (b *filterBackend) Release() {
+	for _, dev := range b.intermediates {
+		dev.Release()
+	}
+	clear(b.intermediates)
+	b.intermediates = b.intermediates[:0]
 }
 
 // MakeImage wraps image for use as a filter source: a texture-backed image on this context wraps directly; a raster

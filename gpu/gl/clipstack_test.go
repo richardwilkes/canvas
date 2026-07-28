@@ -17,6 +17,7 @@ package gl
 import (
 	"testing"
 
+	"github.com/richardwilkes/canvas/canvas"
 	"github.com/richardwilkes/canvas/geom"
 	"github.com/richardwilkes/canvas/gpu"
 	"github.com/richardwilkes/canvas/path"
@@ -682,6 +683,79 @@ func TestClipStackApplySWMask(t *testing.T) {
 	cs.Restore()
 	if len(cs.masks) != 0 {
 		t.Fatalf("masks after restore = %d, want 0", len(cs.masks))
+	}
+}
+
+// concaveClipPath returns a concave path whose AA clip on a single-sample target takes the SW mask lane.
+func concaveClipPath() *path.Path {
+	p := &path.Path{}
+	p.MoveTo(10, 10)
+	p.LineTo(54, 10)
+	p.LineTo(32, 30) // notch back toward the center
+	p.LineTo(54, 54)
+	p.LineTo(10, 54)
+	p.Close()
+	return p
+}
+
+// TestClipStackReleaseInvalidatesMasks covers the teardown a dropped stack needs: a mask still live when the owner goes
+// away has no other eviction path (Restore/ReplaceClip/clip are the only ones), so its texture would stay unique-keyed in
+// the resource cache — where isUsableAsScratch excludes it from reuse — until budget pressure or context teardown.
+func TestClipStackReleaseInvalidatesMasks(t *testing.T) {
+	dc := newFakeDirectContext(t)
+	sdc := newDrawTestSDC(t, dc, 64, 64)
+	defer sdc.Release()
+	identity := geom.IdentityMatrix()
+
+	cs := NewClipStack(deviceBounds64(), false)
+	cs.ClipPath(&identity, concaveClipPath(), gpu.AAYes, raster.ClipIntersect)
+	op, bounds := applyTestOp(geom.Rect{Left: 0, Top: 0, Right: 64, Bottom: 64})
+	out := MakeAppliedClip(sdc.Dimensions())
+	if effect := cs.Apply(sdc, op, gpu.AATypeCoverage, &out, &bounds); effect != ClipEffectClipped {
+		t.Fatalf("concave path effect = %v, want clipped", effect)
+	}
+	if len(cs.masks) != 1 {
+		t.Fatalf("masks recorded = %d, want 1", len(cs.masks))
+	}
+	keyed := dc.ProxyProvider().NumUniqueKeyProxies()
+	if keyed == 0 {
+		t.Fatal("the rendered mask must be registered with the proxy provider")
+	}
+
+	// Dropping the stack (a layer device being discarded with a clip still set) must invalidate it.
+	cs.Release()
+	if len(cs.masks) != 0 {
+		t.Fatalf("masks after release = %d, want 0", len(cs.masks))
+	}
+	if got := dc.ProxyProvider().NumUniqueKeyProxies(); got != keyed-1 {
+		t.Fatalf("uniquely-keyed proxies after release = %d, want %d", got, keyed-1)
+	}
+	cs.Release() // idempotent
+}
+
+// TestDeviceReleaseInvalidatesClipMasks covers the same teardown as reached from the canvas: a saveLayer device is
+// released when the layer is restored, so a clip mask live in the layer's clip stack does not outlive it.
+func TestDeviceReleaseInvalidatesClipMasks(t *testing.T) {
+	dc := newFakeDirectContext(t)
+	sdc := newDrawTestSDC(t, dc, 64, 64)
+	defer sdc.Release()
+
+	dev := NewDevice(sdc)
+	cv := canvas.New(dev)
+	cv.SaveLayer(nil, nil)
+	cv.ClipPath(concaveClipPath(), raster.ClipIntersect, true)
+	paint := canvas.NewPaint()
+	paint.AntiAlias = true
+	cv.DrawRect(geom.Rect{Left: 0, Top: 0, Right: 64, Bottom: 64}, paint)
+	keyed := dc.ProxyProvider().NumUniqueKeyProxies()
+	if keyed == 0 {
+		t.Fatal("the layer's AA concave clip must have rendered a SW mask")
+	}
+
+	cv.Restore()
+	if got := dc.ProxyProvider().NumUniqueKeyProxies(); got >= keyed {
+		t.Fatalf("uniquely-keyed proxies after restore = %d, want fewer than %d (the layer device's "+
+			"clip masks must be invalidated)", got, keyed)
 	}
 }
 

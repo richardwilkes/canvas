@@ -61,6 +61,14 @@ func NewDevice(sdc *SurfaceDrawContext) *Device {
 // SDC exposes the device's draw context (tests and the surface plumbing).
 func (d *Device) SDC() *SurfaceDrawContext { return d.sdc }
 
+// Release drops what the device owns that outlives it on its own: the clip stack's live SW masks, which are cached in the
+// resource cache under unique keys (see ClipStack.Release). Go has no destructor to run this, so a device that is used
+// and discarded — a saveLayer device from CreateDevice, an image-filter intermediate from filterBackend.MakeDevice — is
+// released explicitly by whoever discarded it; canvas.Canvas does so at restore through the optional interface. The
+// device's own render target is owned by the SurfaceDrawContext and is not touched here, so already-recorded draws that
+// reference it (a layer being composited back at restore) remain valid. Safe to call more than once.
+func (d *Device) Release() { d.clipStack.Release() }
+
 // clip returns the device's clip stack as a Clip.
 func (d *Device) clip() Clip { return d.clipStack }
 

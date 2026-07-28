@@ -86,6 +86,12 @@ func (s *RenderTargetSurface) SDC() *SurfaceDrawContext { return s.device.SDC() 
 // Context returns the owning direct context.
 func (s *RenderTargetSurface) Context() *DirectContext { return s.ctx }
 
+// Release drops what the surface's device holds beyond its own lifetime — the clip stack's cached SW masks (see
+// Device.Release). A surface dropped with a clip still set would otherwise leave those mask textures unique-keyed in the
+// resource cache until budget pressure or context teardown reclaims them. The surface's own render target belongs to the
+// draw context and is not touched, so this is not a substitute for tearing down the context. Safe to call more than once.
+func (s *RenderTargetSurface) Release() { s.device.Release() }
+
 // Width returns the surface's width in pixels.
 func (s *RenderTargetSurface) Width() int32 { return s.device.SDC().Dimensions().Width }
 

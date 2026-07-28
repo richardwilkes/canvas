@@ -106,6 +106,24 @@ type Device interface {
 	RelativeTransform(dst Device) geom.Matrix
 }
 
+// releasable is the optional teardown hook a device (or an image-filter backend) implements when it owns state that
+// outlives it on its own — the GPU device's cached clip masks, which are registered in the GPU resource cache under
+// unique keys and can only be evicted by their owner. Go has no destructor to run this, so the canvas releases the
+// devices and backends it creates itself: layer devices at restore and filter backends once their evaluation is done.
+// Devices with no such state (BitmapDevice, the PDF device) do not implement it and are simply dropped.
+type releasable interface {
+	// Release drops the object's externally-cached state. It must be safe to call more than once, and must leave
+	// already-recorded draws that reference the object's pixels valid (a layer is composited before it is released).
+	Release()
+}
+
+// release runs v's teardown hook, if it has one.
+func release(v any) {
+	if r, ok := v.(releasable); ok {
+		r.Release()
+	}
+}
+
 // BitmapDevice is the raster device: it draws into a Pixmap through the scan converters.
 type BitmapDevice struct {
 	pix            *raster.Pixmap

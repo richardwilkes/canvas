@@ -165,6 +165,12 @@ func (c *Canvas) internalRestore() {
 			dstDev.DrawDevice(layer.device, &layer.paint)
 		}
 	}
+	if layer != nil {
+		// The layer device is done: it has been composited (or the layer was rejected) and nothing else can reach it, so
+		// hand back whatever it caches outside itself. Its pixels stay valid for the draws recorded above — see
+		// releasable.
+		release(layer.device)
+	}
 
 	// Update the quick-reject bounds in case the restore changed the top device or the removed save record had included
 	// modifications to the clip stack.

@@ -129,6 +129,41 @@ func TestCoordinatorReuse(t *testing.T) {
 	}
 }
 
+// TestCoordinatorRemoveClearsVacatedSlot verifies that evicting one blob from a per-ID bucket that still holds another
+// does not leave the evicted (or shifted-down) *Blob pinned in the backing array past the bucket's new length: the
+// stored-back array must hold no Blob beyond len, so an evicted blob's subruns cannot stay reachable until the bucket
+// empties.
+func TestCoordinatorRemoveClearsVacatedSlot(t *testing.T) {
+	f := loadTestFont(t, "Roboto-Regular.ttf", 16)
+	list := runListForText(t, f, "evict", geom.Pt(2, 6))
+	m := geom.IdentityMatrix()
+	var scaled geom.Matrix
+	scaled.SetScale(2, 2)
+
+	c := NewTextBlobRedrawCoordinator()
+	// Two different keys (identity and 2x) share the glyph run list's blob ID, so both land in the same bucket.
+	blob1 := c.findOrCreateBlob(&m, list, fillPaint(), nil, noSDFTControl())
+	blob2 := c.findOrCreateBlob(&scaled, list, fillPaint(), nil, noSDFTControl())
+	if blob1 == nil || blob2 == nil || blob1 == blob2 {
+		t.Fatal("expected two distinct cached blobs")
+	}
+	id := blob1.key.uniqueID
+	if got := len(c.blobIDCache[id]); got != 2 {
+		t.Fatalf("bucket len = %d, want 2", got)
+	}
+
+	c.remove(blob1)
+	entry := c.blobIDCache[id]
+	if len(entry) != 1 || entry[0] != blob2 {
+		t.Fatalf("bucket = %v, want just the surviving blob", entry)
+	}
+	for i, b := range entry[:cap(entry)][len(entry):] {
+		if b != nil {
+			t.Fatalf("stored-back bucket pins a *Blob %d slot(s) past len", i+1)
+		}
+	}
+}
+
 func TestCoordinatorBudgetPurge(t *testing.T) {
 	f := loadTestFont(t, "Roboto-Regular.ttf", 16)
 	m := geom.IdentityMatrix()

@@ -313,8 +313,10 @@ func (c *BlobRedrawCoordinator) internalRemove(blob *Blob) {
 		c.detach(blob)
 		for i := range entry {
 			if entry[i] == blob {
-				// removeShuffle.
+				// removeShuffle. Clear the vacated slot so the backing array, which is stored back below on the
+				// non-empty path, does not pin the evicted Blob (and everything its subruns hold) past its removal.
 				entry[i] = entry[len(entry)-1]
+				entry[len(entry)-1] = nil
 				entry = entry[:len(entry)-1]
 				break
 			}

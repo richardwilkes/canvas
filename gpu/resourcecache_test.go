@@ -553,6 +553,40 @@ func TestResourceCacheScratchBackingReuse(t *testing.T) {
 	}
 }
 
+// TestResourceCacheScratchRemoveClearsVacatedSlot verifies that removing one of several resources sharing a scratch key
+// does not leave the removed (or shifted-down) Resource pinned in the backing array past the list's new length: the
+// stored-back array must hold no Resource beyond len, so a released resource cannot stay reachable until the key empties.
+func TestResourceCacheScratchRemoveClearsVacatedSlot(t *testing.T) {
+	m := newMock(30000)
+	cache := m.cache
+
+	a := m.newScratch(BudgetedYes, simulatedPropertyB, 11)
+	b := m.newScratch(BudgetedYes, simulatedPropertyB, 12)
+	a.Unref()
+	b.Unref()
+
+	var scratchKey ScratchKey
+	computeTestScratchKey(simulatedPropertyB, &scratchKey)
+	mk := scratchKey.mapKey()
+	check(t, len(cache.scratchMap[mk]) == 2, "scratch list len = %d, want 2", len(cache.scratchMap[mk]))
+
+	// Pop one; the key still has an entry, so the list is stored back with a vacated trailing slot.
+	found := cache.FindAndRefScratchResource(&scratchKey)
+	if found == nil {
+		t.Fatal("should find a scratch resource")
+	}
+	list := cache.scratchMap[mk]
+	if len(list) != 1 {
+		t.Fatalf("scratch list len = %d, want 1", len(list))
+	}
+	for i, r := range list[:cap(list)][len(list):] {
+		if r != nil {
+			t.Fatalf("stored-back backing pins a Resource %d slot(s) past len", i+1)
+		}
+	}
+	found.resourceBase().Unref()
+}
+
 // TestResourceCacheDuplicateScratchKey verifies that two resources sharing the same scratch key are excluded from the
 // scratch map while referenced, both become countable scratch entries once unreferenced, and a lookup with a different
 // key never matches either.

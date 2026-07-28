@@ -12,7 +12,11 @@
 
 package gpu
 
-import "github.com/richardwilkes/canvas/geom"
+import (
+	"math"
+
+	"github.com/richardwilkes/canvas/geom"
+)
 
 // BackingFit describes whether a backing store must match the requested dimensions exactly.
 type BackingFit bool
@@ -38,7 +42,18 @@ func approxSizeAdjust(value int32) int32 {
 	if value&(value-1) == 0 { // already a power of 2
 		return value
 	}
-	// Next power of 2 above value (value > 1 here).
+	// The ceiling power of 2 above 2^30 is not representable as an int32, so handle that range without searching for
+	// it: the shift below would overflow to a negative value (still < value), then to 0, and 0 shifts to 0 forever.
+	// Saturating at MaxInt32 keeps the "result >= value" contract; every caller's dimensions are bounded well below
+	// this by ValidateSurfaceParams/clip bounds, so no allocation is actually attempted at these sizes.
+	const maxPow2 = int32(1) << 30
+	if value > maxPow2 {
+		if mid := maxPow2 + maxPow2>>1; value <= mid {
+			return mid
+		}
+		return math.MaxInt32
+	}
+	// Next power of 2 above value (1 < value <= 2^30 here).
 	ceilPow2 := int32(1)
 	for ceilPow2 < value {
 		ceilPow2 <<= 1

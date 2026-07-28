@@ -162,9 +162,12 @@ func evalAt(evalX, circleR float32, halfKernel []float32, halfKernelSize int, yK
 	return unitScalarClampToByte(2 * acc)
 }
 
-// CreateCircleProfile builds a profileWidth×1 A8 profile of a blurred circle. Returns nil if the internal allocations
-// would overflow.
+// CreateCircleProfile builds a profileWidth×1 A8 profile of a blurred circle. Returns nil for a non-positive
+// profileWidth (matching CreateIntegralTable) or if the internal allocations would overflow.
 func CreateCircleProfile(sigma, radius float32, profileWidth int) []byte {
+	if profileWidth <= 0 {
+		return nil
+	}
 	numSteps := profileWidth
 
 	// The full kernel is 6 sigmas wide; round up to the next multiple of 2 then halve.
@@ -199,9 +202,10 @@ func CreateCircleProfile(sigma, radius float32, profileWidth int) []byte {
 }
 
 // CreateHalfPlaneProfile builds the profile for the extreme small-radius case, where a circle blur degenerates to
-// convolving a Gaussian with a half-plane. profileWidth must be even.
+// convolving a Gaussian with a half-plane. profileWidth must be even and positive; returns nil otherwise (matching
+// CreateIntegralTable, and because zero passes the even test yet has no last entry to zero out).
 func CreateHalfPlaneProfile(profileWidth int) []byte {
-	if profileWidth&0x1 != 0 {
+	if profileWidth <= 0 || profileWidth&0x1 != 0 {
 		return nil
 	}
 	profile := make([]byte, profileWidth)

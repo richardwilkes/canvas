@@ -295,17 +295,22 @@ func (c *ResourceCache) scratchRemove(scratchKey *ScratchKey, resource Resource)
 	key := scratchKey.mapKey()
 	list := c.scratchMap[key]
 	for i := len(list) - 1; i >= 0; i-- {
-		if list[i] == resource {
-			list = append(list[:i], list[i+1:]...)
-			if len(list) == 0 {
-				delete(c.scratchMap, key)
-				c.recycleScratchBacking(list)
-			} else {
-				c.scratchMap[key] = list
-			}
-			c.scratchCount--
-			return
+		if list[i] != resource {
+			continue
 		}
+		list = append(list[:i], list[i+1:]...)
+		// The shift-down leaves the last element duplicated in the slot past the new length, so clear it: on the
+		// non-empty path below the backing array is stored back and would otherwise pin a Resource that has since been
+		// release()d (the same leak-safety recycleScratchBacking gives the empty path).
+		list[:len(list)+1][len(list)] = nil
+		if len(list) == 0 {
+			delete(c.scratchMap, key)
+			c.recycleScratchBacking(list)
+		} else {
+			c.scratchMap[key] = list
+		}
+		c.scratchCount--
+		return
 	}
 	panic("resource not in scratch map")
 }

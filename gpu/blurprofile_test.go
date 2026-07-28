@@ -114,6 +114,13 @@ func TestCreateHalfPlaneProfile(t *testing.T) {
 	if CreateHalfPlaneProfile(15) != nil {
 		t.Fatal("odd width should be nil")
 	}
+	// Zero passes the even-width test but has no last entry to zero out, so it must be rejected like a negative width
+	// (matching CreateIntegralTable) rather than indexing profile[-1].
+	for _, w := range []int{0, -2, -1} {
+		if CreateHalfPlaneProfile(w) != nil {
+			t.Fatalf("CreateHalfPlaneProfile(%d) should be nil", w)
+		}
+	}
 	const width = 512
 	p := CreateHalfPlaneProfile(width)
 	if len(p) != width {
@@ -134,6 +141,12 @@ func TestCreateHalfPlaneProfile(t *testing.T) {
 }
 
 func TestCreateCircleProfile(t *testing.T) {
+	// A non-positive width has no last entry to zero out, so it must be rejected rather than indexing profile[-1].
+	for _, w := range []int{0, -1} {
+		if CreateCircleProfile(4, 40, w) != nil {
+			t.Fatalf("CreateCircleProfile(width=%d) should be nil", w)
+		}
+	}
 	const width = 512
 	// A moderately large circle relative to sigma: coverage full at center, 0 at the tail.
 	p := CreateCircleProfile(4, 40, width)

@@ -193,9 +193,11 @@ func (d *Document) Emit(object Object) IndirectReference {
 }
 
 // EmitAt serializes object under ref and returns ref. A reference that does not point at an object (see
-// IndirectReference.IsValid) is rejected: nothing is written and the zero, invalid reference is returned.
+// IndirectReference.IsValid) is rejected, as is any emission after Close or Abort — the xref table that would have to
+// name the object is already written (or, after Abort, never will be), so the bytes could only be unreachable trailing
+// garbage. In both cases nothing is written and the zero, invalid reference is returned.
 func (d *Document) EmitAt(object Object, ref IndirectReference) IndirectReference {
-	if !ref.IsValid() {
+	if !ref.IsValid() || d.closed {
 		return IndirectReference{}
 	}
 	beginIndirectObject(&d.offsetMap, ref, d.stream)
@@ -220,8 +222,11 @@ const minimumFlateSavings = len("/Filter /FlateDecode ")
 
 // StreamOut emits content as a stream object, FlateDecode-compressing it when compression is enabled, the level is not
 // None, and doing so actually saves space. dict may be nil (a fresh dictionary is used). Returns the object's
-// reference.
+// reference, or the zero, invalid reference after Close or Abort (see EmitAt).
 func (d *Document) StreamOut(dict *Dict, content []byte, compress bool) IndirectReference {
+	if d.closed {
+		return IndirectReference{}
+	}
 	ref := d.ReserveRef()
 	if dict == nil {
 		dict = NewDict()
@@ -272,8 +277,13 @@ func (p *Page) PageSize() geom.ISize { return p.pageSize }
 
 // BeginPage starts a new page. A page left open by a missing EndPage is finished first, as upstream does. On the first
 // page it writes the file header and emits the document information dictionary (and, in PDF/A mode, the XMP metadata).
-// It returns the Page whose content and resources the caller fills before calling EndPage.
+// It returns the Page whose content and resources the caller fills before calling EndPage, or nil once the document has
+// been closed or aborted — as upstream does, since a page begun then could only append objects past the trailer that no
+// xref table names.
 func (d *Document) BeginPage(width, height float32) *Page {
+	if d.closed {
+		return nil
+	}
 	// The open page's object number is already reserved, so overwriting it would drop its content and leave an in-use
 	// xref entry pointing at byte 0.
 	d.EndPage()
@@ -312,9 +322,13 @@ func (d *Document) BeginPage(width, height float32) *Page {
 
 // BeginPageCanvas starts a page backed by a real PDF Device and returns a canvas that records draw ops into that
 // device's content stream. The canvas takes its coordinates in the page's nominal 72dpi point space, whatever the
-// metadata's RasterDPI. EndPage serializes the device's content and /Resources.
+// metadata's RasterDPI. EndPage serializes the device's content and /Resources. Returns nil once the document has been
+// closed or aborted, matching BeginPage.
 func (d *Document) BeginPageCanvas(width, height float32) *canvas.Canvas {
 	p := d.BeginPage(width, height)
+	if p == nil {
+		return nil
+	}
 	p.device = newDevice(p.pageSize, d, p.initialTransform)
 	c := canvas.New(p.device)
 	// The device (and any layer device it spawns) works at the rasterized scale, while the caller draws in nominal
@@ -325,10 +339,11 @@ func (d *Document) BeginPageCanvas(width, height float32) *canvas.Canvas {
 }
 
 // EndPage emits the current page's content stream and builds the Page dictionary (MediaBox, Resources, Contents,
-// StructParents, Tabs).
+// StructParents, Tabs). It does nothing when no page is open, or once the document has been closed or aborted. Close
+// calls it before marking the document closed, so its own trailing page is still finished.
 func (d *Document) EndPage() {
 	p := d.current
-	if p == nil {
+	if p == nil || d.closed {
 		return
 	}
 	page := NewTypedDict("Page")
@@ -410,10 +425,11 @@ func (d *Document) Close() {
 		return
 	}
 	// BeginPage already reserved the page's object number, so an unfinished page must still be emitted; leaving it out
-	// would put an in-use xref entry with offset 0 in the table and silently drop the page's content.
+	// would put an in-use xref entry with offset 0 in the table and silently drop the page's content. The document is
+	// only marked closed once everything below has been written, since the emitters honor the flag too.
 	d.EndPage()
-	d.closed = true
 	if len(d.pages) == 0 {
+		d.closed = true
 		return
 	}
 	docCatalog := NewTypedDict("Catalog")
@@ -440,10 +456,12 @@ func (d *Document) Close() {
 	d.emitFonts()
 
 	serializeFooter(&d.offsetMap, d.stream, d.infoDict, docCatalogRef, d.uuid)
+	d.closed = true
 }
 
-// Abort discards all pending work and writes nothing further. The stream is left with whatever was already emitted (the
-// header/info dict/content streams of completed pages).
+// Abort discards all pending work and writes nothing further: the document is left closed, so a later BeginPage,
+// EndPage, Emit, EmitAt, or StreamOut is ignored. The stream is left with whatever was already emitted (the header/info
+// dict/content streams of completed pages).
 func (d *Document) Abort() {
 	d.closed = true
 	d.current = nil

@@ -203,10 +203,10 @@ func populateCommonFontDescriptor(descriptor *Dict, m *font.AdvancedMetrics, emS
 }
 
 // insertFontProgram inserts the /FontFile2 entry — the embedded font program stream, with its uncompressed size in
-// /Length1 — into a FontDescriptor. A typeface whose asset couldn't be read yields no bytes; the entry is then omitted
-// entirely rather than embedding an empty program with /Length1 0 that the CIDFontType2 descendant would still point
-// at. As upstream does, the rest of the font's object graph is emitted either way, so there is nothing for the caller
-// to react to.
+// /Length1 — into a FontDescriptor. A typeface whose asset couldn't be read, or whose collection container is
+// malformed, yields no bytes; the entry is then omitted entirely rather than embedding an empty program with /Length1 0
+// that the CIDFontType2 descendant would still point at. As upstream does, the rest of the font's object graph is
+// emitted either way, so there is nothing for the caller to react to.
 func insertFontProgram(doc *Document, descriptor *Dict, data []byte) {
 	if len(data) == 0 {
 		return
@@ -231,8 +231,13 @@ func emitFont(doc *Document, f *pdfFont) {
 	descriptor := NewTypedDict("FontDescriptor")
 	populateCommonFontDescriptor(descriptor, m, emSize, 0)
 
-	data, _ := tf.FontData()
-	insertFontProgram(doc, descriptor, data)
+	// FontProgram, not FontData: /FontFile2 is a TrueType font program, so a face from a collection must be extracted
+	// from its 'ttcf' container first — embedding the container would both violate PDF 32000-1 §9.9 and, for a face
+	// index above 0, make the /CIDToGIDMap /Identity glyph IDs resolve against face 0. A malformed container is treated
+	// like an unreadable asset: the /FontFile2 entry is left out and the rest of the graph emitted anyway.
+	if data, err := tf.FontProgram(); err == nil {
+		insertFontProgram(doc, descriptor, data)
+	}
 
 	newCIDFont := NewTypedDict("Font")
 	newCIDFont.InsertRef("FontDescriptor", doc.Emit(descriptor))

@@ -420,6 +420,79 @@ func TestDocumentAbortDiscardsOpenPage(t *testing.T) {
 	}
 }
 
+// TestDocumentWritesNothingAfterClose pins the closed-document contract for every writer, not just Close: once the
+// xref/trailer/%%EOF are out, nothing may be appended. An object emitted then would be unreachable trailing bytes,
+// since the xref table naming it is already written and the follow-up Close returns without writing a new one.
+func TestDocumentWritesNothingAfterClose(t *testing.T) {
+	var out stream.MemoryWStream
+	doc := NewDocument(&out, DefaultMetadata())
+	writeText(doc.BeginPage(100, 100).Content(), "q Q\n")
+	doc.EndPage()
+	doc.Close()
+	finished := append([]byte(nil), out.Bytes()...)
+
+	if p := doc.BeginPage(200, 200); p != nil {
+		t.Error("BeginPage after Close returned a page")
+	}
+	if c := doc.BeginPageCanvas(200, 200); c != nil {
+		t.Error("BeginPageCanvas after Close returned a canvas")
+	}
+	if ref := doc.Emit(NewDict()); ref.IsValid() {
+		t.Error("Emit after Close returned a valid reference")
+	}
+	if ref := doc.EmitAt(NewDict(), doc.ReserveRef()); ref.IsValid() {
+		t.Error("EmitAt after Close returned a valid reference")
+	}
+	if ref := doc.StreamOut(nil, []byte("past the end of the file"), false); ref.IsValid() {
+		t.Error("StreamOut after Close returned a valid reference")
+	}
+	doc.EndPage()
+	doc.Close()
+
+	if data := out.Bytes(); !bytes.Equal(data, finished) {
+		t.Errorf("%d bytes were appended after %%%%EOF: %q", len(data)-len(finished), data[len(finished):])
+	}
+	validatePDF(t, out.Bytes())
+	if !bytes.HasSuffix(out.Bytes(), []byte("%%EOF\n")) {
+		t.Error("the closed document no longer ends with its end-of-file marker")
+	}
+}
+
+// TestDocumentWritesNothingAfterAbort is the Abort half of the same contract. Abort drops the page list, so a BeginPage
+// afterwards would take the first-page path again and write a second %PDF header (resetting the offset map's base) into
+// a document whose doc comment promises nothing further is written.
+func TestDocumentWritesNothingAfterAbort(t *testing.T) {
+	var out stream.MemoryWStream
+	doc := NewDocument(&out, DefaultMetadata())
+	writeText(doc.BeginPage(100, 100).Content(), "q Q\n")
+	doc.EndPage()
+	doc.Abort()
+	aborted := append([]byte(nil), out.Bytes()...)
+
+	if p := doc.BeginPage(50, 50); p != nil {
+		t.Error("BeginPage after Abort returned a page")
+	}
+	if c := doc.BeginPageCanvas(50, 50); c != nil {
+		t.Error("BeginPageCanvas after Abort returned a canvas")
+	}
+	if ref := doc.Emit(NewDict()); ref.IsValid() {
+		t.Error("Emit after Abort returned a valid reference")
+	}
+	if ref := doc.StreamOut(nil, []byte("past the end of the file"), false); ref.IsValid() {
+		t.Error("StreamOut after Abort returned a valid reference")
+	}
+	doc.EndPage()
+	doc.Close()
+
+	data := out.Bytes()
+	if !bytes.Equal(data, aborted) {
+		t.Errorf("%d bytes were written after Abort: %q", len(data)-len(aborted), data[len(aborted):])
+	}
+	if n := bytes.Count(data, []byte("%PDF-1.4")); n != 1 {
+		t.Errorf("file header count = %d, want 1", n)
+	}
+}
+
 // contentRectInUserSpace composes every "cm" operator preceding the first "re" in a content stream and returns the rect
 // that "re" covers in PDF user space — the same 72dpi space the page's /MediaBox is expressed in.
 func contentRectInUserSpace(t *testing.T, content string) geom.Rect {

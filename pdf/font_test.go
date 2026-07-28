@@ -167,6 +167,53 @@ func TestTextEmbedsWholeFontProgram(t *testing.T) {
 	}
 }
 
+// TestCollectionFaceEmbedsExtractedProgram covers a typeface loaded from a TrueType collection. /FontFile2 must hold
+// the face's own font program: embedding the 'ttcf' container is not a font program at all, and with /CIDToGIDMap
+// /Identity a reader would resolve the glyph IDs against face 0 and draw the wrong glyphs. Face 1 of test.ttc is the
+// case that matters — it maps '!' to a different glyph than face 0 does.
+func TestCollectionFaceEmbedsExtractedProgram(t *testing.T) {
+	container, err := os.ReadFile("../font/testdata/test.ttc")
+	if err != nil {
+		t.Fatalf("read font: %v", err)
+	}
+	tf, err := font.NewTypefaceFromData(container, 1)
+	if err != nil {
+		t.Fatalf("parse font: %v", err)
+	}
+	program, err := tf.FontProgram()
+	if err != nil {
+		t.Fatalf("font program: %v", err)
+	}
+	f := font.NewFont(tf, 20, 1, 0)
+	paint := canvas.NewPaint()
+	paint.Color = colorcore.ARGB(255, 0, 0, 0)
+	data := renderPDF(t, 200, 100, func(c *canvas.Canvas) {
+		c.DrawSimpleText([]byte("!"), font.TextEncodingUTF8, 10, 50, f, paint)
+	})
+	validatePDF(t, data)
+
+	if dictContaining(data, "/FontFile2") == "" {
+		t.Fatalf("no FontDescriptor with FontFile2\nobjects=%v", dictObjects(data))
+	}
+	// /Length1 is the extracted program's size, not the container's.
+	mustContain(t, string(data), "/Length1 "+strconv.Itoa(len(program)))
+	if bytes.Contains(data, []byte("/Length1 "+strconv.Itoa(len(container)))) {
+		t.Errorf("the whole %d-byte collection was embedded as the font program", len(container))
+	}
+	embedded := false
+	for _, s := range allStreamContents(data) {
+		if strings.HasPrefix(s, "ttcf") {
+			t.Error("a collection container was embedded as a stream")
+		}
+		if s == string(program) {
+			embedded = true
+		}
+	}
+	if !embedded {
+		t.Error("no stream holds the extracted font program")
+	}
+}
+
 func TestTextToUnicodeMapsGlyphs(t *testing.T) {
 	tf := loadTestTypeface(t)
 	f := font.NewFont(tf, 24, 1, 0)

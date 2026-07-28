@@ -90,6 +90,39 @@ func mustContain(t *testing.T, haystack, needle string) {
 	}
 }
 
+// TestGlyphBoundsDeviceSpaceNegativeScale pins that the device-space glyph bounds come back sorted whatever the sign of
+// the glyph scales. The x scale carries the font's ScaleX + SkewX and the y scale its size/upem, and Font.SetScaleX /
+// Font.SetSkewX accept arbitrary values, so an unsorted scaled rect really does reach MapRect; the clip-reject in
+// drawGlyphRun (IsEmpty, then Intersects) would drop every glyph of such a run if MapRect did not sort its result.
+func TestGlyphBoundsDeviceSpaceNegativeScale(t *testing.T) {
+	tf := loadTestTypeface(t)
+	gid := tf.UnicharToGlyph('H')
+	if tf.GlyphDesignBounds(gid).IsEmpty() {
+		t.Fatalf("glyph %d has no design bounds to map", gid)
+	}
+	var identity, rotated, perspective geom.Matrix
+	identity.SetIdentity()
+	rotated.SetRotate(30)
+	perspective.SetAll(1, 0, 0, 0, 1, 0, 0, 0.001, 1) // exercises MapRect's perspective branch too
+	pos := geom.Point{X: 12, Y: 34}
+	for name, ctm := range map[string]*geom.Matrix{
+		"identity": &identity, "rotated": &rotated, "perspective": &perspective,
+	} {
+		for _, scale := range [][2]float32{{-0.05, 0.05}, {0.05, -0.05}, {-0.05, -0.05}, {0.05, 0.05}} {
+			r := getGlyphBoundsDeviceSpace(tf, gid, scale[0], scale[1], pos, ctm)
+			if r.Left > r.Right || r.Top > r.Bottom {
+				t.Errorf("%s ctm, scale %v: bounds %v are unsorted", name, scale, r)
+			}
+		}
+	}
+	// The sign of the scale mirrors the glyph about its origin; it cannot change how big the box is.
+	forward := getGlyphBoundsDeviceSpace(tf, gid, 0.05, 0.05, pos, &identity)
+	mirrored := getGlyphBoundsDeviceSpace(tf, gid, -0.05, -0.05, pos, &identity)
+	if forward.Width() != mirrored.Width() || forward.Height() != mirrored.Height() {
+		t.Errorf("mirrored bounds %v are not the same size as %v", mirrored, forward)
+	}
+}
+
 // TestPopulateGraphicStateEntryShaderRouting pins which shaders populateGraphicStateEntry folds into entry.color and
 // which become a /Pattern resource in entry.shaderIndex. Only a ColorShader (and no shader at all) collapses to a
 // color; gradient, image, and generic-fallback shaders all route through makeShader and install a pattern.

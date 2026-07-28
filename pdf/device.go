@@ -668,7 +668,9 @@ func containsPointInclusive(r geom.Rect, x, y float32) bool {
 // getGlyphBoundsDeviceSpace maps a glyph's font-unit design bounds into device space at the given position and CTM.
 func getGlyphBoundsDeviceSpace(tf *font.Typeface, gid uint16, xScale, yScale float32, xy geom.Point, ctm *geom.Matrix) geom.Rect {
 	r := tf.GlyphDesignBounds(gid)
-	// Scale (xScale, yScale are non-negative, so the rect stays sorted), then offset by the absolute position.
+	// Scale, then offset by the absolute position. xScale carries the font's ScaleX + SkewX, which Font.SetScaleX and
+	// Font.SetSkewX accept as arbitrary values, so a negative xScale (and hence an unsorted scaled rect) is reachable;
+	// MapRect sorts its result on every branch, so the returned device bounds are sorted regardless.
 	scaled := geom.RectLTRB(r.Left*xScale, r.Top*yScale, r.Right*xScale, r.Bottom*yScale).Offset(xy.X, xy.Y)
 	devBounds, _ := ctm.MapRect(scaled)
 	return devBounds

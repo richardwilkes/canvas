@@ -14,6 +14,10 @@
 package font
 
 import (
+	"encoding/binary"
+	"errors"
+	"fmt"
+
 	"github.com/richardwilkes/canvas/geom"
 
 	"github.com/go-text/typesetting/font/opentype"
@@ -122,9 +126,114 @@ func (t *Typeface) CanEmbed() bool {
 // CanSubset reports whether the OS/2 fsType permits subsetting.
 func (t *Typeface) CanSubset() bool { return t.fsType&fsTypeNoSubsetting == 0 }
 
-// FontData returns the raw font-program bytes and the collection (TTC) face index. The PDF backend embeds these
-// directly as FontFile2. The bytes are the typeface's own storage; callers must not mutate them.
+// FontData returns the raw bytes the typeface was parsed from and the collection (TTC) face index within them. For a
+// collection these are the whole container, not this face's font program; use FontProgram for something embeddable. The
+// bytes are the typeface's own storage; callers must not mutate them.
 func (t *Typeface) FontData() (data []byte, collectionIndex int) { return t.data, t.collectionIndex }
+
+// FontProgram returns a standalone sfnt font program for this face, which is what a PDF /FontFile2 must hold. A
+// typeface parsed from a single-face file returns its own bytes; one parsed from a collection returns a freshly
+// assembled font holding just this face's tables, since a 'ttcf' container is not a font program and its glyph IDs
+// resolve against face 0 rather than this face. Returns nil and an error for a collection whose header or table
+// directory is malformed. The single-face result is the typeface's own storage; callers must not mutate it.
+func (t *Typeface) FontProgram() ([]byte, error) {
+	return extractFontProgram(t.data, t.collectionIndex)
+}
+
+// ttcTag is the four-byte 'ttcf' signature that starts a TrueType/OpenType collection file.
+const ttcTag = 0x74746366
+
+// headTag is the four-byte 'head' table tag.
+const headTag = 0x68656164
+
+// headCheckSumAdjustmentOffset is the byte offset of checkSumAdjustment within the head table.
+const headCheckSumAdjustmentOffset = 8
+
+// checkSumAdjustmentMagic is the constant the sum of an sfnt font's 32-bit words must add up to, per the OpenType head
+// table specification.
+const checkSumAdjustmentMagic = 0xB1B0AFBA
+
+// extractFontProgram returns the standalone sfnt font program for face index of data. Data that is not a collection is
+// returned unchanged. A collection face is reassembled into its own font: the sfnt header, the face's table directory
+// with every offset rebased onto the new file, the table data (4-byte aligned, as the specification requires), and a
+// recomputed head.checkSumAdjustment. Table contents are copied verbatim, so the per-table checksums already in the
+// directory stay valid (head's is defined with checkSumAdjustment treated as zero, so rewriting that field cannot
+// invalidate it).
+func extractFontProgram(data []byte, index int) ([]byte, error) {
+	if len(data) < 12 || binary.BigEndian.Uint32(data) != ttcTag {
+		return data, nil
+	}
+	numFonts := int64(binary.BigEndian.Uint32(data[8:]))
+	if index < 0 || int64(index) >= numFonts {
+		return nil, fmt.Errorf("font: collection index %d out of range (%d faces)", index, numFonts)
+	}
+	if 12+4*numFonts > int64(len(data)) {
+		return nil, errors.New("font: truncated collection header")
+	}
+	dirOffset := int64(binary.BigEndian.Uint32(data[12+4*index:]))
+	if dirOffset+12 > int64(len(data)) {
+		return nil, fmt.Errorf("font: collection face %d has an out-of-range table directory", index)
+	}
+	numTables := int(binary.BigEndian.Uint16(data[dirOffset+4:]))
+	if numTables == 0 {
+		return nil, fmt.Errorf("font: collection face %d has no tables", index)
+	}
+	if dirOffset+12+16*int64(numTables) > int64(len(data)) {
+		return nil, fmt.Errorf("font: collection face %d has a truncated table directory", index)
+	}
+
+	// The directory is a fixed-size header the tables are appended after, so it can be sized and written up front and
+	// then have each record's rebased offset filled in as that table is copied.
+	out := make([]byte, 12+16*numTables)
+	binary.BigEndian.PutUint32(out, binary.BigEndian.Uint32(data[dirOffset:])) // sfntVersion
+	binary.BigEndian.PutUint16(out[4:], uint16(numTables))
+	entrySelector := uint16(0)
+	for 1<<(entrySelector+1) <= numTables {
+		entrySelector++
+	}
+	searchRange := uint16(16) << entrySelector
+	binary.BigEndian.PutUint16(out[6:], searchRange)
+	binary.BigEndian.PutUint16(out[8:], entrySelector)
+	binary.BigEndian.PutUint16(out[10:], uint16(numTables)*16-searchRange)
+
+	headOffset := -1
+	for i := range numTables {
+		record := data[dirOffset+12+16*int64(i):]
+		tag := binary.BigEndian.Uint32(record)
+		offset := int64(binary.BigEndian.Uint32(record[8:]))
+		length := int64(binary.BigEndian.Uint32(record[12:]))
+		if offset+length > int64(len(data)) {
+			return nil, fmt.Errorf("font: collection face %d has an out-of-range table", index)
+		}
+		for len(out)%4 != 0 { // tables must start on a 4-byte boundary
+			out = append(out, 0)
+		}
+		tableOffset := len(out)
+		out = append(out, data[offset:offset+length]...)
+		// The appends may have moved the backing array, so re-slice the record only now.
+		dst := out[12+16*i:]
+		binary.BigEndian.PutUint32(dst, tag)
+		binary.BigEndian.PutUint32(dst[4:], binary.BigEndian.Uint32(record[4:])) // checkSum
+		binary.BigEndian.PutUint32(dst[8:], uint32(tableOffset))
+		binary.BigEndian.PutUint32(dst[12:], uint32(length))
+		if tag == headTag && length >= headCheckSumAdjustmentOffset+4 {
+			headOffset = tableOffset
+		}
+	}
+	for len(out)%4 != 0 { // the whole-font checksum below reads 32-bit words
+		out = append(out, 0)
+	}
+	if headOffset >= 0 {
+		adjustment := out[headOffset+headCheckSumAdjustmentOffset:]
+		binary.BigEndian.PutUint32(adjustment, 0)
+		var sum uint32
+		for i := 0; i < len(out); i += 4 {
+			sum += binary.BigEndian.Uint32(out[i:])
+		}
+		binary.BigEndian.PutUint32(adjustment, checkSumAdjustmentMagic-sum)
+	}
+	return out, nil
+}
 
 // GlyphToUnicodeMap returns a slice indexed by glyph ID giving the first (smallest) Unicode code point that maps to
 // that glyph through the font's cmap, or 0 when none does. The length is countGlyphs.

@@ -197,6 +197,56 @@ func TestRegionClippedFills(t *testing.T) {
 	}
 }
 
+// TestRegionGetRunsEmptyIsOperable: getRuns' empty-region branch must hand back a run list its only consumer can walk.
+// operate reads a whole scanline header from each side (top, bottom, interval count) before it ever looks at a
+// sentinel, so the old bare-sentinel-in-a-length-1-slice was an index-out-of-range that only regionOper's per-op
+// early-outs kept unreachable — an out-of-range RegionOp falling through the default branch with an empty operand
+// would have hit it. Feeding it through operate with a rect on the other side must produce the rect (union) or nothing
+// (intersect), from either position.
+func TestRegionGetRunsEmptyIsOperable(t *testing.T) {
+	var tmp [rectRegionRuns]int32
+	runs, intervals := (&Region{}).getRuns(&tmp)
+	if intervals != 0 {
+		t.Fatalf("empty region reported %d intervals, want 0", intervals)
+	}
+	if len(runs) < 3 {
+		t.Fatalf("empty region returned %d runs; operate reads a 3-element scanline header unconditionally", len(runs))
+	}
+	if runs[0] != regionSentinel || runs[1] != regionSentinel {
+		t.Fatalf("empty region scanline header is (%d, %d), want both to be the sentinel %d",
+			runs[0], runs[1], regionSentinel)
+	}
+
+	rect := geom.IRectLTRB(2, 3, 8, 9)
+	var tmpRect [rectRegionRuns]int32
+	rectRuns, _ := NewRegionRect(rect).getRuns(&tmpRect)
+	for _, tc := range []struct {
+		name     string
+		op       RegionOp
+		aIsEmpty bool
+		want     geom.IRect
+	}{
+		{name: "empty union rect", op: RegionUnion, aIsEmpty: true, want: rect},
+		{name: "rect union empty", op: RegionUnion, want: rect},
+		{name: "empty intersect rect", op: RegionIntersect, aIsEmpty: true},
+		{name: "rect intersect empty", op: RegionIntersect},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a, b := rectRuns, runs
+			if tc.aIsEmpty {
+				a, b = runs, rectRuns
+			}
+			array := runArray{buf: make([]int32, 256)}
+			count := operate(a, b, &array, tc.op, false)
+			var got Region
+			got.setRunsTrimmed(array.buf[:count])
+			if got.Bounds() != tc.want {
+				t.Fatalf("got %v, want %v", got.Bounds(), tc.want)
+			}
+		})
+	}
+}
+
 // TestRegionTranslateAndEqual: translate shifts every span; Equal detects equality.
 func TestRegionTranslateAndEqual(t *testing.T) {
 	rng := rand.New(rand.NewSource(555))

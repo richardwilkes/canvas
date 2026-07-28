@@ -83,12 +83,13 @@ func buildPolyEdges(b edgeSink, p *path.Path, iclip *geom.IRect, canCullToTheRig
 				break
 			}
 			// Clipping can turn one line into up to geom.LineClipperMaxPoints-1 segments, since portions clipped out on
-			// the left/right become vertical segments.
-			var lines [geom.LineClipperMaxPoints]geom.Point
+			// the left/right become vertical segments. The output buffer lives in the caller-owned scratch rather than
+			// on the stack: handing it to the edgeSink interface forces it to escape, so a local would be one heap
+			// allocation per clipped segment.
 			pts := [2]geom.Point{e.Pts[0], e.Pts[1]}
-			lineCount := geom.ClipLine(&pts, clip, &lines, canCullToTheRight)
-			for i := 0; i < lineCount; i++ {
-				b.addLine(lines[i : i+2])
+			lineCount := geom.ClipLine(&pts, clip, &s.lines, canCullToTheRight)
+			for i := range lineCount {
+				b.addLine(s.lines[i : i+2])
 			}
 		}
 	} else {
@@ -104,14 +105,16 @@ func buildPolyEdges(b edgeSink, p *path.Path, iclip *geom.IRect, canCullToTheRig
 
 // edgeScratch holds the reusable per-build temporaries the edge builders would otherwise allocate: iter (the path edge
 // iterator, one *EdgeIter per build otherwise), clip (ClipPath's iterator + clipper + conic->quad scratch, reused
-// across clipped builds), chop (>= 10 points) for the clipper output and Y-extrema chopping, and conic for the
-// conic->quad approximation, sized to the worst case (1 + 2*(1<<MaxConicToQuadPOW2)). Both builders embed one and pass
-// it to the build drivers; because these buffers flow into the edgeSink interface calls (which forces them to escape),
-// a reused builder field turns per-segment/per-build heap allocations into one-time, pooled ones.
+// across clipped builds), chop (>= 10 points) for the clipper output and Y-extrema chopping, lines for buildPolyEdges'
+// per-segment line clipper output, and conic for the conic->quad approximation, sized to the worst case
+// (1 + 2*(1<<MaxConicToQuadPOW2)). Both builders embed one and pass it to the build drivers; because these buffers flow
+// into the edgeSink interface calls (which forces them to escape), a reused builder field turns per-segment/per-build
+// heap allocations into one-time, pooled ones.
 type edgeScratch struct {
 	iter  path.EdgeIter
 	clip  path.EdgeClipScratch
 	chop  [10]geom.Point
+	lines [geom.LineClipperMaxPoints]geom.Point
 	conic [1 + 2*(1<<geom.MaxConicToQuadPOW2)]geom.Point
 }
 

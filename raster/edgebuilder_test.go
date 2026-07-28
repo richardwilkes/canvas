@@ -16,6 +16,51 @@ import (
 	"github.com/richardwilkes/canvas/path"
 )
 
+// TestBuildPolyEdgesClippedIsAllocationFree: the clipped all-lines fast path must take its line-clipper output from the
+// caller-owned edgeScratch. A local [LineClipperMaxPoints]geom.Point escapes through the edgeSink interface calls, so
+// it becomes one 32-byte heap allocation per clipped line segment on the non-AA polygon path — exactly the per-segment
+// traffic edgeScratch exists to eliminate.
+func TestBuildPolyEdgesClippedIsAllocationFree(t *testing.T) {
+	// A polygon much larger than the clip, so every edge is clipped and most split into several segments.
+	p := path.New()
+	p.MoveTo(-60, -40)
+	p.LineTo(90, -30)
+	p.LineTo(120, 70)
+	p.LineTo(30, 110)
+	p.LineTo(-70, 60)
+	p.Close()
+	if p.SegmentMasks() != path.SegmentLine {
+		t.Fatal("the test path must be all lines to reach buildPolyEdges")
+	}
+	clip := geom.IRectLTRB(0, 0, 40, 40)
+
+	var basic edgeBuilder
+	var analytic analyticEdgeBuilder
+	// Warm up: prime the path's cached convexity/segment masks and let the arenas and edge list reach steady state.
+	for i := 0; i < 3; i++ {
+		if n := basic.buildEdges(p, &clip); n == 0 {
+			t.Fatal("edgeBuilder produced no edges")
+		}
+		basic.reset()
+		if n := analytic.buildEdges(p, &clip); n == 0 {
+			t.Fatal("analyticEdgeBuilder produced no edges")
+		}
+		analytic.reset()
+	}
+	if allocs := testing.AllocsPerRun(50, func() {
+		basic.buildEdges(p, &clip)
+		basic.reset()
+	}); allocs != 0 {
+		t.Fatalf("clipped edgeBuilder build allocated %v times per run, want 0", allocs)
+	}
+	if allocs := testing.AllocsPerRun(50, func() {
+		analytic.buildEdges(p, &clip)
+		analytic.reset()
+	}); allocs != 0 {
+		t.Fatalf("clipped analyticEdgeBuilder build allocated %v times per run, want 0", allocs)
+	}
+}
+
 // TestEdgeBuilderResetReleasesPath: reset zeroes head/tail/inv so an idle pooled builder pins neither arena edges nor a
 // caller's blitter; it must drop the scratch iterators' *path.Path for the same reason, or a pooled builder keeps the
 // last-filled path (and all of its point/verb storage) alive. path.TestEdgeIterReleaseDropsPath covers what Release

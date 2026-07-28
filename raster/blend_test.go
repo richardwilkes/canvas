@@ -10,6 +10,7 @@
 package raster
 
 import (
+	"math"
 	"math/rand"
 	"testing"
 
@@ -152,6 +153,44 @@ func TestBlendBlitterDstIdentity(t *testing.T) {
 		if dev.Pix[i] != before[i] {
 			t.Fatalf("pixel %d changed: %08x -> %08x", i, before[i], dev.Pix[i])
 		}
+	}
+}
+
+// TestBlendBlitterPM4fRangeGuard: NewBlendBlitterPM4f documents that only in-premul-range constants take the lowp
+// lanes. The per-channel `0 <= c && c <= a` tests do not bound alpha itself, so an alpha above 1 used to slip through:
+// the 8-bit lanes then exceed 255 (a == 1.5 gives 383), storePM8 ORs the overflow into the neighboring channel and
+// blendLowp's inv255(sa) underflows in uint32. Each out-of-range constant here must take the highp lane and blit
+// exactly what blendHighpAll produces.
+func TestBlendBlitterPM4fRangeGuard(t *testing.T) {
+	nan := float32(math.NaN())
+	for _, tc := range []struct {
+		name  string
+		color colorcore.PMColor4f
+		lowp  bool
+	}{
+		{name: "in range", color: colorcore.PMColor4f{R: 0.25, G: 0.5, B: 0.5, A: 1}, lowp: true},
+		{name: "alpha above one", color: colorcore.PMColor4f{R: 1, G: 1, B: 1, A: 1.5}},
+		{name: "alpha well above one", color: colorcore.PMColor4f{R: 0, G: 0, B: 0, A: 17}},
+		{name: "channel above alpha", color: colorcore.PMColor4f{R: 1.5, G: 0, B: 0, A: 1}},
+		{name: "negative channel", color: colorcore.PMColor4f{R: -0.5, G: 0, B: 0, A: 1}},
+		{name: "nan alpha", color: colorcore.PMColor4f{R: 0, G: 0, B: 0, A: nan}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dev := NewPixmap(4, 1)
+			dsts := []uint32{0xFF000000, 0xFFFFFFFF, 0x80404040, 0x00000000}
+			copy(dev.Pix, dsts)
+			bb := NewBlendBlitterPM4f(dev, tc.color, BlendSrcOver)
+			if bb.lowp != tc.lowp {
+				t.Fatalf("lowp = %v, want %v", bb.lowp, tc.lowp)
+			}
+			bb.BlitH(0, 0, 4)
+			cf := pmColor4f{r: tc.color.R, g: tc.color.G, b: tc.color.B, a: tc.color.A}
+			for i, d := range dsts {
+				if want := storeWord(blendHighpAll(BlendSrcOver, cf, loadPM4f(d))); dev.Pix[i] != want {
+					t.Fatalf("pixel %d over %08x: got %08x, want the highp result %08x", i, d, dev.Pix[i], want)
+				}
+			}
+		})
 	}
 }
 

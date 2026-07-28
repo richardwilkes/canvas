@@ -268,7 +268,11 @@ func (sb *ShaderBlitter) BlitAntiV2(x, y int32, a0, a1 Alpha) {
 // constants blend in highp.
 func NewBlendBlitterPM4f(dev *Pixmap, c colorcore.PMColor4f, mode BlendMode) *BlendBlitter {
 	cf := pmColor4f{r: c.R, g: c.G, b: c.B, a: c.A}
-	inRange := 0 <= cf.r && cf.r <= cf.a &&
+	// The alpha bound is part of the test, not just the per-channel comparisons: with cf.a > 1 the 8-bit lanes below
+	// exceed 255, storePM8 then ORs the overflow into the neighboring channel and blendLowp's inv255 underflows. NaN
+	// fails every comparison, so it takes the highp lane too.
+	inRange := cf.a <= 1 &&
+		0 <= cf.r && cf.r <= cf.a &&
 		0 <= cf.g && cf.g <= cf.a &&
 		0 <= cf.b && cf.b <= cf.a
 	// To make loads more direct, we store 8-bit values in 16-bit slots.

@@ -226,6 +226,87 @@ func TestAlphaRunsAdd(t *testing.T) {
 	}
 }
 
+// expandRLE flattens an AlphaRuns scanline into one alpha per pixel. The blitters are pooled, so the alpha backing
+// array carries stale values from earlier fills outside the runs the RLE actually describes; only the structure
+// starting at index 0 is meaningful.
+func expandRLE(runs *AlphaRuns, width int32) []Alpha {
+	out := make([]Alpha, width)
+	for i := int32(0); i < width; {
+		n := int32(runs.Runs[i])
+		if n <= 0 {
+			break
+		}
+		for j := int32(0); j < n && i+j < width; j++ {
+			out[i+j] = runs.Alpha[i]
+		}
+		i += n
+	}
+	return out
+}
+
+// TestAdditiveBlitterRunLeftOfBounds: the RLE additive blitters translate the run's x into blitter space and drop what
+// falls left of it. Reslicing antialias[-x:] before clamping the length panicked with "slice bounds out of range"
+// whenever a run lay entirely left of the blitter's left bound by more than its own length; Skia does the same step as
+// pointer arithmetic, where the negative length is caught right after. Runs that partially overlap must still blit the
+// surviving tail, and the blitter must stay usable afterwards.
+func TestAdditiveBlitterRunLeftOfBounds(t *testing.T) {
+	const left, width = 20, 16
+	ir := geom.IRectLTRB(left, 0, left+width, 4)
+	run := func(n int, alpha Alpha) []Alpha {
+		aa := make([]Alpha, n)
+		for i := range aa {
+			aa[i] = alpha
+		}
+		return aa
+	}
+
+	for _, tc := range []struct {
+		make func(Blitter) (*runBasedAdditiveBlitter, func(int32, []Alpha))
+		name string
+	}{
+		{
+			name: "runBased",
+			make: func(dst Blitter) (*runBasedAdditiveBlitter, func(int32, []Alpha)) {
+				r := getRunBasedAdditiveBlitter(dst, ir, ir, false)
+				return r, func(x int32, aa []Alpha) { r.blitAntiHRun(x, 0, aa) }
+			},
+		},
+		{
+			name: "safeRLE",
+			make: func(dst Blitter) (*runBasedAdditiveBlitter, func(int32, []Alpha)) {
+				s := getSafeRLEAdditiveBlitter(dst, ir, ir, false)
+				return &s.runBasedAdditiveBlitter, func(x int32, aa []Alpha) { s.blitAntiHRun(x, 0, aa) }
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dev := NewPixmap(left+width, 4)
+			r, blit := tc.make(NewSolidBlitter(dev, colorcore.Color(0xFF000000)))
+
+			// Entirely left of the bound by more (and by exactly) its own length: dropped, not a panic.
+			blit(left-9, run(4, 0x40))
+			blit(left-4, run(4, 0x40))
+			for i, got := range expandRLE(&r.runs, width) {
+				if got != 0 {
+					t.Fatalf("a fully-clipped run wrote alpha %#x at %d", got, i)
+				}
+			}
+
+			// Straddling the bound: only the part at or right of it survives, at the blitter's own x origin.
+			blit(left-2, run(6, 0x40))
+			for i, got := range expandRLE(&r.runs, width) {
+				want := Alpha(0)
+				if i < 4 {
+					want = 0x40
+				}
+				if got != want {
+					t.Fatalf("straddling run: alpha %#x at %d, want %#x", got, i, want)
+				}
+			}
+		})
+	}
+}
+
 // TestMaskAdditiveBlitterRowCacheAfterVerticalBlits: BlitV and BlitRect walk down rows by stepping the row pointer by
 // RowBytes, so the row cache getRow already set up for row y stays correct. The trailing `m.rowY = y` fixups those two
 // carried were no-ops, and the comment calling the cache stale invited "fixing" rowOff too — which would silently move

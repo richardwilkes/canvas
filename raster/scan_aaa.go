@@ -384,7 +384,12 @@ func (r *runBasedAdditiveBlitter) blitAntiHRun(x, y int32, antialias []Alpha) {
 
 	length := int32(len(antialias))
 	if x < 0 {
-		length += x
+		// Clamp before reslicing. A run lying entirely left of r.left by more than its own length makes -x exceed
+		// len(antialias), so the reslice would panic; Skia does the same step as pointer arithmetic, where an
+		// out-of-bounds pointer is harmless because the negative length is caught next.
+		if length += x; length <= 0 {
+			return
+		}
 		antialias = antialias[-x:]
 		x = 0
 	}
@@ -470,7 +475,10 @@ func (r *safeRLEAdditiveBlitter) blitAntiHRun(x, y int32, antialias []Alpha) {
 
 	length := int32(len(antialias))
 	if x < 0 {
-		length += x
+		// Clamp before reslicing, for the same reason as runBasedAdditiveBlitter.blitAntiHRun above.
+		if length += x; length <= 0 {
+			return
+		}
 		antialias = antialias[-x:]
 		x = 0
 	}

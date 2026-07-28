@@ -198,7 +198,9 @@ func (b *AAClipBlitter) BlitMask(mask *Mask, clip geom.IRect) {
 		return
 	}
 
-	b.ensureRunsAndAA()
+	// No ensureRunsAndAA() here: this method works exclusively out of the row scratch it sizes below and never touches
+	// b.runs/b.aa. Upstream needs the call because there the row mask points into the single shared scanline scratch;
+	// this port keeps the two separate.
 	width := clip.Width()
 	isLCD := mask.Format == MaskLCD16
 	var src int

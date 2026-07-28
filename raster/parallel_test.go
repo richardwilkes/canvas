@@ -68,6 +68,35 @@ func TestFillPathParallelDeterministic(t *testing.T) {
 	}
 }
 
+// TestFillPathParallelPrimesPathCaches: every band reads the same *path.Path, and a Path memoizes its bounds (plus the
+// finiteness flag) and its convexity on the first reader that needs them, so FillPathParallel must prime both before
+// spawning. Without that, `go test -race` reports concurrent writes to Path.bounds and Path.convexity from two band
+// goroutines, and a torn geom.Rect read means wrong path bounds and wrong output, not just a detector warning. The path
+// must be untouched here: any prior fill, Bounds or GetConvexity call primes the caches and hides the bug (which is why
+// TestFillPathParallelDeterministic, whose serial reference fill runs first, does not catch it).
+func TestFillPathParallelPrimesPathCaches(t *testing.T) {
+	const w, h = 96, 8 * minBandRows
+	clip := geom.IRectLTRB(0, 0, w, h)
+	color := colorcore.Color(0xFF224466)
+	for _, aa := range []bool{false, true} {
+		for iter := 0; iter < 8; iter++ {
+			fresh := randomTestPath(rand.New(rand.NewSource(int64(iter))), w, h, iter%2 == 1)
+			got := NewPixmap(w, h)
+			FillPathParallel(fresh, clip, NewSolidBlitter(got, color), aa, 8)
+
+			// The same geometry, primed before the fill, must produce the same pixels.
+			primed := randomTestPath(rand.New(rand.NewSource(int64(iter))), w, h, iter%2 == 1)
+			primed.Bounds()
+			primed.GetConvexity()
+			want := NewPixmap(w, h)
+			FillPathParallel(primed, clip, NewSolidBlitter(want, color), aa, 8)
+			if !bytes.Equal(want.RGBA8888Bytes(), got.RGBA8888Bytes()) {
+				t.Fatalf("iter %d aa=%v: filling an unprimed path differed from filling a primed one", iter, aa)
+			}
+		}
+	}
+}
+
 // TestRectFillBandBounds checks the band-boundary policy: short rects and single-worker requests do not band; otherwise
 // the ends are preserved exactly, interior cuts fall on integer scanlines, the bands are monotonic and never
 // single-scanline (each spans well over one pixel row, so no band isolates a fractional edge row), and the band count

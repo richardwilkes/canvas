@@ -46,7 +46,6 @@ const (
 // regionRunHead holds the run-length-encoded row data backing a complex Region (slices are shared immutably).
 type regionRunHead struct {
 	runs          []int32
-	ySpanCount    int32
 	intervalCount int32
 }
 
@@ -184,7 +183,6 @@ func (h *regionRunHead) computeRunBounds() geom.IRect {
 	i++
 
 	var bot int32
-	ySpanCount := int32(0)
 	intervalCount := int32(0)
 	left := int32(math.MaxInt32)
 	rite := int32(math.MinInt32)
@@ -192,7 +190,6 @@ func (h *regionRunHead) computeRunBounds() geom.IRect {
 	for {
 		bot = runs[i]
 		i++
-		ySpanCount++
 
 		intervals := runs[i]
 		i++
@@ -213,7 +210,6 @@ func (h *regionRunHead) computeRunBounds() geom.IRect {
 		}
 	}
 
-	h.ySpanCount = ySpanCount
 	h.intervalCount = intervalCount
 	return geom.IRectLTRB(left, top, rite, bot)
 }
@@ -471,7 +467,6 @@ func (rgn *Region) Translate(dx, dy int32) {
 
 	rgn.head = &regionRunHead{
 		runs:          dst,
-		ySpanCount:    rgn.head.ySpanCount,
 		intervalCount: rgn.head.intervalCount,
 	}
 	rgn.bounds = rgn.bounds.Offset(dx, dy)
@@ -481,8 +476,18 @@ func (rgn *Region) Translate(dx, dy int32) {
 func (rgn *Region) getRuns(tmp *[rectRegionRuns]int32) (runs []int32, intervals int32) {
 	switch {
 	case rgn.IsEmpty():
-		tmp[0] = regionSentinel
-		return tmp[:1], 0
+		// A well-formed zero-scanline run list, not the bare sentinel upstream writes here. getRuns' only consumer,
+		// operate, reads a full scanline header (top, bottom, interval count) from each side before it inspects any
+		// sentinel and then drives that side's walk from those values, so a bare sentinel in a length-1 slice is an
+		// immediate index-out-of-range and a bare sentinel over a zeroed tail instead walks off the end of the
+		// interval list. A sentinel top *and* bottom make the empty side contribute nothing and never flush, which is
+		// exactly what an empty operand means. regionOper's per-op early-outs mean nothing reaches this today, but
+		// they must not be the only thing keeping it safe.
+		tmp[0] = regionSentinel // top
+		tmp[1] = regionSentinel // bottom
+		tmp[2] = 0              // interval count
+		tmp[3] = regionSentinel // x sentinel
+		return tmp[:], 0
 	case rgn.IsRect():
 		buildRectRuns(rgn.bounds, tmp)
 		return tmp[:], 1

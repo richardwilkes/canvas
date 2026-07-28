@@ -354,6 +354,41 @@ func TestAAClipBlitterBlitMask(t *testing.T) {
 	}
 }
 
+// TestAAClipBlitterBlitMaskSkipsRunScratch: BlitMask merges each row into rowScratch/rowScratch16 and forwards a
+// one-row mask; it never reads or writes the runs/aa scanline scratch, so calling ensureRunsAndAA there was a leftover
+// from upstream (where the row mask points into the single shared scanline buffer) and only forced an otherwise
+// unneeded allocation on the first AA-clipped mask blit. The lazy allocation must still happen for the blits that do
+// use it.
+func TestAAClipBlitterBlitMaskSkipsRunScratch(t *testing.T) {
+	var c AAClip
+	c.SetPath(path.New().AddCircle(48, 48, 30, geom.DirectionCW), geom.IRectLTRB(0, 0, aaGrid, aaGrid), true)
+
+	target := &Mask{
+		Image:    make([]uint8, aaGrid*aaGrid),
+		Bounds:   geom.IRectLTRB(0, 0, aaGrid, aaGrid),
+		RowBytes: aaGrid,
+	}
+	var b AAClipBlitter
+	b.Init(NewA8CoverageBlitter(target), &c)
+
+	src := FillPathToMask(path.New().AddOval(geom.RectLTRB(20.5, 15.25, 80.75, 70.5), geom.DirectionCW),
+		geom.IRectLTRB(0, 0, aaGrid, aaGrid), true)
+	clip := src.Bounds
+	if !clip.Intersect(c.Bounds()) {
+		t.Fatal("expected overlap")
+	}
+	b.BlitMask(src, clip)
+	if b.runs != nil || b.aa != nil {
+		t.Fatalf("BlitMask allocated the scanline scratch it never uses: runs=%d aa=%d", len(b.runs), len(b.aa))
+	}
+
+	// The blits that do consume the scanline scratch must still allocate it on demand.
+	b.BlitH(clip.Left, clip.Top, clip.Width())
+	if int32(len(b.runs)) < c.Bounds().Width()+1 || len(b.aa) != len(b.runs) {
+		t.Fatalf("BlitH did not size the scanline scratch: runs=%d aa=%d", len(b.runs), len(b.aa))
+	}
+}
+
 func TestRasterClipBWToAAPromotion(t *testing.T) {
 	rc := NewRasterClipRect(geom.IRectLTRB(0, 0, aaGrid, aaGrid))
 	if !rc.IsBW() || !rc.IsRect() {

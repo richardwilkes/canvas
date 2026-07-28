@@ -34,9 +34,10 @@ const minBandRows = 32
 // FillPathParallel fills p into blitter restricted to clip, splitting the clip into horizontal bands (each at least
 // minBandRows tall) filled concurrently, and falling back to a serial fill when the clip is too short to band. blitter
 // must tolerate concurrent blits to disjoint rows — the package's device blitters (SolidBlitter, BlendBlitter,
-// A8CoverageBlitter) all do, since their only state is the destination pixels. The band count comes from the shared
-// bandCount policy, so workers <= 0 uses the fixed machine-independent default split. aa selects the analytic-AA
-// converter.
+// A8CoverageBlitter) all do, since their only state is the destination pixels. p is shared read-only across the bands
+// and must not be mutated until this returns; its lazy caches are primed here, so callers need not prime them. The band
+// count comes from the shared bandCount policy, so workers <= 0 uses the fixed machine-independent default split. aa
+// selects the analytic-AA converter.
 func FillPathParallel(p *path.Path, clip geom.IRect, blitter Blitter, aa bool, workers int) {
 	rows := clip.Height()
 	bands := bandCount(rows, workers)
@@ -44,6 +45,14 @@ func FillPathParallel(p *path.Path, clip geom.IRect, blitter Blitter, aa bool, w
 		fillPathSerial(p, clip, blitter, aa)
 		return
 	}
+
+	// Resolve the lazily-cached state the concurrent bands would otherwise race to compute: the path's bounds (and with
+	// it its finiteness flag) and its convexity, both memoized on the shared Path and queried per band by the scan
+	// converters. Priming here makes the bands' accesses read-only; without it, `go test -race` reports concurrent
+	// writes to Path.bounds and Path.convexity, and a torn geom.Rect read yields wrong bounds and wrong output. The
+	// generation ID is the Path's only other lazy cache and nothing in this package reads it.
+	p.Bounds()
+	p.GetConvexity()
 
 	bandRows := (rows + bands - 1) / bands
 	var wg sync.WaitGroup

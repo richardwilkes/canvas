@@ -157,6 +157,19 @@ func (g *defaultGeoProc) hasVertexColor() bool { return g.attrs[1].IsInitialized
 
 func (g *defaultGeoProc) hasVertexCoverage() bool { return g.attrs[3].IsInitialized() }
 
+func (g *defaultGeoProc) tweaksAlphaForCoverage() bool {
+	return g.flags&gpFlagCoverageAttributeTweak != 0
+}
+
+// usesCoverageUniform reports whether the fragment shader declares and reads the Coverage uniform, which is the emitter's
+// fallback case: any coverage other than fully opaque that is not already being passed through from the vertex coverage
+// attribute. Tweak-alpha folds the vertex coverage into the color instead of into the coverage output, so it takes the
+// uniform lane too — SetData must agree with the emitter here or the declared uniform is never written, leaving the draw
+// with zero coverage.
+func (g *defaultGeoProc) usesCoverageUniform() bool {
+	return g.coverage != 0xff && (!g.hasVertexCoverage() || g.tweaksAlphaForCoverage())
+}
+
 func (g *defaultGeoProc) AddToKey(caps *gpu.ShaderCaps, b *gpu.KeyBuilder) {
 	key := g.flags
 	if g.coverage == 0xff {
@@ -210,7 +223,7 @@ func (i *defaultGeoProcImpl) SetData(pdman *ProgramDataManager, caps *gpu.Shader
 		i.colorSet = true
 	}
 
-	if dgp.coverage != i.coverage && !dgp.hasVertexCoverage() {
+	if dgp.coverage != i.coverage && dgp.usesCoverageUniform() {
 		pdman.Set1f(i.coverageUniform, float32(dgp.coverage)/255)
 		i.coverage = dgp.coverage
 	}
@@ -226,7 +239,7 @@ func (i *defaultGeoProcImpl) onEmitCode(args *GPEmitArgs, gpArgs *GPArgs) {
 	// Emit attributes.
 	varyingHandler.EmitAttributes(gp)
 
-	tweakAlpha := gp.flags&gpFlagCoverageAttributeTweak != 0
+	tweakAlpha := gp.tweaksAlphaForCoverage()
 	coverageNeedsSaturate := gp.flags&gpFlagCoverageAttributeUnclamped != 0
 	if tweakAlpha && !gp.hasVertexCoverage() {
 		panic("tweak-alpha requires vertex coverage")
@@ -288,9 +301,10 @@ func (i *defaultGeoProcImpl) onEmitCode(args *GPEmitArgs, gpArgs *GPArgs) {
 		} else {
 			fragBuilder.CodeAppendf("vec4 %s = vec4(alpha);", args.OutputCoverage)
 		}
-	case gp.coverage == 0xff:
+	case !gp.usesCoverageUniform():
 		fragBuilder.CodeAppendf("const vec4 %s = vec4(1);", args.OutputCoverage)
 	default:
+		// The uniform lane SetData uploads (see usesCoverageUniform).
 		var fragCoverage string
 		i.coverageUniform, fragCoverage = uniformHandler.AddUniform(nil, ShaderFlagFragment,
 			GLSLTypeHalf, "Coverage")

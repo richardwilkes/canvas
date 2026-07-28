@@ -49,6 +49,53 @@ func TestEdgeIterAutoClosesOpenContour(t *testing.T) {
 	}
 }
 
+// TestEdgeIterReleaseDropsPath: Release must clear the retained *Path (and leave the iterator in the same state a
+// fresh one has, ready for Reset), so a pooled owner — the rasterizer's edge builders hold an EdgeIter and an
+// EdgeClipScratch across fills — pins no caller path while idle.
+func TestEdgeIterReleaseDropsPath(t *testing.T) {
+	p := New()
+	p.MoveTo(0, 0)
+	p.LineTo(10, 0)
+	p.LineTo(10, 10)
+	p.Close()
+
+	it := NewEdgeIter(p)
+	if _, ok := it.Next(); !ok {
+		t.Fatal("expected an edge")
+	}
+	if it.path == nil {
+		t.Fatal("bad test setup: the iterator should hold the path")
+	}
+	it.Release()
+	if it.path != nil {
+		t.Fatal("Release left the iterator holding the path")
+	}
+	if *it != (EdgeIter{conicIdx: -1}) {
+		t.Fatalf("Release left residual state: %+v", *it)
+	}
+	// A released iterator is still reusable.
+	it.Reset(p)
+	if _, ok := it.Next(); !ok {
+		t.Fatal("a released iterator must still be usable after Reset")
+	}
+
+	var s EdgeClipScratch
+	s.ClipPath(p, geom.RectLTRB(-100, -100, 100, 100), true, func(*geom.EdgeClipper, bool) {})
+	if s.iter.path == nil {
+		t.Fatal("bad test setup: the clip scratch should hold the path")
+	}
+	s.Release()
+	if s.iter.path != nil {
+		t.Fatal("Release left the clip scratch holding the path")
+	}
+	// A released scratch is still reusable: ClipPath resets everything it needs.
+	edges := 0
+	s.ClipPath(p, geom.RectLTRB(-100, -100, 100, 100), true, func(*geom.EdgeClipper, bool) { edges++ })
+	if edges == 0 {
+		t.Fatal("a released clip scratch must still be usable")
+	}
+}
+
 func TestEdgeIterMultipleContoursAndConics(t *testing.T) {
 	p := New()
 	p.MoveTo(0, 0)

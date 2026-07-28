@@ -343,3 +343,40 @@ func TestImageSpriteBlitterMatchesBlendBlitter(t *testing.T) {
 		}
 	}
 }
+
+// TestAlignThinStrokeSnapsFirstArgument pins alignThinStroke's real contract: it is always the *first* argument that
+// snaps to the pixel boundary, with the second shifted by the same delta so the pair's separation survives. Its doc
+// used to say it snapped "the outer edge", but AntiFrameRectRegion's right/bottom calls pass the inner edge first.
+func TestAlignThinStrokeSnapsFirstArgument(t *testing.T) {
+	// Both edges inside pixel 3, at 3.25 and 3.75.
+	const lo = fDot8(3*256 + 64)
+	const hi = fDot8(3*256 + 192)
+	const gap = hi - lo
+
+	a, b := lo, hi
+	alignThinStroke(&a, &b)
+	if a != 3*256 {
+		t.Fatalf("first argument not snapped to the pixel boundary: got %d want %d", a, 3*256)
+	}
+	if b-a != gap {
+		t.Fatalf("separation not preserved: got %d want %d", b-a, gap)
+	}
+
+	// Swapping the arguments snaps the other edge — the right/bottom call sites rely on this.
+	a, b = hi, lo
+	alignThinStroke(&a, &b)
+	if a != 3*256 {
+		t.Fatalf("swapped: first argument not snapped: got %d want %d", a, 3*256)
+	}
+	if a-b != gap {
+		t.Fatalf("swapped: separation not preserved: got %d want %d", a-b, gap)
+	}
+
+	// Edges in different pixels are left alone.
+	a, b = fDot8(3*256+128), fDot8(4*256+16)
+	before := [2]fDot8{a, b}
+	alignThinStroke(&a, &b)
+	if a != before[0] || b != before[1] {
+		t.Fatalf("edges in different pixels must be untouched: got %v want %v", [2]fDot8{a, b}, before)
+	}
+}

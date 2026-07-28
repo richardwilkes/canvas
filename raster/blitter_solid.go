@@ -214,7 +214,11 @@ func alphaMul(value, alpha256 uint32) uint32 {
 	return (value * alpha256) >> 8
 }
 
-// alphaMulInv256 computes 255*255 - value*alpha256 in [0, 255*255], rounded up to [0, 256].
+// alphaMulInv256 returns the 256-based inverse-coverage multiplier blendARGB32 scales the destination by: it computes
+// 0xFFFF - value*alpha256 (in [255, 0xFFFF] for value in [0, 255] and alpha256 in [0, 256]) and divides by 255 with the
+// usual (x + (x>>8)) >> 8 approximation, giving 256 - value*alpha256/255 in [0, 256] — 256 when the source contributes
+// nothing, 0 for a fully opaque source at full coverage. Note the numerator is 0xFFFF = 257*255, not 255*255; the
+// approximation falls one short of an exact divide only at that top end, which is what keeps the result within 256.
 func alphaMulInv256(value, alpha256 uint32) uint32 {
 	prod := 0xFFFF - value*alpha256
 	return (prod + (prod >> 8)) >> 8

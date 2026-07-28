@@ -224,14 +224,14 @@ func (m *maskAdditiveBlitter) BlitV(x, y, height int32, alpha Alpha) {
 	if alpha == 0 {
 		return
 	}
+	// The vertical walk steps i by RowBytes rather than calling getRow again, so the row cache is left describing row
+	// y — which getRow already made true — and needs no fixup here.
 	row := m.getRow(y)
 	i := row.off + int(x)
 	for h := int32(0); h < height; h++ {
 		row.img[i] = alpha
 		i += int(m.mask.RowBytes)
 	}
-	// keep the row cache honest: we walked past rowY's row
-	m.rowY = y
 }
 
 // BlitRect implements Blitter.
@@ -244,7 +244,6 @@ func (m *maskAdditiveBlitter) BlitRect(x, y, width, height int32) {
 		}
 		i += int(m.mask.RowBytes)
 	}
-	m.rowY = y
 }
 
 // BlitAntiRect implements Blitter.

@@ -163,3 +163,49 @@ func BenchmarkFillPathSerial(b *testing.B)       { benchFill(b, false, 1) }
 func BenchmarkFillPathParallel(b *testing.B)     { benchFill(b, false, 0) }
 func BenchmarkAntiFillPathSerial(b *testing.B)   { benchFill(b, true, 1) }
 func BenchmarkAntiFillPathParallel(b *testing.B) { benchFill(b, true, 0) }
+
+// TestFillPathParallelBandPolicy: FillPathParallel must split with the shared bandCount policy its doc names. A ceiling
+// divide put the band floor in the wrong place — 33 rows split into 17/16, both under minBandRows — and never consulted
+// bandCount at all, so a clip spanning fewer than two full bands still fanned out. Now a short clip is byte-for-byte
+// the serial fill, and a tall one matches bandCount's split exactly.
+func TestFillPathParallelBandPolicy(t *testing.T) {
+	rng := rand.New(rand.NewSource(9))
+	const w, h = 160, 320
+	color := colorcore.Color(0xFF224466)
+	p := randomTestPath(rng, w, h, true)
+
+	for _, aa := range []bool{false, true} {
+		for _, rows := range []int32{1, minBandRows, minBandRows + 1, 2*minBandRows - 1} {
+			clip := geom.IRectLTRB(0, 0, w, rows)
+			want := NewPixmap(w, rows)
+			fillPathSerial(p, clip, NewSolidBlitter(want, color), aa)
+			got := NewPixmap(w, rows)
+			FillPathParallel(p, clip, NewSolidBlitter(got, color), aa, 8)
+			if !bytes.Equal(want.RGBA8888Bytes(), got.RGBA8888Bytes()) {
+				t.Fatalf("aa=%v rows=%d: a clip shorter than two bands must fall back to the serial fill", aa, rows)
+			}
+		}
+
+		for _, workers := range []int{0, 2, 3, 8} {
+			clip := geom.IRectLTRB(0, 0, w, h)
+			bands := bandCount(h, workers)
+			if bands < 2 {
+				t.Fatalf("bad test setup: %d rows should band with workers=%d", h, workers)
+			}
+			bandRows := (h + bands - 1) / bands
+			if bandRows < minBandRows {
+				t.Fatalf("workers=%d: nominal band of %d rows is below the %d floor", workers, bandRows, minBandRows)
+			}
+			want := NewPixmap(w, h)
+			for top := clip.Top; top < clip.Bottom; top += bandRows {
+				band := geom.IRectLTRB(clip.Left, top, clip.Right, min(top+bandRows, clip.Bottom))
+				fillPathSerial(p, band, NewSolidBlitter(want, color), aa)
+			}
+			got := NewPixmap(w, h)
+			FillPathParallel(p, clip, NewSolidBlitter(got, color), aa, workers)
+			if !bytes.Equal(want.RGBA8888Bytes(), got.RGBA8888Bytes()) {
+				t.Fatalf("aa=%v workers=%d: split does not match bandCount's %d bands", aa, workers, bands)
+			}
+		}
+	}
+}

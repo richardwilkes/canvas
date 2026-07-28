@@ -115,6 +115,13 @@ type edgeScratch struct {
 	conic [1 + 2*(1<<geom.MaxConicToQuadPOW2)]geom.Point
 }
 
+// release drops the *path.Path references iter and clip's iterator retain from the last build, so an idle pooled
+// builder pins no caller path. The buffers themselves are kept; the build drivers Reset the iterators before use.
+func (s *edgeScratch) release() {
+	s.iter.Release()
+	s.clip.Release()
+}
+
 // buildCurveEdges is the general path, handling curves. Returns false if clipped output produced non-finite points (the
 // caller then reports zero edges). s is a caller-owned (reused) scratch buffer for the per-segment temporaries.
 func buildCurveEdges(b edgeSink, p *path.Path, iclip *geom.IRect, canCullToTheRight bool, s *edgeScratch) bool {
@@ -219,11 +226,12 @@ func (b *edgeBuilder) reset() {
 	b.lines.reset()
 	b.quads.reset()
 	b.cubics.reset()
-	// Drop the sentinel links and the inverse blitter's wrapped blitter so the idle pooled builder pins neither arena
-	// edges nor a caller's blitter.
+	// Drop the sentinel links, the inverse blitter's wrapped blitter and the scratch iterators' path so the idle pooled
+	// builder pins none of arena edges, a caller's blitter or a caller's path.
 	b.head = Edge{}
 	b.tail = Edge{}
 	b.inv = inverseBlitter{}
+	b.scratch.release()
 }
 
 // isVertical reports whether edge is vertical; only edges that were originally lines are considered vertical, to avoid
@@ -350,6 +358,7 @@ func (b *analyticEdgeBuilder) reset() {
 	b.cubics.reset()
 	b.head = AnalyticEdge{}
 	b.tail = AnalyticEdge{}
+	b.scratch.release()
 }
 
 // isVerticalAnalytic reports whether an analytic edge is vertical.

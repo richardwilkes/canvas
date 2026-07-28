@@ -24,10 +24,12 @@ const analyticAccuracy = 2
 // kInverseTableSize is FDot6One * 16.
 const kInverseTableSize = 1024
 
-// quickInverse returns -4194304 / x with C-style truncating division (equivalent to a 1025-entry lookup table whose
-// entries are exactly -4194304 / (1024 - i), verified against the table's endpoints and spot values, so the direct
-// division reproduces it bit-for-bit). x == 0 maps to 0 (updateLine reaches it when a non-zero Fixed slope truncates to
-// zero FDot6).
+// quickInverse returns +4194304 / x with C-style truncating division, so the result carries x's sign. It replaces a
+// 1025-entry lookup table whose entries are exactly -4194304 / (1024 - i): the negation lives in the indexing, which
+// negates the entry for x > 0 and reads the mirrored entry for x < 0, so it cancels for both signs. Verified against
+// the table's endpoints and spot values, so the direct division reproduces it bit-for-bit. The sign matters — the DY
+// callers pass an already-absolute slope and use the result as a non-negative reciprocal slope. x == 0 maps to 0
+// (updateLine reaches it when a non-zero Fixed slope truncates to zero FDot6).
 func quickInverse(x FDot6) Fixed {
 	if x == 0 {
 		return 0
@@ -82,7 +84,9 @@ type AnalyticEdge struct {
 	Y      Fixed // the current y
 	UpperY Fixed
 	LowerY Fixed
-	// DY is abs(1/DX); may be MaxInt32 when DX is close to 0. Only used for blitting trapezoids.
+	// DY is the reciprocal slope abs(dy/dx), i.e. abs(1/DX) in Fixed; it may be MaxInt32 when DX is close to 0. Only
+	// used for blitting trapezoids. SetLine and updateLine derive it identically (FDot6-converted slope through
+	// quickInverse), so it means the same thing for line edges and curve segments.
 	DY Fixed
 
 	EdgeType   EdgeType // remembers the *initial* edge type
@@ -141,7 +145,11 @@ func (e *AnalyticEdge) SetLine(p0, p1 geom.Point) bool {
 	}
 	dx := FixedToFDot6(x1 - x0)
 	slope := quickDiv(dx, dy)
-	absSlope := slope
+	// quickInverse is defined over FDot6, so the slope must be converted before it is handed over — otherwise DY comes
+	// out 1024x too small and means something different here than it does for the curve segments updateLine feeds.
+	// Abs of the FDot6 conversion, in that order, matching updateLine: the arithmetic shift floors negative slopes away
+	// from zero, so e.g. slope -3734 gives absSlope 4, not 3.
+	absSlope := FixedToFDot6(slope)
 	if absSlope < 0 {
 		absSlope = -absSlope
 	}
@@ -156,7 +164,7 @@ func (e *AnalyticEdge) SetLine(p0, p1 geom.Point) bool {
 	case dx == 0 || slope == 0:
 		e.DY = math.MaxInt32
 	case absSlope < kInverseTableSize:
-		e.DY = quickInverse(FDot6(absSlope))
+		e.DY = quickInverse(absSlope)
 	default:
 		e.DY = FixedAbs(quickDiv(dy, dx))
 	}

@@ -191,3 +191,38 @@ func TestBlendModeAffectsTransparentBlackMatchesKernels(t *testing.T) {
 		}
 	}
 }
+
+// TestAlphaMulInv256Domain pins alphaMulInv256's domain and range. It is not the "255*255 - value*alpha256 in
+// [0, 255*255], rounded up to [0, 256]" its old doc claimed: the numerator is 0xFFFF = 257*255, and the (x + (x>>8))>>8
+// divide falls one short of an exact 0xFFFF/255 at the top end, which is precisely what keeps the result within 256.
+func TestAlphaMulInv256Domain(t *testing.T) {
+	if got := alphaMulInv256(0, 256); got != 256 {
+		t.Fatalf("alphaMulInv256(0, 256) = %d, want 256", got)
+	}
+	if got := alphaMulInv256(255, 256); got != 0 {
+		t.Fatalf("alphaMulInv256(255, 256) = %d, want 0", got)
+	}
+	if got := alphaMulInv256(0, 0); got != 256 {
+		t.Fatalf("alphaMulInv256(0, 0) = %d, want 256", got)
+	}
+	for value := uint32(0); value <= 255; value++ {
+		for alpha256 := uint32(0); alpha256 <= 256; alpha256++ {
+			got := alphaMulInv256(value, alpha256)
+			if got > 256 {
+				t.Fatalf("alphaMulInv256(%d, %d) = %d, above the documented 256 ceiling", value, alpha256, got)
+			}
+			// Within one count of the exact 256 - value*alpha256/255 the doc describes.
+			want := int(256 - (value*alpha256+127)/255)
+			if d := int(got) - want; d < -1 || d > 1 {
+				t.Fatalf("alphaMulInv256(%d, %d) = %d, more than one off 256 - value*alpha256/255 (%d)",
+					value, alpha256, got, want)
+			}
+		}
+	}
+	// The 256 end is only reached by a source contributing nothing, so the destination survives untouched.
+	for _, dst := range []uint32{0x00000000, 0x80402010, 0xFFFFFFFF} {
+		if got := blendARGB32(0, dst, 0xFF); got != dst {
+			t.Fatalf("blendARGB32(0, %08X, 0xFF) = %08X, want the destination unchanged", dst, got)
+		}
+	}
+}

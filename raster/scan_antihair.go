@@ -819,8 +819,11 @@ func innerStrokeDot8(l, t, r, b fDot8, blitter Blitter) {
 	}
 }
 
-// alignThinStroke: for sub-unit strokes whose edges fall within the same pixel, snap the outer edge to the pixel
-// boundary so the frame logic neither double-blits nor miscomputes coverage.
+// alignThinStroke tweaks a sub-unit stroke's hull so one of its two edges coincides with a pixel edge: when edge1 and
+// edge2 land in the same pixel, edge1 snaps down to that pixel's boundary and edge2 shifts by the same delta, so their
+// separation is preserved. It is always edge1 that gets snapped, whichever edge that is — the left/top call sites pass
+// the outer edge first, the right/bottom ones pass the inner edge first. This keeps the frame logic from blitting a
+// scanline twice and from miscomputing coverage when both edges fall within one pixel.
 func alignThinStroke(edge1, edge2 *fDot8) {
 	if fDot8Floor(*edge1) == fDot8Floor(*edge2) {
 		*edge2 -= *edge1 & 0xFF

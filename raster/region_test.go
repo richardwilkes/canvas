@@ -289,3 +289,45 @@ func TestRegionContainsIntersects(t *testing.T) {
 		}
 	}
 }
+
+// TestRegionSetPathDrivesBlitRect: the non-AA fill really does emit BlitRect on the region builder — from
+// walkSimpleEdges' zero-slope fast path for an axis-aligned rect, and from blitAboveClip/blitBelowClip via
+// blitRectRegion for an inverse fill — so rgnBuilder.BlitRect must keep its forwarding body. A no-op there (as the
+// blanket "never called" comment above it once implied) drops those spans entirely.
+func TestRegionSetPathDrivesBlitRect(t *testing.T) {
+	clip := NewRegionRect(geom.IRectLTRB(0, 0, rgnGrid, rgnGrid))
+	inner := geom.IRectLTRB(10, 12, 40, 36)
+
+	// Axis-aligned rect: both edges have zero slope, so every scanline arrives as one BlitRect.
+	p := path.New().AddRect(geom.RectLTRB(10, 12, 40, 36), geom.DirectionCW)
+	rgn := &Region{}
+	if !rgn.SetPath(p, clip) {
+		t.Fatal("SetPath returned false")
+	}
+	if got := rgn.Bounds(); got != inner {
+		t.Fatalf("rect region bounds = %v, want %v", got, inner)
+	}
+	got := rasterizeRegion(rgn)
+	for y := int32(0); y < rgnGrid; y++ {
+		for x := int32(0); x < rgnGrid; x++ {
+			if want := inner.ContainsPoint(x, y); got[y*rgnGrid+x] != want {
+				t.Fatalf("rect fill: (%d,%d) got %v want %v", x, y, got[y*rgnGrid+x], want)
+			}
+		}
+	}
+
+	// Inverse fill: the rows above and below the path's bounds arrive through blitRectRegion's BlitRect.
+	p.SetFillType(path.FillInverseWinding)
+	inv := &Region{}
+	if !inv.SetPath(p, clip) {
+		t.Fatal("inverse SetPath returned false")
+	}
+	got = rasterizeRegion(inv)
+	for y := int32(0); y < rgnGrid; y++ {
+		for x := int32(0); x < rgnGrid; x++ {
+			if want := !inner.ContainsPoint(x, y); got[y*rgnGrid+x] != want {
+				t.Fatalf("inverse fill: (%d,%d) got %v want %v", x, y, got[y*rgnGrid+x], want)
+			}
+		}
+	}
+}

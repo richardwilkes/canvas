@@ -10,6 +10,7 @@
 package raster
 
 import (
+	"bytes"
 	"math/rand"
 	"testing"
 
@@ -507,5 +508,57 @@ func TestRasterClipStack(t *testing.T) {
 	s.ReplaceClip(geom.IRectLTRB(-10, -10, 30, 300))
 	if s.RC().Bounds() != geom.IRectLTRB(0, 0, 30, 80) {
 		t.Fatalf("replaceClip got %v", s.RC().Bounds())
+	}
+}
+
+// TestAAClipBlitterReInitGrowsScratch: Init rebinds the blitter and clip but the scanline scratch is sized lazily, so
+// re-Initing one instance with a wider clip must grow it. Sizing on nil-ness instead of length overran the buffers the
+// narrow clip left behind (an index-out-of-range inside mergeAARuns/expandToRuns).
+func TestAAClipBlitterReInitGrowsScratch(t *testing.T) {
+	const wide = 64
+	var narrowClip, wideClip AAClip
+	if !narrowClip.SetRect(geom.IRectLTRB(0, 0, 4, 8)) || !wideClip.SetRect(geom.IRectLTRB(0, 0, wide, 8)) {
+		t.Fatal("SetRect returned false")
+	}
+	color := colorcore.Color(0xFF3366CC)
+
+	antiRun := func(width int32) (aa []Alpha, runs []int16) {
+		aa = make([]Alpha, width+1)
+		runs = make([]int16, width+1)
+		aa[0] = 0x80
+		runs[0] = int16(width)
+		return aa, runs
+	}
+
+	// Reused instance: narrow clip first (which sizes the scratch), then the wide one.
+	reused := NewPixmap(wide, 8)
+	var b AAClipBlitter
+	b.Init(NewSolidBlitter(reused, color), &narrowClip)
+	narrowAA, narrowRuns := antiRun(4)
+	b.BlitAntiH(0, 0, narrowAA, narrowRuns)
+	b.Init(NewSolidBlitter(reused, color), &wideClip)
+	wideAA, wideRuns := antiRun(wide)
+	b.BlitAntiH(0, 1, wideAA, wideRuns)
+	b.BlitH(0, 2, wide)
+
+	// Fresh instance doing only the wide work.
+	fresh := NewPixmap(wide, 8)
+	var f AAClipBlitter
+	f.Init(NewSolidBlitter(fresh, color), &narrowClip)
+	narrowAA, narrowRuns = antiRun(4)
+	f.BlitAntiH(0, 0, narrowAA, narrowRuns)
+	f2 := &AAClipBlitter{}
+	f2.Init(NewSolidBlitter(fresh, color), &wideClip)
+	wideAA, wideRuns = antiRun(wide)
+	f2.BlitAntiH(0, 1, wideAA, wideRuns)
+	f2.BlitH(0, 2, wide)
+
+	if !bytes.Equal(reused.RGBA8888Bytes(), fresh.RGBA8888Bytes()) {
+		t.Fatal("a re-Inited AAClipBlitter did not match a freshly Inited one")
+	}
+	for x := int32(0); x < wide; x++ {
+		if reused.Pix[reused.addr(x, 1)]>>24 == 0 {
+			t.Fatalf("wide BlitAntiH left pixel (%d,1) untouched", x)
+		}
 	}
 }

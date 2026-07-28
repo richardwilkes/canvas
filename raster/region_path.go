@@ -172,7 +172,9 @@ func (b *rgnBuilder) copyToRgn(runs []int32) {
 	runs[i] = regionSentinel
 }
 
-// The remaining Blitter methods are never called on the region builder (the non-AA fill only emits BlitH).
+// The remaining Blitter methods. The non-AA fill emits only BlitH and BlitRect on the region builder — BlitRect from
+// walkSimpleEdges' zero-slope fast path and from blitAboveClip/blitBelowClip via blitRectRegion — so BlitRect below has
+// a real body while the rest are no-ops.
 
 // BlitAntiH implements Blitter.
 func (b *rgnBuilder) BlitAntiH(_, _ int32, _ []Alpha, _ []int16) {}

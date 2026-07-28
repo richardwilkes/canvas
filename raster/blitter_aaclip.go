@@ -31,18 +31,21 @@ type AAClipBlitter struct {
 	clipBounds   geom.IRect
 }
 
-// Init sets up the blitter to wrap blitter's blits with clip's coverage. clip must be non-empty.
+// Init sets up the blitter to wrap blitter's blits with clip's coverage. clip must be non-empty. One instance may be
+// re-Inited with a different blitter and clip; the scratch buffers are sized on demand and grow with the clip.
 func (b *AAClipBlitter) Init(blitter Blitter, clip *AAClip) {
 	b.blitter = blitter
 	b.clip = clip
 	b.clipBounds = clip.Bounds()
 }
 
-// ensureRunsAndAA lazily allocates the scanline scratch buffers to the clip width.
+// ensureRunsAndAA lazily allocates the scanline scratch buffers to the clip width. It sizes on length rather than
+// nil-ness so that re-Initing one instance with a wider clip grows the buffers instead of overrunning the ones the
+// previous clip sized (the row scratch in BlitMask grows the same way).
 func (b *AAClipBlitter) ensureRunsAndAA() {
-	if b.runs == nil {
-		// add 1 so we can store the terminating run count of 0
-		count := b.clipBounds.Width() + 1
+	// add 1 so we can store the terminating run count of 0
+	count := b.clipBounds.Width() + 1
+	if int32(len(b.runs)) < count {
 		b.runs = make([]int16, count)
 		b.aa = make([]Alpha, count)
 	}

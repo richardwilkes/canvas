@@ -50,6 +50,12 @@ func (it *EdgeIter) Reset(p *Path) {
 	*it = EdgeIter{path: p, conicIdx: -1}
 }
 
+// Release drops the iterator's reference to its path so an idle pooled owner does not pin the path (and its point,
+// verb and conic-weight storage) against collection. The iterator must be Reset before it is used again.
+func (it *EdgeIter) Release() {
+	*it = EdgeIter{conicIdx: -1}
+}
+
 // ConicWeight returns the weight of the conic most recently returned by Next.
 func (it *EdgeIter) ConicWeight() float32 {
 	return it.path.conicWeights[it.conicIdx]
@@ -135,6 +141,12 @@ type EdgeClipScratch struct {
 	iter    EdgeIter
 	clipper geom.EdgeClipper
 	conic   [1 + 2*(1<<geom.MaxConicToQuadPOW2)]geom.Point
+}
+
+// Release drops the scratch's reference to the path it last clipped so an idle pooled owner does not pin it against
+// collection. The scratch stays ready to use: ClipPath resets everything it needs.
+func (s *EdgeClipScratch) Release() {
+	s.iter.Release()
 }
 
 // ClipPath clips each segment of p against clip, reusing the receiver's temporaries across calls.

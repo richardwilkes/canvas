@@ -31,19 +31,15 @@ import (
 // formula than the multi-row top/bottom path.
 const minBandRows = 32
 
-// FillPathParallel fills p into blitter restricted to clip, splitting the clip into horizontal bands filled
-// concurrently. blitter must tolerate concurrent blits to disjoint rows — the package's device blitters (SolidBlitter,
-// BlendBlitter, A8CoverageBlitter) all do, since their only state is the destination pixels. workers <= 0 uses the
-// fixed machine-independent default split (see bandCount). aa selects the analytic-AA converter.
+// FillPathParallel fills p into blitter restricted to clip, splitting the clip into horizontal bands (each at least
+// minBandRows tall) filled concurrently, and falling back to a serial fill when the clip is too short to band. blitter
+// must tolerate concurrent blits to disjoint rows — the package's device blitters (SolidBlitter, BlendBlitter,
+// A8CoverageBlitter) all do, since their only state is the destination pixels. The band count comes from the shared
+// bandCount policy, so workers <= 0 uses the fixed machine-independent default split. aa selects the analytic-AA
+// converter.
 func FillPathParallel(p *path.Path, clip geom.IRect, blitter Blitter, aa bool, workers int) {
-	if workers <= 0 {
-		workers = maxDefaultBands
-	}
 	rows := clip.Height()
-	bands := int32(workers)
-	if maxBands := (rows + minBandRows - 1) / minBandRows; bands > maxBands {
-		bands = maxBands
-	}
+	bands := bandCount(rows, workers)
 	if bands <= 1 {
 		fillPathSerial(p, clip, blitter, aa)
 		return

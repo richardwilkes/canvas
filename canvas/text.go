@@ -149,7 +149,11 @@ func (c *Canvas) onDrawGlyphRunList(glyphRunList *textblob.GlyphRunList, paint *
 // and draws them (no drawables — no reachable scaler produces them). deviceProps carries the device's pixel geometry
 // for the LCD16 lane; the bitmap blitters can only draw LCD text in srcOver, so a non-srcOver paint falls back to the
 // unknown-geometry props.
-func drawGlyphRunListForBitmapDevice(canvas *Canvas, dr *draw, glyphRunList *textblob.GlyphRunList, paint *Paint, drawMatrix *geom.Matrix, deviceProps *font.DeviceProps) {
+//
+// drawPaths is false for every tile but the first when the caller is tiling: the path stage draws through the canvas
+// (which re-tiles over the whole device on its own), so issuing it per tile would draw those glyphs once per tile. The
+// partition still runs when it is false — the path lane's rejects are what feed the mask stage.
+func drawGlyphRunListForBitmapDevice(canvas *Canvas, dr *draw, glyphRunList *textblob.GlyphRunList, paint *Paint, drawMatrix *geom.Matrix, deviceProps *font.DeviceProps, drawPaths bool) {
 	var props *font.DeviceProps
 	if paint.BlendMode == raster.BlendSrcOver {
 		props = deviceProps
@@ -203,36 +207,38 @@ func drawGlyphRunListForBitmapDevice(canvas *Canvas, dr *draw, glyphRunList *tex
 			sourceGlyphs = append([]uint16(nil), rejectedGlyphIDs...)
 			sourcePositions = append([]geom.Point(nil), rejectedPositions...)
 
-			// The paint we draw paths with must have the same anti-aliasing state as the run font, allowing the paths
-			// to have the same edging as the glyph masks.
-			pathPaint := *paint
-			pathPaint.AntiAlias = runFont.HasSomeAntiAliasing()
+			if drawPaths {
+				// The paint we draw paths with must have the same anti-aliasing state as the run font, allowing the
+				// paths to have the same edging as the glyph masks.
+				pathPaint := *paint
+				pathPaint.AntiAlias = runFont.HasSomeAntiAliasing()
 
-			stroking := pathPaint.Style != StyleFill
-			hairline := pathPaint.StrokeWidth == 0
-			needsExactCTM := pathPaint.Shader != nil || pathPaint.PathEffect != nil ||
-				pathPaint.MaskFilter != nil || (stroking && !hairline)
+				stroking := pathPaint.Style != StyleFill
+				hairline := pathPaint.StrokeWidth == 0
+				needsExactCTM := pathPaint.Shader != nil || pathPaint.PathEffect != nil ||
+					pathPaint.MaskFilter != nil || (stroking && !hairline)
 
-			if !needsExactCTM {
-				for i, g := range acceptedGlyphs {
-					glyphPath := g.Path()
-					translate := drawOrigin.Add(acceptedPositions[i])
-					var m geom.Matrix
-					m.SetScaleTranslate(strikeToSourceScale, strikeToSourceScale, translate.X, translate.Y)
-					canvas.Save()
-					canvas.Concat(&m)
-					canvas.DrawPath(glyphPath, &pathPaint)
-					canvas.Restore()
-				}
-			} else {
-				for i, g := range acceptedGlyphs {
-					glyphPath := g.Path()
-					translate := drawOrigin.Add(acceptedPositions[i])
-					var m geom.Matrix
-					m.SetScaleTranslate(strikeToSourceScale, strikeToSourceScale, translate.X, translate.Y)
-					deviceOutline := path.New()
-					glyphPath.TransformTo(&m, deviceOutline)
-					canvas.DrawPath(deviceOutline, &pathPaint)
+				if !needsExactCTM {
+					for i, g := range acceptedGlyphs {
+						glyphPath := g.Path()
+						translate := drawOrigin.Add(acceptedPositions[i])
+						var m geom.Matrix
+						m.SetScaleTranslate(strikeToSourceScale, strikeToSourceScale, translate.X, translate.Y)
+						canvas.Save()
+						canvas.Concat(&m)
+						canvas.DrawPath(glyphPath, &pathPaint)
+						canvas.Restore()
+					}
+				} else {
+					for i, g := range acceptedGlyphs {
+						glyphPath := g.Path()
+						translate := drawOrigin.Add(acceptedPositions[i])
+						var m geom.Matrix
+						m.SetScaleTranslate(strikeToSourceScale, strikeToSourceScale, translate.X, translate.Y)
+						deviceOutline := path.New()
+						glyphPath.TransformTo(&m, deviceOutline)
+						canvas.DrawPath(deviceOutline, &pathPaint)
+					}
 				}
 			}
 			// (Drawable glyphs would be processed here; no reachable scaler produces them.)

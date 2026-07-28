@@ -356,12 +356,20 @@ func (d *BitmapDevice) drawPathImpl(p *path.Path, paint *Paint, pathIsMutable bo
 }
 
 // DrawGlyphRunList implements Device, routing to the glyph-run painter (tiling with no bounds past 8191px).
+//
+// Only the mask and rescaled-bitmap stages are per-tile: they blit through the tile-local draw. The path stage draws
+// back through the canvas (so mask filters and layers apply), which re-enters DrawPath and re-tiles over the whole
+// device on its own, so it is tile-independent and is issued on the first tile only. Running it once per tile would
+// rasterize every path-lane glyph once per tile across the full device, compositing AA edges and non-opaque paint
+// repeatedly.
 func (d *BitmapDevice) DrawGlyphRunList(canvas *Canvas, glyphRunList *textblob.GlyphRunList, paint *Paint) {
 	if d.clipMayNeedTiling() {
 		var tiler drawTiler
 		tiler.init(d, nil)
+		drawPaths := true
 		for dr := tiler.next(); dr != nil; dr = tiler.next() {
-			drawGlyphRunListForBitmapDevice(canvas, dr, glyphRunList, paint, dr.ctm, &d.props)
+			drawGlyphRunListForBitmapDevice(canvas, dr, glyphRunList, paint, dr.ctm, &d.props, drawPaths)
+			drawPaths = false
 		}
 		return
 	}
@@ -369,7 +377,7 @@ func (d *BitmapDevice) DrawGlyphRunList(canvas *Canvas, glyphRunList *textblob.G
 	if dr.rc.IsEmpty() {
 		return
 	}
-	drawGlyphRunListForBitmapDevice(canvas, &dr, glyphRunList, paint, dr.ctm, &d.props)
+	drawGlyphRunListForBitmapDevice(canvas, &dr, glyphRunList, paint, dr.ctm, &d.props, true)
 }
 
 // CreateDevice implements Device: a fresh premul raster device. The layer paint is unused — a raster device is always a

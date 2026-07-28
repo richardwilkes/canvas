@@ -10,11 +10,14 @@
 package canvas
 
 import (
+	"math"
 	"testing"
 
 	"github.com/richardwilkes/canvas/colorcore"
 	"github.com/richardwilkes/canvas/colorfilter"
+	"github.com/richardwilkes/canvas/filtercore"
 	"github.com/richardwilkes/canvas/geom"
+	"github.com/richardwilkes/canvas/imagefilter"
 	"github.com/richardwilkes/canvas/maskfilter"
 	"github.com/richardwilkes/canvas/path"
 	"github.com/richardwilkes/canvas/patheffect"
@@ -326,6 +329,53 @@ func TestDrawPointsRoundCapCircle(t *testing.T) {
 	viaPath.DrawPath(circle, fill)
 
 	pixmapsEqual(t, pixA, pixB, "round point vs circle path")
+}
+
+// TestDrawPointsNonFiniteWithTransparentBlackFilter verifies DrawPoints bails out when the point bounds are non-finite
+// and the paint carries a filter. Without that bail-out the draw falls through to aboutToDraw with nil bounds, which
+// sizes the auto filter layer to the whole clip; a filter that affects transparent black (here a src-blend color
+// filter, which floods) then composites its output across the entire clip at restore, where nothing should be drawn.
+func TestDrawPointsNonFiniteWithTransparentBlackFilter(t *testing.T) {
+	cf := colorfilter.NewBlend(colorcore.Color(0xFF00FF00), raster.BlendSrc)
+	if !filtercore.ColorFilterAffectsTransparentBlack(cf) {
+		t.Fatal("src-blend color filter must affect transparent black for this test to mean anything")
+	}
+	flood := imagefilter.ColorFilter(cf, nil, nil)
+
+	for _, tc := range []struct {
+		name string
+		pts  []geom.Point
+	}{
+		{name: "NaN", pts: []geom.Point{{X: float32(math.NaN()), Y: 5}, {X: 20, Y: 20}}},
+		{name: "Inf", pts: []geom.Point{{X: 5, Y: float32(math.Inf(1))}, {X: 20, Y: 20}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, pix := newWhiteCanvasWH(30, 30)
+			paint := NewPaint()
+			paint.Color = colorcore.Color(0xFF000000)
+			paint.StrokeWidth = 4
+			paint.ImageFilter = flood
+			c.DrawPoints(PointModePoints, tc.pts, paint)
+			for y := int32(0); y < 30; y++ {
+				for x := int32(0); x < 30; x++ {
+					if got := at(pix, x, y); got != 0xFFFFFFFF {
+						t.Fatalf("pixel (%d,%d) = %08x, want the untouched white background", x, y, got)
+					}
+				}
+			}
+		})
+	}
+
+	// The same paint with all-finite points still draws — the bail-out must be keyed on the bounds, not on the filter.
+	c, pix := newWhiteCanvasWH(30, 30)
+	paint := NewPaint()
+	paint.Color = colorcore.Color(0xFF000000)
+	paint.StrokeWidth = 4
+	paint.ImageFilter = flood
+	c.DrawPoints(PointModePoints, []geom.Point{{X: 15, Y: 15}}, paint)
+	if at(pix, 15, 15) == 0xFFFFFFFF {
+		t.Fatal("finite points with a flooding filter must still draw")
+	}
 }
 
 ///////////////////////////////////////////////////////////////////////////////

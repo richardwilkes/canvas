@@ -23,6 +23,7 @@ import (
 	"testing"
 
 	"github.com/richardwilkes/canvas/colorcore"
+	"github.com/richardwilkes/canvas/font"
 	"github.com/richardwilkes/canvas/geom"
 	"github.com/richardwilkes/canvas/raster"
 )
@@ -164,6 +165,48 @@ func TestDrawTilerBoundsAnchorAndSkip(t *testing.T) {
 		t.Errorf("bounds outside the clip must yield no draws")
 	}
 	dev.PopClipStack()
+}
+
+// TestDrawTilerPathGlyphsDrawOnce covers the glyph painter's path stage under tiling. That stage draws back through the
+// canvas (so mask filters and layers apply), which re-enters DrawPath and re-tiles over the whole device on its own, so
+// it is tile-independent and must be issued exactly once — not once per tile. Hairline-stroked text always takes the
+// path lane (font.ShouldDrawAsPathMatrix returns true for a zero-width stroke), and a half-transparent paint makes a
+// repeat visible: each extra pass composites the AA glyph outlines over themselves and darkens them. The tiled strip
+// (three tiles at 20000px wide) must therefore match an untiled render of the same scene byte for byte.
+func TestDrawTilerPathGlyphsDrawOnce(t *testing.T) {
+	const stripW, winW, h = 20000, 400, 40
+	f := loadTestFont(t, 24)
+	scene := func(c *Canvas) {
+		c.Clear(colorcore.Color(0xFFFFFFFF))
+		paint := NewPaint()
+		paint.AntiAlias = true
+		paint.Style = StyleStroke
+		paint.StrokeWidth = 0 // hairline: forces the glyph path lane
+		paint.Color = colorcore.Color(0x80000000)
+		c.DrawSimpleText([]byte("Handgloves"), font.TextEncodingUTF8, 20, 30, f, paint)
+	}
+
+	strip := raster.NewPixmap(stripW, h)
+	scene(NewForPixmap(strip))
+	win := raster.NewPixmap(winW, h)
+	scene(NewForPixmap(win))
+
+	inked := false
+	for y := int32(0); y < h; y++ {
+		for x := int32(0); x < winW; x++ {
+			got := strip.Pix[int(y)*int(strip.RowPixels)+int(x)]
+			want := win.Pix[int(y)*int(win.RowPixels)+int(x)]
+			if got != want {
+				t.Fatalf("pixel (%d,%d): tiled=%08x untiled=%08x (path glyphs drawn once per tile?)", x, y, got, want)
+			}
+			if want != 0xFFFFFFFF {
+				inked = true
+			}
+		}
+	}
+	if !inked {
+		t.Fatal("no glyph ink in the compared window — the test proves nothing")
+	}
 }
 
 // TestDrawTilerSeamEquivalence verifies seam placement pixel-wise without the oracle: scenes drawn on a tiled strip

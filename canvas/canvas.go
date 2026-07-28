@@ -651,16 +651,20 @@ func (c *Canvas) DrawPoints(mode PointMode, pts []geom.Point, paint *Paint) {
 	strokePaint := *paint
 	strokePaint.Style = StyleStroke
 
-	// Bounds (and the quick-reject) are only computed when the paint carries mask/image filters.
+	// Bounds (and the quick-reject) are only computed when the paint carries mask/image filters. A non-finite
+	// coordinate defeats SetBounds; there is nothing to draw and nothing to size a filter layer with, so bail out
+	// rather than fall through to aboutToDraw with nil bounds — that would build a filter layer covering the whole
+	// clip and composite a transparent-black-affecting filter's output across it at restore.
 	var bounds *geom.Rect
 	if strokePaint.MaskFilter != nil || strokePaint.ImageFilter != nil {
 		var r geom.Rect
-		if r.SetBounds(pts) {
-			if c.internalQuickReject(r, &strokePaint) {
-				return
-			}
-			bounds = &r
+		if !r.SetBounds(pts) {
+			return
 		}
+		if c.internalQuickReject(r, &strokePaint) {
+			return
+		}
+		bounds = &r
 	}
 
 	if dp, restore, ok := c.aboutToDraw(&strokePaint, bounds); ok {

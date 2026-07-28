@@ -389,6 +389,59 @@ func TestStrokePatchWriterAttribLayout(t *testing.T) {
 	}
 }
 
+// TestTessJoinEncodingAndEdges covers the join encoding and the per-lane fixed join-edge counts: a negative miter limit
+// must not encode as a round join, and the static-join lane's count must match the constant its shader compiles in
+// (tessNumFixedEdgesInJoinType), including for a miter join whose limit is 0 — which encodes as a bevel, so the
+// dynamic lane's count is one edge lower and would size the draw short of what the static shader consumes.
+func TestTessJoinEncodingAndEdges(t *testing.T) {
+	round := strokeRec(4, stroke.CapButt, stroke.JoinRound, 4)
+	bevel := strokeRec(4, stroke.CapButt, stroke.JoinBevel, 4)
+	miter := strokeRec(4, stroke.CapButt, stroke.JoinMiter, 4)
+	miter0 := strokeRec(4, stroke.CapButt, stroke.JoinMiter, 0)
+	miterNeg := strokeRec(4, stroke.CapButt, stroke.JoinMiter, -3)
+	for _, c := range []struct {
+		rec  *stroke.Rec
+		name string
+		want float32
+	}{
+		{name: "round", rec: &round, want: -1},
+		{name: "bevel", rec: &bevel, want: 0},
+		{name: "miter", rec: &miter, want: 4},
+		{name: "miter limit 0", rec: &miter0, want: 0},
+		{name: "negative miter limit", rec: &miterNeg, want: 0},
+	} {
+		if got := tessGetJoinType(c.rec); got != c.want {
+			t.Errorf("%s: tessGetJoinType = %v, want %v", c.name, got, c.want)
+		}
+	}
+
+	// The static lane counts the miter's extra edge from the join enum whatever the limit is; the dynamic lane can only
+	// read the encoding, which collapses a 0 limit onto bevel.
+	if got := tessNumFixedEdgesInJoinType(stroke.JoinMiter); got != 4 {
+		t.Errorf("static miter join edges = %d, want 4", got)
+	}
+	if got := tessNumFixedEdgesInJoin(makeStrokeParams(&miter0)); got != 3 {
+		t.Errorf("dynamic miter-limit-0 join edges = %d, want 3", got)
+	}
+
+	// The uniform/static lane must size the draw for the enum's count, so the final (exact-p3) edge of the instance is
+	// still emitted for a miter join with a 0 limit.
+	writer := &patchWriter{maxScale: 1}
+	writer.tolerances = newLinearTolerances()
+	writer.updateUniformStrokeParams(makeStrokeParams(&miter0), miter0.Join())
+	staticEdges := writer.tolerances.requiredStrokeEdges()
+	dynamic := &patchWriter{maxScale: 1, attribs: PatchAttribStrokeParams}
+	dynamic.tolerances = newLinearTolerances()
+	dynamic.updateStrokeParamsAttrib(makeStrokeParams(&miter0))
+	if got := staticEdges - dynamic.tolerances.requiredStrokeEdges(); got != 1 {
+		t.Errorf("static lane allots %d extra join edge(s) over the dynamic lane, want 1", got)
+	}
+	if got := writer.tolerances.edgesInJoins; got != tessNumFixedEdgesInJoinType(stroke.JoinMiter) {
+		t.Errorf("static lane join edges = %d, want %d", got,
+			tessNumFixedEdgesInJoinType(stroke.JoinMiter))
+	}
+}
+
 func TestStrokesHaveEqualParams(t *testing.T) {
 	a := strokeRec(4, stroke.CapButt, stroke.JoinMiter, 4)
 	b := strokeRec(4, stroke.CapRound, stroke.JoinMiter, 4)
@@ -417,7 +470,8 @@ func TestFixedCountStrokes(t *testing.T) {
 	// Vertex count is 2x the required stroke edges, clamped to kMaxEdges.
 	var tol linearTolerances
 	rec := strokeRec(10, stroke.CapButt, stroke.JoinRound, 4)
-	tol.setStroke(makeStrokeParams(&rec), 1)
+	params := makeStrokeParams(&rec)
+	tol.setStroke(params, tessNumFixedEdgesInJoin(params), 1)
 	tol.setParametricSegments(16 * 16 * 16 * 16)
 	edges := tol.requiredStrokeEdges()
 	if got := fixedCountStrokesVertexCountForTolerances(&tol); got != edges*2 {

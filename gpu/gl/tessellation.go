@@ -296,7 +296,11 @@ func tessGetJoinType(rec *stroke.Rec) float32 {
 	case stroke.JoinBevel:
 		return 0
 	case stroke.JoinMiter:
-		return rec.Miter()
+		// A negative miter limit must not encode as a round join: stroke.PaintSpec.MiterLimit is an unvalidated public
+		// field and Rec.SetStrokeParams does no clamping (upstream instead relies on SkPaint::setStrokeMiter rejecting
+		// negatives), so clamp to the bevel encoding, which is what the CPU stroker's miterLimit <= 1 demotion also
+		// produces for such a limit.
+		return max32(rec.Miter(), 0)
 	}
 	panic("unreachable join type")
 }
@@ -312,8 +316,9 @@ func makeStrokeParams(rec *stroke.Rec) strokeParams {
 	return strokeParams{radius: rec.Width() * 0.5, joinType: tessGetJoinType(rec)}
 }
 
-// tessNumFixedEdgesInJoin returns the fixed number of edges that are always emitted with the given join type. If the
-// join is round, the caller needs to account for the additional radial edges on their own.
+// tessNumFixedEdgesInJoin returns the fixed number of edges the dynamic-stroke shader lane emits for a join, which
+// reads the encoded joinType (sign(JOIN_TYPE) + 1 + 2) and therefore cannot tell a miter join with a miter limit of 0
+// from a bevel join. If the join is round, the caller needs to account for the additional radial edges on their own.
 func tessNumFixedEdgesInJoin(params strokeParams) int {
 	if params.joinType > 0 { // miter
 		return 4
@@ -321,11 +326,12 @@ func tessNumFixedEdgesInJoin(params strokeParams) int {
 	return 3 // round or bevel
 }
 
-// tessNumFixedEdgesInJoinType returns the fixed number of edges for a join type alone (no stroke params). Each join
-// always emits two colocated edges at the beginning (a full-width edge to seam with the preceding stroke and a
-// half-width edge to begin the join), an extra edge in the middle for miter joins (round joins' variable radial edges
-// are the caller's responsibility), and a half-width edge at the end that will be colocated with the first edge of the
-// stroke.
+// tessNumFixedEdgesInJoinType returns the fixed number of edges for a join type alone (no stroke params), which is what
+// the static-join shader lane compiles in — unlike tessNumFixedEdgesInJoin it counts the miter's extra edge for every
+// miter join, including one whose miter limit is 0. Each join always emits two colocated edges at the beginning (a
+// full-width edge to seam with the preceding stroke and a half-width edge to begin the join), an extra edge in the
+// middle for miter joins (round joins' variable radial edges are the caller's responsibility), and a half-width edge at
+// the end that will be colocated with the first edge of the stroke.
 func tessNumFixedEdgesInJoinType(join stroke.Join) int {
 	if join == stroke.JoinMiter {
 		return 4
@@ -412,7 +418,12 @@ func (t *linearTolerances) setParametricSegments(n4 float32) {
 }
 
 // setStroke records the radial-segment and join-edge tolerances for a stroke at the given max device scale.
-func (t *linearTolerances) setStroke(params strokeParams, maxScale float32) {
+// edgesInJoin is the fixed number of join edges the shader lane that will draw these patches emits: the dynamic lane
+// derives it from the encoded JOIN_TYPE (tessNumFixedEdgesInJoin), while the static lane compiles it from the join enum
+// (tessNumFixedEdgesInJoinType). The two disagree for a miter join with a miter limit of 0 — which encodes as a bevel —
+// so it is the caller's lane, not the encoding, that decides the count; sizing the draw below what the shader consumes
+// drops the instance's final edge and leaves a gap at the seam.
+func (t *linearTolerances) setStroke(params strokeParams, edgesInJoin int, maxScale float32) {
 	var approxDeviceStrokeRadius float32
 	if params.radius == 0 {
 		// Hairlines are always 1 px wide.
@@ -422,7 +433,7 @@ func (t *linearTolerances) setStroke(params strokeParams, maxScale float32) {
 		approxDeviceStrokeRadius = params.radius * maxScale
 	}
 	t.numRadialSegmentsPerRadian = tessCalcNumRadialSegmentsPerRadian(approxDeviceStrokeRadius)
-	t.edgesInJoins = tessNumFixedEdgesInJoin(params)
+	t.edgesInJoins = edgesInJoin
 	if params.joinType < 0 && t.numRadialSegmentsPerRadian > 0 {
 		// For round joins we need to count the radial edges on our own. Account for a worst-case join of 180 degrees
 		// (pi radians).

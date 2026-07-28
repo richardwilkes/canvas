@@ -51,7 +51,8 @@ func writeFixedCountPatches(patchWriter *patchWriter, shaderMatrix *geom.Matrix,
 		geom.ScalarAbs(shaderMatrix.MaxScale()))
 	if patchWriter.attribs&PatchAttribStrokeParams == 0 {
 		// Strokes are static. Calculate tolerances once.
-		patchWriter.updateUniformStrokeParams(makeStrokeParams(&pathStrokes.stroke))
+		patchWriter.updateUniformStrokeParams(makeStrokeParams(&pathStrokes.stroke),
+			pathStrokes.stroke.Join())
 	}
 
 	for pathStroke := pathStrokes; pathStroke != nil; pathStroke = pathStroke.next {

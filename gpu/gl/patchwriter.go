@@ -32,6 +32,7 @@ import (
 
 	"github.com/richardwilkes/canvas/colorcore"
 	"github.com/richardwilkes/canvas/geom"
+	"github.com/richardwilkes/canvas/stroke"
 )
 
 // patchAllocator is the PatchWriter's PatchAllocator contract: append returns space for a single patch worth of data
@@ -218,22 +219,24 @@ func (w *patchWriter) updateJoinControlPointAttrib(lastControlPoint geom.Point) 
 	w.deferredPatch.disableDeferral()
 }
 
-// updateStrokeParamsAttrib sets the stroke params written out with each patch (dynamic strokes).
+// updateStrokeParamsAttrib sets the stroke params written out with each patch (dynamic strokes). The join-edge count
+// comes from the encoded params, which is what the dynamic shader lane derives its own count from.
 func (w *patchWriter) updateStrokeParamsAttrib(params strokeParams) {
 	if w.attribs&PatchAttribStrokeParams == 0 {
 		panic("stroke params attrib not enabled")
 	}
 	w.strokePs = params
-	w.tolerances.setStroke(params, w.maxScale)
+	w.tolerances.setStroke(params, tessNumFixedEdgesInJoin(params), w.maxScale)
 }
 
 // updateUniformStrokeParams updates tolerances to account for stroke params that are stored as uniforms instead of
-// dynamic instance attributes.
-func (w *patchWriter) updateUniformStrokeParams(params strokeParams) {
+// dynamic instance attributes. join is the stroke's join enum, which the static shader lane compiles its join-edge count
+// from (see linearTolerances.setStroke).
+func (w *patchWriter) updateUniformStrokeParams(params strokeParams, join stroke.Join) {
 	if w.attribs&PatchAttribStrokeParams != 0 {
 		panic("uniform stroke params require the attrib to be disabled")
 	}
-	w.tolerances.setStroke(params, w.maxScale)
+	w.tolerances.setStroke(params, tessNumFixedEdgesInJoinType(join), w.maxScale)
 }
 
 // updateColorAttrib sets the color written out with each patch. The optional-wide variant stores both forms and writes

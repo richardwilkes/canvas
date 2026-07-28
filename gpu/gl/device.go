@@ -546,8 +546,10 @@ func (d *Device) DrawImageRect(img imagecore.DrawableImage, src *geom.Rect, dst 
 	}
 	clippedDst, _ := srcToDst.MapRect(clippedSrc)
 
+	// chooseAA, not paint.AntiAlias: a DMSAA surface antialiases every draw, and DrawFilledQuad's
+	// canUseDynamicMSAA && aa == AANo special case relies on the device layer never handing it AANo there.
 	aaFlags := gpu.QuadAAFlagsNone
-	if paint.AntiAlias {
+	if d.chooseAA(paint) {
 		aaFlags = gpu.QuadAAFlagsAll
 	}
 	glConstraint := SrcRectConstraintFast

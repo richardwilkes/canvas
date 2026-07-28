@@ -133,7 +133,7 @@
 		},
 		{
 			"name": "clip-stroke-interaction",
-			"sha256": "f27ab02a1aa5efdcfc5a476207b0f6a7bdb5ccc15f5f036afd470df1f1aead7f",
+			"sha256": "35156ec89bb50a98d3e48f8167c182b7de6095515692f24a79d41d5361069761",
 			"width": 256,
 			"height": 256
 		},
@@ -145,7 +145,7 @@
 		},
 		{
 			"name": "colorfilter-blend-tint",
-			"sha256": "b4b5b7cc0946534f905fd4b070f89c8ec2d220d3a12ae29f327095bbc635ed00",
+			"sha256": "907de23290ab3f08c6a5d70480284552db00ae72d8a07ee51a986d9281d9ecda",
 			"width": 256,
 			"height": 256
 		},
@@ -361,7 +361,7 @@
 		},
 		{
 			"name": "imagefilter-crop-rect",
-			"sha256": "44c70e1af9413ba48fe5675ee3f52e29b95dd396967d9235bff4a184bb81851e",
+			"sha256": "ae9a7f5ae89ba1645b55882fa751b7aba68722390bfd72bbb98d274dec3c580b",
 			"width": 256,
 			"height": 256
 		},
@@ -409,7 +409,7 @@
 		},
 		{
 			"name": "imagefilter-merge",
-			"sha256": "b9001a7685fad11633a50c93fe3c24409f39dfce842bb8f44019785b05423d90",
+			"sha256": "41da719c35058f4ebe23f040a2516ac21a9e7a144c94a4954ee3a94faec91a76",
 			"width": 256,
 			"height": 256
 		},

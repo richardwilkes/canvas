@@ -79,7 +79,7 @@
 		},
 		{
 			"name": "clip-difference-grid",
-			"sha256": "dce188453f11d1645cf14828f06b383ba94dff4dd02862640a5c744526af846a",
+			"sha256": "fc50b8d87d8d15959d45fa44a3094b2ffd235851f2d664fa746b809d6598c267",
 			"width": 256,
 			"height": 256
 		},
@@ -103,13 +103,13 @@
 		},
 		{
 			"name": "clip-path-evenodd",
-			"sha256": "bccdcd85d42bf58e615ca80704a75ffa50f77f16edeac7a2ac3c87896542a42b",
+			"sha256": "5fad447792e38ede42fc266d799363d242f1bba36f8854faad5141a0c5828712",
 			"width": 256,
 			"height": 256
 		},
 		{
 			"name": "clip-persp",
-			"sha256": "254df5d572cbf9973cd52dc0731f9abb216a4f2b6045730fe4260e307f4100f9",
+			"sha256": "b956e9091d68dc3268c48afa2b2d474538297766f0c1ca3a22866e0f2797d0bc",
 			"width": 256,
 			"height": 256
 		},

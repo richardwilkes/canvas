@@ -103,13 +103,13 @@
 		},
 		{
 			"name": "clip-path-evenodd",
-			"sha256": "bccdcd85d42bf58e615ca80704a75ffa50f77f16edeac7a2ac3c87896542a42b",
+			"sha256": "3fb74e7eb197bc0d2c22d2e59c450eb4dedc550881f559508e92a41935f7bbde",
 			"width": 256,
 			"height": 256
 		},
 		{
 			"name": "clip-persp",
-			"sha256": "a43c1e43529b409b1c46eb24473236a7943af6d4890357b2dca128fea3709983",
+			"sha256": "791ccae4d2dc5241293c2331027c90bea145fea9a2e398f8b0699cff62ac64b4",
 			"width": 256,
 			"height": 256
 		},

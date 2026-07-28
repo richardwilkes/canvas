@@ -112,6 +112,43 @@ func TestPeriodicAxisTransform(t *testing.T) {
 	}
 }
 
+// TestPeriodicAxisTransformNegativePeriods covers outputs that sit left of / above the crop, where the period indices
+// are negative. Parity has to be read off the integer period: a signed remainder reports -1 for an odd negative period,
+// which silently dropped the mirror flip and rendered that tile as a plain translation.
+func TestPeriodicAxisTransformNegativePeriods(t *testing.T) {
+	crop := geom.IRectLTRB(0, 0, 10, 10)
+	// Period -1 on X: the tile immediately left of the crop is mirrored, so image x=2 lands at layer x=-2 (matching
+	// what shaders' exclusiveMirror computes for the same tiling).
+	m, ok := periodicAxisTransform(shaders.TileMirror, crop, geom.IRectLTRB(-8, 2, -2, 8))
+	if !ok {
+		t.Fatalf("expected single-period mirror to simplify")
+	}
+	if p := m.MapPoint(geom.Point{X: 2, Y: 2}); p.X != -2 || p.Y != 2 {
+		t.Fatalf("x period -1 maps (2,2) -> %v, want (-2,2)", p)
+	}
+	// Period -1 on Y behaves the same way.
+	if m, ok = periodicAxisTransform(shaders.TileMirror, crop, geom.IRectLTRB(2, -8, 8, -2)); !ok {
+		t.Fatalf("expected single-period mirror to simplify")
+	}
+	if p := m.MapPoint(geom.Point{X: 2, Y: 2}); p.X != 2 || p.Y != -2 {
+		t.Fatalf("y period -1 maps (2,2) -> %v, want (2,-2)", p)
+	}
+	// Period -2 is even, so it stays an unmirrored translation of two periods.
+	if m, ok = periodicAxisTransform(shaders.TileMirror, crop, geom.IRectLTRB(-18, 2, -12, 8)); !ok {
+		t.Fatalf("expected single-period mirror to simplify")
+	}
+	if p := m.MapPoint(geom.Point{X: 2, Y: 2}); p.X != -18 || p.Y != 2 {
+		t.Fatalf("x period -2 maps (2,2) -> %v, want (-18,2)", p)
+	}
+	// Repeat never flips, negative period or not.
+	if m, ok = periodicAxisTransform(shaders.TileRepeat, crop, geom.IRectLTRB(-8, 2, -2, 8)); !ok {
+		t.Fatalf("expected single-period repeat to simplify")
+	}
+	if p := m.MapPoint(geom.Point{X: 2, Y: 2}); p.X != -8 || p.Y != 2 {
+		t.Fatalf("repeat period -1 maps (2,2) -> %v, want (-8,2)", p)
+	}
+}
+
 func TestIsNearlyIntegerTranslation(t *testing.T) {
 	var m geom.Matrix
 	m.SetTranslate(5.0004, -3.0007)
@@ -169,6 +206,40 @@ func TestDecomposeCTM(t *testing.T) {
 	}
 	if lm = m.LayerMatrix(); !lm.IsIdentity() {
 		t.Fatalf("translate capability should give identity layer matrix")
+	}
+}
+
+// TestDecomposeTransformOptionalOutputs pins decomposeTransform's documented contract that either output may be nil: a
+// caller wanting only the post-scaling remainder used to hit a nil dereference on the scaling output.
+func TestDecomposeTransformOptionalOutputs(t *testing.T) {
+	for _, tc := range []struct {
+		transform func(m *geom.Matrix)
+		name      string
+	}{
+		{name: "affine", transform: func(m *geom.Matrix) { m.SetRotate(30); m.PreScale(2, 3) }},
+		{name: "perspective", transform: func(m *geom.Matrix) { m.SetAll(2, 0, 5, 0, 2, 7, 0.001, 0.002, 1) }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var transform geom.Matrix
+			tc.transform(&transform)
+			pt := geom.Point{X: 10, Y: 10}
+			var both, scaling geom.Matrix
+			decomposeTransform(&transform, pt, &both, &scaling)
+			// Dropping the scaling output must neither panic nor change the remainder.
+			var postOnly geom.Matrix
+			decomposeTransform(&transform, pt, &postOnly, nil)
+			if postOnly != both {
+				t.Fatalf("post-scaling differs without the scaling output: %v vs %v", postOnly, both)
+			}
+			// Dropping the post-scaling output must not change the scaling either.
+			var scalingOnly geom.Matrix
+			decomposeTransform(&transform, pt, nil, &scalingOnly)
+			if scalingOnly != scaling {
+				t.Fatalf("scaling differs without the post-scaling output: %v vs %v", scalingOnly, scaling)
+			}
+			// Both nil is a well-defined no-op.
+			decomposeTransform(&transform, pt, nil, nil)
+		})
 	}
 }
 

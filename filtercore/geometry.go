@@ -289,7 +289,9 @@ func decomposeTransform(transform *geom.Matrix, representativePoint geom.Point, 
 		if postScaling != nil {
 			*postScaling = remaining
 		}
-		scaling.SetScale(scale.Width, scale.Height)
+		if scaling != nil {
+			scaling.SetScale(scale.Width, scale.Height)
+		}
 		return
 	}
 	// Perspective, which has a non-uniform scaling effect on the filter. Pick a single scale factor that best matches
@@ -309,7 +311,9 @@ func decomposeTransform(transform *geom.Matrix, representativePoint geom.Point, 
 		s.SetScale(invScale, invScale)
 		postScaling.PreConcat(&s)
 	}
-	scaling.SetScale(approxScale, approxScale)
+	if scaling != nil {
+		scaling.SetScale(approxScale, approxScale)
+	}
 }
 
 // periodicAxisTransform reports whether a periodic tiling of crop covers output with a single (possibly mirrored)
@@ -339,12 +343,16 @@ func periodicAxisTransform(tileMode shaders.TileMode, crop, output geom.IRect) (
 		tx := -cropL
 		ty := -cropT
 		if tileMode == shaders.TileMirror {
-			// Flip image when in odd periods on each axis (the periods hold integer values).
-			if math.Mod(periodL, 2) > float64(geom.ScalarNearlyZeroTol) {
+			// Flip image when in odd periods on each axis. The periods hold integer values, but they are negative when
+			// the output lies left of / above the crop, so test the parity of the integer itself: a signed remainder
+			// would report -1 for an odd negative period and miss the flip. The magnitude is bounded by the int32
+			// coordinate range divided by the (integral, non-zero) crop extent, so the conversion cannot overflow —
+			// non-finite periods were already rejected by the single-instance test above.
+			if int64(periodL)&1 != 0 {
 				sx = -1
 				tx = cropWidth - tx
 			}
-			if math.Mod(periodT, 2) > float64(geom.ScalarNearlyZeroTol) {
+			if int64(periodT)&1 != 0 {
 				sy = -1
 				ty = cropHeight - ty
 			}

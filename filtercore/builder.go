@@ -65,18 +65,9 @@ func (b *Builder) outputBounds(explicitOutput *geom.IRect) geom.IRect {
 }
 
 // createInputShaders converts each added input to a shader, sampled over outputBounds (or its own sample bounds when
-// set). evaluateInParameterSpace is only used by the shader/runtime filters.
-func (b *Builder) createInputShaders(outputBounds geom.IRect, evaluateInParameterSpace bool) []shaders.Shader {
-	var xtraFlags ShaderFlags
-	var layerToParam geom.Matrix
-	if evaluateInParameterSpace {
-		layerMatrix := b.ctx.Mapping().LayerMatrix()
-		layerToParam = invertOrIdentity(&layerMatrix)
-		if !isNearlyIntegerTranslation(&layerToParam, nil) {
-			xtraFlags |= ShaderFlagNonTrivialSampling
-		}
-	}
-
+// set). The inputs are always evaluated in layer space; upstream's parameter-space lane exists only for the runtime and
+// picture filters, neither of which is ported.
+func (b *Builder) createInputShaders(outputBounds geom.IRect) []shaders.Shader {
 	inputShaders := make([]shaders.Shader, 0, len(b.inputs))
 	for i := range b.inputs {
 		input := &b.inputs[i]
@@ -85,21 +76,17 @@ func (b *Builder) createInputShaders(outputBounds geom.IRect, evaluateInParamete
 		if input.sampleBounds != nil {
 			sampleBounds = *input.sampleBounds
 		}
-		shader := input.image.asShader(&b.ctx, input.sampling, input.flags|xtraFlags, sampleBounds)
-		if evaluateInParameterSpace && shader != nil {
-			shader = shaders.NewWithLocalMatrix(shader, layerToParam)
-		}
-		inputShaders = append(inputShaders, shader)
+		inputShaders = append(inputShaders, input.image.asShader(&b.ctx, input.sampling, input.flags, sampleBounds))
 	}
 	return inputShaders
 }
 
 // drawShader fills outputBounds with shader (src blend, no dst content), returning the result as a FilterResult.
-func (b *Builder) drawShader(shader shaders.Shader, outputBounds geom.IRect, evaluateInParameterSpace bool) FilterResult {
+func (b *Builder) drawShader(shader shaders.Shader, outputBounds geom.IRect) FilterResult {
 	if shader == nil {
 		return FilterResult{}
 	}
-	surface := newAutoSurface(&b.ctx, outputBounds, boundaryTransparent, evaluateInParameterSpace)
+	surface := newAutoSurface(&b.ctx, outputBounds, boundaryTransparent, false)
 	if surface.valid {
 		surface.drawPaint(&PaintParams{Shader: shader, Blend: raster.BlendSrc})
 	}
@@ -113,8 +100,8 @@ func (b *Builder) Eval(shaderFn func(inputs []shaders.Shader) shaders.Shader, ex
 	if outputBounds.IsEmpty() {
 		return FilterResult{}
 	}
-	inputShaders := b.createInputShaders(outputBounds, false)
-	return b.drawShader(shaderFn(inputShaders), outputBounds, false)
+	inputShaders := b.createInputShaders(outputBounds)
+	return b.drawShader(shaderFn(inputShaders), outputBounds)
 }
 
 // Merge src-over stacks all added inputs into a single output.

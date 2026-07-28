@@ -214,6 +214,98 @@ func TestTileFilter(t *testing.T) {
 	}
 }
 
+// horizontalPairImage builds a 2x1 image holding the two given pixel words side by side.
+func horizontalPairImage(left, right uint32) *imagecore.Image {
+	info, _ := imagecore.MakeInfo(2, 1, imagecore.ColorTypeRGBA8888, imagecore.AlphaTypePremul)
+	p := imagecore.NewPixels(info)
+	p.Words[0] = left
+	p.Words[1] = right
+	return imagecore.FromPixels(p)
+}
+
+// mirrorCropPixels mirror-tiles a 64x64 crop that holds a two-tone 20x20 bar (red left half, blue right half) and
+// returns the visible 64x64 device pixels. offset places the crop — and the bar inside it — exactly one period to the
+// left (-64) or right (+64) of the device, so the single visible tile is an odd period either way and must come out
+// mirrored: blue on the left, red on the right.
+func mirrorCropPixels(t *testing.T, offset float32) *raster.Pixmap {
+	t.Helper()
+	img := horizontalPairImage(0xFF0000FF, 0xFFFF0000) // red, blue
+	return drawSquare(t, func(p *canvas.Paint) {
+		p.ImageFilter = imagefilter.Crop(geom.RectLTRB(offset, 0, offset+64, 64), shaders.TileMirror,
+			imagefilter.Image(img, geom.RectWH(2, 1), geom.RectLTRB(offset+20, 20, offset+40, 40),
+				shaders.SamplingOptions{Filter: shaders.FilterNearest}))
+	})
+}
+
+// TestMirrorCropNegativePeriod pins the mirror flip for a crop sitting to the right of the visible output, where the
+// period index is negative. The parity test used to run on a signed remainder, which reports -1 for an odd negative
+// period and so rendered that tile as an unmirrored translation while the symmetric positive period reflected.
+func TestMirrorCropNegativePeriod(t *testing.T) {
+	const (
+		red  = 0xFF0000FF
+		blue = 0xFFFF0000
+	)
+	for _, tc := range []struct {
+		name   string
+		offset float32
+	}{
+		{name: "period+1", offset: -64},
+		{name: "period-1", offset: 64},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			pix := mirrorCropPixels(t, tc.offset)
+			// The bar is mirrored about the crop edge, so its blue half lands left of its red half.
+			if got := pixel(pix, 28, 30); got != blue {
+				t.Fatalf("left half = %08x, want blue (%08x): tile is not mirrored", got, uint32(blue))
+			}
+			if got := pixel(pix, 38, 30); got != red {
+				t.Fatalf("right half = %08x, want red (%08x): tile is not mirrored", got, uint32(red))
+			}
+			// The mirrored bar spans x in [24,44); outside it the crop's tiling is transparent.
+			if got := pixel(pix, 20, 30); got != 0 {
+				t.Fatalf("left of the mirrored bar = %08x, want transparent", got)
+			}
+			if got := pixel(pix, 48, 30); got != 0 {
+				t.Fatalf("right of the mirrored bar = %08x, want transparent", got)
+			}
+		})
+	}
+	// Both odd periods reflect about their own crop edge, so they must land on identical pixels.
+	left, right := mirrorCropPixels(t, -64), mirrorCropPixels(t, 64)
+	for i := range left.Pix {
+		if left.Pix[i] != right.Pix[i] {
+			t.Fatalf("pixel %d differs between periods +1 and -1: %08x vs %08x", i, left.Pix[i], right.Pix[i])
+		}
+	}
+}
+
+// TestArithmeticUnderScaledCanvas exercises Builder.Eval's input shaders under a non-identity layer matrix: the inputs
+// are always sampled in layer space, so a 2x CTM must scale both the geometry and the filter's own offsets.
+func TestArithmeticUnderScaledCanvas(t *testing.T) {
+	pix := raster.NewPixmap(128, 128)
+	c := canvas.NewForPixmap(pix)
+	c.Scale(2, 2)
+	p := canvas.NewPaint()
+	p.Color = 0xFFFF0000
+	// out = 0.5*BG + 0.5*FG, with BG the source square and FG the source offset by (10,0) in parameter space.
+	p.ImageFilter = imagefilter.Arithmetic(0, 0.5, 0.5, 0, false, nil,
+		imagefilter.Offset(10, 0, nil, nil), nil)
+	c.DrawRect(geom.RectLTRB(20, 20, 40, 40), p)
+	// The square covers device x in [40,80) and the offset copy [60,100).
+	if got := alphaOf(pixel(pix, 50, 60)); got < 127 || got > 128 {
+		t.Fatalf("background-only alpha = %d, want ~128", got)
+	}
+	if got := alphaOf(pixel(pix, 70, 60)); got != 255 {
+		t.Fatalf("overlap alpha = %d, want 255", got)
+	}
+	if got := alphaOf(pixel(pix, 90, 60)); got < 127 || got > 128 {
+		t.Fatalf("foreground-only alpha = %d, want ~128", got)
+	}
+	if got := pixel(pix, 110, 60); got != 0 {
+		t.Fatalf("outside both = %08x, want transparent", got)
+	}
+}
+
 func TestSaveLayerWithFilterPaint(t *testing.T) {
 	// saveLayer with an image-filter paint applies the filter at restore.
 	pix := raster.NewPixmap(64, 64)

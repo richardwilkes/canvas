@@ -3,7 +3,7 @@
 	"lane": "gpudmsaa",
 	"gl_renderer": "llvmpipe (LLVM 15.0.7, 256 bits)",
 	"gl_version": "4.5 (Core Profile) Mesa 23.2.1-1ubuntu3.1~22.04.4",
-	"captured_at": "2026-07-27",
+	"captured_at": "2026-07-28",
 	"entries": [
 		{
 			"name": "arcs",
@@ -661,19 +661,19 @@
 		},
 		{
 			"name": "text-clipped-layer",
-			"sha256": "c761d6aaf691bfd5fcd2cfb9f17e08b263cb5ebf255bc0493d5eaabe6fb6a7c1",
+			"sha256": "5bcaed896c5e98f37799aa50f83078a25f2ff31750fd50fdd762d0f7694c8a6d",
 			"width": 256,
 			"height": 256
 		},
 		{
 			"name": "text-direct-rotated",
-			"sha256": "3c49e409dc987579e5d67074247fa5deb29f25e8d311406b4ab6ee4921322a95",
+			"sha256": "7bf92b4feec71ca283ac86ca5cc1db34dab6662c25d0c531c414356de28b10e7",
 			"width": 256,
 			"height": 256
 		},
 		{
 			"name": "text-emoji-colr",
-			"sha256": "4219b3d5a03dba94ce41342e1b2c3b60c97396bfdd8c8cb7361b36931332b31d",
+			"sha256": "6d1c6a99556862663eb0ee196b91940bc555e5389011c11fadea49694c6a640c",
 			"width": 256,
 			"height": 256
 		},
@@ -685,7 +685,7 @@
 		},
 		{
 			"name": "text-sdf-rotated",
-			"sha256": "b7fd685f3bc6ec890b11baffc367c9c34557480d315dcabf9a750c4924012e60",
+			"sha256": "6eacf142cef57448f42b26f3d38d81e2f951c75ee8213098c3dd7e04fc837ed5",
 			"width": 256,
 			"height": 256
 		},
@@ -697,19 +697,19 @@
 		},
 		{
 			"name": "text-skewed",
-			"sha256": "31f883726594b44d2120a70a8f6bcccb2d51c691819c06226172cbbdb2171863",
+			"sha256": "94dc816aa17db99baee75560cc4ac8c94bb2a7e5a33f603c42ac76d6d702dda9",
 			"width": 256,
 			"height": 256
 		},
 		{
 			"name": "text-styled",
-			"sha256": "5e2ae4c8224ea4a9837c9338f9934f8ed09ea9c3b50937038e3acb3ac0fffb36",
+			"sha256": "315e8d60ed120f7cd50472ceb2311335ebccea669809faa589aa837f2cb43ef2",
 			"width": 256,
 			"height": 256
 		},
 		{
 			"name": "text-waterfall",
-			"sha256": "c96983cd7d33b7c078cb9dff5c75b00c59f2c3c171fcccd93f8ccddadc362e76",
+			"sha256": "da9ba50b6510865bfce1c8b90619e9b632fc2e7bdcee6a1d3653539a844c8965",
 			"width": 256,
 			"height": 256
 		},

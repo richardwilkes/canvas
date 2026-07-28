@@ -32,8 +32,8 @@ var (
 // the config implies. Sniffing the chunk stream restores the alpha that lane drops. Paletted PNGs need no sniff:
 // DecodeConfig runs on to IDAT for those, so the tRNS alpha is already folded into the palette it reports.
 func pngHasTRNS(data []byte) bool {
-	for off := uint64(len(pngMagic)); off+8 <= uint64(len(data)); {
-		length := uint64(binary.BigEndian.Uint32(data[off:]))
+	for off := len(pngMagic); off+8 <= len(data); {
+		length := int(binary.BigEndian.Uint32(data[off:]))
 		switch typ := data[off+4 : off+8]; {
 		case bytes.Equal(typ, pngTypeTRNS):
 			return true

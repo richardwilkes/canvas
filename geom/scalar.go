@@ -14,6 +14,14 @@ package geom
 
 import "math"
 
+// The module targets 64-bit platforms only: int and uintptr are assumed to be 64 bits wide, so int arithmetic over
+// values already bounded by the int32-typed dimensions, offsets and strides the API uses can never overflow. Code must
+// still guard genuine int32 overflow (those types wrap identically on every platform), but never needs to widen int
+// math or cap int values merely to survive a 32-bit int. This is the module's base package, so the assertion below
+// fails the build of anything that depends on it — "invalid operation: division by zero" — where int is 32 bits: the
+// shift yields 1 only when uint has a bit 63.
+const _ = 1 / (^uint(0) >> 63)
+
 const (
 	// ScalarNearlyZeroTol (1/4096) is the tolerance used for "nearly zero" comparisons throughout geometry code.
 	ScalarNearlyZeroTol = 1.0 / (1 << 12)

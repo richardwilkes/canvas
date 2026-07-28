@@ -10,6 +10,15 @@ a CPU rasterizer and a GPU (OpenGL) renderer.
 > This library has been tailored to the needs of my specific projects (principally
 > [unison](https://github.com/richardwilkes/unison)) and may not be suitable for anyone else.
 
+## Requirements
+
+**64-bit targets only.** The module assumes `int` and `uintptr` are 64 bits wide; 32-bit builds are not supported and
+are not tested. The `geom` package carries a compile-time assertion of this, so a 32-bit build fails to compile rather
+than silently overflowing. Code guards genuine `int32` overflow where the API's `int32` dimensions, offsets and strides
+demand it, but never widens `int` math or caps `int` values just to survive a 32-bit `int`.
+
+The module is also 100% cgo-free and must stay that way; `build.sh` enforces it.
+
 ## Packages
 
 | Package | What it is |

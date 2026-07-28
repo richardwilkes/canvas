@@ -18,7 +18,7 @@ import (
 )
 
 // The seed corpus: geometry-only scenarios (no text, no images) sized 256x256, exercising the drawing operations the
-// port must reproduce. Names are stable identifiers for goldens.
+// library must reproduce. Names are stable identifiers for goldens.
 
 const (
 	red    = colorcore.Color(0xFFE0392E)
@@ -178,10 +178,9 @@ func init() {
 		c.Restore()
 	})
 
-	// Formerly built from the SVG string "M30 100 A40 40 0 0 1 110 100 A40 40 0 0 1 190 100 Q210 130 190 160 L30 160
-	// Z", spelled out directly now that the SVG path-data parser is gone. The endpoint-arc primitive it drives is
-	// unchanged, so the geometry — and the golden — are identical; SVG's sweep-flag 1 maps to DirectionCW (the flag is
-	// inverted relative to the enum) and its large-arc-flag 0 to ArcSizeSmall.
+	// The SVG equivalent of this path is "M30 100 A40 40 0 0 1 110 100 A40 40 0 0 1 190 100 Q210 130 190 160 L30 160
+	// Z". SVG's sweep-flag 1 maps to DirectionCW (the flag is inverted relative to the enum) and its large-arc-flag 0
+	// to ArcSizeSmall.
 	reg("path-arcs-svg", func(c Canvas) {
 		c.Clear(white)
 		spec := NewPathSpec().MoveTo(30, 100).

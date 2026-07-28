@@ -14,7 +14,7 @@ import (
 	"github.com/richardwilkes/canvas/geom"
 )
 
-// Corpus growth: shader coverage beyond the linear/radial pair — sweep and two-point conical gradients, the color
+// Shader coverage beyond the linear/radial pair — sweep and two-point conical gradients, the color
 // and blend shaders, tile-mode and stop-position edge cases, local matrices, and dither.
 
 func init() {
@@ -301,7 +301,7 @@ func init() {
 	})
 
 	reg("gradient-on-stroke", func(c Canvas) {
-		// The ring is sized deliberately: tall enough (2*(44+6) rows) that the port takes the banded parallel
+		// The ring is sized deliberately: tall enough (2*(44+6) rows) that the library takes the banded parallel
 		// shaded-path-fill lane, so the golden gates keep exercising it. Banded output is not byte-exact against a
 		// *serial* fill (AA seam pixels can differ by a coverage step; canvas/parallel_path_test.go), but the default
 		// band split is a pure function of fill height (raster.bandCount), never of the machine, so the banded render

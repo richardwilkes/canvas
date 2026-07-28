@@ -7,7 +7,7 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// Unit tests for the distance-field generator (E.1): the byte packing formula, and structural properties of the
+// Unit tests for the distance-field generator: the byte packing formula, and structural properties of the
 // generated field (threshold at the coverage edge, monotonicity away from the shape, symmetry) that the 8SSEDT
 // transform must satisfy.
 

@@ -116,7 +116,7 @@ func (f *Font) setFlag(mask uint8, on bool) {
 	}
 }
 
-// SetForceAutoHinting sets whether auto-hinting is forced (recorded, never honored: this port renders outline fonts
+// SetForceAutoHinting sets whether auto-hinting is forced (recorded, never honored: this library renders outline fonts
 // only).
 func (f *Font) SetForceAutoHinting(on bool) { f.setFlag(flagForceAutoHinting, on) }
 
@@ -136,8 +136,8 @@ func (f *Font) SetSubpixel(on bool) { f.setFlag(flagSubpixel, on) }
 // Subpixel reports whether subpixel positioning is requested.
 func (f *Font) Subpixel() bool { return f.flags&flagSubpixel != 0 }
 
-// SetHinting sets the requested hinting level (only HintingNone/HintingSlight are honored; the port is always unhinted
-// with linear metrics).
+// SetHinting sets the requested hinting level (only HintingNone/HintingSlight are honored; the library is always
+// unhinted with linear metrics).
 func (f *Font) SetHinting(h Hinting) { f.hinting = h }
 
 // Hinting returns the recorded hinting.

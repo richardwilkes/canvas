@@ -14,7 +14,7 @@ import (
 	"github.com/richardwilkes/canvas/geom"
 )
 
-// Corpus growth: the stroking / dash / path-effect family. Dashing is the highest-value path-effect coverage (the
+// The stroking / dash / path-effect family. Dashing is the highest-value path-effect coverage (the
 // one real apps use constantly); the rest exercises each sk_path_effect_create_* constructor once through both
 // backends.
 

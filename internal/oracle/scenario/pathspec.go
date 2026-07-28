@@ -189,7 +189,7 @@ func (s *PathSpec) AddPathReverse(sub *PathSpec) *PathSpec {
 	return s.add(&PathOp{Kind: OpAddPathReverse, Sub: sub})
 }
 
-// BuildGo replays the spec into the Go port's path type.
+// BuildGo replays the spec into the library's path type.
 func (s *PathSpec) BuildGo() *path.Path {
 	p := path.New()
 	for _, op := range s.Ops {

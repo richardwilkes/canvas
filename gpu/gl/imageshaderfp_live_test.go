@@ -7,7 +7,7 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// Live-context tests for the GPU image-shader fragment-processor lane (skgr.go's makeImageShaderFP): image shaders
+// Live-context tests for the GPU image-shader fragment-processor lane (paintconvert.go's makeImageShaderFP): image shaders
 // converted via the paint-to-FP conversion and rendered through the fill-rect op, compared against the CPU image-shader
 // pipeline (the Go-GPU vs Go-CPU self-consistency lane). Before this lane existed a paint carrying an image shader
 // failed fragment-processor conversion and the draw was a silent no-op. Skips when no GL context is available.

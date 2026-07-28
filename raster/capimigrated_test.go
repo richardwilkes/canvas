@@ -7,8 +7,7 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// Tests migrated from the retired façade suite: they keep the core behaviors that previously had coverage only through
-// the façade's forwarding tests.
+// Contract checks for the public raster entry points.
 
 package raster
 
@@ -19,7 +18,7 @@ import (
 	"github.com/richardwilkes/canvas/path"
 )
 
-// TestWrapBytes verifies the sk_surface_make_raster_direct pixel-wrapping contract raster.WrapBytes keeps: a valid
+// TestWrapBytes verifies the pixel-wrapping contract raster.WrapBytes keeps: a valid
 // buffer wraps without copying, and each unsupported configuration (bad dimensions, narrow or non-whole-pixel rowBytes,
 // short buffer) returns nil.
 func TestWrapBytes(t *testing.T) {
@@ -60,9 +59,9 @@ func TestWrapBytes(t *testing.T) {
 	}
 }
 
-// TestAAFillCircleMaskLane AA-fills a circle sized for the additive-mask lane (the path the façade's 40x40 draw suite
-// exercised): the interior must reach full coverage — the mask blitter's BlitRect rows — and the integer-aligned
-// extremes produce the zero-alpha edge columns its BlitV guard skips.
+// TestAAFillCircleMaskLane AA-fills a circle sized for the additive-mask lane: the interior must reach full coverage
+// — the mask blitter's BlitRect rows — and the integer-aligned extremes produce the zero-alpha edge columns its BlitV
+// guard skips.
 func TestAAFillCircleMaskLane(t *testing.T) {
 	p := path.New()
 	p.AddCircle(17, 22, 12, geom.DirectionCW)
@@ -96,9 +95,9 @@ func TestAAFillCircleMaskLane(t *testing.T) {
 	}
 }
 
-// TestAAFillRoundRectMaskLane AA-fills a round rect with integer-aligned straight sides on the additive-mask lane (the
-// façade's 40x40 draw_round_rect): the tall vertical sides emit anti-rect spans whose edge columns carry zero partial
-// alpha (the mask blitter's BlitV zero-skip) around a full-coverage interior run (its BlitRect rows).
+// TestAAFillRoundRectMaskLane AA-fills a round rect with integer-aligned straight sides on the additive-mask lane:
+// the tall vertical sides emit anti-rect spans whose edge columns carry zero partial alpha (the mask blitter's BlitV
+// zero-skip) around a full-coverage interior run (its BlitRect rows).
 func TestAAFillRoundRectMaskLane(t *testing.T) {
 	p := path.New()
 	p.AddRoundRect(geom.RectLTRB(6, 9, 33, 27), 6, 3, geom.DirectionCW)

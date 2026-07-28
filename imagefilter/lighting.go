@@ -162,7 +162,7 @@ func cosDegrees(degrees float32) float32 {
 // transparent.
 func (f *lightingFilter) OnAffectsTransparentBlack() bool { return true }
 
-// GPUEvaluable implements filtercore.GPUEvaluable: the sk_normal + sk_lighting kernels convert to FPs
+// GPUEvaluable implements filtercore.GPUEvaluable: the normal + lighting kernels convert to FPs
 // (gpu/gl/filterkernelfp.go).
 func (f *lightingFilter) GPUEvaluable() bool { return true }
 

@@ -305,7 +305,7 @@ func TestPathContainsProbe(t *testing.T) {
 			continue
 		}
 		// The whole grid is queried as one batch: 147 points per path, and a fixture entry apiece would be pure noise.
-		// The points derive from the port's bounds, so replay regenerates them identically and the answers stay
+		// The points derive from the library's bounds, so replay regenerates them identically and the answers stay
 		// index-aligned with what was captured.
 		const n = 12
 		pts := make([]geom.Point, 0, n*n+3)

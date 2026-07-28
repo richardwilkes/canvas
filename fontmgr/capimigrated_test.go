@@ -7,9 +7,8 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// Tests migrated from the retired façade suite: they keep the core behaviors that previously had coverage only through
-// the façade's forwarding tests — most importantly the system-font Default() manager, which the rest of the suite
-// avoids for hermeticity.
+// Checks for the public font-manager entry points — most importantly the system-font Default() manager, which the
+// rest of the suite avoids for hermeticity.
 
 package fontmgr
 
@@ -20,8 +19,8 @@ import (
 	"github.com/richardwilkes/canvas/font"
 )
 
-// TestDefaultManagerEnumeration verifies the process-wide default manager builds from the system font index
-// (sk_fontmgr_ref_default) and its enumeration entry points stay consistent.
+// TestDefaultManagerEnumeration verifies the process-wide default manager builds from the system font index and its
+// enumeration entry points stay consistent.
 func TestDefaultManagerEnumeration(t *testing.T) {
 	mgr := Default()
 	if mgr == nil {
@@ -95,8 +94,8 @@ func TestDefaultManagerMatching(t *testing.T) {
 	}
 }
 
-// TestDefaultManagerMakeFromData verifies sk_fontmgr_create_from_data's semantics on the manager: valid font bytes
-// parse to a typeface, garbage yields nil.
+// TestDefaultManagerMakeFromData verifies MakeFromData's semantics: valid font bytes parse to a typeface, garbage
+// yields nil.
 func TestDefaultManagerMakeFromData(t *testing.T) {
 	mgr := Default()
 	data, err := os.ReadFile("../font/testdata/Roboto-Regular.ttf")

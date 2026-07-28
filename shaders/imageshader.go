@@ -171,7 +171,7 @@ func tweakSampling(s SamplingOptions, m *geom.Matrix) SamplingOptions {
 func (s *ImageShader) appendStages(p *Pipeline, mRec MatrixRec) bool { //nolint:gocritic // see Shader.appendStages
 	sampling := s.sampling
 	if sampling.isAniso() {
-		sampling = anisoFallback(false) // CPU images carry no mips in this port
+		sampling = anisoFallback(false) // CPU images carry no mips in this library
 	}
 
 	// If the total matrix isn't valid (a runtime-effect kernel samples this shader at computed coordinates) the base

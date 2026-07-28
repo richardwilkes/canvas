@@ -25,7 +25,7 @@ import (
 // offscreenStencilBits is the stencil bit depth of the wrapped FBO's DEPTH24_STENCIL8 attachment.
 const offscreenStencilBits = 8
 
-// GPUContext renders scenarios through the port's GL backend — the render context behind the GPU golden gates and the
+// GPUContext renders scenarios through the library's GL backend — the render context behind the GPU golden gates and the
 // GPU lanes of `oracle bless`/`soak`. It owns a headless gltest GL context (the stand-in for the unison-provided
 // context, exactly as gpu/gl's own live tests use it) plus a gl.DirectContext assembled over it via
 // MakeNativeInterface + MakeGLDirectContext — the same assembly unison performs in production.
@@ -90,7 +90,7 @@ func (g *GPUContext) Dispose() {
 	}
 }
 
-// RenderScenarioGPU renders one scenario through the port's GL backend into RGBA8888-premul pixels (tightly packed,
+// RenderScenarioGPU renders one scenario through the library's GL backend into RGBA8888-premul pixels (tightly packed,
 // top-left origin) — directly comparable with the self-captured GPU goldens in ../goldens/gpu, which `oracle bless`
 // captures through this same path. It builds a SurfaceDrawContext, wraps it in a
 // GL canvas device, replays the scenario through the shared sceneCanvas adapter, flushes, and reads the pixels back.
@@ -100,9 +100,9 @@ func RenderScenarioGPU(g *GPUContext, sc scenario.Scenario) []byte {
 	})
 }
 
-// RenderSceneGPU renders an arbitrary draw callback through the port's GL backend into RGBA8888-premul pixels (tightly
-// packed, top-left origin) — the one-off-scene form of RenderScenarioGPU for differentials whose content is not
-// expressible in the declarative scenario corpus (e.g. paints carrying image filters).
+// RenderSceneGPU renders an arbitrary draw callback through the library's GL backend into RGBA8888-premul pixels
+// (tightly packed, top-left origin) — the one-off-scene form of RenderScenarioGPU for differentials whose content is
+// not expressible in the declarative scenario corpus (e.g. paints carrying image filters).
 func RenderSceneGPU(g *GPUContext, width, height int, label string, draw func(*gocanvas.Canvas)) []byte {
 	dims := geom.ISize{Width: int32(width), Height: int32(height)}
 	sdc := gl.MakeSurfaceDrawContext(g.dc, gpu.ColorTypeRGBA8888, dims, gpu.BackingFitExact, 1,
@@ -129,7 +129,7 @@ func RenderSceneGPU(g *GPUContext, width, height int, label string, draw func(*g
 }
 
 // createOffscreenFBO builds a caller-owned offscreen FBO — an RGBA8 color renderbuffer plus a packed DEPTH24_STENCIL8
-// renderbuffer for the GL backend clip/path stenciling — the FBO shape a windowing embedder hands the port (and the
+// renderbuffer for the GL backend clip/path stenciling — the FBO shape a windowing embedder hands the library (and the
 // same formats, attachments, and clear the removed C oracle's FBO helper used, so the archived goldens-skia renders
 // were captured over an identical target). It leaves the FBO bound; the caller re-syncs the direct
 // context's GL-state shadow before wrapping it. Returns the FBO name and its two renderbuffer names (for teardown), and
@@ -164,10 +164,10 @@ func createOffscreenFBO(f *gl.Functions, w, h int32) (fbo, colorRB, dsRB uint32,
 	return fbo, colorRB, dsRB, true
 }
 
-// RenderScenarioGPUWrappedFBO renders one scenario through the port's GL backend into a *caller-owned wrapped FBO* —
-// the wrap-backend-render-target production path unison follows (it hands the port its window FBO), rather than the
-// port-owned offscreen draw context RenderScenarioGPU uses. It drives the API unison drives —
-// gl.NewRenderTargetSurfaceFromBackendRenderTarget (the port of sk_surface_new_backend_render_target / Skia's
+// RenderScenarioGPUWrappedFBO renders one scenario through the library's GL backend into a *caller-owned wrapped FBO* —
+// the wrap-backend-render-target production path unison follows (it hands the library its window FBO), rather than the
+// library-owned offscreen draw context RenderScenarioGPU uses. It drives the API unison drives —
+// gl.NewRenderTargetSurfaceFromBackendRenderTarget (the Go equivalent of sk_surface_new_backend_render_target / Skia's
 // Surfaces::WrapBackendRenderTarget) — so the wrapped-FBO surface path is gated end-to-end against the self-captured
 // GPU goldens on the whole corpus rather than only CPU-checked in gpu/gl's live tests.
 //
@@ -180,7 +180,7 @@ func RenderScenarioGPUWrappedFBO(g *GPUContext, sc scenario.Scenario) []byte {
 	return renderScenarioGPUWrappedFBOWithProps(g, sc, nil)
 }
 
-// RenderScenarioGPUDMSAA is RenderScenarioGPUWrappedFBO with the surface props carrying DynamicMSAAFlag (the port of
+// RenderScenarioGPUDMSAA is RenderScenarioGPUWrappedFBO with the surface props carrying DynamicMSAAFlag (the library of
 // SkSurfaceProps::kDynamicMSAA_Flag): the gpudmsaa lane's render path, which promotes path/stencil render passes to a
 // dynamic 4x MSAA attachment over the wrapped render target. Its self-captured reference sets live in
 // ../goldens/gpudmsaa; the lane needs its own sets because an MSAA resolve antialiases edges differently from
@@ -199,7 +199,7 @@ func renderScenarioGPUWrappedFBOWithProps(g *GPUContext, sc scenario.Scenario, p
 	}
 	// createOffscreenFBO bound the FBO behind the context's back, and GL reuses deleted FBO ids across scenarios, so
 	// re-sync the direct context's GL-state shadow before it wraps and renders to the new FBO — the same reset a
-	// production embedder performs after touching GL state the port cannot see.
+	// production embedder performs after touching GL state the library cannot see.
 	g.dc.ResetContext(gl.AllBackendState)
 
 	rt := gl.NewRenderTargetSurfaceFromBackendRenderTarget(g.dc, gpu.ColorTypeRGBA8888,

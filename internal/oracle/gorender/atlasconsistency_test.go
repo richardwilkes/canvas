@@ -17,7 +17,7 @@ import (
 	"github.com/richardwilkes/canvas/internal/oracle/scenario"
 )
 
-// TestAtlasGPUvsCPUSelfConsistency renders the four atlas scenarios through both of the port's own backends and
+// TestAtlasGPUvsCPUSelfConsistency renders the four atlas scenarios through both of the library's own backends and
 // compares them under the GPU profile. The two Go lanes lower drawAtlas differently — the CPU lane per sprite (rect
 // fill under a concatenated CTM), the GPU lane through the faithful DrawAtlasOp vertex stream — so this cross-check is
 // the standing guard on the per-sprite equivalence claim, independent of the C oracle. Cgo-free; skips without a GL

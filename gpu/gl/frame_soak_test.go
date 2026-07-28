@@ -17,8 +17,8 @@
 //
 // This is the GPU half of the GA soak and is cgo-free (built on a gltest context, with no cgo dependency), so it also
 // runs under `-race`, where it exercises the op / program-info / pipeline / geometry-processor / scratch-backing pools
-// (S106-S117) and the persistent flush state (S114) across thousands of recycle cycles on one context. Skips when no GL
-// context is available.
+// and the persistent flush state across thousands of recycle cycles on one context. Skips when no GL context is
+// available.
 
 package gl_test
 

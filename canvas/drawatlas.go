@@ -73,7 +73,7 @@ func (c *Canvas) DrawAtlas(atlas imagecore.DrawableImage, xforms []geom.RSXform,
 }
 
 // atlasDrawScratch holds BitmapDevice.DrawAtlas's per-call temporaries so a bulk call makes no per-sprite allocations
-// (the S118 imageDrawScratch discipline): the working paint, the per-sprite matrices (whose addresses flow into
+// (the same discipline as imageDrawScratch): the working paint, the per-sprite matrices (whose addresses flow into
 // retaining callees — the draw's ctm reaches the blitter), the per-sprite color/blend scratch shaders, and the draw
 // value itself. Pooled (not a shared instance) so nested/concurrent draws stay independent.
 type atlasDrawScratch struct {

@@ -9,7 +9,7 @@
 
 // A GPU buffer object (vertex, index, or transfer), flattened into one type since GL is the only backend. Desktop
 // trims: the Chromium map-buffer and NV-PBO transfer lanes are unreachable and dropped, as is the
-// has-been-attached-to-a-texture flag, which only serves the GL_TEXTURE_BUFFER lane this trim does not port.
+// has-been-attached-to-a-texture flag, which only serves the GL_TEXTURE_BUFFER lane this trim omits.
 
 package gl
 

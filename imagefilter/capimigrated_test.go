@@ -7,8 +7,7 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// Tests migrated from the retired façade suite: they keep the core behaviors that previously had coverage only through
-// the façade's forwarding tests.
+// Constructor checks for the public image-filter entry points.
 
 package imagefilter_test
 
@@ -52,8 +51,7 @@ func TestImageDefaultSourceBounds(t *testing.T) {
 	}
 }
 
-// TestPointLitSpecularConstructor verifies the point-light specular lighting constructor accepts valid arguments (the
-// façade exercised it as one of the 23 sk_imagefilter_new_* entry points).
+// TestPointLitSpecularConstructor verifies the point-light specular lighting constructor accepts valid arguments.
 func TestPointLitSpecularConstructor(t *testing.T) {
 	f := imagefilter.PointLitSpecular(geom.Point3{X: 5, Y: 5, Z: 10}, 0xFFFFFFFF, 1, 1, 8, nil, nil)
 	if f == nil {

@@ -9,8 +9,8 @@
 
 // The sRGB transfer function and its inverse. The inverse constants are derived at init time with the same scalar powf
 // approximation used to derive the reference values (log2/exp2 with truncating float→int conversion — subtly different
-// from ApproxPowf, which rounds), so the derived constants are stable bit for bit. Moved here from colorfilter so
-// imagecore's pixel-conversion steps can share them without an import cycle.
+// from ApproxPowf, which rounds), so the derived constants are stable bit for bit. They live here, rather than in
+// colorfilter, so imagecore's pixel-conversion steps can share them without an import cycle.
 
 package colorcore
 

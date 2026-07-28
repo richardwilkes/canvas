@@ -73,8 +73,8 @@ func (m *Measure) IsClosed() bool { return m.isClosed }
 func segTo(pts []geom.Point, seg segType, startT, stopT float32, dst *path.Path) {
 	if startT == stopT {
 		if !dst.IsEmpty() {
-			// if the dash as a zero-length on segment, add a corresponding zero-length line. The stroke code will add
-			// end caps to zero length lines as appropriate
+			// A zero-length on-interval from the dash effect becomes a zero-length line, which the stroker turns
+			// into a pair of end caps.
 			if lastPt, ok := dst.LastPt(); ok {
 				dst.LineToPt(lastPt)
 			}
@@ -183,7 +183,6 @@ func conicTooCurvy(firstPt, midTPt, lastPt geom.Point, tolerance float32) bool {
 // cheapDistExceedsLimit reports whether pt strays from (x, y) by more than the tolerance (Chebyshev distance).
 func cheapDistExceedsLimit(pt geom.Point, x, y, tolerance float32) bool {
 	dist := max(geom.ScalarAbs(x-pt.X), geom.ScalarAbs(y-pt.Y))
-	// just made up the 1/2
 	return dist > tolerance
 }
 
@@ -354,10 +353,9 @@ func (it *Iter) buildSegments() *Measure {
 	haveSeenClose := it.forceClosed
 	haveSeenMoveTo := false
 
-	// Note: as we accumulate distance, we have to check that the result of += actually made it larger, since a very
-	// small delta might be > 0, but still have no effect on distance (if distance >>> delta).
-	//
-	// We do this check below, and in compute_quad_segs and compute_cubic_segs
+	// The running distance is accumulated by the computeLineSeg/computeQuadSegs/computeConicSegs/computeCubicSegs
+	// helpers, each of which records a segment only when += actually made the total larger: a delta can be > 0 yet
+	// still vanish into the running total once distance >>> delta.
 
 	it.segments = it.segments[:0]
 	it.pts = it.pts[:0]

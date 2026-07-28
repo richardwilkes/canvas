@@ -11,9 +11,8 @@
 // optional FlateDecode compression, the file header/trailer, the page tree, and the document lifecycle
 // (BeginPage/EndPage/Close/Abort). Stream serialization is single-threaded; all jobs run inline.
 //
-// This part 1 slice generates a valid PDF whose pages carry a caller-supplied content stream and resource dict
-// (Page.Content / Page.Resources). The PDF Device that turns canvas draw ops into a content stream, and the
-// canvas-returning BeginPageCanvas, arrived with part 2 and reuse this machinery unchanged.
+// Pages carry either a caller-supplied content stream and resource dict (Page.Content / Page.Resources) or, via
+// BeginPageCanvas, a content stream the PDF Device generates from canvas draw ops.
 
 package pdf
 
@@ -68,8 +67,8 @@ func (m *offsetMap) emitCrossReferenceTable(s stream.WStream) int {
 }
 
 // skpdfMagic is the four-byte binary marker recommended after the %PDF header to signal to naive tools that the file
-// contains binary data; each byte has its high bit set. These particular bytes are Skia's (SkPDF emits the same four),
-// kept so the output stays byte-for-byte compatible with what the C library produced; document_test.go pins them.
+// contains binary data; each byte has its high bit set. These particular bytes match SkPDF's, so the output stays
+// byte-for-byte compatible with it; document_test.go pins them.
 const skpdfMagic = "\xD3\xEB\xE9\xE1"
 
 func serializeHeader(m *offsetMap, s stream.WStream) {
@@ -245,8 +244,8 @@ func (d *Document) StreamOut(dict *Dict, content []byte, compress bool) Indirect
 
 // ---- page lifecycle ---------------------------------------------------------------------------------
 
-// Page is an in-progress PDF page: a content stream plus a resource dictionary that the caller (part 2: the PDF device)
-// fills between BeginPage and EndPage.
+// Page is an in-progress PDF page: a content stream plus a resource dictionary that the caller (the PDF device, or
+// the application directly) fills between BeginPage and EndPage.
 type Page struct {
 	doc              *Document
 	content          *stream.MemoryWStream

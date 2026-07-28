@@ -17,7 +17,7 @@ import (
 	"github.com/richardwilkes/canvas/path"
 )
 
-// Corpus growth: the clip-torture family — deep clip stacks, AA/non-AA mixes, difference stacking, path/rect
+// The clip-torture family — deep clip stacks, AA/non-AA mixes, difference stacking, path/rect
 // interactions, and clips under rotated/perspective CTMs.
 
 func init() {

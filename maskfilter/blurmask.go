@@ -75,8 +75,8 @@ func clampOuterWithOrig(dst []uint8, dstRB int, src []uint8, srcRB, sw, sh int) 
 func boxBlur(src *raster.Mask, sigma float32, style BlurStyle) (dst *raster.Mask, margin geom.IPoint, ok bool) {
 	blurFilter := newMaskBlurFilter(float64(sigma), float64(sigma))
 	if blurFilter.hasNoBlur() {
-		// If there is no effective blur most styles will just produce the original mask. However, kOuter will produce
-		// an empty mask.
+		// If there is no effective blur most styles will just produce the original mask. However, BlurOuter will
+		// produce an empty mask.
 		if style == BlurOuter {
 			dst = &raster.Mask{Bounds: geom.IRect{}, RowBytes: 0}
 			return dst, geom.IPoint{}, true

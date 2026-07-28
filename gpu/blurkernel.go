@@ -22,7 +22,7 @@ const MaxBlurSamples = 28
 // MaxLinearBlurSigma is the largest sigma handled by a single 1D linear-filtered pass; larger sigmas must be
 // downscaled before such a pass runs. It sits well under the MaxBlurSamples ceiling: this sigma needs radius 12 and so
 // a linear kernel width of 13, not the 28 samples a single pass could afford. Upstream has kept the same value since
-// before the linear-filtering optimization cut the per-tap cost, and this port follows it.
+// before the linear-filtering optimization cut the per-tap cost, and this library follows it.
 const MaxLinearBlurSigma = 4.0
 
 // BlurIsEffectivelyIdentity reports whether a blur of this sigma is small enough to be a no-op.

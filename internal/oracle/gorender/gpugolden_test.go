@@ -21,7 +21,7 @@ import (
 )
 
 // gpuGoldenDir is the per-platform self-captured GPU golden directory (relative to this package, since `go test` runs
-// with the package directory as the working directory). The goldens are the port's own output, captured by `oracle
+// with the package directory as the working directory). The goldens are the library's own output, captured by `oracle
 // bless` on the platform's software GL stack; the archived Skia-era renders live under ../goldens-skia and are not
 // gated.
 func gpuGoldenDir() string {
@@ -37,7 +37,7 @@ const (
 // wrappedFBOKnifeEdge lists scenarios whose wrapped-FBO render deterministically differs from the owned-RT render (and
 // therefore from the owned-RT-captured golden) beyond the ±1 envelope on a specific GL stack, keyed by the manifest's
 // GL_RENDERER string. The two lanes draw identically; on the listed stack the destination's backing type (caller-owned
-// renderbuffer FBO vs port-owned texture RT) nudges rasterization at a knife-edge pixel. Measured on linux_amd64
+// renderbuffer FBO vs library-owned texture RT) nudges rasterization at a knife-edge pixel. Measured on linux_amd64
 // llvmpipe: text-sdf-rotated differs by exactly 1 px at max delta 5, byte-identical across runs, while the owned-RT
 // lane matches the golden bit-exactly and every other stack keeps the lanes within the envelope. The entries are keyed
 // to the exact renderer string deliberately: a driver bump trips the GL-stack mismatch diagnostic first, forcing
@@ -150,16 +150,16 @@ func checkGPUGoldens(t *testing.T, label string, render func(*gorender.GPUContex
 		label, gated, exact, wobbled, len(scenario.All())-gated)
 }
 
-// TestGoGPUvsSelfCapturedGolden is the GPU pixel gate over the port-owned offscreen render target: the corpus rendered
-// through the port's GL backend, diffed against the self-captured per-platform goldens under exact1. Any machine whose
-// GL stack matches the manifest verifies the port's GPU output against the committed reference.
+// TestGoGPUvsSelfCapturedGolden is the GPU pixel gate over the library-owned offscreen render target: the corpus
+// rendered through the library's GL backend, diffed against the self-captured per-platform goldens under exact1. Any
+// machine whose GL stack matches the manifest verifies the library's GPU output against the committed reference.
 func TestGoGPUvsSelfCapturedGolden(t *testing.T) {
 	checkGPUGoldens(t, labelOwnedRT, gorender.RenderScenarioGPU)
 }
 
 // TestGoGPUWrappedFBOvsSelfCapturedGolden is the same gate over the *caller-owned wrapped FBO* —
-// gl.NewRenderTargetSurfaceFromBackendRenderTarget, the production surface path unison drives when it hands the port
-// its window FBO — rather than the port-owned offscreen target the test above uses. The two lanes are separate gates
+// gl.NewRenderTargetSurfaceFromBackendRenderTarget, the production surface path unison drives when it hands the library
+// its window FBO — rather than the library-owned offscreen target the test above uses. The two lanes are separate gates
 // because the surface-creation path differs even though the drawing does not; keeping both is what verifies the
 // wrapped-FBO path end-to-end on the whole corpus rather than only on gpu/gl's CPU-checked live tests.
 //

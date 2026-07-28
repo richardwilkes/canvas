@@ -357,9 +357,9 @@ func (s *middleOutShader) tessBase() *tessellationShaderBase { return &s.tessell
 
 func (s *middleOutShader) shaderAttribs() PatchAttribs { return s.attribs }
 
-// AddToKey implements GeometryProcessor. When color is in a uniform, it's always wide, so we need to ignore
-// kWideColorIfEnabled; when color is in an attrib, its wideness is accounted for as part of the attribute key. Either
-// way, we get the correct key by ignoring the flag.
+// AddToKey implements GeometryProcessor. When color is in a uniform, it's always wide, so PatchAttribWideColorIfEnabled
+// must be ignored; when color is in an attrib, its wideness is accounted for as part of the attribute key. Either way,
+// ignoring the flag gives the correct key.
 func (s *middleOutShader) AddToKey(_ *gpu.ShaderCaps, b *gpu.KeyBuilder) {
 	b.Add32(uint32(s.attribs&^PatchAttribWideColorIfEnabled), "middleOutShaderAttribs")
 }

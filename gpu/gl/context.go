@@ -115,7 +115,7 @@ func (dc *DirectContext) TextBlobCache() *text.BlobRedrawCoordinator {
 	return dc.textBlobCache
 }
 
-// GetSubRunControl (E.1) computes whether/where SDFT is used, from the shader caps (derivatives support), the
+// GetSubRunControl computes whether/where SDFT is used, from the shader caps (derivatives support), the
 // perspective-SDFT workaround cap, and the context options' DF size thresholds.
 func (dc *DirectContext) GetSubRunControl(useSDFTForSmallText bool) text.SubRunControl {
 	options := dc.gpu.ContextInfo().Options

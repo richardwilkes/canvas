@@ -210,7 +210,7 @@ func BenchmarkGLFramePathsAA(b *testing.B) { benchGLFramePaths(b, false) }
 func BenchmarkGLFramePathsDMSAA(b *testing.B) { benchGLFramePaths(b, true) }
 
 // reportFrameMetrics attaches the GPU frame's first-class outputs: GL draw calls issued per frame (the batching
-// metric), total GL calls issued per frame (the B.1 FFI-pressure metric — every call pays purego.SyscallN's marshaling
+// metric), total GL calls issued per frame (the FFI-pressure metric — every call pays purego.SyscallN's marshaling
 // allocations, so this is the number state shadowing drives down) and, when prims >= 0, the primitives recorded per
 // frame (so the batching factor is prims÷draws), plus the steady-state program-cache hit rate (should be ~1.0 after
 // warm-up — a lower value means the cache is thrashing). The caller must reset both stats (ResetGLDrawStats,

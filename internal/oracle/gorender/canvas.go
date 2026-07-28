@@ -7,15 +7,14 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// Package gorender renders the scenario corpus through the pure-Go port (the canvas package over a raster or GL
-// device), so the harness can compare the Go implementation against the checked-in goldens — the port's own output,
+// Package gorender renders the scenario corpus through the canvas library (the canvas package over a raster or GL
+// device), so the harness can compare its output against the checked-in goldens — the library's own output,
 // self-captured per platform by `oracle bless` (see ../goldens/README.md). It materializes each scenario into the
-// port's own canvas/paint/path/shader types. This package is cgo-free — it imports only the shipped Go module — so the
-// golden gates drive the port exactly as unison does.
+// library's own canvas/paint/path/shader types. This package is cgo-free — it imports only the shipped Go module — so
+// the golden gates drive the library exactly as unison does.
 //
-// It is the harness's only renderer: the C Skia counterpart it was originally written to be compared against is gone
-// (its final renders are archived under ../goldens-skia), and every gate in this package reads its reference side from
-// ../goldens rather than rendering it.
+// It is the harness's only renderer; every gate in this package reads its reference side from ../goldens rather than
+// rendering it. A frozen, non-gating archive of the retired C Skia oracle's renders sits under ../goldens-skia.
 package gorender
 
 import (
@@ -38,15 +37,15 @@ import (
 	"github.com/richardwilkes/canvas/stroke"
 )
 
-// sceneCanvas adapts a *canvas.Canvas to scenario.Canvas. The scenario enum ordinals mirror the removed capi/sk_capi.h
-// exactly (see scenario.go), and the port's canvas/paint enums mirror the same Skia Paint/Canvas values, so the
-// mode/style/cap/join/tile/clip-op casts below are one-to-one.
+// sceneCanvas adapts a *canvas.Canvas to scenario.Canvas. The scenario enum ordinals and the library's canvas/paint
+// enums mirror the same underlying values (see scenario.go), so the mode/style/cap/join/tile/clip-op casts below are
+// one-to-one.
 type sceneCanvas struct {
 	c *gocanvas.Canvas
 }
 
-// buildPaint materializes a scenario.Paint into a port *canvas.Paint (plus its effects/filters, if any). Unlike the C
-// oracle there is nothing to free — the port is GC-managed.
+// buildPaint materializes a scenario.Paint into a *canvas.Paint (plus its effects/filters, if any). Nothing needs
+// freeing; the result is GC-managed.
 func buildPaint(sp scenario.Paint) *gocanvas.Paint {
 	p := gocanvas.NewPaint()
 	p.Color = sp.Color
@@ -77,7 +76,7 @@ func buildPaint(sp scenario.Paint) *gocanvas.Paint {
 	return p
 }
 
-// buildShader materializes a scenario.ShaderSpec into a port shader (recursively for blend shaders).
+// buildShader materializes a scenario.ShaderSpec into a canvas shader (recursively for blend shaders).
 func buildShader(s *scenario.ShaderSpec) shaders.Shader {
 	switch s.Kind {
 	case scenario.ShaderLinearGradient:
@@ -101,7 +100,7 @@ func buildShader(s *scenario.ShaderSpec) shaders.Shader {
 	return nil
 }
 
-// buildPathEffect materializes a scenario.PathEffectSpec into a port path effect (recursively for sum/compose).
+// buildPathEffect materializes a scenario.PathEffectSpec into a canvas path effect (recursively for sum/compose).
 func buildPathEffect(s *scenario.PathEffectSpec) stroke.PathEffect {
 	switch s.Kind {
 	case scenario.PathEffectDash:
@@ -126,7 +125,7 @@ func buildPathEffect(s *scenario.PathEffectSpec) stroke.PathEffect {
 	return nil
 }
 
-// buildColorFilter materializes a scenario.ColorFilterSpec into a port color filter (recursively for compose).
+// buildColorFilter materializes a scenario.ColorFilterSpec into a canvas color filter (recursively for compose).
 func buildColorFilter(s *scenario.ColorFilterSpec) shaders.ColorFilter {
 	switch s.Kind {
 	case scenario.ColorFilterMatrix:
@@ -151,7 +150,7 @@ func buildColorFilter(s *scenario.ColorFilterSpec) shaders.ColorFilter {
 
 func specPoint3(p scenario.Point3) geom.Point3 { return geom.Point3{X: p.X, Y: p.Y, Z: p.Z} }
 
-// buildImageFilter materializes a scenario.ImageFilterSpec DAG into a port image filter. A nil spec yields nil (the
+// buildImageFilter materializes a scenario.ImageFilterSpec DAG into a canvas image filter. A nil spec yields nil (the
 // filtered source), matching the public surface's NULL-input convention.
 func buildImageFilter(s *scenario.ImageFilterSpec) filtercore.Filter {
 	if s == nil {
@@ -336,8 +335,7 @@ func (s sceneCanvas) ClipPath(spec *scenario.PathSpec, op scenario.ClipOp, aa bo
 func (s sceneCanvas) Translate(dx, dy float32) { s.c.Translate(dx, dy) }
 func (s sceneCanvas) Scale(sx, sy float32)     { s.c.Scale(sx, sy) }
 
-// RotateRadians maps to the port's degree-based Rotate. The C oracle's sk_canvas_rotate_radians converts to degrees the
-// same way (Skia's RadiansToDegrees = radians * 180/pi), so the CTMs match to float precision.
+// RotateRadians maps to the library's degree-based Rotate, converting with radians * 180/pi.
 func (s sceneCanvas) RotateRadians(rad float32) {
 	s.c.Rotate(float32(float64(rad) * (180.0 / math.Pi)))
 }

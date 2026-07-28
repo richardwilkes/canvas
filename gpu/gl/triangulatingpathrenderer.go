@@ -331,7 +331,7 @@ func (o *triangulatingPathOp) createNonAAMesh(target *OpFlushState) {
 		isLinear:    isLinear, tolerance: tol,
 	}))
 
-	o.vertexData.Ref() // the sk_sp copy handed to the cache
+	o.vertexData.Ref() // the ref-counted copy handed to the cache
 	tmpV, _ := threadSafeCache.AddVertsWithData(&key, o.vertexData, tessIsNewerBetter)
 	if tmpV != o.vertexData {
 		if tmpV.GpuBuffer() != nil {
@@ -355,7 +355,7 @@ func (o *triangulatingPathOp) createAAMesh(target *OpFlushState) {
 		panic("style must have been applied before triangulation")
 	}
 	// AsPath's result is always freshly owned (it clones the backing path), so no second Clone is needed before the
-	// in-place Transform (B.3).
+	// in-place Transform.
 	devPath := o.shape.AsPath()
 	devPath.Transform(&o.viewMatrix)
 	if devPath.IsEmpty() {

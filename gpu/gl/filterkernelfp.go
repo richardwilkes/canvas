@@ -69,8 +69,8 @@ type morphologyFP struct {
 	linear bool  // linear (radius-unrolled) form; false = sparse (single ±offset tap pair)
 }
 
-// makeMorphologyFP converts a MorphologyShader: the linear form is a radius-uniform loop over the fixed
-// kMaxLinearRadius bound, the sparse form a single ±offset tap pair.
+// makeMorphologyFP converts a MorphologyShader: the linear form is a radius-uniform loop over the fixed maximum
+// linear radius, the sparse form a single ±offset tap pair.
 func makeMorphologyFP(s *shaders.MorphologyShader, args *FPArgs, mRec *shaders.MatrixRec) FragmentProcessor {
 	child, ok := convertKernelChild(s.Child(), args)
 	if !ok {
@@ -418,7 +418,8 @@ func (i *lightingFPImpl) EmitCode(args *FPEmitArgs) {
 		lpfName, args.SampleCoord, mltName)
 	fb.CodeAppendf("} else { surfaceToLight = %s.xyz; }", ldcName)
 	fb.CodeAppendf("vec3 color = %s;", colName)
-	// $spotlight_scale, with kConeAAThreshold = 0.016 and kConeScale = 1/kConeAAThreshold.
+	// The spotlight scale, with a cone AA threshold of 0.016 and a cone scale of its reciprocal (matching
+	// shaders.filterkernels).
 	fb.CodeAppendf("if (%s.w > 0.0) {", mltName)
 	fb.CodeAppendf("float cosAngle = -dot(surfaceToLight, %s.xyz);", ldcName)
 	fb.CodeAppend("float scale = 0.0;")

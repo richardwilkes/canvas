@@ -7,15 +7,14 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// Pooling for the transient ProgramInfo/Pipeline pair that each executing op builds during flush (the GPU
-// op-stream-arena counterpart of the CPU pooled-temporaries series S81–S94, following the op-struct free lists of
-// S109/S111). Building one *ProgramInfo and one *Pipeline per executing op (NewPipeline + NewProgramInfo) and then
-// dropping that pair every frame (the S109 op-struct recycle) made the GPU-frame benchmarks rank it as the next-largest
-// in-our-code allocation tier after the FFI variadic (~8.4% of the panels frame). This pools both types with per-type
-// free lists, reusing the op free-list machinery (oppool.go), so a steady-state frame allocates no
-// program-info/pipeline storage.
+// Pooling for the transient ProgramInfo/Pipeline pair that each executing op builds during flush, the GPU counterpart
+// of the op-struct free lists in oppool.go. Building one *ProgramInfo and one *Pipeline per executing op (NewPipeline
+// + NewProgramInfo) and then dropping that pair every frame made the GPU-frame benchmarks rank it as the next-largest
+// in-repo allocation tier after the FFI variadic (~8.4% of the panels frame). This pools both types with per-type free
+// lists, reusing the op free-list machinery (oppool.go), so a steady-state frame allocates no program-info/pipeline
+// storage.
 //
-// Lifetime safety (the S109 argument, applied here): a ProgramInfo/Pipeline pair is dead once the op that owns it
+// Lifetime safety: a ProgramInfo/Pipeline pair is dead once the op that owns it
 // (op.programInfo) finishes OnExecute. The program cache keys on the descriptor bytes and returns a cached *Program —
 // it never retains the *ProgramInfo or *Pipeline (FlushGLState → FindOrCreateProgram / Program.UpdateUniforms consume
 // them synchronously within the op's OnExecute; see gpudraw.go / glprogram.go). ProgramInfo copies its target view's

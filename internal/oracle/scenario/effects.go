@@ -7,11 +7,10 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// The declarative effect/filter specs added as the corpus grew: path effects, color filters, the blur mask
-// filter, and image filters, each described as plain data so a backend materializes them natively (the port through
-// patheffect/colorfilter/maskfilter/imagefilter; the C oracle, while it existed, through the public-surface
-// constructors). Every enum whose values cross the public boundary mirrors the ordinals of the removed capi/sk_capi.h,
-// so backends may cast directly — the same contract as the scenario.go enums.
+// The declarative effect/filter specs: path effects, color filters, the blur mask filter, and image filters, each
+// described as plain data so a backend materializes them natively (through patheffect/colorfilter/maskfilter/
+// imagefilter). Every enum whose values cross the public boundary has frozen ordinals mirroring the C API the corpus
+// was built against — the same contract as the scenario.go enums.
 
 package scenario
 

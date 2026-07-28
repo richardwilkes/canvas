@@ -17,7 +17,7 @@ import (
 	"github.com/richardwilkes/canvas/path"
 )
 
-// Corpus growth: extra geometry coverage for the operations the corpus already draws — hairline AA/non-AA splits,
+// Extra geometry coverage for the operations the corpus already draws — hairline AA/non-AA splits,
 // rotated ovals and round rects (each leaves its axis-aligned specialized op), degenerate arcs, inverse fills under
 // clips, and point-mode edge cases.
 

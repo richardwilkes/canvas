@@ -1053,8 +1053,7 @@ type BitmapProcContext struct {
 // OpaqueAlpha reports whether the pixmap is opaque and the paint alpha is 255.
 func (c *BitmapProcContext) OpaqueAlpha() bool { return c.opaque }
 
-// maxCountForBufferSize computes the max sample count that fits the fixed buffer for the current matrix/filter
-// configuration.
+// maxCount computes the max sample count that fits the fixed buffer for the current matrix/filter configuration.
 func (c *BitmapProcContext) maxCount() int {
 	size := int32(bitmapProcBufMax * 4)
 	size &^= 3

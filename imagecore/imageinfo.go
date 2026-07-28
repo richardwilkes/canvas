@@ -70,9 +70,9 @@ func (ct ColorType) BytesPerPixel() int {
 	}
 }
 
-// Supported reports whether the port implements pixel storage and conversion for ct — the supported color-type matrix:
-// N32 (RGBA/BGRA 8888), A8, Gray8, RGB565, RGBA_F16 (convert-only), 888x. This is the canonical definition of that
-// matrix; everything else that speaks of it is bounded by this set.
+// Supported reports whether the library implements pixel storage and conversion for ct — the supported color-type
+// matrix: N32 (RGBA/BGRA 8888), A8, Gray8, RGB565, RGBA_F16 (convert-only), 888x. This is the canonical definition of
+// that matrix; everything else that speaks of it is bounded by this set.
 func (ct ColorType) Supported() bool {
 	switch ct {
 	case ColorTypeAlpha8, ColorTypeRGB565, ColorTypeRGBA8888, ColorTypeRGB888x, ColorTypeBGRA8888,

@@ -25,7 +25,7 @@ import (
 var fillRectOpClassID = GenOpClassID()
 
 // fillRectOpPool is the free list of fillRectOp shells (see oppool.go); fillRectQuadBufferPool holds their QuadBuffers,
-// recycled/borrowed alongside (B.3).
+// recycled/borrowed alongside.
 var (
 	fillRectOpPool         opPool[fillRectOp]
 	fillRectQuadBufferPool opPool[QuadBuffer[colorAndAA]]

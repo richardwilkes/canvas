@@ -14,7 +14,7 @@ import (
 	"github.com/richardwilkes/canvas/geom"
 )
 
-// Corpus growth: the blur mask filter — the one mask filter with a dedicated GPU lane on both sides. Covers the
+// The blur mask filter — the one mask filter with a dedicated GPU lane on both backends. Covers the
 // four styles, rect/rrect/circle/path geometries (each takes a different specialized blur lane), stroked geometry, and
 // the respectCTM flag.
 

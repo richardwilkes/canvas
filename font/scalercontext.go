@@ -334,7 +334,7 @@ type ScalerContext struct {
 	typeface   *Typeface
 	rec        ScalerRec
 	single     geom.Matrix // cached rec.singleMatrix()
-	strikePpem uint16      // requested bitmap-strike ppem derived from the kFull scale
+	strikePpem uint16      // requested bitmap-strike ppem derived from the y scale
 	// generateImageFromPath: styled glyphs must render through their (styled) path.
 	generateImageFromPath bool
 	isSing                bool // cached rec.singular()
@@ -574,7 +574,7 @@ func (c *ScalerContext) makeGlyph(packedID PackedGlyphID) *Glyph {
 		return g
 	}
 
-	// The SDF pad (E.1): the SDF lane is the rec format itself (MakeSDFTMaskSpec), so the bounds are outset by
+	// The SDF pad: the SDF lane is the rec format itself (MakeSDFTMaskSpec), so the bounds are outset by
 	// DistanceFieldPad here directly; the format was already MaskSDF from generateMetrics. Color lanes (COLR/bitmap)
 	// override the format per glyph and take no pad.
 	if g.Format == MaskSDF {
@@ -770,8 +770,8 @@ func (c *ScalerContext) getImage(g *Glyph) {
 
 	if unfiltered.Format == MaskARGB32 {
 		if !maskfilter.AcceptsColorMask(mf) {
-			// filterMask returns false on a kARGB32 source for this filter, so getImage copies the unfiltered mask —
-			// the bounds pass was skipped too, so the rects and formats line up.
+			// filterMask returns false on a MaskARGB32 source for this filter, so getImage copies the unfiltered
+			// mask — the bounds pass was skipped too, so the rects and formats line up.
 			if unfiltered.IRect() == g.IRect() && g.Format == MaskARGB32 {
 				copy(g.Image32, unfiltered.Image32)
 			}
@@ -932,7 +932,7 @@ func (c *ScalerContext) generateMask(g *Glyph, bounds geom.IRect) {
 	c.internalGetPath(g)
 	devPath := g.Path()
 	if devPath == nil {
-		// No outline host exists in the port other than paths; nothing to draw.
+		// No outline host exists in the library other than paths; nothing to draw.
 		return
 	}
 
@@ -941,7 +941,7 @@ func (c *ScalerContext) generateMask(g *Glyph, bounds geom.IRect) {
 	a8FromLCD := c.rec.Flags&recFlagGenA8FromLCD != 0
 	hairline := g.pathIsHairline
 
-	// The SDF lane (E.1): rasterize A8 coverage at the bounds inset by the pad, then generate the distance field into
+	// The SDF lane: rasterize A8 coverage at the bounds inset by the pad, then generate the distance field into
 	// the glyph's padded plane.
 	if g.Format == MaskSDF {
 		inner := bounds

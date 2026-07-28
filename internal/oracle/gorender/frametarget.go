@@ -18,9 +18,9 @@ import (
 
 // FrameTarget is a persistent GL render target for frame-loop measurement: one SurfaceDrawContext wrapped in a GL
 // canvas device, reused across many frames — unlike RenderScenarioGPU, which creates a fresh surface per call for the
-// once-per-scenario golden render. Built for the retired paired C-vs-Go frame-time baseline, it now backs the
-// per-frame allocation gate (framealloc_test.go), mirroring the persistent surface a real render loop (unison) reuses
-// across frames so the measurement is the steady-state per-frame recording/batching/flush cost, not surface creation.
+// once-per-scenario golden render. It backs the per-frame allocation gate (framealloc_test.go), mirroring the
+// persistent surface a real render loop (unison) reuses across frames so the measurement is the steady-state per-frame
+// recording/batching/flush cost, not surface creation.
 type FrameTarget struct {
 	g   *GPUContext
 	sdc *gl.SurfaceDrawContext

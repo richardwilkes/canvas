@@ -10,11 +10,11 @@
 // Guards against the "silent no-op" class of GPU correctness gap: when MakePaint cannot convert a paint's shader or
 // color filter to a fragment processor it returns ok=false, and the GPU device then draws *nothing* — no error, no
 // fallback, just a blank result. Two real instances shipped and were caught only later: image shaders and perlin-noise
-// shaders (S121), both because MakeShaderFP's default case returned nil for a shader a C client can actually construct.
+// shaders, both because MakeShaderFP's default case returned nil for a shader a caller can actually construct.
 //
 // TestGPUEffectCoverageNoSilentNoOp asserts every paint-attachable shader and color-filter family in the public
-// shaders/colorfilter packages (the surface unison constructs effects through, since the prior C-API façade was
-// removed) converts (MakePaint returns ok=true). TestEffectCoverageIsExhaustive then parses those packages' sources and
+// shaders/colorfilter packages (the surface unison constructs effects through) converts (MakePaint returns ok=true).
+// TestEffectCoverageIsExhaustive then parses those packages' sources and
 // fails if a new exported shader/color-filter constructor is added without either a coverage case or an explicit
 // filter-internal exclusion here — so a future family cannot silently regress the same way. Skips the live-draw
 // assertions when no GL context is available; the exhaustiveness guard needs no GL.
@@ -205,9 +205,8 @@ var filterInternalConstructors = map[string]bool{
 
 // TestEffectCoverageIsExhaustive parses the shaders and colorfilter package sources and asserts that every exported
 // constructor returning a Shader or ColorFilter has either a coverage case above or an explicit filter-internal
-// exclusion. This is the future-proof half (previously anchored to the removed skcapi façade's 1:1 mirror): adding a
-// new paint-attachable effect constructor without wiring a GPU conversion case here fails this test, forcing the
-// silent-no-op question to be answered.
+// exclusion: adding a new paint-attachable effect constructor without wiring a GPU conversion case here fails this
+// test, forcing the silent-no-op question to be answered.
 func TestEffectCoverageIsExhaustive(t *testing.T) {
 	covered := map[string]bool{}
 	for _, tc := range shaderCoverageCases(rgbaTestImage(4, 4)) {

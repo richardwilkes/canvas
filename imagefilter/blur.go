@@ -24,7 +24,7 @@ const maxBlurSigma = 532
 type blurFilter struct {
 	filterDefaults
 	sigma geom.Size // parameter space
-	// legacyTileMode: kDecal means no legacy tiling (crops handle it); anything else emulates the historical tiling
+	// legacyTileMode: shaders.TileDecal means no legacy tiling (crops handle it); anything else emulates the tiling
 	// applied when no crop rect was provided.
 	legacyTileMode shaders.TileMode
 }

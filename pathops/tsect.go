@@ -1194,7 +1194,7 @@ type closestRecord struct {
 	c2Index  int
 }
 
-// addIntersection records this record's matched endpoint pair as an intersection in in.
+// addIntersection records this record's matched endpoint pair into in.
 func (r *closestRecord) addIntersection(in *intersections) {
 	r1t := r.c1Span.startT
 	if r.c1Index != 0 {

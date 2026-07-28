@@ -269,7 +269,7 @@ func boundsOrEmptyPairs(pos []float32) geom.Rect {
 	return geom.RectLTRB(l, t, r, b)
 }
 
-// glyphBytes encodes glyph IDs as the little-endian byte stream measureText's kGlyphID encoding reads.
+// glyphBytes encodes glyph IDs as the little-endian byte stream font.TextEncodingGlyphID reads.
 func glyphBytes(glyphs []uint16) []byte {
 	out := make([]byte, len(glyphs)*2)
 	for i, g := range glyphs {

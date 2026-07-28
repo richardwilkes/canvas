@@ -7,7 +7,7 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// The sk_encode_* encoders: PNG via image/png with the zlib level mapped onto Go's coarser scale (encode parity is
+// The image encoders: PNG via image/png with the zlib level mapped onto Go's coarser scale (encode parity is
 // decode-back equality, not byte equality), JPEG via image/jpeg (quality passthrough; alpha is ignored on premul input,
 // which feeding Go's encoder premul bytes as RGBA matches), and WebP: lossless through the pure-Go VP8L encoder, lossy
 // through the pure-Go VP8 encoder (codecs/internal/vp8enc + webplossy.go).
@@ -48,7 +48,7 @@ func readRGBA(img *imagecore.Image) *image.RGBA {
 	return out
 }
 
-// EncodePNG implements sk_encode_png: compressionLevel is a zlib level (0..9), mapped onto Go's levels. Returns nil on
+// EncodePNG encodes img as PNG: compressionLevel is a zlib level (0..9), mapped onto Go's levels. Returns nil on
 // failure.
 func EncodePNG(img *imagecore.Image, compressionLevel int) []byte {
 	if img == nil {
@@ -77,7 +77,7 @@ func EncodePNG(img *imagecore.Image, compressionLevel int) []byte {
 	return buf.Bytes()
 }
 
-// EncodeJPEG implements sk_encode_jpeg. Alpha is ignored on premul input, which feeding the premultiplied bytes as RGBA
+// EncodeJPEG encodes img as JPEG. Alpha is ignored on premul input, which feeding the premultiplied bytes as RGBA
 // reproduces. Returns nil on failure.
 func EncodeJPEG(img *imagecore.Image, quality int) []byte {
 	if img == nil {
@@ -99,7 +99,7 @@ func EncodeJPEG(img *imagecore.Image, quality int) []byte {
 	return buf.Bytes()
 }
 
-// EncodeWebP implements sk_encode_webp. A lossless request encodes through the pure-Go VP8L encoder; a lossy request
+// EncodeWebP encodes img as WebP. A lossless request encodes through the pure-Go VP8L encoder; a lossy request
 // encodes through the pure-Go VP8 encoder with quality on the standard WebP 0..100 scale, adding a losslessly-coded
 // ALPH chunk in a VP8X container when the image is not opaque (webplossy.go). Both lanes consume unpremultiplied RGBA.
 // Out-of-range quality fails for both compression modes; the in-range value has no lossless meaning (VP8L here is

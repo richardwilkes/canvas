@@ -130,7 +130,7 @@ func (s *strokeIterator) next() bool {
 			return true
 		}
 		if s.atVerb(0) == strokeIterVerbContourFinished {
-			// Don't let "kContourFinished" be prevVerb at the start of the next contour.
+			// Don't let strokeIterVerbContourFinished be prevVerb at the start of the next contour.
 			s.queueCount = 0
 		}
 	}
@@ -255,7 +255,7 @@ func (s *strokeIterator) finishOpenContour() bool {
 			// when it's processed.
 			s.enqueue(strokeIterVerbMoveWithinContour, s.firstPtsInContour, s.firstWInContour)
 		case stroke.CapRound:
-			// The "kCircle" verb serves as our barrier to prevent the first stroke from getting joined with the end of
+			// The circle verb serves as our barrier to prevent the first stroke from getting joined with the end of
 			// the contour. We just need to make sure that the first point of the contour goes last.
 			backIdx := strokeIterVerbPtCount(s.backVerb()) - 1
 			s.enqueue(strokeIterVerbCircle, s.backPts()[backIdx:backIdx+1], 1)

@@ -65,7 +65,7 @@ type Device interface {
 	DrawSpecial(img *SpecialImage, deviceMatrix geom.Matrix, sampling shaders.SamplingOptions,
 		pp *PaintParams)
 	// DrawImageRect draws img with the strict source-rect constraint (MakeFromImage's fractional-src lane; geometry is
-	// in local coordinates via LocalToDevice). The image is polymorphic (S118): raster devices resolve a texture
+	// in local coordinates via LocalToDevice). The image is polymorphic: raster devices resolve a texture
 	// backing to CPU pixels, the GPU device samples it directly.
 	DrawImageRect(img imagecore.DrawableImage, src, dst geom.Rect, sampling shaders.SamplingOptions,
 		pp *PaintParams)

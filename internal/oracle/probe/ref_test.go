@@ -9,19 +9,13 @@
 
 // Reference-value record/replay for the numeric probes.
 //
-// The probes were originally live differentials: each one called into the C Skia library (via skiac) for the reference
-// answer and compared the Go port against it. The C library is gone, so the answers it gave are frozen here instead —
-// captured from Skia one last time on darwin/arm64 and checked in under testdata/ref. The values are still *Skia's*, so
-// the probes remain correctness references rather than mere pins on the port's current behavior, and their agree()
-// tolerances keep their original meaning.
+// The reference answers are Skia's, captured on darwin/arm64 and checked in under testdata/ref. Because the values
+// are Skia's rather than this library's own, the probes remain correctness references rather than mere pins on current
+// behavior, and their agree() tolerances keep their original meaning.
 //
 // What this cannot do is answer for input that was never captured. A probe that invents new input (the SVG parse fuzz
-// is the notable one) can only replay the corpus frozen here; growing it needs a Skia build from git history. Corpus
-// changes therefore fail loudly (missing key) rather than silently skipping.
-//
-// This file is the replay half and ships unconditionally. The capture half (ref_ops_capture_test.go, build tag
-// `skiaoracle`) is what talked to skiac; it was removed with the rest of the C bindings and survives only in git
-// history.
+// is the notable one) can only replay the corpus frozen here; growing it would need a Skia build from git history.
+// Corpus changes therefore fail loudly (missing key) rather than silently skipping.
 package probe
 
 import (
@@ -272,7 +266,7 @@ type strokeResult struct {
 	isFill   bool
 }
 
-// The Skia's PathMeasure record. Measuring is a stateful walk — construct, read the contour, step to the next — so the
+// The PathMeasure record. Measuring is a stateful walk — construct, read the contour, step to the next — so the
 // fixture freezes the whole walk for one (path, forceClosed, resScale) as an ordered list of contours, rather than
 // trying to key each individual query. The fractions and spans sampled are fixed constants in the probe, so both halves
 // index them identically.

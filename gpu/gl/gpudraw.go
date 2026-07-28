@@ -223,7 +223,7 @@ func (p *OpsRenderPass) BindBuffers(indexBuffer, instanceBuffer, vertexBuffer An
 	// Bind the instance buffer up front only when the draws won't rebind it per-baseInstance anyway, and defer the
 	// vertex buffer whenever an indexed draw without baseVertexBaseInstance support will have to bake its baseVertex
 	// into the attrib pointers — the draw then performs the single glVertexAttribPointer pass per attribute instead of
-	// an eager offset-0 pass here plus a rebind at the real offset (B.1: that double pass was ~half the panel frame's
+	// an eager offset-0 pass here plus a rebind at the real offset (that double pass was ~half the panel frame's
 	// VertexAttribPointer traffic). A driver workaround for broken base-vertex support in non-indexed draws is outside
 	// the desktop trim, so non-indexed draws always bind eagerly and pass baseVertex to glDrawArrays directly.
 	if instanceBuffer != nil && p.gpu.glCaps().BaseVertexBaseInstanceSupport() {

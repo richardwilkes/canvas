@@ -7,8 +7,7 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// Tests migrated from the retired façade suite: they keep the core behaviors that previously had coverage only through
-// the façade's forwarding tests.
+// Endpoint checks for the public SVG-style elliptical arc entry points.
 
 package path
 

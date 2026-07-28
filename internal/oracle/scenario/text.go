@@ -10,7 +10,7 @@
 // Text scenarios: rotated and scaled text is the SDFT demand trigger, so the corpus carries scenes exercising
 // the distance-field window (device text size in [162, glyphsAsPathsFontSize]) under rotation and scaling, plus a
 // rotated direct-mask scene below the window. The scenarios draw with an embedded copy of Roboto-Regular (the same
-// fixture the probe tests use) so every render rasterizes identical outlines through the port's own scaler, making
+// fixture the probe tests use) so every render rasterizes identical outlines through the library's own scaler, making
 // text output deterministic per platform and gated in every lane against the per-platform golden sets.
 
 package scenario

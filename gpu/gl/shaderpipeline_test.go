@@ -137,7 +137,7 @@ func newShaderRecordingContext(t *testing.T) *DirectContext {
 }
 
 // newShaderRecordingContextWithOptions is newShaderRecordingContext with explicit context options, for tests that pin
-// option-dependent behavior — e.g. the per-OS fGlyphsAsPathsFontSize (E.1) — without depending on the host GOOS's
+// option-dependent behavior — e.g. the per-OS glyphs-as-paths font size — without depending on the host GOOS's
 // defaults.
 func newShaderRecordingContextWithOptions(t *testing.T, options *gpu.ContextOptions) *DirectContext {
 	t.Helper()

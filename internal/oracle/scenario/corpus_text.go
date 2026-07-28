@@ -14,8 +14,8 @@ import (
 	"github.com/richardwilkes/canvas/geom"
 )
 
-// More text scenes, including color emoji. Text renders through the port's own rasterizer, deterministic per platform,
-// so these scenarios gate in every lane against the per-platform golden sets like any other scenario.
+// More text scenes, including color emoji. Text renders through the library's own rasterizer, deterministic per
+// platform, so these scenarios gate in every lane against the per-platform golden sets like any other scenario.
 
 func regText(name string, draw func(c Canvas)) {
 	Register(Scenario{Name: name, Width: 256, Height: 256, Draw: draw})

@@ -64,7 +64,7 @@ const floatColorDecimalCount = 4
 
 // appendColorComponentF appends value clamped to [0,1] with four significant digits.
 func appendColorComponentF(dst []byte, value float32) []byte {
-	const factor = 10 * 10 * 10 * 10 // int_pow(10, kFloatColorDecimalCount)
+	const factor = 10 * 10 * 10 * 10 // 10^4, the four significant digits
 	x := int(geom.RoundToInt(value * factor))
 	if x >= factor || x <= 0 { // clamp to 0-1
 		if x > 0 {

@@ -159,7 +159,7 @@ func genProgramKey(b *gpu.KeyBuilder, programInfo *ProgramInfo, caps *Caps) {
 
 	b.AddBits(16, uint32(pipeline.WriteSwizzle()), "writeSwizzle")
 	b.AddBool(pipeline.SnapVerticesToPixelCenters(), "snapVertices")
-	// The base descriptor only stores whether or not the primitiveType is kPoints.
+	// The base descriptor only stores whether or not the primitiveType is PrimitiveTypePoints.
 	b.AddBool(programInfo.PrimitiveType() == gpu.PrimitiveTypePoints, "isPoints")
 
 	// Put a clean break between the "common" data and any backend data appended later.

@@ -268,7 +268,7 @@ func stencilDrawPath(sdc *SurfaceDrawContext, pr PathRenderer, clip Clip, bounds
 	paint := NewPaint()
 	paint.SetXPFactory(DisableColorXPFactory())
 
-	// kMSAA is the only type of AA that's possible on a stencil buffer.
+	// MSAA is the only type of AA that's possible on a stencil buffer.
 	pathAAType := gpu.AATypeNone
 	if aa == gpu.AAYes {
 		pathAAType = gpu.AATypeMSAA

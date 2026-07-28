@@ -7,12 +7,12 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// Package probe holds the oracle numeric probes: bit-exact differential tests that drive the Go port over shared input
+// Package probe holds the oracle numeric probes: bit-exact differential tests that drive the library over shared input
 // corpora and compare against the oracle's frozen answers. These lock in the math-core and path requirement that pure
 // math match the oracle exactly.
 //
-// The probes originally drove the C library live (via skiac, including its C++ shim). The C side is gone; its answers
-// were captured once, keyed by a hash of the inputs, into testdata/ref (see ref_test.go). This package is cgo-free.
+// The oracle's answers were captured once, keyed by a hash of the inputs, into testdata/ref (see ref_test.go). This
+// package is cgo-free.
 package probe
 
 import (
@@ -24,10 +24,10 @@ import (
 )
 
 // Comparison policy. Where the C++ computes through double before storing (affine setConcat via muladdmul, affine
-// invert via dcross, rect ops, scalar rounding), the Go port must match bit-exactly. Where the C++ does float
+// invert via dcross, rect ops, scalar rounding), the library must match bit-exactly. Where the C++ does float
 // arithmetic (perspective rowcol3/scross, mapPoints procs, Skia's Geometry interpolation), clang's default
-// -ffp-contract=on fuses mul+add chains into FMAs, and which chains fuse is a per-compiler, per-platform choice the
-// port cannot (economically) replicate, and the tolerance-based policy declines to chase it. For those paths the probes
+// -ffp-contract=on fuses mul+add chains into FMAs, and which chains fuse is a per-compiler, per-platform choice this
+// library cannot (economically) replicate, so the tolerance-based policy declines to chase it. For those paths the probes
 // instead require both results to lie within probeK*eps32*mag of each other, where mag is the magnitude of the
 // expression's terms evaluated in float64 — tight enough that any formula or fast-path porting bug fails, while
 // contraction-level noise (including its amplification through cancellation and perspective division) passes by
@@ -44,10 +44,7 @@ func nonFinite(v float32) bool {
 	return math.IsNaN(f) || math.IsInf(f, 0)
 }
 
-// ptsAgree compares two point slices under agree() per axis (see agree). It lives in this cross-platform helper file —
-// rather than beside the geometry probes that first used it — because the probes that shared it were once split by
-// whether they needed the C++ shim, which was build-excluded on Windows (mingw cannot resolve Skia's MSVC-mangled C++
-// exports). Replay needs no linker, so every probe now runs everywhere and the split is gone.
+// ptsAgree compares two point slices under agree() per axis (see agree).
 func ptsAgree(t *testing.T, label string, got, want []geom.Point, magX, magY float64) {
 	t.Helper()
 	if len(got) != len(want) {

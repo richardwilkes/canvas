@@ -151,7 +151,7 @@ func (i *bitmapTextGeoProcImpl) SetData(pdman *ProgramDataManager, caps *gpu.Sha
 
 // appendIndexUVVaryings extracts the texture page index and texel coordinates from the packed inTextureCoords attribute
 // (the 2-bit page lives in bits 13/14 of x) and hands them to the fragment shader as varyings. st (may be nil) is the
-// unnormalized-coords varying only the SDFT processors consume (E.1).
+// unnormalized-coords varying only the SDFT processors consume.
 func appendIndexUVVaryings(args *GPEmitArgs, numTextureSamplers int, inTexCoordsName, atlasDimensionsInvName string, uv, texIdx, st *Varying) {
 	vb := args.VertBuilder
 	if args.ShaderCaps.IntegerSupport {

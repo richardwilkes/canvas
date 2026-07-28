@@ -487,9 +487,9 @@ func filterKernelCases(child Shader) []struct {
 	}
 }
 
-// TestFilterKernelsCompileAllocFree locks the goal for the S94-line's final file: every image-filter runtime kernel
-// compiles with zero per-draw heap allocations once the pipeline pool is warm (the capturing closures + new(...)
-// scratch of the old form are gone, replaced by static stages reading pooled contexts). Measured through the real
+// TestFilterKernelsCompileAllocFree pins that every image-filter runtime kernel compiles with zero per-draw heap
+// allocations once the pipeline pool is warm — static stages reading pooled contexts, rather than capturing closures
+// and new(...) scratch. Measured through the real
 // Compile → RecyclePipeline pool path with an allocation-free child.
 func TestFilterKernelsCompileAllocFree(t *testing.T) {
 	if raceEnabled {

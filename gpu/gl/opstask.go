@@ -666,7 +666,7 @@ func (t *OpsTask) OnExecute(flushState *OpFlushState) bool {
 		// (caps, format, dims, usage, sampleCnt) and no render-target identity (ComputeSharedAttachmentUniqueKey), and
 		// a finished SurfaceDrawContext leaves both user-bit residue (the clip mask helper's cover passes only zero
 		// what they rasterize) and clip-bit residue (ClearStencilClip only ever clears within a scissor) behind. Under
-		// DMSAA — where the shared, port-allocated MSAA stencil attachment is the one in play rather than a wrapped
+		// DMSAA — where the shared, library-allocated MSAA stencil attachment is the one in play rather than a wrapped
 		// FBO's own per-surface stencil — reloading that residue paints stray bands into a later render target that
 		// carries no clip at all. Skipping the clear could save at most one glClear per SurfaceDrawContext anyway:
 		// setNeedsStencil requests kUserBitsCleared once per context, and split tasks ask for kPreserved.
@@ -774,10 +774,11 @@ func (t *OpsTask) MergeFrom(tasks []RenderTask) int {
 		t.totalBounds.Join(toMerge.totalBounds)
 		t.renderPassXferBarriers |= toMerge.renderPassXferBarriers
 		if t.initialStencilContent == StencilContentDontCare {
-			// Propagate the first stencil content that isn't kDontCare: once it has any kind of initial content that
-			// isn't don't-care, the initial contents of subsequent merged opsTasks don't matter. (This works because
-			// the opsTasks all target the same render target in painter's order — kPreserved happens automatically with
-			// a merge, and kClear is automatic because ops leave the stencil in a cleared state when finished.)
+			// Propagate the first stencil content that isn't StencilContentDontCare: once it has any kind of initial
+			// content that isn't don't-care, the initial contents of subsequent merged opsTasks don't matter. (This
+			// works because the opsTasks all target the same render target in painter's order — the preserved case
+			// happens automatically with a merge, and the cleared case is automatic because ops leave the stencil in a
+			// cleared state when finished.)
 			t.initialStencilContent = toMerge.initialStencilContent
 		}
 		t.usesMSAASurface = t.usesMSAASurface || toMerge.usesMSAASurface

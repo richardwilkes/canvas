@@ -7,9 +7,8 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// Tests migrated from the retired façade suite: they keep the core behaviors that previously had coverage only through
-// the façade's forwarding tests. The façade's blur image-filter differential rendered with sub-2 sigmas, which was the
-// suite's only exercise of the GaussianPass (true 1D kernel) lane; this pins it directly.
+// Checks for the raster Gaussian blur pass over impulse and solid-clamp inputs. These pin the GaussianPass (true 1D
+// kernel) lane directly, which only sub-2-sigma blurs reach.
 
 package filtercore
 

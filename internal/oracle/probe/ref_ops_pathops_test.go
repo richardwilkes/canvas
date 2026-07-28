@@ -9,10 +9,9 @@
 
 // The path-ops reference values, replay-only and untagged.
 //
-// Unlike the other op groups there is no capture counterpart left: capture read Skia's result paths through the SVG
-// emit/parse pair (the C API exposes no path iterator, so that was the only readable form), and path/svg.go is gone.
-// Recapturing these would mean restoring both it and the capture code from git history. The fixtures are checked in;
-// that is the supported state.
+// Unlike the other op groups there is no capture counterpart left, so recapturing these would mean restoring the
+// capture code — and the SVG emit/parse pair it read result paths through — from git history. The fixtures are checked
+// in; that is the supported state.
 
 package probe
 
@@ -34,7 +33,7 @@ func mustPath(s string) *path.Path {
 
 // --- path ops ---
 //
-// These return the oracle's result already materialized as a port path. Live, the probe had to ferry Skia's result
+// These return the oracle's result already materialized as a canvas path. Live, the probe had to ferry Skia's result
 // across through the SVG emit/parse pair — the C API exposes no path iterator, so that was the only readable form. The
 // fixture stores the geometry directly, so the bridge (and with it the last reason for the SVG parser to exist) is
 // gone.
@@ -55,7 +54,7 @@ func refPathOpsSimplify(s *scenario.PathSpec) (*path.Path, bool) {
 	return mustPath(res), true
 }
 
-// refPathOpsBuilder replays an Skia's OpBuilder script: a sequence of (path, op) adds resolved as one.
+// refPathOpsBuilder replays a Skia OpBuilder script: a sequence of (path, op) adds resolved as one.
 func refPathOpsBuilder(adds []builderAdd) (*path.Path, bool) {
 	res, ok := split2(refGet("PathOpsBuilder", hashKey(encBuilderScript(adds))))
 	if !mustBool(ok) {

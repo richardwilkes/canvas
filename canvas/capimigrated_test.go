@@ -7,8 +7,7 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// Tests migrated from the retired façade suite: they keep the core behaviors that previously had coverage only through
-// the façade's forwarding tests.
+// Entry-point behavior checks driven through the public canvas surface.
 
 package canvas
 
@@ -82,7 +81,7 @@ func TestCanvasLocalClipBoundsEmpty(t *testing.T) {
 	}
 }
 
-// TestCanvasQuickRejectPath covers sk_canvas_quick_reject_path's semantics on the core API: an empty path is always
+// TestCanvasQuickRejectPath covers QuickRejectPath's semantics: an empty path is always
 // rejected, a path outside the clip is rejected, and a path inside it is not.
 func TestCanvasQuickRejectPath(t *testing.T) {
 	c, _ := newWhiteCanvas()

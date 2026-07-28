@@ -20,7 +20,7 @@ import (
 	"github.com/richardwilkes/canvas/internal/oracle/scenario"
 )
 
-// TestGoGPUDMSAAvsSelfCapturedGolden is the dynamic-MSAA lane's pixel gate: the corpus rendered through the port's GL
+// TestGoGPUDMSAAvsSelfCapturedGolden is the dynamic-MSAA lane's pixel gate: the corpus rendered through the library's GL
 // backend with the dynamic-MSAA surface-props flag set (the production wrapped-FBO path), diffed against the
 // self-captured per-platform DMSAA goldens under the exact1 profile (see checkGPUGoldens for why exact1 and why the
 // software-renderer pin).

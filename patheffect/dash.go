@@ -40,8 +40,8 @@ func findFirstInterval(intervals []float32, phase float32) (dashLength float32, 
 		}
 	}
 	// If we get here, phase "appears" to be larger than our length. This shouldn't happen with perfect precision, but
-	// we can accumulate errors during the initial length computation (rounding can make our sum be too big or too
-	// small. In that event, we just have to eat the error here.
+	// we can accumulate errors during the initial length computation (rounding can make the sum too big or too
+	// small). In that event, the error just has to be absorbed here.
 	return intervals[0], 0
 }
 
@@ -224,8 +224,8 @@ func cullPath(srcPath *path.Path, rec *stroke.Rec, cullRect *geom.Rect, interval
 
 			pts := [2]geom.Point{itPts[0], itPts[1]}
 			if clipLine(&pts, bounds, intervalLength, float32(math.Mod(accum, float64(intervalLength)))) {
-				// pts[0] may have just been changed by clip_line(). If that's not where we ended the previous lineTo(),
-				// we need to moveTo() there.
+				// pts[0] may have just been changed by clipLine. If that's not where the previous lineTo ended, a moveTo
+				// is needed there.
 				if last, hasLast := builder.LastPt(); !hasLast || last != pts[0] {
 					builder.MoveToPt(pts[0])
 				}
@@ -407,7 +407,7 @@ func dashInternalFilter(dst, src *path.Path, rec *stroke.Rec, cullRect *geom.Rec
 		}
 
 		// Using double precision to avoid looping indefinitely due to single precision rounding (for extreme
-		// path_length/dash_length ratios). See test_infinite_dash() unittest.
+		// path-length/dash-length ratios).
 		distance := float64(0)
 		dlen := float64(initialDashLength)
 
@@ -475,8 +475,8 @@ func MakeDash(intervals []float32, phase float32) stroke.PathEffect {
 	return d
 }
 
-// DashIntervals exports the effect's intervals (E.1: the SDFT strike-spec construction rescales dash intervals into the
-// distance-field strike's space). The returned slice must not be mutated.
+// DashIntervals exports the effect's intervals, which the SDFT strike-spec construction rescales into the
+// distance-field strike's space. The returned slice must not be mutated.
 func (d *dashEffect) DashIntervals() []float32 { return d.intervals }
 
 // DashPhase exports the effect's phase (see DashIntervals).

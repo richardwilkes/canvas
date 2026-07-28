@@ -549,7 +549,7 @@ type quadPerEdgeAAGeometryProcessor struct {
 	attrs [6]Attribute // position, coverage, color, localCoord, geomSubset, texSubset
 	GPBase
 	// samplerStorage inlines the textured form's single sampler so the GP owns no external heap backing — the
-	// precondition for the plain full-zero pooling in gppool.go (B.3).
+	// precondition for the plain full-zero pooling in gppool.go.
 	samplerStorage [1]TextureSampler
 	coverageMode   QuadCoverageMode
 	// The position attribute may have coverage built into it, so float3 is an ambiguous type and may mean 2d with

@@ -7,10 +7,8 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// This probe checks the port's analytic AA edge walkers against Skia's Analytic*'s, replayed from the frozen reference
-// fixtures (see ref.go). It once drove Skia's C++ internals live through the skiac shim, which confined it to
-// darwin/linux — mingw g++ cannot resolve Skia's MSVC-mangled C++ exports. Replay needs no linker, so it now runs
-// everywhere.
+// This probe checks the library's analytic AA edge walkers against Skia's Analytic*'s, replayed from the frozen
+// reference fixtures (see ref_test.go).
 
 package probe
 
@@ -22,7 +20,7 @@ import (
 	"github.com/richardwilkes/canvas/raster"
 )
 
-// TestAnalyticEdgeSegmentsProbe compares the raw analytic quad/cubic edge segment streams against the C library's,
+// TestAnalyticEdgeSegmentsProbe compares the raw analytic quad/cubic edge segment streams against Skia's,
 // bit-exactly (all the math past the float->FDot6 conversion is integer).
 func TestAnalyticEdgeSegmentsProbe(t *testing.T) {
 	rng := rand.New(rand.NewSource(0xedbe))

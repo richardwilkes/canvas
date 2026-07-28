@@ -67,7 +67,7 @@ func TestProgramCacheHitReuseByteIdentical(t *testing.T) {
 	}
 }
 
-// TestProgramCacheHitIsAllocFree locks the S104 win: a program-cache hit — the steady-state per-draw case — allocates
+// TestProgramCacheHitIsAllocFree pins that a program-cache hit — the steady-state per-draw case — allocates
 // nothing (the reused descriptor storage plus the m[string(keyScratch)] no-allocation map lookup). This is what takes
 // the GPU-frame benchmark's per-draw program lookup to zero allocs.
 func TestProgramCacheHitIsAllocFree(t *testing.T) {

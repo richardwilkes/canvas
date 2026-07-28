@@ -132,7 +132,8 @@ func (bb *BlendBlitter) blendSpan(span []uint32) {
 func (bb *BlendBlitter) blendSpanCoverage(span []uint32, aa uint32) {
 	if bb.lowp {
 		if bb.prescale {
-			// scale_1_float: from_float(aa/255) reproduces aa exactly, so src scales by div255(v*aa).
+			// Converting aa/255 into the lowp fixed-point form reproduces aa exactly, so scaling the source is
+			// just div255(v*aa).
 			s := pm8{
 				r: div255(bb.sc.r * aa),
 				g: div255(bb.sc.g * aa),

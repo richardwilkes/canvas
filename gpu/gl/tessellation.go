@@ -72,7 +72,7 @@ const (
 	PatchAttribColor              PatchAttribs = 1 << 3 // [ubyte4 or float4] per-patch colors
 	PatchAttribPaintDepth         PatchAttribs = 1 << 4 // unused by this backend
 	PatchAttribExplicitCurveType  PatchAttribs = 1 << 5 // [float] GPU can't infer curve type from infinity
-	PatchAttribWideColorIfEnabled PatchAttribs = 1 << 6 // flag: kColor is float4 wide color
+	PatchAttribWideColorIfEnabled PatchAttribs = 1 << 6 // flag: PatchAttribColor is float4 wide color
 	PatchAttribSsboIndex          PatchAttribs = 1 << 7 // unused by this backend
 )
 
@@ -134,12 +134,12 @@ func patchStride(attribs PatchAttribs) int {
 // areCusps is set to true if the chop point occurred at a cusp (within tolerance), or if the chop point(s) occurred at
 // 180-degree turnaround points on a degenerate flat line.
 func findCubicConvex180Chops(pts *[4]geom.Point, t *[2]float32, areCusps *bool) int {
-	// If a chop falls within a distance of "kEpsilon" from 0 or 1, throw it out. Tangents become unstable when we chop
+	// If a chop falls within epsilon of 0 or 1, throw it out. Tangents become unstable when we chop
 	// too close to the boundary. This works out because the tessellation shaders don't allow more than 2^10 parametric
 	// segments, and they snap the beginning and ending edges at 0 and 1. So if we overstep an inflection or point of
 	// 180-degree rotation by a fraction of a tessellation segment, it just gets snapped.
 	const epsilon float32 = 1.0 / (1 << 11)
-	// Floating-point representation of "1 - 2*kEpsilon".
+	// Floating-point representation of 1 - 2*epsilon.
 	const ieeeOneMinus2Epsilon uint32 = (127 << 23) - 2*(1<<(24-11))
 
 	p0, p1, p2, p3 := pts[0], pts[1], pts[2], pts[3]

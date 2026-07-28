@@ -87,7 +87,7 @@ func MakeShaderFP(shader shaders.Shader, args *FPArgs, mRec *shaders.MatrixRec) 
 	case *shaders.PerlinNoiseShader:
 		return makePerlinNoiseFP(s, args, mRec)
 	case *shaders.FilterDecalShader:
-		// The kDecal runtime effect (filtercore's layer-space decal wrap): the child samples at the decal's own coords
+		// The decal runtime effect (filtercore's layer-space decal wrap): the child samples at the decal's own coords
 		// (explicit sampling), so it converts against a fresh MatrixRec, and the pending matrix applies around the
 		// decal FP itself — the CPU leg's identity-seeded apply.
 		childRec := shaders.NewMatrixRec(geom.IdentityMatrix())

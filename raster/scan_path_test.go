@@ -199,7 +199,7 @@ func TestFillCurvedPathContainment(t *testing.T) {
 
 func TestFillCubicMatchesFlattenedReference(t *testing.T) {
 	// A cubic blob: verify every span is within the path per Contains at pixel centers (Contains uses the
-	// analytically-correct winding machinery from the port, so agreement within a small band around the boundary
+	// analytically-correct winding machinery from the library, so agreement within a small band around the boundary
 	// validates the forward-differencing edges).
 	p := path.New()
 	p.MoveTo(2, 8)

@@ -32,7 +32,7 @@ import (
 const (
 	dmsaaResidueSize = 256
 	// dmsaaResidueStencilBits is the stencil depth of the offscreen FBO's packed depth-stencil renderbuffer — the FBO
-	// shape a windowing embedder hands the port.
+	// shape a windowing embedder hands the library.
 	dmsaaResidueStencilBits = 8
 )
 

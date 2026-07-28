@@ -14,7 +14,7 @@ import (
 	"github.com/richardwilkes/canvas/geom"
 )
 
-// Corpus growth: image filters, one scenario per sk_imagefilter_new_* constructor the declarative spec reaches
+// Image filters, one scenario per sk_imagefilter_new_* constructor the declarative spec reaches
 // ("image filters per constructor"). Parameter ranges follow the GPU image-filter live differential scenes, which both
 // GPU backends agreed on; those scenes were one-offs outside the corpus, and once these scenarios covered every
 // constructor they reached — all 21 ImageFilterKind values, including the six straggler kernels (morphology,
@@ -192,11 +192,8 @@ func init() {
 	})
 
 	reg("imagefilter-matrix-transform", func(c Canvas) {
-		// The rect is 90x90 rather than the 110x110 it started as because the rotated linear-resample area used to be
-		// held inside a cross-renderer tolerance budget: bilerp weight rounding drifted a couple of LSBs between the
-		// C oracle's SIMD lanes and the port's, and at 110x110 that drifting area exceeded the raster differential's
-		// 0.5% budget on the linux leg. No live budget constrains the geometry now — the C oracle is gone and every
-		// lane gates against self-captured goldens ((near-)bit-exactly) — so the size is simply what the goldens hold.
+		// The 90x90 size is not significant; every lane gates against self-captured goldens ((near-)bit-exactly), so
+		// the size is simply what the goldens hold.
 		c.Clear(white)
 		m := geom.IdentityMatrix()
 		m.SetAll(0.86, -0.5, 60, 0.5, 0.86, -30, 0, 0, 1) // rotate 30 degrees + offset

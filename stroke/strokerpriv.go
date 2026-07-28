@@ -16,7 +16,8 @@ import (
 	"github.com/richardwilkes/canvas/path"
 )
 
-// Cap identifies how a stroke's open ends are drawn. The values match sk_stroke_cap_t.
+// Cap identifies how a stroke's open ends are drawn. The values match canvas.StrokeCap, which is cast directly to
+// this type.
 type Cap uint8
 
 // Cap values.
@@ -26,7 +27,8 @@ const (
 	CapSquare
 )
 
-// Join identifies how a stroke's segment joins are drawn. The values match sk_stroke_join_t.
+// Join identifies how a stroke's segment joins are drawn. The values match canvas.StrokeJoin, which is cast directly
+// to this type.
 type Join uint8
 
 // Join values.

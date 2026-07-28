@@ -82,8 +82,8 @@ func buildPolyEdges(b edgeSink, p *path.Path, iclip *geom.IRect, canCullToTheRig
 			if !ok {
 				break
 			}
-			// clipping can turn 1 line into (up to) kMaxClippedLineSegments, since portions that are clipped out on the
-			// left/right become vertical segments.
+			// Clipping can turn one line into up to geom.LineClipperMaxPoints-1 segments, since portions clipped out on
+			// the left/right become vertical segments.
 			var lines [geom.LineClipperMaxPoints]geom.Point
 			pts := [2]geom.Point{e.Pts[0], e.Pts[1]}
 			lineCount := geom.ClipLine(&pts, clip, &lines, canCullToTheRight)

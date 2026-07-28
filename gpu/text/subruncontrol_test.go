@@ -7,7 +7,7 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// Unit tests pinning the SubRunControl decision functions (E.1): the isSDFT/isDirect size gates (incl. the
+// Unit tests pinning the SubRunControl decision functions: the isSDFT/isDirect size gates (incl. the
 // useSDFTForSmallText MinSDFTRange rule), the paint-style and mask-filter gates, the perspective rules, the getSDFFont
 // bucket sizes/matrix ranges (with the extra-large bucket on darwin), and SDFTMatrixRange reuse.
 

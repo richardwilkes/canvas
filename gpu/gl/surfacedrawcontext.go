@@ -51,12 +51,11 @@ const (
 // crop. paint may be nil (the textured-quad lane); ss may be nil (unused stencil settings).
 func (sdc *SurfaceDrawContext) attemptQuadOptimization(clip Clip, ss *UserStencilSettings, quad *DrawQuad, paint *Paint) quadOptimization {
 	// Optimization requirements:
-	// 1. kDiscard applies when clip bounds and quad bounds do not intersect
-	// 2a. kSubmitted applies when constColor and the final geometry is a pixel-aligned rect (rect clip and (rect quad
-	//     or quad covers clip)), OR
-	// 2b. kSubmitted applies when constColor and rrect clip and quad covers clip
-	// 4. kClipApplied applies when rect clip and (rect quad or quad covers clip)
-	// 5. kCropped in all other scenarios (although a crop may be a no-op)
+	//  1. quadOptDiscarded applies when clip bounds and quad bounds do not intersect.
+	//  2. quadOptSubmitted applies when constColor and either the final geometry is a pixel-aligned rect (rect clip
+	//     and (rect quad or quad covers clip)), or the clip is an rrect the quad covers.
+	//  3. quadOptClipApplied applies when rect clip and (rect quad or quad covers clip).
+	//  4. quadOptCropped in all other scenarios (although a crop may be a no-op).
 	var constColor *colorcore.PMColor4f
 	if ss == nil && paint != nil && !paint.HasCoverageFragmentProcessor() {
 		if paintColor, isConstant := paint.IsConstantBlendedColor(); isConstant {
@@ -65,8 +64,8 @@ func (sdc *SurfaceDrawContext) attemptQuadOptimization(clip Clip, ss *UserStenci
 		}
 	}
 
-	// Save the old AA flags since CropToRect will modify 'quad' and if kCropped is returned it's better to just keep
-	// the old flags instead of introducing mixed edge flags.
+	// Save the old AA flags since CropToRect will modify 'quad' and if quadOptCropped is returned it's better to
+	// just keep the old flags instead of introducing mixed edge flags.
 	oldFlags := quad.EdgeFlags
 
 	// Use the logical size of the render target, which allows for "fullscreen" clears even if the render target has an

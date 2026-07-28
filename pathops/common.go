@@ -10,7 +10,7 @@
 // The shared driver spine the boolean-op and simplify entry points build on — the angle-winding lookup (angleWinding),
 // the undone-span scan (findUndone), the simplify chase walker (findChase), the bounds-sort of the contour list
 // (sortContourList), and the whole coincidence-resolution orchestrator (handleCoincidence) with its per-contour
-// calc/sort-angles and move/missing-coincidence passes. findSortableTop lives in winding.go (session 64).
+// calc/sort-angles and move/missing-coincidence passes. findSortableTop lives in winding.go.
 //
 // The chase list is a *[]*opSpanBase, with appends always going to the tail; sortContourList re-seats the head through
 // the opContourHead sortedHead redirect rather than reassigning a head pointer (see opContourHead); the two markAngle

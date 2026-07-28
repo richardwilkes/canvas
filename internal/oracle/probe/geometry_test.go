@@ -7,10 +7,8 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// This probe checks the port's curve chopping against Skia's Geometry chop/conic routines, replayed from the frozen
-// reference fixtures (see ref.go). It once drove Skia's C++ internals live through the skiac shim, which confined it to
-// darwin/linux — mingw g++ cannot resolve Skia's MSVC-mangled C++ exports. Replay needs no linker, so it now runs
-// everywhere.
+// This probe checks the library's curve chopping against Skia's Geometry chop/conic routines, replayed from the frozen
+// reference fixtures (see ref_test.go).
 
 package probe
 
@@ -72,7 +70,7 @@ func TestChopCubicAtProbe(t *testing.T) {
 	}
 }
 
-// TestConicQuadsProbe: Skia's Conic::computeQuadPOW2 + chopIntoQuadsPOW2 vs the geom port. The count must match exactly
+// TestConicQuadsProbe: Skia's Conic::computeQuadPOW2 + chopIntoQuadsPOW2 vs geom. The count must match exactly
 // (it feeds verb streams); the points get the contraction tolerance.
 func TestConicQuadsProbe(t *testing.T) {
 	rng := rand.New(rand.NewSource(103))
@@ -131,8 +129,8 @@ func TestBuildUnitArcProbe(t *testing.T) {
 			}
 			// Skip (near-)coincident and (near-)opposite vector pairs: the coincident-vector early return branches on
 			// the sign of cross(u, v), whose tiny residue depends on the C compiler's fp-contract choice (Skia behaves
-			// differently on mac-arm64 vs x86 here). The Go port pins the unfused evaluation — cross(u, u) is exactly
-			// zero — so these cases diverge from this platform's C library by design.
+			// differently on mac-arm64 vs x86 here). This library pins the unfused evaluation — cross(u, u) is exactly
+			// zero — so these cases diverge from the reference by design.
 			cross64 := float64(u.X)*float64(v.Y) - float64(u.Y)*float64(v.X)
 			if math.Abs(cross64) < 1e-6 {
 				continue

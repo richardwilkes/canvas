@@ -89,7 +89,7 @@ func typeHasReferences(t reflect.Type) bool {
 // batchable geometry ops store in their inline-array-backed slices are pure POD. The capacity-preserving reset
 // preserves a grown backing across recycle/borrow (reset to length 0 and clear()ed); if any of these element types
 // gained a reference-holding field, a preserved backing could pin stale heap objects beyond the live length. clear()
-// already defends against that, but keeping the types POD keeps the design's reasoning (and the S107 inline-array
+// already defends against that, but keeping the types POD keeps the design's reasoning (and the inline-array
 // bootstrap) simple, so this test fails fast if the assumption is broken.
 func TestInstanceTypesArePointerFree(t *testing.T) {
 	types := []reflect.Type{
@@ -119,8 +119,8 @@ func aaStrokeRectGetSet() (get func(*aaStrokeRectOp) []aaStrokeRectInfo, set fun
 // TestRecycleKeepingBackingPreservesGrownBacking verifies the capacity-preserving reset: once an op's instance slice
 // has grown past its inline [1] backing into the heap, recycle keeps that heap backing — same array, capacity
 // preserved, length 0, cleared — while still zeroing every other field, and the next constructor bootstrap reuses it
-// instead of re-growing. This recovers the merge-time OnCombineIfPossible grow that S109's plain full-zero recycle
-// dropped every frame.
+// instead of re-growing. This recovers the merge-time OnCombineIfPossible grow that a plain full-zero recycle would
+// drop every frame.
 func TestRecycleKeepingBackingPreservesGrownBacking(t *testing.T) {
 	var p opPool[aaStrokeRectOp]
 	o := p.borrow()
@@ -144,7 +144,7 @@ func TestRecycleKeepingBackingPreservesGrownBacking(t *testing.T) {
 	get, set := aaStrokeRectGetSet()
 	recycleKeepingBacking(&p, o, get, set)
 
-	// Every field except the preserved backing must be zeroed (the S109 safety property).
+	// Every field except the preserved backing must be zeroed (the pool's safety property).
 	if o.wideColor || o.miterStroke || o.self != nil || o.ClassID() != 0 || o.uniqueID != 0 {
 		t.Fatalf("recycleKeepingBacking left stale non-backing state: wideColor=%v miterStroke=%v "+
 			"self!=nil=%v classID=%d uniqueID=%d", o.wideColor, o.miterStroke, o.self != nil,

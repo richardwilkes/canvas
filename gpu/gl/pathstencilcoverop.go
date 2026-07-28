@@ -168,7 +168,7 @@ func (o *pathStencilCoverOp) VisitProxies(fn func(*SurfaceProxy, gpu.Mipmapped))
 	}
 }
 
-// UsesMSAA implements DrawOp (fixedFunctionFlags' kUsesHWAA bit).
+// UsesMSAA implements DrawOp.
 func (o *pathStencilCoverOp) UsesMSAA() bool { return o.aaType != gpu.AATypeNone }
 
 // UsesStencil implements DrawOp (fixedFunctionFlags always sets kUsesStencil).
@@ -251,7 +251,7 @@ func (o *pathStencilCoverOp) OnPrepare(state *OpFlushState) {
 
 	if o.stencilFanProgram != nil {
 		// The inner fan isn't built into the tessellator. Generate a standard Redbook fan with a middle-out topology.
-		// Path fans might have an extra edge from an implicit kClose at the end, but they also always begin with kMove,
+		// Path fans might have an extra edge from an implicit close at the end, but they also always begin with a move,
 		// so the max possible number of edges in a single path is equal to the number of verbs; therefore the max
 		// number of combined fan edges in a path list is the number of combined verbs from the paths in the list. (A
 		// single n-sided polygon is fanned by n-2 triangles; multiple polygons with a combined edge count of n are

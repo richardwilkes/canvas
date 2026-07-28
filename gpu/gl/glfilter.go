@@ -320,7 +320,7 @@ func (f *filterDevice) DrawSpecial(img *filtercore.SpecialImage, deviceMatrix ge
 }
 
 // DrawImageRect implements filtercore.Device (the strict-constraint image draw the image-source leaf and the tiling
-// lanes use); the GPU device's image draw is polymorphic (S118), so a texture-backed image samples directly.
+// lanes use); the GPU device's image draw is polymorphic, so a texture-backed image samples directly.
 func (f *filterDevice) DrawImageRect(img imagecore.DrawableImage, src, dst geom.Rect, sampling shaders.SamplingOptions, pp *filtercore.PaintParams) {
 	f.dev.DrawImageRect(img, &src, dst, sampling, canvas.PaintFromFilterParams(pp),
 		canvas.ConstraintStrict)

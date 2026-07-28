@@ -11,7 +11,7 @@
 // borrows its op shell from the pool instead of heap allocating a fresh one, and the ops-task machinery recycles each
 // op back to its pool the instant it becomes dead (surviving ops once execution completes, merged-away ops at the merge
 // points in the op chain's combine logic — see opstask.go). This is the GPU counterpart of the CPU pooled-temporaries
-// series (S81–S94).
+// machinery.
 //
 // Lifetime safety (the whole reason this is delicate — recycling a live op corrupts a frame):
 //   - recycle fully zeroes the op via `var zero T; *o = zero` before returning it to the pool. A complete zero — not a
@@ -25,7 +25,7 @@
 //   - An op is recycled only when it is provably dead: a survivor is recycled at deleteOps, which the drawing manager
 //     calls in EndFlush strictly after OnExecute; a merged-away op is recycled right where the batching machinery drops
 //     it, after CombineIfPossible has *copied* its instances into the surviving op (append copies element values, so
-//     the survivor never aliases the recycled op's storage). Nothing else in the port retains an op pointer past its
+//     the survivor never aliases the recycled op's storage). Nothing else in the library retains an op pointer past its
 //     chain — the program/resource/ thread-safe caches are keyed on descriptors and shapes, not ops.
 //   - Because a merge and its recycle happen during recording/close, an op recycled here may be re-borrowed by a later
 //     draw *in the same frame*; that is safe for the same reason (the recycled op is dead, its data already copied out)
@@ -68,10 +68,10 @@ func (p *opPool[T]) recycle(o *T) {
 }
 
 // recycleKeepingBacking returns dead value o to pool p after a full-zero reset that *preserves* its heap-grown slice
-// backing, so a later user reuses the backing instead of re-growing it (the GPU counterpart of the CPU
-// pooled-temporaries series S81–S94). Two callers: the batchable geometry ops (this file's op pools) bootstrap their
-// instance slice from an inline [1] array (S107) and grow past it into the heap when OnCombineIfPossible merges
-// instances in — S109's plain recycle dropped that grown backing, so a merge-heavy op re-grew it every frame; and the
+// backing, so a later user reuses the backing instead of re-growing it. Two callers: the batchable geometry ops (this
+// file's op pools) bootstrap their instance slice from an inline [1] array and grow past it into the heap when
+// OnCombineIfPossible merges instances in — a plain recycle would drop that grown backing, making a merge-heavy op
+// re-grow it every frame; and the
 // pipeline pool (programinfopool.go) preserves a Pipeline's fragmentProcessors backing the same way. getBacking reads
 // the slice before the zero and setBacking re-installs the preserved backing on the freshly zeroed value; both are
 // non-capturing (static funcs), so this allocates nothing.

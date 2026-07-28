@@ -50,8 +50,8 @@ func DrawToMask(devPath *path.Path, clipBounds geom.IRect, mf MaskFilter, ctm *g
 		return nil, false
 	}
 
-	// By using infinite bounds for inverse fills, compute_mask_bounds is able to clip it to clipBounds outset by
-	// whatever extra margin the mask filter requires.
+	// Using infinite bounds for inverse fills lets computeMaskBounds clip to clipBounds outset by whatever extra
+	// margin the mask filter requires.
 	pathBounds := devPath.Bounds()
 	if devPath.IsInverseFillType() {
 		inf := float32(math.Inf(1))

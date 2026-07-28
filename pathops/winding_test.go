@@ -259,7 +259,7 @@ func TestComputeWindSumTwoRects(t *testing.T) {
 	}
 }
 
-// TestComputeOneSumBowtie exercises the angle-loop transfer (the direct consumer of session 63's sorted angle loops):
+// TestComputeOneSumBowtie exercises the angle-loop transfer (the direct consumer of the sorted angle loops):
 // after seeding one angle's winding at the bow-tie crossing, ComputeOneSum transfers it onto the next angle in the
 // counterclockwise loop.
 func TestComputeOneSumBowtie(t *testing.T) {

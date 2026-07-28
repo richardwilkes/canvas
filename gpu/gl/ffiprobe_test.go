@@ -65,8 +65,8 @@ func probeSetupGeometry(tb testing.TB, f *Functions) {
 }
 
 // TestFFIAllocProbe reports allocs/op for three all-integer procs called three ways: through the production wrapper
-// (the B.2 fixed-arity glCall lane), through a raw purego.SyscallN of the identical proc address (the pre-B.2
-// production path, kept for the head-to-head), and through a purego.RegisterFunc-bound typed func. Run with -v to see
+// (the fixed-arity glCall lane), through a raw purego.SyscallN of the identical proc address (kept for the
+// head-to-head), and through a purego.RegisterFunc-bound typed func. Run with -v to see
 // the table:
 //
 //	go test ./gpu/gl/ -run TestFFIAllocProbe -v
@@ -115,9 +115,8 @@ func TestFFIAllocProbe(t *testing.T) {
 		sn := testing.AllocsPerRun(5000, c.syscallN)
 		rf := testing.AllocsPerRun(5000, c.registerFunc)
 		t.Logf("%-28s %12.2f %14.2f %18.2f", c.name, gc, sn, rf)
-		// The B.2 verdict: the fixed-arity glCall lane must never be more expensive than the purego.SyscallN path it
-		// replaced (it is 0 allocs/op on the trampoline platforms and equal on the fallback platforms, where glCall is
-		// SyscallN).
+		// The fixed-arity glCall lane must never be more expensive than the purego.SyscallN path it replaced (it is 0
+		// allocs/op on the trampoline platforms and equal on the fallback platforms, where glCall is SyscallN).
 		if gc > sn {
 			t.Errorf("%s: the glCall lane costs %.2f allocs/op vs SyscallN's %.2f — the fixed-arity "+
 				"path regressed", c.name, gc, sn)
@@ -137,8 +136,8 @@ func TestFFIAllocProbe(t *testing.T) {
 }
 
 // The benchmarks give B/op alongside allocs/op for the same head-to-head. The GLCall pair measures the production
-// wrappers (the B.2 fixed-arity lane); the SyscallN pair measures a raw purego.SyscallN of the identical proc address
-// (the pre-B.2 production path). Run:
+// wrappers (the fixed-arity lane); the SyscallN pair measures a raw purego.SyscallN of the identical proc address.
+// Run:
 //
 //	go test ./gpu/gl/ -run '^$' -bench BenchmarkFFIProbe -benchmem
 func BenchmarkFFIProbeGLCallVertexAttribPointer(b *testing.B) {

@@ -9,7 +9,7 @@
 
 // Live-context tests for the proxy/render-task/drawing-manager layer: clear + readback scenarios running through the
 // full DirectContext → SurfaceDrawContext → OpsTask → DrawingManager flush pipeline on a real GL context, including the
-// wrapped-FBO path (`sk_surface_new_backend_render_target`'s shape), MSAA resolve tasks, write-pixels task ordering,
+// wrapped-FBO path, MSAA resolve tasks, write-pixels task ordering,
 // and copy tasks. Pixel expectations are computed on the CPU (clears and copies are exact); comparison against the
 // oracle GPU goldens lives in internal/oracle/gorender (TestGoGPUvsSelfCapturedGolden), not here. Skips when no GL
 // context is available.

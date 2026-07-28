@@ -799,7 +799,7 @@ func NewAAConvexPathRenderer() *AAConvexPathRenderer { return &AAConvexPathRende
 // Name implements PathRenderer.
 func (r *AAConvexPathRenderer) Name() string { return "AAConvex" }
 
-// OnGetStencilSupport implements PathRenderer (the base-class kNoSupport default).
+// OnGetStencilSupport implements PathRenderer, reporting StencilSupportNone.
 func (r *AAConvexPathRenderer) OnGetStencilSupport(*StyledShape) StencilSupport {
 	return StencilSupportNone
 }

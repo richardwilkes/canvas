@@ -35,12 +35,11 @@
 // soak and bless exit with code 3 (not 1) when the GPU backend cannot bring up a GL context, so callers (the
 // capture-goldens workflow) can distinguish "this leg has no GL stack — skip the lane loudly" from a real failure.
 //
-// gen renders through the pure-Go port (internal/oracle/gorender). It used to render through the C Skia library — the
-// reference oracle — with a separate `go-gpu` subcommand for the port's GL backend; the C dependency is gone and the
-// two collapsed into one. The checked-in goldens under ../../goldens are the port's own output, captured per platform
-// by `bless`, so `gen` + `diff` against a raster set is a pure change detector: a failure means the port's rendering
-// changed on this platform, full stop. (The C library's final renders are archived, non-gating, under
-// ../../goldens-skia; `diff` with the cpu/text/gpu tolerance profiles exists for comparing against that archive.)
+// gen renders through the canvas library (internal/oracle/gorender). The checked-in goldens under ../../goldens are
+// the library's own output, captured per platform by `bless`, so `gen` + `diff` against a raster set is a pure change
+// detector: a failure means rendering changed on this platform, full stop. A frozen archive of the retired C Skia
+// oracle's renders sits, non-gating, under ../../goldens-skia; `diff` with the cpu/text/gpu tolerance profiles exists
+// for comparing against that archive.
 package main
 
 import (
@@ -207,7 +206,7 @@ func gen(dir string, useGPU bool) error {
 // writeGoldens renders scenarios through render and writes the golden PNGs + manifest to dir.
 //
 // The manifest is schema 2, the same schema `bless` writes: schema 1 means "a frozen Skia-era archive set" (see
-// golden.Manifest), which both bless and capture.sh refuse to overwrite, so stamping gen's freshly rendered port
+// golden.Manifest), which both bless and capture.sh refuse to overwrite, so stamping gen's freshly rendered
 // output with it would poison the directory against any later capture with a diagnosis naming an archive that was
 // never there. The lane and GL-stack fields stay empty — gen's output is a scratch comparison set, not a blessed one.
 func writeGoldens(dir string, scenarios []scenario.Scenario, render func(scenario.Scenario) []byte) error {

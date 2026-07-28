@@ -14,7 +14,7 @@ import (
 	"github.com/richardwilkes/canvas/geom"
 )
 
-// Corpus growth: blend-mode coverage. blend-modes-basic samples 8 modes; these grids cover all 29 sk_blend_mode_t
+// Blend-mode coverage. blend-modes-basic samples 8 modes; these grids cover all 29 sk_blend_mode_t
 // values (12 Porter-Duff, 13 separable, 4 HSL), grouped by family, each cell compositing a translucent source circle
 // over a translucent destination rect inside its own clip cell (the blend-modes-basic cell recipe, kept so the grids
 // read uniformly). A separate scenario blends over a gradient destination to catch coefficient errors an axis-aligned

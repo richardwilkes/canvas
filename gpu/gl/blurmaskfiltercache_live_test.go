@@ -52,7 +52,7 @@ func TestLiveMaskFilterCacheSW(t *testing.T) {
 }
 
 // TestLiveMaskFilterCacheHW verifies the HW lane's rendered filtered mask is memoized the same way. A 100px shape
-// clears the kMIN_GPU_BLUR gate, so the mask is generated (create_mask_GPU) and blurred (GaussianBlur) on the GPU, then
+// clears the minimum-GPU-blur gate, so the mask is generated (createMaskGPU) and blurred on the GPU, then
 // cached with an explicit long-lived ref; the repeat reuses it.
 func TestLiveMaskFilterCacheHW(t *testing.T) {
 	_, dc := newLiveDirectContext(t)

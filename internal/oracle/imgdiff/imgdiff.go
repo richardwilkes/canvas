@@ -10,14 +10,12 @@
 // Package imgdiff compares RGBA8888-premul pixel buffers under the named threshold profiles below and renders diff
 // heatmaps and side-by-side images for failures. It is cgo-free, like the rest of the harness.
 //
-// The gating profiles are (near-)bit-exact: the golden references are the port's own per-platform output, so the gates
-// ask "did the output change at all?", not "are two renderers visually equivalent?". Exact gates the raster lane;
-// Exact1 gates the GPU lanes, tolerating only the ±1 LSB driver-internal wobble of software GL rasterizers. The looser
-// CPU/Text/GPU profiles date from when the reference was the C Skia library — a foreign renderer whose output
-// legitimately differed at AA edges (SIMD lane order, analytic-AA implementation details, float contraction; more so
-// on GPU, where drivers vary) — and no golden gate uses them: they remain for `oracle diff` comparisons against the
-// archived Skia renders in ../goldens-skia, and GPU also bounds gorender's atlas CPU-vs-GPU self-consistency
-// cross-check between the port's two live backends.
+// The gating profiles are (near-)bit-exact: the golden references are the library's own per-platform output, so the
+// gates ask "did the output change at all?", not "are two renderers visually equivalent?". Exact gates the raster
+// lane; Exact1 gates the GPU lanes, tolerating only the ±1 LSB driver-internal wobble of software GL rasterizers. The
+// looser CPU/Text/GPU profiles are cross-renderer tolerances that no golden gate uses: they remain for `oracle diff`
+// comparisons against the archived Skia renders in ../goldens-skia, and GPU also bounds gorender's atlas CPU-vs-GPU
+// self-consistency cross-check between the library's two live backends.
 package imgdiff
 
 import (
@@ -38,9 +36,8 @@ type Profile struct {
 // is "exact modulo ±1 LSB" — every channel delta must be ≤ 1 and zero pixels may exceed it — and gates the GPU lanes:
 // software GL rasterizers wobble ±1 intermittently between GL sessions, proven driver-internal (identical inputs and
 // GL command streams still produce ±1-differing output; see the oracle soak command's doc comment), while real breaks
-// measure ≥32 LSB. CPU, Text, and GPU are the cross-renderer tolerances of the era when the C Skia library was the
-// reference, kept for archive comparisons: Text is looser than CPU because glyph masks came from a platform scaler,
-// and GPU looser still because drivers vary.
+// measure ≥32 LSB. CPU, Text, and GPU are cross-renderer tolerances kept for archive comparisons: Text is looser than
+// CPU because the archived glyph masks came from a platform scaler, and GPU looser still because drivers vary.
 var (
 	Exact  = Profile{Name: "exact", MaxChannelDelta: 0, MaxDiffFraction: 0}
 	Exact1 = Profile{Name: "exact1", MaxChannelDelta: 1, MaxDiffFraction: 0}

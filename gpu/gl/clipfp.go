@@ -540,7 +540,7 @@ func (f *convexPolyFP) Clone() FragmentProcessor {
 }
 
 func (f *convexPolyFP) onAddToKey(_ *gpu.ShaderCaps, b *gpu.KeyBuilder) {
-	// static_assert(kGrClipEdgeTypeCnt <= 8)
+	// The edge type is packed into the low 3 bits, so the edge-type count must stay <= 8.
 	b.Add32(uint32(f.edgeCount)<<3|uint32(f.edgeType), "edgesAndType")
 }
 

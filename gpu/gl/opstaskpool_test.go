@@ -7,7 +7,7 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// Guard for the OpsTask free list (opstaskpool.go), in the style of the S106–S117 pool guards: a recycled task must
+// Guard for the OpsTask free list (opstaskpool.go), in the style of the other pool guards: a recycled task must
 // come back indistinguishable from a zero-valued one on every live field — stale cross-frame state (bounds, clip
 // generation, flags, dependency links) is exactly the class of bug whole-object pooling can introduce — while keeping
 // only the documented carry-overs (slice capacities and the self-capturing visitor closures).

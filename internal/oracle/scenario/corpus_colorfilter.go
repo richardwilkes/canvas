@@ -14,7 +14,7 @@ import (
 	"github.com/richardwilkes/canvas/geom"
 )
 
-// Corpus growth: color-filter coverage — one scenario per sk_colorfilter_new_* constructor the spec carries,
+// Color-filter coverage — one scenario per sk_colorfilter_new_* constructor the spec carries,
 // applied over a shared colorful base scene so filter output has structure to act on.
 
 // cfBase draws a colorful reference scene: a diagonal gradient background with three solid shapes.

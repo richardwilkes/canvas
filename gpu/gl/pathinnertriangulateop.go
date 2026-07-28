@@ -279,7 +279,7 @@ func (o *pathInnerTriangulateOp) VisitProxies(fn func(*SurfaceProxy, gpu.Mipmapp
 	}
 }
 
-// UsesMSAA implements DrawOp (fixedFunctionFlags' kUsesHWAA bit).
+// UsesMSAA implements DrawOp.
 func (o *pathInnerTriangulateOp) UsesMSAA() bool { return o.aaType != gpu.AATypeNone }
 
 // UsesStencil implements DrawOp (fixedFunctionFlags always sets kUsesStencil).

@@ -7,7 +7,7 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// Fake-driver tests for the OpsRenderPass bind/draw call sequences (B.1): the deferred vertex- and instance-buffer
+// Fake-driver tests for the OpsRenderPass bind/draw call sequences: the deferred vertex- and instance-buffer
 // binding in BindBuffers and the two DrawIndexed lanes. The recorder counts the GL calls that survive the attrib-state
 // shadow, so these tests pin the exact per-draw glVertexAttribPointer traffic — one pass per attribute per indexed draw
 // without baseVertexBaseInstance support, and none at all (after the eager offset-0 pass) with it.
@@ -136,8 +136,7 @@ func TestDrawIndexedDeferredVertexBind(t *testing.T) {
 		t.Errorf("repeat-offset draw grew attrib pointers to %d, want still 2", got)
 	}
 
-	// New baseVertex: exactly one more pass, not two (the pre-B.1 code paid an eager offset-0 pass in BindBuffers plus
-	// the rebind here).
+	// New baseVertex: exactly one more pass, not two (an eager offset-0 pass in BindBuffers plus the rebind here).
 	pass.DrawIndexed(6, 0, 0, 3, 9)
 	if got := counts("glVertexAttribPointer"); got != 4 {
 		t.Errorf("new-offset draw set %d attrib pointers total, want 4", got)

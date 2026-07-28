@@ -9,16 +9,10 @@
 
 // The per-frame allocation gate.
 //
-// This is what remains of the old paired driver matrix. That matrix stated its gates as ratios against the cgo Skia
-// baseline rendered alongside the port in one process (GPU frame time <=1.5x, CPU raster <=3x); with the C library gone
-// there is nothing to divide by, and absolute wall-clock gates are not worth stating on shared-tenancy CI runners — the
-// ratio was precisely what canceled runner speed variance. The allocation count does not have that problem: it is
-// deterministic, it is the axis the port actually regresses on (FFI marshaling, lost pooling), and it is what caught
-// the per-frame allocation regressions. So timing is dropped and allocations are kept, as a plain test rather than a
-// benchmark whose output something else has to parse.
-//
-// Cgo-free, so it runs on every leg with a GL stack rather than only where Skia builds. Skips without a GL context,
-// like the other live GPU tests.
+// Allocation count is gated rather than frame time: it is deterministic, immune to the speed variance of
+// shared-tenancy CI runners, and it is the axis this code actually regresses on (FFI marshaling, lost pooling). It is
+// a plain test rather than a benchmark, so nothing has to parse its output. Skips without a GL context, like the
+// other live GPU tests.
 package gorender_test
 
 import (
@@ -82,7 +76,7 @@ func newFramePanelPaints() (bg, fill, border *gocanvas.Paint) {
 	return bg, fill, border
 }
 
-// TestGLFramePanelsAllocs holds the port's steady-state per-frame allocations under frameAllocBudget.
+// TestGLFramePanelsAllocs holds the library's steady-state per-frame allocations under frameAllocBudget.
 //
 // Rendered inline on the test goroutine: gorender.NewGPUContext locks the OS thread and the GL context is current only
 // on the goroutine that created it, so there are no subtests.

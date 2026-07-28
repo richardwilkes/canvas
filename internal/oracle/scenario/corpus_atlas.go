@@ -21,7 +21,7 @@ import (
 // scenario.Canvas DrawAtlas hook. They gate exactly as every other scenario does — the raster lane bit-exactly under
 // `exact`, the gpu and gpudmsaa lanes under `exact1` — against this platform's self-captured goldens. The looser
 // `gpu` profile bounds only the Go-GPU-vs-Go-CPU self-consistency check (gorender's
-// TestAtlasGPUvsCPUSelfConsistency), which compares the port's two live backends against each other rather than
+// TestAtlasGPUvsCPUSelfConsistency), which compares the library's two live backends against each other rather than
 // against a golden, and guards the per-sprite CPU-lowering equivalence claim.
 
 // atlasSize is the shared atlas's dimension (four 32x32 tiles in a 64x64 square).
@@ -92,11 +92,10 @@ func atlasTiles() []geom.Rect {
 }
 
 // atlasSpriteRing builds n sprites on a ring: sprite i is tile i%4, rotated (i+0.35)*(2pi/n) radians and scaled between
-// 0.5 and 1.5, anchored at the tile center. The 0.35 phase keeps every sprite away from exact axis alignment: at angles
-// that are exact multiples of pi/2, nearest sampling lands exactly on texel boundaries across whole sprite columns,
-// where the port's forward-matrix-then-invert coordinate derivation and the C++ vertices lane's PolyToPoly derivation
-// round differently by 1 ulp and flip entire texel runs — a measure-zero degeneracy the differential should not sit on
-// (the per-sprite equivalence is tolerance-level, not boundary-exact).
+// 0.5 and 1.5, anchored at the tile center. The 0.35 phase keeps every sprite away from exact axis alignment: at
+// angles that are exact multiples of pi/2, nearest sampling lands exactly on texel boundaries across whole sprite
+// columns, where a 1-ulp difference in the coordinate derivation flips entire texel runs — a measure-zero degeneracy
+// the corpus should not sit on.
 func atlasSpriteRing(n int, cx, cy, radius float32) (xforms []geom.RSXform, tex []geom.Rect) {
 	tiles := atlasTiles()
 	xforms = make([]geom.RSXform, n)

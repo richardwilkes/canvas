@@ -29,7 +29,7 @@ func TestPackedGlyphID(t *testing.T) {
 	}
 
 	// The X sub-pixel field quantizes the fractional position into quarters; the packing expects the rounding constant
-	// to have been added already (prepare_for_direct_mask_drawing adds halfSampleFreq).
+	// to have been added already (the direct-mask-drawing path adds halfSampleFreq).
 	mask := geom.IPoint{X: 3, Y: 0}
 	cases := []struct {
 		frac float32

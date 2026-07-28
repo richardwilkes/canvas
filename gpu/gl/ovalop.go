@@ -2189,7 +2189,7 @@ func MakeRRectOp(caps *Caps, paint *Paint, viewMatrix *geom.Matrix, rrect geom.R
 	return makeRRectOpInternal(paint, viewMatrix, rrect, strokeRec)
 }
 
-// MakeCircleOp builds a draw op for a circle. Dashed strokes are unreachable here since this port's style carries no
+// MakeCircleOp builds a draw op for a circle. Dashed strokes are unreachable here since this library's style carries no
 // path effects. The paint is consumed.
 func MakeCircleOp(paint *Paint, viewMatrix *geom.Matrix, oval geom.Rect, strokeRec *stroke.Rec) DrawOp {
 	width := oval.Width()

@@ -257,7 +257,7 @@ func emitDFCoverage(args *GPEmitArgs, flags uint32) {
 	case flags&gammaCorrectDistanceFieldEffectFlag != 0:
 		// The smoothstep falloff compensates for the non-linear sRGB response curve. If we are doing gamma-correct
 		// rendering (to an sRGB or F16 buffer), then we actually want distance mapped linearly to coverage, so use a
-		// linear step. (Never set in the port, since destinations are always sRGB — kept for fidelity.)
+		// linear step. (Never set in the library, since destinations are always sRGB — kept for fidelity.)
 		fb.CodeAppend("float val = clamp((distance + afwidth) / (2.0 * afwidth), 0.0, 1.0);")
 	default:
 		fb.CodeAppend("float val = smoothstep(-afwidth, afwidth, distance);")

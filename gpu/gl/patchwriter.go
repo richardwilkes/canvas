@@ -7,7 +7,7 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// patchWriter emits tessellation patches for the three fill/stroke configurations this port supports:
+// patchWriter emits tessellation patches for the three fill/stroke configurations this library supports:
 //
 //   - CurveWriter: Optional color/wide-color-if-enabled/explicit-curve-type + AddTrianglesWhenChopping +
 //     DiscardFlatCurves
@@ -19,9 +19,9 @@
 // control points (8 floats) defining the curve's geometry — quads are converted to equivalent cubics on the CPU during
 // writing, conics store {w, inf} in their last control point, triangles store {inf, inf} — followed by the enabled
 // attrib values in PatchAttribs order. TrackJoinControlPoints defers each contour's first patch to CPU-side storage
-// until writeDeferredStrokePatch() supplies the now-known join control point; the stroke iterator this port uses
+// until writeDeferredStrokePatch() supplies the now-known join control point; the stroke iterator this library uses
 // manages caps itself, so only the no-cap deferral lane below is reachable (a cap-producing deferral lane exists in
-// other tessellators this port doesn't implement). All point math is plain element-wise float32 arithmetic (mix(a,b,T)
+// other tessellators this library doesn't implement). All point math is plain element-wise float32 arithmetic (mix(a,b,T)
 // == (b-a)*T + a throughout).
 
 package gl
@@ -68,10 +68,10 @@ func (a *vertexChunkPatchAllocator) close() { a.builder.close() }
 //   - If both are negative, then nothing has been written that needs to be deferred.
 //   - If nP4 == 0, the caller has explicitly managed the join and nothing is deferred.
 //   - If nP4 < 0 and curveType >= 0, then a degenerate verb has been recorded so caps should be written when the
-//     deferred patch is ended (a lane this port's stroke iterator never takes, since it produces caps itself).
+//     deferred patch is ended (a lane this library's stroke iterator never takes, since it produces caps itself).
 //   - If nP4 > 0 and curveType >= 0, then this is a full deferred patch.
 //
-// Upstream also tracks the contour's first and last control points here, to synthesize caps and closes. This port's
+// Upstream also tracks the contour's first and last control points here, to synthesize caps and closes. This library's
 // stroke iterator produces its own caps and closes, so neither is tracked.
 type deferredPatchStorage struct {
 	data      []byte  // an entire patch, except with an undefined join control point
@@ -184,8 +184,8 @@ func (w *patchWriter) updateFanPointAttrib(fanPoint geom.Point) {
 }
 
 // writeDeferredStrokePatch completes a contour of a stroke by rewriting the deferred patch with now-available join
-// control point information, then resets the deferral state. This port's stroke iterator manages caps on its own, so
-// only joins are ever produced here (a cap-producing variant exists in other tessellators this port doesn't implement).
+// control point information, then resets the deferral state. This library's stroke iterator manages caps on its own, so
+// only joins are ever produced here (a cap-producing variant exists in other tessellators this library doesn't implement).
 func (w *patchWriter) writeDeferredStrokePatch() {
 	if !w.trackJoinControlPoints {
 		panic("writeDeferredStrokePatch requires join tracking")
@@ -270,7 +270,7 @@ func patchPutPoint(buf []byte, off int, p geom.Point) int {
 }
 
 // emitPatchAttribs writes the enabled attribs after a patch's 4 control points (the paint-depth/ ssbo-index attribs are
-// never enabled in this port). The join is a parameter because writeCircle supplies its own location instead of the
+// never enabled in this library). The join is a parameter because writeCircle supplies its own location instead of the
 // tracked join.
 func (w *patchWriter) emitPatchAttribs(buf []byte, off int, join geom.Point, explicitCurveType float32) {
 	if w.attribs&PatchAttribJoinControlPoint != 0 {
@@ -321,8 +321,8 @@ func (w *patchWriter) appendPatch(explicitCurveType float32) []byte {
 // for the next patch when join tracking is enabled.
 func (w *patchWriter) writePatch(p0, p1, p2, p3 geom.Point, explicitCurveType float32) {
 	if w.trackJoinControlPoints {
-		// Store this even if we don't write a patch, to remember we should add caps (a lane this port's stroke iterator
-		// never takes, but kept for structural fidelity with the deferral state machine).
+		// Store this even if we don't write a patch, to remember we should add caps (a lane this library's stroke
+		// iterator never takes, but kept for structural fidelity with the deferral state machine).
 		w.deferredPatch.curveType = explicitCurveType
 	}
 

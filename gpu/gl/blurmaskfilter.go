@@ -9,7 +9,7 @@
 
 // The mask-filter draw lane: DrawShapeWithMaskFilter and its helpers. A blurred (or otherwise mask-filtered) shape is
 // turned into an A8 coverage mask that is filtered and then drawn as a device-space coverage rect. Large blurs generate
-// and blur the mask entirely on the GPU (createMaskGPU + filterMask over the session-45 GaussianBlur engine); small
+// and blur the mask entirely on the GPU (createMaskGPU + filterMask over the Gaussian blur engine); small
 // blurs (and every non-blur filter) render the filtered mask on the CPU and upload it (swCreateFilteredMask), matching
 // the standard minimum-GPU-blur-size gate.
 //
@@ -581,7 +581,7 @@ func drawShapeWithMaskFilter(sdc *SurfaceDrawContext, clip Clip, paint *Paint, v
 		return maskFilterLaneNone // 'shape' was entirely clipped out
 	}
 
-	// GPU-filtered mask (direct context only; there is no DDL recording thread in the port).
+	// GPU-filtered mask (direct context only; there is no DDL recording thread in the library).
 	hwView, maskRect, hwOK := hwCreateFilteredMask(sdc.Context(), sdc, viewMatrix, shape, mf,
 		unclippedDevShapeBounds, boundsForClip, &maskKey)
 	if hwOK {

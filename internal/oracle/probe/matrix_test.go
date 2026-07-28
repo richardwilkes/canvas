@@ -8,9 +8,7 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // This probe checks geom.Matrix against Skia's Matrix concat/invert/map results, replayed from the frozen reference
-// fixtures (see ref.go). It once drove Skia's C++ internals live through the skiac shim, which confined it to
-// darwin/linux — mingw g++ cannot resolve Skia's MSVC-mangled C++ exports. Replay needs no linker, so it now runs
-// everywhere.
+// fixtures (see ref_test.go).
 
 package probe
 

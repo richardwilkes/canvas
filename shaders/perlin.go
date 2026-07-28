@@ -255,7 +255,7 @@ func (s *PerlinNoiseShader) initPaintingData(seed float32, tileW, tileH int32) {
 				s.baseFreqY = hi
 			}
 		}
-		// StitchData(tileW * freqX, tileH * freqY): fWidth = min(round(w), MaxS32 - kPerlinNoise)
+		// Stitch data from (tileW * freqX, tileH * freqY), with each extent capped at MaxInt32 - perlinNoise.
 		w := int32(math.Floor(float64(tileWf*s.baseFreqX + 0.5)))
 		h := int32(math.Floor(float64(tileHf*s.baseFreqY + 0.5)))
 		if w > math.MaxInt32-perlinNoise {

@@ -24,13 +24,12 @@ import (
 	"github.com/richardwilkes/canvas/internal/oracle/scenario"
 )
 
-// The frozen reference ops. Each mirrors the skiac call the probe used to make live, with the same signature, so a
-// probe reads `refMatrixSetConcat(a, b)` where it once read `skiac.MatrixSetConcat(a, b)`. The value returned is
-// Skia's, captured on darwin/arm64; see ref_test.go.
+// The frozen reference ops. Each returns Skia's value for the given inputs, captured on darwin/arm64; see
+// ref_test.go.
 //
 // A lookup failure is fatal rather than a skip: a missing key means the probe corpus drifted away from what was
-// captured, and there is no longer an oracle to answer for the new input. Silently skipping would let coverage
-// evaporate unnoticed.
+// captured, and there is no oracle left to answer for the new input. Silently skipping would let coverage evaporate
+// unnoticed.
 
 // --- matrix ---
 

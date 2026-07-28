@@ -223,7 +223,7 @@ func decPath(s string) (*path.Path, error) {
 }
 
 // encSpec canonically encodes a PathSpec for use as a fixture key. Keyed on the spec rather than on the built path so
-// the key survives a change in how the port builds paths — a build change should fail the probe that checks it, not
+// the key survives a change in how the library builds paths — a build change should fail the probe that checks it, not
 // silently miss every path-ops fixture.
 func encSpec(s *scenario.PathSpec) string {
 	if s == nil {
@@ -249,7 +249,7 @@ func encSpec(s *scenario.PathSpec) string {
 	return b.String()
 }
 
-// encMeasure encodes an Skia's PathMeasure walk. The nesting gets one separator per level — "@" contours, "|" fields,
+// encMeasure encodes a PathMeasure walk. The nesting gets one separator per level — "@" contours, "|" fields,
 // ";" list items, "," item fields — above encPoints' own " ", so every level stays unambiguous and the fixture is still
 // greppable.
 //
@@ -348,7 +348,7 @@ func encStrokePaint(sp *strokePaint) string {
 		f32(sp.resScale))
 }
 
-// builderAdd is one (path, op) step of an Skia's OpBuilder script. It lives here rather than in the probe that drives
+// builderAdd is one (path, op) step of a Skia OpBuilder script. It lives here rather than in the probe that drives
 // it so both the replay and capture halves can key on the same encoding.
 type builderAdd struct {
 	spec *scenario.PathSpec

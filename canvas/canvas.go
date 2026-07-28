@@ -11,8 +11,7 @@
 // maintenance, saveLayer/saveLayerAlpha with layer devices and restore-time composition (the machinery specific to
 // image-filtered layers lives in filterlayer.go), and the draw entry points (paint, color, clear, rect, oval, rrect,
 // round-rect, arc, circle, line, point(s), path, plus the image draws in drawimage.go and text in text.go). The
-// canvas's total matrix is the 3x3 geom.Matrix, which is what the public surface exposes (sk_canvas_set_matrix takes a
-// 3x3).
+// canvas's total matrix is the 3x3 geom.Matrix, which is what the public surface exposes.
 
 package canvas
 
@@ -90,7 +89,7 @@ func (c *Canvas) BaseDevice() Device { return c.rootDevice }
 // SetSurfaceBase installs the owning surface's copy-on-write hook.
 func (c *Canvas) SetSurfaceBase(s SurfaceBase) { c.surface = s }
 
-// SurfaceBaseValue returns the installed surface hook (used by sk_canvas_get_surface).
+// SurfaceBaseValue returns the installed surface hook.
 func (c *Canvas) SurfaceBaseValue() SurfaceBase { return c.surface }
 
 // predrawNotify gives the owning surface a chance to copy-on-write before pixels change.

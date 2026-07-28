@@ -137,7 +137,7 @@ func (t *drawTiler) next() *draw {
 // stepAndSetupTileDraw advances to the next tile and rebuilds the tile's pixmap subset, shifted CTM, and re-derived
 // clip.
 func (t *drawTiler) stepAndSetupTileDraw() {
-	// We do srcBounds.Right - kMaxDim instead of origin.X + kMaxDim to avoid overflow.
+	// Use srcBounds.Right - tilerMaxDim instead of origin.X + tilerMaxDim to avoid overflow.
 	if t.origin.X >= t.srcBounds.Right-tilerMaxDim { // too far
 		t.origin.X = t.srcBounds.Left
 		t.origin.Y += tilerMaxDim

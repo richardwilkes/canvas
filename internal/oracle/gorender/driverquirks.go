@@ -9,7 +9,7 @@
 
 package gorender
 
-// Driver quirks that are proven to live below the port: rendering differences a given GL stack produces on its own,
+// Driver quirks that are proven to live below the library: rendering differences a given GL stack produces on its own,
 // which no app-level change can remove. They live here rather than in the golden gates because capture (oracle
 // soak/bless) and gating must agree about them exactly — a quirk excused by the gate but treated as nondeterminism by
 // the capture path makes capture succeed or fail by luck, which is what happened to darwin_arm64's gpu lane on

@@ -238,7 +238,7 @@ func makeTextureEffectSampling(proxy *SurfaceProxy, sampler gpu.SamplerState, su
 		}
 		if !alwaysUseShaderTileMode && domainIsSafe {
 			// The domain of coords that will be used won't access texels outside of the subset, so the wrap mode
-			// effectively doesn't matter. Use kClamp since it is always supported.
+			// effectively doesn't matter. Use WrapModeClamp since it is always supported.
 			r.shaderMode = ShaderModeNone
 			r.hwWrap = gpu.WrapModeClamp
 			r.shaderSubset = textureEffectSpan{}
@@ -548,7 +548,7 @@ func (i *textureEffectImpl) EmitCode(args *FPEmitArgs) {
 		return fb.AppendTextureLookup(args.UniformHandler, i.samplerHandle, normCoord)
 	}
 
-	// Implements coord wrapping for kRepeat and kMirrorRepeat.
+	// Implements coord wrapping for the repeat and mirror-repeat shader modes.
 	subsetCoord := func(mode TextureEffectShaderMode, coordSwizzle, subsetStartSwizzle,
 		subsetStopSwizzle, extraCoord, coordWeight string,
 	) {
@@ -638,7 +638,7 @@ func (i *textureEffectImpl) EmitCode(args *FPEmitArgs) {
 		clampCoord(useClamp[0], ".x", ".x", ".z")
 		clampCoord(useClamp[1], ".y", ".y", ".w")
 	}
-	// Additional clamping for the extra coords for kRepeat with mip maps.
+	// Additional clamping for the extra coords for repeat with mip maps.
 	switch {
 	case mipmapRepeatX && mipmapRepeatY:
 		fb.CodeAppendf("extraRepeatCoord = clamp(extraRepeatCoord, %s.xy, %s.zw);", clampName,
@@ -651,7 +651,8 @@ func (i *textureEffectImpl) EmitCode(args *FPEmitArgs) {
 			clampName)
 	}
 
-	// Do the 2 or 4 texture reads for kRepeatMipMap and then apply the weight(s) to blend between them. If neither
+	// Do the 2 or 4 texture reads for the repeat-with-mipmap modes and then apply the weight(s) to blend between them.
+	// If neither
 	// direction is repeat or not using mip maps do a single read at clampedCoord.
 	switch {
 	case mipmapRepeatX && mipmapRepeatY:
@@ -675,12 +676,12 @@ func (i *textureEffectImpl) EmitCode(args *FPEmitArgs) {
 		fb.CodeAppendf("vec4 textureColor = %s;", read("clampedCoord"))
 	}
 
-	// Strings for extra texture reads used only in kRepeatLinear.
+	// Strings for extra texture reads used only by the repeat-with-linear-filter modes.
 	repeatLinearReadX := ""
 	repeatLinearReadY := ""
 
 	// Calculate the amount the coord moved for clamping. This is used to implement shader-based filtering for
-	// kClampToBorder and kRepeat.
+	// clamp-to-border and repeat.
 	repeatLinearFilterX := m[0] == ShaderModeRepeatLinearNone || m[0] == ShaderModeRepeatLinearMipmap
 	repeatLinearFilterY := m[1] == ShaderModeRepeatLinearNone || m[1] == ShaderModeRepeatLinearMipmap
 	if repeatLinearFilterX || m[0] == ShaderModeClampToBorderFilter {
@@ -698,7 +699,7 @@ func (i *textureEffectImpl) EmitCode(args *FPEmitArgs) {
 		}
 	}
 
-	// Add logic for kRepeat + linear filter: 1 or 3 more texture reads depending on whether both modes are kRepeat and
+	// Add logic for repeat + linear filter: 1 or 3 more texture reads depending on whether both modes are repeat and
 	// whether we're near a single subset edge or a corner, then blend the reads using the err values calculated above.
 	ifStr := "if"
 	if repeatLinearFilterX && repeatLinearFilterY {
@@ -731,7 +732,8 @@ func (i *textureEffectImpl) EmitCode(args *FPEmitArgs) {
 		)
 	}
 
-	// Do soft edge shader filtering against border color for kClampToBorderFilter using the err values calculated
+	// Do soft edge shader filtering against border color for ShaderModeClampToBorderFilter using the err values
+	// calculated
 	// above.
 	if m[0] == ShaderModeClampToBorderFilter {
 		fb.CodeAppendf("textureColor = mix(textureColor, %s, min(abs(errX), 1.0));", borderName)
@@ -740,7 +742,8 @@ func (i *textureEffectImpl) EmitCode(args *FPEmitArgs) {
 		fb.CodeAppendf("textureColor = mix(textureColor, %s, min(abs(errY), 1.0));", borderName)
 	}
 
-	// Do hard-edge shader transition to border color for kClampToBorderNearest at the subset boundaries. Snap the input
+	// Do hard-edge shader transition to border color for ShaderModeClampToBorderNearest at the subset boundaries. Snap
+	// the input
 	// coordinates to nearest neighbor (with an epsilon) before comparing to the subset rect, to avoid GPU interpolation
 	// errors.
 	if m[0] == ShaderModeClampToBorderNearest {

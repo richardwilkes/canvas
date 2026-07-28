@@ -729,7 +729,7 @@ func (r *DefaultPathRenderer) internalDrawPath(sdc *SurfaceDrawContext, paint *P
 			if reverse && viewMatrix.HasPerspective() {
 				viewM = &identity
 			}
-			// This is a non-coverage-aa rect op since we assert aaType != kCoverage at the start.
+			// This is a non-coverage-aa rect op since aaType != AATypeCoverage is asserted at the start.
 			sdc.StencilRect(clip, passes[pass], paint, gpu.AA(aaType == gpu.AATypeMSAA), viewM,
 				bounds, &localMatrix)
 		} else {

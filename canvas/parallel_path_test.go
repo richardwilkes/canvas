@@ -197,7 +197,7 @@ func TestDrawPathShadedBandedWiringAndDeterminism(t *testing.T) {
 		}
 	}
 
-	// A solid paint must stay on the serial lane (C.1 is scoped to shaded fills).
+	// A solid paint must stay on the serial lane (the banded parallel lane is scoped to shaded fills).
 	solid := NewPaint()
 	solid.Color = 0x80336699
 	solid.AntiAlias = true

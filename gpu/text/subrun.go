@@ -747,7 +747,7 @@ func MakeSubRuns(glyphRunList *textblob.GlyphRunList, positionMatrix *geom.Matri
 		// and not too big.
 		if (runPaint.Style != canvas.StyleStroke || runPaint.StrokeWidth != 0) &&
 			approximateDeviceTextSize < maxMaskSize {
-			// SDFT case (E.1) — this should be the .009% case.
+			// SDFT case — this should be the .009% case.
 			if control.IsSDFT(approximateDeviceTextSize, runPaint, positionMatrix) {
 				spec, strikeToSourceScale, matrixRange := makeSDFTStrikeSpec(runFont,
 					&scalerPaint, positionMatrix, glyphRunListLocation, control)

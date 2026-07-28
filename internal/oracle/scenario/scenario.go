@@ -11,10 +11,9 @@
 // Canvas interface using only operations reachable through the public surface, with paints and paths described as plain
 // data so a backend can materialize them natively. This package is cgo-free.
 //
-// The corpus was built to be rendered by two backends — the C Skia oracle and the Go port — and compared live. The C
-// side is gone: its final renders are archived under ../goldens-skia, and the gating references are now the port's own
-// per-platform self-captured sets under ../goldens, regenerated deliberately via `oracle bless` and the
-// capture-goldens workflow whenever rendering changes intentionally.
+// The gating references are the library's own per-platform self-captured sets under ../goldens, regenerated
+// deliberately via `oracle bless` and the capture-goldens workflow whenever rendering changes intentionally. A frozen,
+// non-gating archive of the retired C Skia oracle's renders sits under ../goldens-skia.
 package scenario
 
 import (
@@ -24,8 +23,8 @@ import (
 	"github.com/richardwilkes/canvas/geom"
 )
 
-// Enum values mirror the ordinals of the C API this corpus was built against (the removed capi/sk_capi.h, whose values
-// are Skia's own); backends may cast directly. The `sk_*` names below record which C type each mirrors.
+// Enum ordinals are frozen: they mirror the C API the corpus was built against (whose values are Skia's own) and the
+// goldens depend on them, so they must not be renumbered. The `sk_*` names below record which C type each mirrors.
 
 // BlendMode mirrors sk_blend_mode_t.
 type BlendMode int32
@@ -136,9 +135,8 @@ const (
 	ShaderBlend
 )
 
-// ShaderSpec declaratively describes a paint shader. Corpus growth added the sweep and two-point conical
-// gradients, the single-color shader, and the blend-of-two-shaders combinator; each variant reads only its documented
-// fields.
+// ShaderSpec declaratively describes a paint shader: the four gradient families, the single-color shader, and the
+// blend-of-two-shaders combinator. Each variant reads only its documented fields.
 type ShaderSpec struct {
 	Dst, Src   *ShaderSpec // blend shader inputs
 	Local      *geom.Matrix
@@ -156,9 +154,8 @@ type ShaderSpec struct {
 	Blend      BlendMode       // blend shader
 }
 
-// Paint declaratively describes an sk_paint_t. Always start from NewPaint: the zero value has blend mode Clear (enum
-// ordinal 0), not Skia's SrcOver default. The effect/filter fields (all nil by default) were added with the corpus
-// growth; their spec types live in effects.go.
+// Paint declaratively describes a paint. Always start from NewPaint: the zero value has blend mode Clear (enum
+// ordinal 0), not the SrcOver default. The effect/filter spec types (all nil by default) live in effects.go.
 type Paint struct {
 	Shader      *ShaderSpec
 	ImageFilter *ImageFilterSpec
@@ -207,7 +204,7 @@ func Stroke(c colorcore.Color, width float32) Paint {
 	return p
 }
 
-// Canvas is the publicly reachable drawing surface a scenario draws on. gorender's adapter over the port's
+// Canvas is the publicly reachable drawing surface a scenario draws on. gorender's adapter over the library's
 // *canvas.Canvas is its only implementation now; the removed C oracle once provided a second one.
 type Canvas interface {
 	Clear(c colorcore.Color)
@@ -230,9 +227,8 @@ type Canvas interface {
 	Concat(m *geom.Matrix)
 	Save() int
 	SaveLayerAlpha(bounds *geom.Rect, alpha uint8) int
-	// SaveLayer is the paint-carrying saveLayer (sk_canvas_save_layer): the layer's restore draws through the paint's
-	// alpha, blend mode, color filter, and image filter. p nil means a plain layer. Added with the
-	// saveLayer-variant scenarios.
+	// SaveLayer is the paint-carrying saveLayer: the layer's restore draws through the paint's alpha, blend mode,
+	// color filter, and image filter. p nil means a plain layer.
 	SaveLayer(bounds *geom.Rect, p *Paint) int
 	Restore()
 	// DrawSimpleText draws UTF-8 text at the baseline origin with the corpus font (FontData) at the given point size —
@@ -245,16 +241,15 @@ type Canvas interface {
 	// DrawAtlas draws sprites from an atlas passed as raw RGBA8888-premul pixels (tightly packed, top-left origin), so
 	// each backend materializes its native image type from identical bytes: sprite i maps the atlas sub-rect tex[i]
 	// onto xforms[i]'s quad, optionally modulated by colors[i] (nil for none) through mode. linear selects linear
-	// filtering (nearest otherwise); cull is the optional quick-reject hint. The Go port draws through the Go-native
-	// Canvas.DrawAtlas; the C oracle, while it existed, reached Skia's Canvas::drawAtlas through a test-only
-	// side door (no public sk_canvas_* entry point existed). Added with the atlas scenarios.
+	// filtering (nearest otherwise); cull is the optional quick-reject hint. This is materialized through
+	// Canvas.DrawAtlas.
 	DrawAtlas(atlasW, atlasH int32, atlasRGBA []byte, xforms []geom.RSXform, tex []geom.Rect,
 		colors []colorcore.Color, mode BlendMode, linear bool, cull *geom.Rect, p Paint)
 }
 
 // Scenario is one differential test case: a named drawing routine at a fixed size. Every scenario renders in every
 // lane: the golden sets are per-platform (goldens/<lane>/<GOOS_GOARCH>/), so platform-dependent output — text via the
-// port's own rasterizer, composite rounding differences between architectures — is in scope for all of them.
+// library's own rasterizer, composite rounding differences between architectures — is in scope for all of them.
 type Scenario struct {
 	Draw   func(c Canvas)
 	Name   string

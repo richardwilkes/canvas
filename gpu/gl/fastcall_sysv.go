@@ -7,7 +7,7 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// The B.2 fixed-arity GL call lane for the SysV platforms (darwin/linux on amd64/arm64): glCall dispatches a resolved
+// The fixed-arity GL call lane for the SysV platforms (darwin/linux on amd64/arm64): glCall dispatches a resolved
 // GL proc through the in-repo glcall9 assembly trampoline (fastcall_sysv_*.s) via runtime.cgocall, replacing
 // purego.SyscallN for the all-integer wrappers in interface.go. purego.SyscallN costs two heap allocations per call —
 // the escaping variadic []uintptr at the call site (forced by its //go:uintptrescapes tag) and its internal 25-slot
@@ -73,7 +73,7 @@ func runtimeCgocall(fn uintptr, arg unsafe.Pointer) int32
 
 // glCall invokes the GL proc fn with up to nine integer-class arguments through the glcall9 trampoline and returns the
 // proc's integer result. Callers pad unused trailing arguments with zero; a C callee never reads registers or stack
-// slots beyond its declared parameters, so the padding is inert. The //go:uintptrescapes tag is the S105 GC-stack
+// slots beyond its declared parameters, so the padding is inert. The //go:uintptrescapes tag is the GC-stack
 // contract, identical to the tag on the purego.SyscallN this lane replaces: a Go pointer converted at a glCall call
 // site (e.g. uintptr(unsafe.Pointer(buffers)) in a generated wrapper) is forced to escape and stays alive and pinned
 // for the duration of the call.

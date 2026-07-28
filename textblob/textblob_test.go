@@ -398,9 +398,9 @@ func copyPositions(list *GlyphRunList) [][]geom.Point {
 	return out
 }
 
-// TestGlyphRunBuilderPoolReuse locks the invariants the S91 pooling relies on: the returned list is the builder's own
-// retained header, a builder reused for a smaller/different blob (its position/run buffers left "poisoned" with a prior
-// larger blob's data) produces byte-identical output to a fresh builder, full-positioned runs correctly share the
+// TestGlyphRunBuilderPoolReuse locks the invariants the builder pooling relies on: the returned list is the builder's
+// own retained header, a builder reused for a smaller/different blob (its position/run buffers left "poisoned" with a
+// prior larger blob's data) produces byte-identical output to a fresh builder, full-positioned runs correctly share the
 // reused position buffer, and Release drops the source-blob reference.
 func TestGlyphRunBuilderPoolReuse(t *testing.T) {
 	f := loadFont(t, 24)

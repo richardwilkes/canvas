@@ -8,7 +8,7 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // Package codecs registers the image decoders: PNG, JPEG (with EXIF orientation applied), GIF (first frame), BMP, WebP,
-// plus small native ICO and WBMP decoders, and hosts the sk_encode_* encoders. Stdlib and golang.org/x/image do the
+// plus small native ICO and WBMP decoders, and hosts the image encoders. Stdlib and golang.org/x/image do the
 // entropy decoding, rather than porting what Go already provides; the adapters produce the reported image info (with
 // the unpremul→premul upgrade) and the codec premultiply rounding.
 package codecs

@@ -124,7 +124,7 @@ func (r *allocRegister) instantiateSurface(proxy *SurfaceProxy, resourceProvider
 	surface := newSurface
 	if surface == nil {
 		surface = r.existingSurface
-		// The register keeps its own ref; the proxy gets an additional one (the sk_sp copy).
+		// The register keeps its own ref; the proxy gets an additional one.
 		surface.Ref()
 	}
 	// Make the surface budgeted if this proxy is budgeted.

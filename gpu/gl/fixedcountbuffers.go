@@ -26,7 +26,7 @@ import (
 )
 
 // Fixed-count curve buffer geometry: the vertex buffer holds (resolveLevel, idx) float pairs for
-// kMaxParametricSegments+1 vertices; the index buffer connects them with a middle-out topology.
+// tessMaxParametricSegments+1 vertices; the index buffer connects them with a middle-out topology.
 const (
 	fixedCountCurvesVertexCount = tessMaxParametricSegments + 1
 	fixedCountCurvesVertexSize  = fixedCountCurvesVertexCount * 8

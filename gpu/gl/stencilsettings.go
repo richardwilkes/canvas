@@ -67,7 +67,7 @@ const (
 	UserStencilOpSetClipBit
 	UserStencilOpInvertClipBit
 
-	// Ops that modify both clip and user bits. These can only be paired with kKeep or each other.
+	// Ops that modify both clip and user bits. These can only be paired with UserStencilOpKeep or each other.
 	UserStencilOpSetClipAndReplaceUserBits
 	UserStencilOpZeroClipAndUserBits
 )
@@ -314,10 +314,10 @@ type StencilFace struct {
 // userStencilTestToRaw maps each UserStencilTest to its concrete StencilTest.
 var userStencilTestToRaw = [...]StencilTest{
 	// Tests that respect the clip.
-	StencilTestAlways, // kAlwaysIfInClip (this is only for when there is not a stencil clip).
-	StencilTestEqual,  // kEqualIfInClip.
-	StencilTestLess,   // kLessIfInClip.
-	StencilTestLEqual, // kLEqualIfInClip.
+	StencilTestAlways, // UserStencilTestAlwaysIfInClip (only for when there is not a stencil clip).
+	StencilTestEqual,  // UserStencilTestEqualIfInClip.
+	StencilTestLess,   // UserStencilTestLessIfInClip.
+	StencilTestLEqual, // UserStencilTestLEqualIfInClip.
 
 	// Tests that ignore the clip.
 	StencilTestAlways,
@@ -340,17 +340,17 @@ var userStencilOpToRaw = [...]StencilOp{
 	StencilOpInvert,
 	StencilOpIncWrap,
 	StencilOpDecWrap,
-	StencilOpIncClamp, // kIncMaybeClamp.
-	StencilOpDecClamp, // kDecMaybeClamp.
+	StencilOpIncClamp, // UserStencilOpIncMaybeClamp.
+	StencilOpDecClamp, // UserStencilOpDecMaybeClamp.
 
 	// Ops that only modify the clip bit.
-	StencilOpZero,    // kZeroClipBit.
-	StencilOpReplace, // kSetClipBit.
-	StencilOpInvert,  // kInvertClipBit.
+	StencilOpZero,    // UserStencilOpZeroClipBit.
+	StencilOpReplace, // UserStencilOpSetClipBit.
+	StencilOpInvert,  // UserStencilOpInvertClipBit.
 
 	// Ops that modify clip and user bits.
-	StencilOpReplace, // kSetClipAndReplaceUserBits.
-	StencilOpZero,    // kZeroClipAndUserBits.
+	StencilOpReplace, // UserStencilOpSetClipAndReplaceUserBits.
+	StencilOpZero,    // UserStencilOpZeroClipAndUserBits.
 }
 
 // reset derives the concrete face settings from an abstract UserStencilFace, given the clip state and stencil bit

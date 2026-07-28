@@ -124,8 +124,8 @@ func (p *Paint) canComputeFastBounds() bool {
 }
 
 // StrokeSpec bundles the paint's stroke-relevant fields (style, stroke geometry, path effect) for callers outside the
-// canvas package that measure text or fill with this paint — the sk_font_measure_text and sk_textblob_get_intercepts
-// use cases, where the caller hands the spec to the font/textblob packages exactly as the internal draw path does.
+// canvas package that measure text or fill with this paint — the text-measurement and glyph-intercept use cases,
+// where the caller hands the spec to the font/textblob packages exactly as the internal draw path does.
 func (p *Paint) StrokeSpec() stroke.PaintSpec { return p.strokeSpec() }
 
 // strokeSpec bundles the paint's stroke-relevant fields for the stroke package.
@@ -178,8 +178,7 @@ func (p *Paint) computeFastBounds(orig geom.Rect) geom.Rect {
 // FillPath applies this paint's path effect and, for stroked styles, its stroke geometry to src, writing the resulting
 // fill path into dst at the given resolution scale (a larger resScale asks for finer curve approximation) and optional
 // cull rect. It returns true if dst is a real fill to be painted with the paint's fill settings; false means the paint
-// draws nothing beyond a hairline and dst holds the modified path. This is the entry point behind
-// sk_paint_get_fill_path, which unison calls directly.
+// draws nothing beyond a hairline and dst holds the modified path. unison calls this directly.
 func (p *Paint) FillPath(src, dst *path.Path, cullRect *geom.Rect, resScale float32) bool {
 	spec := p.strokeSpec()
 	return stroke.FillPathWithPaintResScale(src, &spec, dst, cullRect, resScale)

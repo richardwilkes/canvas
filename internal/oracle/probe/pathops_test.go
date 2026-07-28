@@ -21,11 +21,11 @@ import (
 	"github.com/richardwilkes/canvas/raster"
 )
 
-// Faithful pathops probes. The port's boolean engine is now the faithful Skia's OpSegment machinery
-// (runOp/runSimplify), so it keeps curves exactly as Skia does; results are compared by area sampling: both sides'
-// result paths are rasterized through the port's (oracle-verified) rasterizer over the operands' joint bounds and the
-// coverage masks must agree except in a thin sub-pixel band around the boundaries, where AA edge placement and the
-// last-ULP conic-control-point noise from the SVG round-trip of the port's result legitimately differ. Success flags
+// Faithful pathops probes. The boolean engine is the faithful OpSegment machinery (runOp/runSimplify), so it keeps
+// curves exactly as Skia does; results are compared by area sampling: both sides'
+// result paths are rasterized through the library's (oracle-verified) rasterizer over the operands' joint bounds and
+// the coverage masks must agree except in a thin sub-pixel band around the boundaries, where AA edge placement and the
+// last-ULP conic-control-point noise from the SVG round-trip of the library's result legitimately differ. Success flags
 // and result fill types (the gOpInverse/ gOutInverse algebra) must agree exactly. The fast paths that bypass the engine
 // (rect intersect, empty operands with convex survivors) are compared bit-exactly through the verified SVG emitters.
 
@@ -180,7 +180,7 @@ func pathOpsWindow(paths ...*path.Path) (geom.Rect, bool) {
 	return geom.RectLTRB(bounds.Left-pad, bounds.Top-pad, bounds.Right+pad, bounds.Bottom+pad), true
 }
 
-// renderPathOpsMask rasterizes a result path over the window into a res x res A8 coverage mask through the port's
+// renderPathOpsMask rasterizes a result path over the window into a res x res A8 coverage mask through the library's
 // rasterizer (fill rule and inverse-ness honored).
 func renderPathOpsMask(p *path.Path, window geom.Rect, res int32) []uint8 {
 	scale := float32(res) / max(window.Right-window.Left, window.Bottom-window.Top)
@@ -198,8 +198,8 @@ func renderPathOpsMask(p *path.Path, window geom.Rect, res int32) []uint8 {
 }
 
 // comparePathOpsResults area-samples the two sides' results and enforces the fill-type algebra. The oracle's result
-// arrives as a port path already — replayed from the frozen fixtures (see ref_test.go), which store its geometry rather
-// than a rasterization, so both sides here go through the *current* rasterizer.
+// arrives as a canvas path already — replayed from the frozen fixtures (see ref_test.go), which store its geometry
+// rather than a rasterization, so both sides here go through the *current* rasterizer.
 func comparePathOpsResults(t *testing.T, label string, portResult, oracleResult *path.Path, inputs ...*path.Path) {
 	t.Helper()
 	if got, want := int(portResult.FillType()), int(oracleResult.FillType()); got != want {
@@ -333,7 +333,7 @@ func TestPathOpsBuilderProbes(t *testing.T) {
 // TestPathOpsBuilderConvexUnionExact pins the all-union optimization's convex lanes bit-exactly against real Skia. A
 // single convex union operand runs Skia's OpBuilder::resolve's all-union branch through Simplify's convex fast path (a
 // clone), fixWinding's one-contour fast path (reverse iff the direction is CW), and Simplify's convex fast path again —
-// all exact geometry, no engine, so the port must match Skia's output point stream bit-for-bit. This is the
+// all exact geometry, no engine, so the library must match Skia's output point stream bit-for-bit. This is the
 // structural-parity evidence for the faithful fold (an earlier one produced the operand's own orientation, which
 // diverged from Skia's fix-winding reversal). Both the reversing (CW) and non-reversing (CCW) fixWinding branches are
 // exercised.

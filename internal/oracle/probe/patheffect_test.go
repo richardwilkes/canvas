@@ -7,16 +7,11 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// The Skia's PathMeasure probe.
+// The PathMeasure probe.
 //
-// TestPathMeasureProbe drives the contour package against Skia's PathMeasure through the shim side door (the public
-// surface never exposes measurement standalone): contour lengths, closedness, pos/tan samples, matrices, and segment
-// extraction, iterated in lock-step across contours. The oracle's whole walk is replayed from the frozen reference
-// fixtures (see ref_test.go), so this no longer needs the C library — which is also why it no longer carries //go:build
-// !windows: that tag existed because mingw cannot resolve Skia's MSVC-mangled C++ exports, and replay needs no linker.
-//
-// The path-effect probes that shared this file (fill-path, canvas rendering, dashed asPoints) drove the C library live
-// and were removed with the rest of the render probes.
+// TestPathMeasureProbe drives the contour package against Skia's PathMeasure: contour lengths, closedness, pos/tan
+// samples, matrices, and segment extraction, iterated in lock-step across contours. The oracle's whole walk is
+// replayed from the frozen reference fixtures (see ref_test.go).
 
 package probe
 

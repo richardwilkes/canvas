@@ -7,8 +7,7 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// Tests migrated from the retired façade suite: they keep the core behaviors that previously had coverage only through
-// the façade's forwarding tests.
+// Round-trip and accessor checks for the public font entry points.
 
 package font
 
@@ -33,8 +32,8 @@ func loadMigratedTestFont(t *testing.T, size float32) *Font {
 	return NewFont(tf, size, 1, 0)
 }
 
-// TestFontFlagAndHintingRoundTrip covers the sk_font setter/getter pairs the façade forwarded: force auto-hinting,
-// subpixel, and the hinting level all round-trip.
+// TestFontFlagAndHintingRoundTrip covers the Font setter/getter pairs: force auto-hinting, subpixel, and the hinting
+// level all round-trip.
 func TestFontFlagAndHintingRoundTrip(t *testing.T) {
 	f := loadMigratedTestFont(t, 20)
 	if f.ForceAutoHinting() {

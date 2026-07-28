@@ -45,7 +45,7 @@ type Entry struct {
 //     "the GL stack moved" as a one-line renderer-string mismatch instead of a wall of pixel diffs; they are empty for
 //     the raster lane, which has no environment exposure (pure Go). `oracle gen` also writes schema 2 (leaving all of
 //     the added fields empty) — its output is a scratch comparison set rather than a blessed one, but it is still the
-//     port's own current output, which is exactly what schema 1 does not mean.
+//     library's own current output, which is exactly what schema 1 does not mean.
 type Manifest struct {
 	Platform   string  `json:"platform"`              // GOOS_GOARCH that generated the goldens
 	Lane       string  `json:"lane,omitempty"`        // "raster", "gpu", or "gpudmsaa" (schema 2)

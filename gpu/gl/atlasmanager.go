@@ -11,7 +11,7 @@
 // OpFlushState, which implies that adding glyphs to the atlas is a flush-time operation. The manager doubles as the
 // atlas generation counter and registers itself as the drawing manager's on-flush callback: preFlush validates page
 // instantiation, postFlush compacts. getPackedGlyphImage covers the lanes this codebase's scaler can produce: A8 masks
-// (tight rows), ARGB32 color glyphs, LCD16 masks into the A565 atlas (E.4) with the 565→8888 expansion for drivers
+// (tight rows), ARGB32 color glyphs, LCD16 masks into the A565 atlas with the 565→8888 expansion for drivers
 // without a 565 format; the BW bit-expansion lane is unreachable.
 
 package gl
@@ -132,7 +132,7 @@ func getPackedGlyphImage(glyph *font.Glyph, dstRB int, expectedMaskFormat gpu.Ma
 }
 
 // AddGlyphToAtlas returns AtlasErrorCodeSucceeded if the glyph was added to the texture atlas. srcPadding is 0 for
-// direct masks, 1 for transformed masks, and font.DistanceFieldInset (2) for SDFT glyphs (E.1).
+// direct masks, 1 for transformed masks, and font.DistanceFieldInset (2) for SDFT glyphs.
 func (m *AtlasManager) AddGlyphToAtlas(skGlyph *font.Glyph, glyph *text.Glyph, srcPadding int, resourceProvider *ResourceProvider, uploadTarget DeferredUploadTarget) AtlasErrorCode {
 	if srcPadding < 0 {
 		panic("negative padding")

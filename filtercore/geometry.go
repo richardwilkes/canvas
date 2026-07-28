@@ -418,8 +418,8 @@ func (m *Mapping) DecomposeCTM(ctm *geom.Matrix, capability MatrixCapability, re
 		remainder = *ctm
 		layer = geom.IdentityMatrix()
 	case ctm.IsScaleTranslate() || capability == MatrixCapabilityComplex:
-		// Either layer space can be anything (kComplex) - or - it can be scale+translate, and the ctm is. In both
-		// cases, the layer space can be equivalent to device space.
+		// Either layer space can be anything (MatrixCapabilityComplex), or it can be scale+translate and the ctm is.
+		// In both cases the layer space can be equivalent to device space.
 		remainder = geom.IdentityMatrix()
 		layer = *ctm
 	default:

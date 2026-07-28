@@ -16,7 +16,7 @@ import (
 	"github.com/richardwilkes/canvas/geom"
 )
 
-// Corpus growth: saveLayer variants — bounded layers, nesting, and the paint-carrying SaveLayer whose restore
+// SaveLayer variants — bounded layers, nesting, and the paint-carrying SaveLayer whose restore
 // composites through the paint's alpha / blend mode / color filter / image filter.
 
 func init() {

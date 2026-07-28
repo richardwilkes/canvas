@@ -203,8 +203,8 @@ func NewImageSpriteBlitter(dst, src *Pixmap, left, top int32, alpha uint8, mode 
 	}
 }
 
-// srcPixel returns the source word for destination pixel (x, y), scaled by the paint alpha in the lowp form
-// (scale_1_float with c = from_float(alpha/255) = alpha).
+// srcPM8 returns the source pixel for destination pixel (x, y), scaled by the paint alpha in the lowp form: alpha/255
+// converts into the lowp fixed-point form as alpha exactly, so the scale is div255(v*alpha).
 func (ib *ImageSpriteBlitter) srcPM8(x, y int32) pm8 {
 	s := loadPM8(ib.src.Pix[ib.src.addr(x-ib.left, y-ib.top)])
 	if ib.alpha != 255 {

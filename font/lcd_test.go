@@ -36,8 +36,8 @@ func lcdTestFont(t *testing.T, size float32) *Font {
 	return f
 }
 
-// TestMakeRecAndEffectsLCDGates pins compute_mask_format + the MakeRecAndEffects LCD16 gates: pixel geometry,
-// kUseDeviceIndependentFonts, and too_big_for_lcd.
+// TestMakeRecAndEffectsLCDGates pins the mask-format selection and the MakeRecAndEffects LCD16 gates: pixel geometry,
+// the device-independent-fonts flag, and the maximum size for LCD text.
 func TestMakeRecAndEffectsLCDGates(t *testing.T) {
 	f := lcdTestFont(t, 24)
 	identity := geom.IdentityMatrix()

@@ -11,7 +11,7 @@
 // one is closed at flush and replaced (SurfaceFillContext. GetOpsTask → replaceOpsTask → NewOpsTask) — so without
 // pooling every frame re-grows its opChains slice from nil, which the GPU-frame benchmarks measure as the single
 // largest in-our-code allocation (the append in OpsTask.recordOp). The C++ OpsTask is arena-allocated and freed
-// wholesale with the flush, so a steady-state C++ frame allocates none of this; the Go port recovers that by handing
+// wholesale with the flush, so a steady-state C++ frame allocates none of this; the library recovers that by handing
 // each dead task's grown backing to the next frame's task.
 //
 // The backing is wrapped in a pointer-sized box so the free list stores a *opChainsBox rather than a []opChain —

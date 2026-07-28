@@ -114,7 +114,7 @@ func getClipGeometry(a, b clipGeometryOperand) clipGeometry {
 			// B's zero coverage region completely contains A, so intersection = empty.
 			return clipGeometryEmpty
 		default:
-			// Note that this op combination cannot produce kBOnly.
+			// Note that this op combination cannot produce clipGeometryBOnly.
 			return clipGeometryBoth
 		}
 	}
@@ -140,7 +140,7 @@ func getClipGeometry(a, b clipGeometryOperand) clipGeometry {
 		// Mirror of the above case, intersection = B instead.
 		return clipGeometryBOnly
 	default:
-		// It is not possible to produce kEmpty for this op combination.
+		// It is not possible to produce clipGeometryEmpty for this op combination.
 		return clipGeometryBoth
 	}
 }
@@ -822,8 +822,8 @@ type clipStackSaveRecord struct {
 
 	deferredSaveCount int
 
-	// stackOp is kIntersect unless every valid element is kDifference, which is significant because then there is an
-	// implicit extra outer bounds at the device edges.
+	// stackOp is raster.ClipIntersect unless every valid element is raster.ClipDifference, which is significant
+	// because then there is an implicit extra outer bounds at the device edges.
 	stackOp raster.ClipOp
 	state   ClipStackState
 	genIDv  uint32
@@ -874,7 +874,7 @@ func (s *clipStackSaveRecord) genID() uint32 {
 	case ClipStackWideOpen:
 		return clipWideOpenGenID
 	default:
-		// May be kInvalid if the record hasn't had any elements added to it yet.
+		// May be clipInvalidGenID if the record hasn't had any elements added to it yet.
 		return s.genIDv
 	}
 }
@@ -1352,9 +1352,9 @@ func (cs *ClipStack) PreApply(bounds geom.Rect, aa gpu.AA) PreClipResult {
 		return MakePreClipResult(ClipEffectUnclipped)
 	default:
 		// clipGeometryBoth, plus clipGeometryAOnly: the latter shouldn't happen since the inner bounds of a draw are
-		// unknown, but if it did, the draw covered the clip and should be considered kClipped (the kBoth handling).
+		// unknown, but if it did, the draw covered the clip and gets the clipGeometryBoth handling below.
 		if len(cs.elements) == 0 {
-			panic("kBoth requires elements")
+			panic("clipGeometryBoth requires elements")
 		}
 		back := &cs.elements[len(cs.elements)-1]
 		switch current.recordState() {

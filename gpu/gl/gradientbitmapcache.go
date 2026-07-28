@@ -193,7 +193,7 @@ func colorTypeIsWiderThan8(ct gpu.ColorType) bool {
 	}
 }
 
-// makeTexturedColorizer bakes the gradient into a 256×1 LUT through the per-context cache, uploads it via the S120
+// makeTexturedColorizer bakes the gradient into a 256×1 LUT through the per-context cache, uploads it via the
 // pixels-proxy lane, and samples it with clamp wrap + linear filtering through a texture effect whose local matrix
 // scales by (width, 1). The LUT is 8888, or F16 when the destination is wider than 8 bits per channel and an F16
 // backend format exists. The LUT directly encodes the interpolated-to-dst result — including the final

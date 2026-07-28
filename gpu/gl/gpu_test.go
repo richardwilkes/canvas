@@ -94,7 +94,7 @@ func newRecordingGpuWithDriver(t *testing.T, d *capsFakeDriver) *Gpu {
 }
 
 // newRecordingGpuWithDriverOptions additionally takes explicit context options, for tests that pin option-dependent
-// behavior — e.g. the per-OS fGlyphsAsPathsFontSize (E.1) — without depending on the host GOOS's defaults.
+// behavior — e.g. the per-OS glyphs-as-paths font size — without depending on the host GOOS's defaults.
 func newRecordingGpuWithDriverOptions(t *testing.T, d *capsFakeDriver, options *gpu.ContextOptions) *Gpu {
 	t.Helper()
 	recCounts = map[string]int{}

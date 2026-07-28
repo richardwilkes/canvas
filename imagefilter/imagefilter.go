@@ -10,9 +10,9 @@
 // Package imagefilter provides the image filter implementations, built on the filtercore machinery: each filter
 // implements filtercore.Filter with consistent bounds propagation and FilterResult composition, and the factory
 // functions handle graph-building concerns like crop-rect wrapping, filter collapses, and compositions such as
-// DropShadow. Part 1 covers crop/tile/empty, blur, matrix-transform/offset, color-filter, compose, merge, and the
-// drop-shadow compositions; part 2 adds the shader-evaluating filters (morphology, displacement, lighting, magnifier,
-// matrix convolution, arithmetic) over the runtime-effect kernels in shaders, plus the image-source leaf.
+// DropShadow. The set covers crop/tile/empty, blur, matrix-transform/offset, color-filter, compose, merge, the
+// drop-shadow compositions, the shader-evaluating filters (morphology, displacement, lighting, magnifier, matrix
+// convolution, arithmetic) over the runtime-effect kernels in shaders, and the image-source leaf.
 package imagefilter
 
 import (

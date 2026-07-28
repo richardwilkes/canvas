@@ -22,7 +22,7 @@ import (
 
 // MakeFromImage builds a FilterResult drawing image from srcRect to dstRect with the given sampling. srcRect is
 // relative to the image's contents; dstRect is in parameter space. The caller guarantees a non-nil image. The image is
-// polymorphic (S118): a texture-backed image on the GPU backend enters the FilterResult world without a CPU readback.
+// polymorphic: a texture-backed image on the GPU backend enters the FilterResult world without a CPU readback.
 func MakeFromImage(ctx *Context, image imagecore.DrawableImage, srcRect, dstRect geom.Rect, sampling shaders.SamplingOptions) FilterResult {
 	imageBounds := geom.RectWH(float32(image.Width()), float32(image.Height()))
 	if !imageBounds.ContainsRect(srcRect) {

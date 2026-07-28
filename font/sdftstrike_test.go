@@ -7,7 +7,7 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// Unit tests for the SDF strike lane (E.1): MakeSDFTMaskSpec produces MaskSDF glyphs whose bounds are the A8 bounds
+// Unit tests for the SDF strike lane: MakeSDFTMaskSpec produces MaskSDF glyphs whose bounds are the A8 bounds
 // outset by SK_DistanceFieldPad, the kSDFT digest action accepts exactly the SDF-format in-atlas glyphs, and the
 // generated image is a distance field consistent with the A8 coverage (inside > 128 where coverage is high, far pad
 // below threshold).

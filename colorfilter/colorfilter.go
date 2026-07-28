@@ -79,8 +79,8 @@ type blendFilter struct {
 	mode  raster.BlendMode
 }
 
-// NewBlend returns the blend-mode color filter (the public entry point sk_colorfilter_new_mode): collapse modes against
-// the color's alpha, and return nil for the combinations that are no-ops.
+// NewBlend returns the blend-mode color filter: it collapses modes against the color's alpha, and returns nil for the
+// combinations that are no-ops.
 func NewBlend(c colorcore.Color, mode raster.BlendMode) shaders.ColorFilter {
 	if mode > raster.BlendLuminosity {
 		return nil

@@ -457,8 +457,8 @@ func (d *draw) drawRectFull(prePaintRect geom.Rect, paint *Paint, paintMatrix *g
 		}
 	}
 
-	// we want to "fill" if we are kFill or kStrokeAndFill, since in the latter case we are also hairline (if we've
-	// gotten to here), which devolves to effectively just kFill
+	// Fill for both StyleFill and StyleStrokeAndFill: reaching here in the latter case means the stroke is a
+	// hairline, which devolves to an effective fill.
 	switch rtype {
 	case rectTypeFill:
 		if paint.AntiAlias {

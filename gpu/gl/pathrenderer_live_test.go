@@ -139,8 +139,7 @@ func TestLivePathRendererSelection(t *testing.T) {
 		t.Fatalf("non-AA stroke selected %v, want Tessellation", pr)
 	}
 
-	// Hairline styles ride the tessellation renderer's stroke lane for non-AA (the session-31 interim gate that kept
-	// them on DefaultPathRenderer is resolved).
+	// Hairline styles ride the tessellation renderer's stroke lane for non-AA.
 	hairShape := gl.MakeStyledShapePath(liveStarPath(), gl.SimpleHairlineStyle(),
 		gl.DoSimplifyYes)
 	pr = dc.DrawingManager().GetPathRenderer(makeArgs(&hairShape, gpu.AATypeNone), false,
@@ -267,8 +266,7 @@ func TestLiveDefaultPathRendererFills(t *testing.T) {
 
 func TestLiveDefaultPathRendererHairline(t *testing.T) {
 	// Disable the tessellation renderer so the hairline stays on DefaultPathRenderer's line lane (the tessellation
-	// stroke lane claims hairlines since session 32; its own hairline coverage lives in
-	// TestLiveStrokeTessellationHairline).
+	// stroke lane claims hairlines; its own hairline coverage lives in TestLiveStrokeTessellationHairline).
 	env := newGLEnv(t)
 	opts := gpu.DefaultContextOptions()
 	opts.PathRenderers &^= gpu.PathRenderersTessellation

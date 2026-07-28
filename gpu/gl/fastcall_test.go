@@ -7,7 +7,7 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// Tests for the B.2 fixed-arity glCall lane (fastcall_*.go): a live-GL functional check of the trampoline against
+// Tests for the fixed-arity glCall lane (fastcall_*.go): a live-GL functional check of the trampoline against
 // purego.SyscallN on identical proc addresses (including the 9-argument stack-slot path and the zero-allocation
 // guarantee), and a source-level audit that pins the lane's arity contract so a future GL function-table regeneration
 // cannot silently violate it.
@@ -28,7 +28,7 @@ import (
 // proc address, out-parameters and the 9th-argument stack slot must land (glTexImage2D with a pixel upload), and a call
 // must not allocate on the trampoline platforms (on fallback platforms glCall is SyscallN, so the allocation assertion
 // is skipped there by construction — this file only builds where the repo builds, and the trampoline covers every
-// platform the port supports).
+// platform the library supports).
 func TestGLCallLaneLive(t *testing.T) {
 	ctx, err := gltest.New()
 	if err != nil {

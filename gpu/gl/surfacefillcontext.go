@@ -339,9 +339,9 @@ func MakeSurfaceDrawContextWithProps(ctx *DirectContext, colorType gpu.ColorType
 	return sdc
 }
 
-// MakeSurfaceDrawContextFromBackendRenderTarget wraps a caller-owned GL render target description (the
-// `sk_surface_new_backend_render_target` path: unison's FBO 0 with its stencil bits) into a proxy-backed draw context
-// carrying the surface props (nil = default).
+// MakeSurfaceDrawContextFromBackendRenderTarget wraps a caller-owned GL render target description (the wrapped-FBO
+// path: unison's FBO 0 with its stencil bits) into a proxy-backed draw context carrying the surface props (nil =
+// default).
 func MakeSurfaceDrawContextFromBackendRenderTarget(ctx *DirectContext, colorType gpu.ColorType, dims geom.ISize, format Format, sampleCnt, stencilBits int, fboID uint32, origin gpu.SurfaceOrigin, props *surface.Props) *SurfaceDrawContext {
 	if ctx.Abandoned() {
 		return nil

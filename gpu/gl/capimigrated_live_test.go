@@ -7,10 +7,9 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// Live tests migrated from the retired façade suite: the wrapped-FBO bottom-left-origin lanes the façade's gpu_live
-// tests exercised, now driven through the underlying API exactly as unison drives it. The oracle's wrapped-FBO golden
-// lane covers the top-left wrapped-FBO surface path; these cover the bottom-left origin flip against an asymmetric
-// source image, where a wrong flip diverges.
+// Live tests for the wrapped-FBO bottom-left-origin lanes, driven through the underlying API exactly as unison drives
+// it. The oracle's wrapped-FBO golden lane covers the top-left wrapped-FBO surface path; these cover the bottom-left
+// origin flip against an asymmetric source image, where a wrong flip diverges.
 
 package gl_test
 

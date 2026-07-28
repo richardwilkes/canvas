@@ -138,7 +138,7 @@ const (
 	// XPAnalysisIgnoresInputColor: the color input to the XferProcessor will be ignored.
 	XPAnalysisIgnoresInputColor uint32 = 0x4
 	// XPAnalysisRequiresDstTexture: the destination color will be provided to the fragment processor using a texture
-	// (additional information about kReadsDstInShader).
+	// (additional information about XPAnalysisReadsDstInShader).
 	XPAnalysisRequiresDstTexture uint32 = 0x10
 	// XPAnalysisRequiresNonOverlappingDraws: each pixel can only be touched once during a draw (e.g. because of a dst
 	// texture or an xfer barrier).

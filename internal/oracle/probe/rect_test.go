@@ -8,9 +8,7 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // This probe checks geom.Rect against Skia's Rect intersect/join/round results, replayed from the frozen reference
-// fixtures (see ref.go). It once drove Skia's C++ internals live through the skiac shim, which confined it to
-// darwin/linux — mingw g++ cannot resolve Skia's MSVC-mangled C++ exports. Replay needs no linker, so it now runs
-// everywhere.
+// fixtures (see ref_test.go).
 
 package probe
 
@@ -22,7 +20,7 @@ import (
 )
 
 // TestRectIntersectProbe: geom.Rect.Intersect vs Skia's Rect::intersect — flag and mutated receiver, including the
-// asymmetric NaN quirk the port deliberately preserves.
+// asymmetric NaN quirk the library deliberately preserves.
 func TestRectIntersectProbe(t *testing.T) {
 	rects := rectCorpus()
 	for i, a := range rects {
@@ -71,7 +69,7 @@ func TestRectSetBoundsProbe(t *testing.T) {
 	}
 }
 
-// TestRectRoundProbe: Round/RoundOut/RoundIn vs the Skia's Rect versions (saturated double rounding).
+// TestRectRoundProbe: Round/RoundOut/RoundIn vs Skia's Rect versions (saturated double rounding).
 func TestRectRoundProbe(t *testing.T) {
 	for i, r := range rectCorpus() {
 		if got, want := r.Round(), refRectRound(r); got != want {

@@ -95,7 +95,7 @@ func TestMeasureCircleLength(t *testing.T) {
 		t.Error("circle should be closed")
 	}
 	// The flattened length approaches 2*pi*r from below; the 0.5 base tolerance at resScale 1 yields ~0.65% error at
-	// r=10 (exact parity with the C library is the oracle probe's job).
+	// r=10 (exact parity with Skia is the oracle probe's job).
 	want := float32(2 * math.Pi * 10)
 	if m.Length() > want || m.Length() < want*0.99 {
 		t.Errorf("circle length: got %v, want ~%v", m.Length(), want)

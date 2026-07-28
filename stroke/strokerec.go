@@ -19,7 +19,8 @@ import (
 	"github.com/richardwilkes/canvas/path"
 )
 
-// PaintStyle identifies whether a paint fills, strokes, or both. The values match sk_paint_style_t.
+// PaintStyle identifies whether a paint fills, strokes, or both. The values match canvas.Style, which is cast
+// directly to this type.
 type PaintStyle uint8
 
 // PaintStyle values.

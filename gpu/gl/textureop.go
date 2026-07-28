@@ -580,8 +580,8 @@ func (sdc *SurfaceDrawContext) DrawTexturedQuad(clip Clip, proxyView SurfaceProx
 		panic("drawTexturedQuad requires a texture proxy")
 	}
 
-	// Functionally this is very similar to drawFilledQuad except that there's no constColor to enable the kSubmitted
-	// optimizations, no stencil settings support, and it's a TextureOp.
+	// Functionally this is very similar to drawFilledQuad except that there's no constColor to enable the
+	// quadOptSubmitted optimizations, no stencil settings support, and it's a TextureOp.
 	opt := sdc.attemptQuadOptimization(clip, nil /* stencil */, quad, nil /* paint */)
 	if opt == quadOptSubmitted {
 		panic("texture quads cannot reduce to native clears")

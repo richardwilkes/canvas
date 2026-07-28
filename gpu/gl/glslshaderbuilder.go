@@ -355,9 +355,8 @@ func (f *FragmentShaderBuilder) ensureBlendHelper(key string) {
 	}
 	f.blendFuncsEmitted[key] = true
 	if key == glslGuardedDivideFn {
-		// Both overloads emit together. $kGuardedDivideEpsilon folds the mustGuardDivisionEvenAfterExplicitZeroCheck
-		// caps bit (an Adreno workaround; false on every desktop-trim driver, but the caps bit is honored for
-		// faithfulness).
+		// Both overloads emit together. The epsilon folds in the MustGuardDivisionEvenAfterExplicitZeroCheck caps bit
+		// (an Adreno workaround; false on every desktop-trim driver, but the caps bit is honored for faithfulness).
 		eps := "0.0"
 		if f.programBuilder.shaderCaps().MustGuardDivisionEvenAfterExplicitZeroCheck {
 			eps = "0.00000001"

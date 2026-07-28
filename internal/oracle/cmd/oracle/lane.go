@@ -67,23 +67,33 @@ type laneSession struct {
 	glVersion  string
 }
 
-// newLaneSession opens a fresh rendering session for one full corpus pass. For the GPU lanes it creates the headless
-// GL context; a context-creation failure comes back wrapping errNoGLContext so main can exit with exitNoGLContext (the
-// capture workflow's loud-skip signal).
+// pinSoftwareRenderer pins CANVAS_GLTEST_RENDERER=software for the GL lanes, so a capture renders on the same stack
+// the golden gates do. Every GPU gate pins it — TestGoGPUvsSelfCapturedGolden and its wrapped-FBO twin
+// (gorender/gpugolden_test.go) as much as TestGoGPUDMSAAvsSelfCapturedGolden — because comparing across GL stacks is
+// meaningless under exact1: hardware and software rasterizers differ structurally at AA edges, and DMSAA output
+// additionally depends on the driver's MSAA sample positions and resolve filter. Pinning only the gpudmsaa lane would
+// let `oracle bless -lane gpu` on a machine with hardware GL capture a set no gate can ever render, caught only after
+// a full two-pass capture by the gate's GL_RENDERER manifest guard.
 //
-// The gpudmsaa lane self-pins CANVAS_GLTEST_RENDERER=software before creating the context, mirroring
-// TestGoGPUDMSAAvsSelfCapturedGolden (gorender/gpudmsaagolden_test.go): DMSAA output depends on the driver's MSAA
-// sample positions and resolve filter, so that lane's goldens and gates live on the pinned non-hardware stack. On
-// darwin the variable selects kCGLRendererGenericFloatID; on Linux and Windows it is a no-op (their software stacks are
-// provisioned externally — llvmpipe under Xvfb / the Mesa3D drop-in) so setting it unconditionally is safe.
+// On darwin the variable selects kCGLRendererGenericFloatID; on Linux and Windows it is a no-op (their software stacks
+// are provisioned externally — llvmpipe under Xvfb / the Mesa3D drop-in), so setting it for every GL lane is safe. The
+// raster lane is pure Go with no GL exposure, so it is left alone.
+func pinSoftwareRenderer(lane string) error {
+	if lane == laneRaster {
+		return nil
+	}
+	return os.Setenv("CANVAS_GLTEST_RENDERER", "software")
+}
+
+// newLaneSession opens a fresh rendering session for one full corpus pass. For the GPU lanes it pins the software GL
+// stack (see pinSoftwareRenderer) and creates the headless GL context; a context-creation failure comes back wrapping
+// errNoGLContext so main can exit with exitNoGLContext (the capture workflow's loud-skip signal).
 func newLaneSession(lane string) (*laneSession, error) {
 	if lane == laneRaster {
 		return &laneSession{render: gorender.RenderScenarioRaster, dispose: func() {}}, nil
 	}
-	if lane == laneGPUDMSAA {
-		if err := os.Setenv("CANVAS_GLTEST_RENDERER", "software"); err != nil {
-			return nil, err
-		}
+	if err := pinSoftwareRenderer(lane); err != nil {
+		return nil, err
 	}
 	g, err := gorender.NewGPUContext()
 	if err != nil {

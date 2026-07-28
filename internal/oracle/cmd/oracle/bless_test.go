@@ -12,6 +12,7 @@ package main
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -321,6 +322,123 @@ func TestBlessRefusesGLStackChange(t *testing.T) {
 	}
 	if _, statErr := os.Stat(dir); !os.IsNotExist(statErr) {
 		t.Fatalf("bless wrote the target directory despite refusing")
+	}
+}
+
+// oneSessionThenNoGL returns a session factory that serves one working session and then fails exactly the way
+// newLaneSession does when no GL context comes up: an error wrapping errNoGLContext.
+func oneSessionThenNoGL() func() (*laneSession, error) {
+	sessions := 0
+	return func() (*laneSession, error) {
+		sessions++
+		if sessions > 1 {
+			return nil, fmt.Errorf("lane gpu: GPU backend unavailable (%w): %w", errNoGLContext,
+				errors.New("the context vanished"))
+		}
+		return &laneSession{render: solidRender(10), dispose: func() {}, glRenderer: "stack", glVersion: "4.1"}, nil
+	}
+}
+
+// TestBlessVerifySessionFailureIsNotASkip covers a mid-run GL loss: the capture pass gets a session and the verify pass
+// does not. That failure must not carry errNoGLContext, because fatalMaybeNoGL would then exit 3 and
+// capture-goldens.yml would report the lane as "no GL stack — loud skip" rather than the failure it is. soak strips the
+// sentinel for exactly this case; bless has to as well.
+func TestBlessVerifySessionFailureIsNotASkip(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "goldens", "gpu", "test_platform")
+	cfg := blessConfig{
+		out:        &bytes.Buffer{},
+		dir:        dir,
+		lane:       laneGPU,
+		platform:   "test_platform",
+		scenarios:  testScenarios(),
+		newSession: oneSessionThenNoGL(),
+	}
+	err := bless(&cfg)
+	if err == nil {
+		t.Fatal("bless with a failing verify-pass session: want an error")
+	}
+	if errors.Is(err, errNoGLContext) {
+		t.Fatalf("bless reported a mid-run GL loss as the loud-skip case (exit %d): %v", exitNoGLContext, err)
+	}
+	if !strings.Contains(err.Error(), "verify-pass session failed") {
+		t.Fatalf("error does not say which pass failed: %v", err)
+	}
+	if !strings.Contains(err.Error(), "the context vanished") {
+		t.Fatalf("stripping the sentinel lost the underlying diagnosis: %v", err)
+	}
+	if _, statErr := os.Stat(dir); !os.IsNotExist(statErr) {
+		t.Fatalf("bless wrote the target directory despite refusing")
+	}
+	if _, statErr := os.Stat(dir + ".staging"); !os.IsNotExist(statErr) {
+		t.Fatalf("bless left its staging directory behind after refusing")
+	}
+}
+
+// TestBlessCapturePassFailureStaysASkip is the other half of the asymmetry: a leg with no GL stack at all fails on the
+// *first* session, and that must keep the sentinel so the capture workflow skips the lane loudly instead of failing.
+func TestBlessCapturePassFailureStaysASkip(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "goldens", "gpu", "test_platform")
+	cfg := blessConfig{
+		out:       &bytes.Buffer{},
+		dir:       dir,
+		lane:      laneGPU,
+		platform:  "test_platform",
+		scenarios: testScenarios(),
+		newSession: func() (*laneSession, error) {
+			return nil, fmt.Errorf("lane gpu: GPU backend unavailable (%w): %w", errNoGLContext,
+				errors.New("no GL stack on this leg"))
+		},
+	}
+	err := bless(&cfg)
+	if err == nil || !errors.Is(err, errNoGLContext) {
+		t.Fatalf("bless with no GL context at all: err = %v, want the errNoGLContext loud-skip signal", err)
+	}
+}
+
+// TestBlessCapturesOverDamagedPriorGolden checks that a damaged prior golden cannot abort a capture. The change summary
+// is purely informational and runs after both render passes have verified the new set, and a damaged golden set is the
+// one situation where re-blessing is most needed — refusing there would also delete the staged capture on the way out.
+func TestBlessCapturesOverDamagedPriorGolden(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "goldens", "raster", "test_platform")
+	cfg := blessOverPrior(t, dir)
+	var out bytes.Buffer
+	cfg.out = &out
+	// alpha decodes as nothing at all; beta decodes fine but disagrees with the size in its own manifest entry.
+	if err := os.WriteFile(filepath.Join(dir, "alpha.png"), []byte("\x89PNG\r\n\x1a\ntruncated"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := golden.WritePNG(filepath.Join(dir, "beta.png"), make([]byte, 4), 1, 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := bless(cfg); err != nil {
+		t.Fatalf("bless over a damaged prior golden set: %v, want success", err)
+	}
+	text := out.String()
+	if !strings.Contains(text, "CHANGED   alpha") || !strings.Contains(text, "unreadable") {
+		t.Fatalf("change summary did not report the unreadable prior golden:\n%s", text)
+	}
+	if !strings.Contains(text, "CHANGED   beta") || !strings.Contains(text, "manifest entry says") {
+		t.Fatalf("change summary did not report the size-mismatched prior golden:\n%s", text)
+	}
+	m, err := golden.ReadManifest(dir)
+	if err != nil {
+		t.Fatalf("ReadManifest after capturing over the damaged set: %v", err)
+	}
+	for i, s := range testScenarios() {
+		want := golden.HashPixels(solidRender(20)(s))
+		if m.Entries[i].SHA256 != want {
+			t.Fatalf("%s: bless did not capture over the damaged prior set", s.Name)
+		}
+		pixels, _, _, pngErr := golden.ReadPNG(filepath.Join(dir, s.Name+".png"))
+		if pngErr != nil {
+			t.Fatalf("ReadPNG %s after the capture: %v", s.Name, pngErr)
+		}
+		if golden.HashPixels(pixels) != want {
+			t.Fatalf("%s: the damaged PNG survived the capture", s.Name)
+		}
+	}
+	if _, err = os.Stat(dir + ".staging"); !os.IsNotExist(err) {
+		t.Fatalf("bless left its staging directory behind")
 	}
 }
 

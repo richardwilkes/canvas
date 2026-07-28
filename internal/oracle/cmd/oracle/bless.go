@@ -55,7 +55,10 @@ type blessConfig struct {
 // invariant the gates rely on; see laneSession), stages the PNGs + schema-2 manifest beside the target directory,
 // prints a per-scenario old-vs-new change summary when a prior set exists (the reviewable diff is generated at
 // capture time), and only then swaps the staged set into place — renaming the prior set aside rather than removing it,
-// so a failed swap puts it back. On any error the target directory is untouched.
+// so a failed swap puts it back. On any error the target directory keeps the prior set, with one exception the swap
+// itself cannot rule out: when the staged set cannot be moved into place *and* the prior set cannot be moved back, the
+// target is left missing and both sets survive beside it (`.prior` and `.staging`). That is precisely the state
+// recoverInterruptedSwap repairs on the next run, and the error names both directories.
 //
 // The guard is per-lane, mirroring soak: raster is strictly bit-exact (any hash difference refuses), while the gpu
 // and gpudmsaa lanes compare the verify pass per-pixel against the retained capture-pass buffers under the ±1 LSB
@@ -142,7 +145,11 @@ func bless(cfg *blessConfig) error {
 	// premise of self-captured goldens does not hold on this stack and nothing may be written.
 	verify, err := cfg.newSession()
 	if err != nil {
-		return err
+		// A context that came up for the capture pass and not for the verify pass is its own kind of broken, so this
+		// must not reach main as the loud-skip case: err.Error() rather than %w strips errNoGLContext, exactly as soak
+		// does for the same situation. Wrapping it would exit 3 and make capture-goldens.yml report a mid-run GL loss
+		// as "this leg has no GL stack" instead of a failure.
+		return fmt.Errorf("bless: the verify-pass session failed after the capture pass succeeded: %s", err.Error())
 	}
 	if verify.glRenderer != m.GLRenderer || verify.glVersion != m.GLVersion {
 		verify.dispose()
@@ -339,9 +346,21 @@ func blessSummary(cfg *blessConfig, prior, next *golden.Manifest, staging string
 				ne.Height)
 			continue
 		}
-		oldPix, _, _, err := golden.ReadPNG(filepath.Join(cfg.dir, ne.Name+".png"))
+		oldPix, oldW, oldH, err := golden.ReadPNG(filepath.Join(cfg.dir, ne.Name+".png"))
 		if err != nil {
-			return fmt.Errorf("bless: reading prior golden for change summary: %w", err)
+			// A damaged prior golden may not abort the capture. This summary is informational and runs after both
+			// render passes have already verified the new set, and a damaged golden set is the one situation where
+			// re-blessing is most needed — refusing here would instead delete the staged capture on the way out.
+			fmt.Fprintf(cfg.out, "CHANGED   %-32s prior golden unreadable (%v); capturing over it\n", ne.Name, err)
+			continue
+		}
+		if oldW != pe.Width || oldH != pe.Height {
+			// Same reasoning: a prior PNG that disagrees with its own manifest entry is a damaged set to capture over,
+			// not a reason to refuse (and Compare would reject the mismatched buffer anyway).
+			fmt.Fprintf(cfg.out,
+				"CHANGED   %-32s prior golden is %dx%d but its manifest entry says %dx%d; capturing over it\n",
+				ne.Name, oldW, oldH, pe.Width, pe.Height)
+			continue
 		}
 		newPix, _, _, err := golden.ReadPNG(filepath.Join(staging, ne.Name+".png"))
 		if err != nil {

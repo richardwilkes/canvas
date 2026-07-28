@@ -9,9 +9,9 @@
 #
 # GL provisioning mirrors build.yml's oracle jobs: Xvfb + Mesa llvmpipe (LIBGL_ALWAYS_SOFTWARE=1 and
 # CANVAS_GLTEST_RENDERER=software) on Linux, the pinned Mesa3D llvmpipe drop-in beside the binary on Windows (the
-# app-directory copy of opengl32.dll wins over System32; PATH does not work), and the runner's own GL on macOS (the
-# gpudmsaa lane self-pins CANVAS_GLTEST_RENDERER=software inside the oracle CLI, exactly as the DMSAA gate does — the
-# variable stays out of the darwin env so the plain gpu lane keeps rendering on the runner's default stack). A leg
+# app-directory copy of opengl32.dll wins over System32; PATH does not work), and the runner's own GL on macOS (both
+# GPU lanes self-pin CANVAS_GLTEST_RENDERER=software inside the oracle CLI, exactly as their gates do, so the variable
+# does not need to be in the darwin env — on the macOS runners it selects the stack they already render on). A leg
 # whose GL context fails to come up logs a loud warning and skips that lane's artifact content (oracle exits 3 for
 # exactly this case); a lane that soaks or blesses *nondeterministically* marks the leg failed — nondeterminism is a
 # rendering bug that would make exact golden comparison meaningless, and must be fixed, never papered over.

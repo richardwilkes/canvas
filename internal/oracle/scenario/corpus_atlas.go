@@ -18,9 +18,11 @@ import (
 )
 
 // The drawAtlas corpus: the four atlas scenarios, drawing sprites from a shared procedural atlas through the
-// scenario.Canvas DrawAtlas hook. The CPU lane compares under the standard profile, the GPU lane under `gpu`, and the
-// Go-GPU-vs-Go-CPU self-consistency check (gorender's TestAtlasGPUvsCPUSelfConsistency) guards the per-sprite
-// CPU-lowering equivalence claim.
+// scenario.Canvas DrawAtlas hook. They gate exactly as every other scenario does — the raster lane bit-exactly under
+// `exact`, the gpu and gpudmsaa lanes under `exact1` — against this platform's self-captured goldens. The looser
+// `gpu` profile bounds only the Go-GPU-vs-Go-CPU self-consistency check (gorender's
+// TestAtlasGPUvsCPUSelfConsistency), which compares the port's two live backends against each other rather than
+// against a golden, and guards the per-sprite CPU-lowering equivalence claim.
 
 // atlasSize is the shared atlas's dimension (four 32x32 tiles in a 64x64 square).
 const atlasSize = 64

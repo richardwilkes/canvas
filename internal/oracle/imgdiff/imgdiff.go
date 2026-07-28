@@ -63,9 +63,8 @@ func ProfileByName(name string) (Profile, bool) {
 type Result struct {
 	Profile       Profile
 	Width, Height int
-	DiffPixels    int // pixels with any channel delta > profile.MaxChannelDelta
-	AnyDiffPixels int // pixels with any channel delta > 0
-	TotalDelta    uint64
+	DiffPixels    int   // pixels with any channel delta > profile.MaxChannelDelta
+	AnyDiffPixels int   // pixels with any channel delta > 0
 	MaxDelta      uint8 // largest channel delta anywhere
 }
 
@@ -105,11 +104,9 @@ func Compare(a, b []byte, width, height int, profile Profile) (Result, error) {
 	for i := 0; i < n; i += 4 {
 		var maxD uint8
 		for j := range 4 {
-			d := absDelta(a[i+j], b[i+j])
-			if d > maxD {
+			if d := absDelta(a[i+j], b[i+j]); d > maxD {
 				maxD = d
 			}
-			res.TotalDelta += uint64(d)
 		}
 		if maxD > 0 {
 			res.AnyDiffPixels++
@@ -125,7 +122,7 @@ func Compare(a, b []byte, width, height int, profile Profile) (Result, error) {
 }
 
 // Heatmap renders per-pixel max channel deltas as an image: black where identical, then a blue→yellow→red ramp (delta 1
-// is already clearly visible; red means delta ≥ 64).
+// is already clearly visible; each band's label in heatColor is its inclusive upper bound, so red means delta > 64).
 func Heatmap(a, b []byte, width, height int) *image.NRGBA {
 	img := image.NewNRGBA(image.Rect(0, 0, width, height))
 	for y := range height {

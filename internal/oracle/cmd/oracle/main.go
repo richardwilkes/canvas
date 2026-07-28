@@ -201,16 +201,21 @@ func gen(dir string, useGPU bool) error {
 		defer g.Dispose()
 		render = func(s scenario.Scenario) []byte { return gorender.RenderScenarioGPU(g, s) }
 	}
-	return writeGoldens(dir, render)
+	return writeGoldens(dir, scenario.All(), render)
 }
 
-// writeGoldens renders every corpus scenario through render and writes the golden PNGs + manifest to dir.
-func writeGoldens(dir string, render func(scenario.Scenario) []byte) error {
+// writeGoldens renders scenarios through render and writes the golden PNGs + manifest to dir.
+//
+// The manifest is schema 2, the same schema `bless` writes: schema 1 means "a frozen Skia-era archive set" (see
+// golden.Manifest), which both bless and capture.sh refuse to overwrite, so stamping gen's freshly rendered port
+// output with it would poison the directory against any later capture with a diagnosis naming an archive that was
+// never there. The lane and GL-stack fields stay empty — gen's output is a scratch comparison set, not a blessed one.
+func writeGoldens(dir string, scenarios []scenario.Scenario, render func(scenario.Scenario) []byte) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
-	m := golden.Manifest{Schema: 1, Platform: runtime.GOOS + "_" + runtime.GOARCH}
-	for _, s := range scenario.All() {
+	m := golden.Manifest{Schema: blessSchema, Platform: runtime.GOOS + "_" + runtime.GOARCH}
+	for _, s := range scenarios {
 		pixels := render(s)
 		if err := golden.WritePNG(filepath.Join(dir, s.Name+".png"), pixels, s.Width, s.Height); err != nil {
 			return err
@@ -259,10 +264,11 @@ func diff(aDir, bDir string, profile imgdiff.Profile, artifacts string) (failure
 			failures++
 			continue
 		}
-		if ae.SHA256 == be.SHA256 {
-			fmt.Printf("ok   %-32s identical\n", ae.Name)
-			continue
-		}
+		// Both PNGs are read even when the manifests agree. The manifest hashes describe the pixels a golden was
+		// captured from, not the bytes now on disk, so short-circuiting on hash equality would leave every passing
+		// golden PNG unopened — and the raster lane's only gate is `oracle gen` + `oracle diff`, which would then never
+		// notice a corrupted or truncated checked-in golden. Reading them is what makes the files comparison data
+		// first (see package golden).
 		apx, aw, ah, pngErr := golden.ReadPNG(filepath.Join(aDir, ae.Name+".png"))
 		if pngErr != nil {
 			return failures, pngErr
@@ -274,6 +280,18 @@ func diff(aDir, bDir string, profile imgdiff.Profile, artifacts string) (failure
 		if aw != ae.Width || ah != ae.Height || bw != be.Width || bh != be.Height {
 			fmt.Printf("FAIL %-32s png size disagrees with manifest\n", ae.Name)
 			failures++
+			continue
+		}
+		if ae.SHA256 == be.SHA256 {
+			// Equal manifest hashes still have to be the hashes of these two files: a PNG whose pixels no longer hash
+			// to its own entry is a damaged golden, however well the two manifests agree with each other.
+			if aHash, bHash := golden.HashPixels(apx), golden.HashPixels(bpx); aHash != ae.SHA256 || bHash != be.SHA256 {
+				fmt.Printf("FAIL %-32s png content disagrees with its manifest entry (%s: %s, %s: %s, manifest: %s)\n",
+					ae.Name, aDir, aHash, bDir, bHash, ae.SHA256)
+				failures++
+				continue
+			}
+			fmt.Printf("ok   %-32s identical\n", ae.Name)
 			continue
 		}
 		res, pngErr := imgdiff.Compare(apx, bpx, aw, ah, profile)

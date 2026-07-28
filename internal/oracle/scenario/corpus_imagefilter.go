@@ -192,9 +192,11 @@ func init() {
 	})
 
 	reg("imagefilter-matrix-transform", func(c Canvas) {
-		// The rect is sized so the rotated linear-resample area stays inside the raster differential's 0.5% CPU budget
-		// on every leg: bilerp weight rounding drifts by a couple of LSBs between the oracle's SIMD lanes, and at
-		// 110x110 the drifting area measured 0.53% on the linux leg.
+		// The rect is 90x90 rather than the 110x110 it started as because the rotated linear-resample area used to be
+		// held inside a cross-renderer tolerance budget: bilerp weight rounding drifted a couple of LSBs between the
+		// C oracle's SIMD lanes and the port's, and at 110x110 that drifting area exceeded the raster differential's
+		// 0.5% budget on the linux leg. No live budget constrains the geometry now — the C oracle is gone and every
+		// lane gates against self-captured goldens ((near-)bit-exactly) — so the size is simply what the goldens hold.
 		c.Clear(white)
 		m := geom.IdentityMatrix()
 		m.SetAll(0.86, -0.5, 60, 0.5, 0.86, -30, 0, 0, 1) // rotate 30 degrees + offset

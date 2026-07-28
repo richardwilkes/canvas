@@ -94,6 +94,41 @@ func TestPremulUnpremulRoundTrip(t *testing.T) {
 	}
 }
 
+// TestUnPreMultiplySaturatesNonCanonical pins the clamp for premultiplied colors whose channels exceed their alpha.
+// PMColorARGB is exported and validates nothing, so such a color is constructible through the public API; without the
+// clamp the shifted product wraps on the conversion to uint8 (alpha 1, channel 255 lands on 65025, whose low byte is 1
+// — near-black instead of white).
+func TestUnPreMultiplySaturatesNonCanonical(t *testing.T) {
+	if got := PMColorARGB(1, 255, 0, 0).UnPreMultiply(); got != ARGB(1, 255, 0, 0) {
+		t.Errorf("PMColorARGB(1,255,0,0).UnPreMultiply() = %#08x, want %#08x", uint32(got), uint32(ARGB(1, 255, 0, 0)))
+	}
+	// Every out-of-range (alpha, component) pair must saturate; every in-range pair must stay unclamped, matching the
+	// exact quotient to within the one count the 8.24 reciprocal can shed at a tie.
+	for a := 1; a <= 254; a++ {
+		for v := 0; v <= 255; v++ {
+			got := PMColorARGB(uint8(a), uint8(v), uint8(v), uint8(v)).UnPreMultiply()
+			if got.A() != uint8(a) || got.R() != got.G() || got.R() != got.B() {
+				t.Fatalf("PMColorARGB(%d,%d,%d,%d).UnPreMultiply() = %#08x, channels disagree", a, v, v, v, uint32(got))
+			}
+			if v >= a {
+				if got.R() != 255 {
+					t.Fatalf("PMColorARGB(%d,%d,%d,%d).UnPreMultiply() = %#08x, want saturated channels", a, v, v, v,
+						uint32(got))
+				}
+				continue
+			}
+			if want := math.Floor(float64(v)*255/float64(a) + 0.5); math.Abs(float64(got.R())-want) > 1 {
+				t.Fatalf("PMColorARGB(%d,%d,%d,%d).UnPreMultiply() = %#08x, want channels near %g", a, v, v, v,
+					uint32(got), want)
+			}
+		}
+	}
+	// Alpha 255 passes through untouched, out-of-range or not, since no division is needed.
+	if got := PMColorARGB(255, 255, 128, 0).UnPreMultiply(); got != ARGB(255, 255, 128, 0) {
+		t.Errorf("opaque unpremul = %#08x", uint32(got))
+	}
+}
+
 func TestColor4fRoundTrip(t *testing.T) {
 	// Byte -> float -> byte must be identity for all 256 values per channel.
 	for v := 0; v <= 255; v++ {

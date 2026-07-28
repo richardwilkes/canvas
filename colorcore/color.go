@@ -111,13 +111,20 @@ func unpremulScale(a uint8) uint32 {
 	return uint32((uint64(255<<24) + uint64(a)/2) / uint64(a))
 }
 
-// applyUnpremulScale un-premultiplies one channel: (component*scale + 2^23) >> 24.
+// applyUnpremulScale un-premultiplies one channel: (component*scale + 2^23) >> 24, saturated to 255. The shifted
+// product only stays within a byte for a canonical premultiplied color (component <= alpha); PMColorARGB is exported
+// and validates nothing, so a caller can hand UnPreMultiply a color whose channel exceeds its alpha. Saturating there
+// keeps the result a valid color rather than letting the uint8 conversion wrap it to an unrelated value.
 func applyUnpremulScale(scale uint32, component uint8) uint8 {
-	return uint8((uint64(component)*uint64(scale) + 1<<23) >> 24)
+	if v := (uint64(component)*uint64(scale) + 1<<23) >> 24; v < 255 {
+		return uint8(v)
+	}
+	return 255
 }
 
 // UnPreMultiply converts the premultiplied color back to an unpremultiplied Color, dividing each color channel by alpha
-// with round-to-nearest arithmetic. A zero alpha yields transparent black.
+// with round-to-nearest arithmetic. A zero alpha yields transparent black. A channel that exceeds the alpha — possible
+// only for a non-canonical premultiplied color, which PMColorARGB does not reject — saturates to 255.
 func (c PMColor) UnPreMultiply() Color {
 	a := c.A()
 	if a == 0 {

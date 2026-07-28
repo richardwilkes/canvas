@@ -326,6 +326,17 @@ func dashInternalFilter(dst, src *path.Path, rec *stroke.Rec, cullRect *geom.Rec
 
 	dashCount := float32(0)
 
+	// The maxDashCount bail-out below throws away everything this call produced, so when dst already holds output from
+	// an earlier effect (MakeSum hands the same dst to both of its children) the dashed segments have to accumulate in a
+	// scratch path that can be dropped on its own. Otherwise the bail-out would erase the caller's contribution too,
+	// violating the "appending the result to dst" contract in stroke.PathEffect. dst is empty in the common case, so the
+	// scratch path (and the copy it costs) is only paid for when it is actually needed.
+	out := dst
+	if !dst.IsEmpty() {
+		out = path.Borrow()
+		defer path.Recycle(out)
+	}
+
 	builder := &path.Path{}
 	srcPtr := src
 	if cullPath(src, rec, cullRect, intervalLength, builder) {
@@ -391,7 +402,7 @@ func dashInternalFilter(dst, src *path.Path, rec *stroke.Rec, cullRect *geom.Rec
 		// threshold (see maxDashCount).
 		dashCount += length * float32(count>>1) / intervalLength
 		if dashCount > maxDashCount {
-			dst.Reset()
+			out.Rewind()
 			return false
 		}
 
@@ -406,9 +417,9 @@ func dashInternalFilter(dst, src *path.Path, rec *stroke.Rec, cullRect *geom.Rec
 				addedSegment = true
 
 				if specialLine {
-					lineRec.addSegment(geom.DoubleToScalar(distance), geom.DoubleToScalar(distance+dlen), dst)
+					lineRec.addSegment(geom.DoubleToScalar(distance), geom.DoubleToScalar(distance+dlen), out)
 				} else {
-					meas.GetSegment(geom.DoubleToScalar(distance), geom.DoubleToScalar(distance+dlen), dst, true)
+					meas.GetSegment(geom.DoubleToScalar(distance), geom.DoubleToScalar(distance+dlen), out, true)
 				}
 			}
 			distance += dlen
@@ -428,13 +439,16 @@ func dashInternalFilter(dst, src *path.Path, rec *stroke.Rec, cullRect *geom.Rec
 
 		// extend if we ended on a segment and we need to join up with the (skipped) initial segment
 		if meas.IsClosed() && isEven(initialDashIndex) && initialDashLength >= 0 {
-			meas.GetSegment(0, initialDashLength, dst, !addedSegment)
+			meas.GetSegment(0, initialDashLength, out, !addedSegment)
 		}
 		if !meas.NextContour() {
 			break
 		}
 	}
 
+	if out != dst {
+		dst.AddPath(out, path.AddPathAppend)
+	}
 	return true
 }
 

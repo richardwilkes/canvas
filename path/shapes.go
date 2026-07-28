@@ -159,8 +159,6 @@ func (p *Path) AddOvalWithStart(oval geom.Rect, dir geom.PathDirection, startPoi
 
 	if isOval {
 		p.isa = isAOval
-		p.isaDir = dir
-		p.isaStart = uint8(startPointIndex % 4)
 	}
 	return p
 }
@@ -232,8 +230,6 @@ func (p *Path) AddRRectWithStart(rrect geom.RRect, dir geom.PathDirection, start
 
 	if isRRect {
 		p.isa = isARRect
-		p.isaDir = dir
-		p.isaStart = uint8(startIndex % 8)
 	}
 	return p
 }

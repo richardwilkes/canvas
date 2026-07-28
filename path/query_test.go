@@ -305,6 +305,48 @@ func TestTransformPreservesOval(t *testing.T) {
 	}
 }
 
+// TestTransformShapeIdentity covers the whole of what a transform carries for a simple shape: the identity itself (an
+// oval stays an oval, a rrect stays a rrect and is never mistaken for one) whenever the matrix keeps rects as rects,
+// and nothing more — no direction or start index is tracked, so a mirror needs no bookkeeping beyond the flag.
+func TestTransformShapeIdentity(t *testing.T) {
+	var mirror geom.Matrix
+	mirror.SetScale(-1, 1)
+
+	oval := New().AddOval(geom.RectLTRB(0, 0, 20, 10), geom.DirectionCW)
+	oval.Transform(&mirror)
+	if bounds, ok := oval.IsOval(); !ok || bounds != geom.RectLTRB(-20, 0, 0, 10) {
+		t.Errorf("mirrored oval = %v, %v", bounds, ok)
+	}
+
+	rrect := New().AddRRect(geom.MakeRRect(geom.RectLTRB(0, 0, 20, 10), 3, 3), geom.DirectionCCW)
+	rrect.Transform(&mirror)
+	if rrect.isa != isARRect {
+		t.Errorf("mirrored rrect identity = %v, want isARRect", rrect.isa)
+	}
+	if _, ok := rrect.IsOval(); ok {
+		t.Error("a rrect must never report as an oval")
+	}
+
+	// A 45-degree rotate is not rect-stays-rect, so the rrect identity drops too.
+	var r geom.Matrix
+	r.SetRotate(45)
+	rrect.Transform(&r)
+	if rrect.isa != isAGeneral {
+		t.Errorf("rotated rrect identity = %v, want isAGeneral", rrect.isa)
+	}
+
+	// TransformTo carries the identity to the destination without disturbing the source.
+	src := New().AddOval(geom.RectLTRB(0, 0, 20, 10), geom.DirectionCW)
+	dst := New().MoveTo(3, 3).LineTo(4, 4) // non-empty, and not a simple shape
+	src.TransformTo(&mirror, dst)
+	if _, ok := dst.IsOval(); !ok {
+		t.Error("TransformTo should carry the oval identity to dst")
+	}
+	if _, ok := src.IsOval(); !ok {
+		t.Error("TransformTo should leave the source's oval identity alone")
+	}
+}
+
 func TestTransformConvexityDirectionFlip(t *testing.T) {
 	p := New().AddRect(geom.RectLTRB(0, 0, 10, 10), geom.DirectionCW)
 	if p.GetConvexity() != ConvexityConvexCW {

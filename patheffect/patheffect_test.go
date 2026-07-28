@@ -575,6 +575,88 @@ func TestSumAndCompose(t *testing.T) {
 	}
 }
 
+func TestDashOverflowKeepsPriorOutput(t *testing.T) {
+	// Two segments rather than a straight line, so the dash takes the measure-based lane and leaves the stroke rec
+	// alone (the special-line lane would switch it to fill, and the second dash would then decline the source).
+	src := &path.Path{}
+	src.MoveTo(0, 0)
+	src.LineTo(1000000, 0)
+	src.LineTo(1000000, 1000000)
+
+	coarse := MakeDash([]float32{1000, 1000}, 0) // ~1000 dashes: well under maxDashCount
+	tooFine := MakeDash([]float32{0.5, 0.5}, 0)  // 2,000,000 dashes: over maxDashCount, so it gives up
+
+	// The coarse dash on its own is the yardstick.
+	want := &path.Path{}
+	recWant := strokeRec(0)
+	if !coarse.FilterPath(want, src, &recWant, nil, identity()) {
+		t.Fatal("coarse dash FilterPath failed")
+	}
+	if want.IsEmpty() {
+		t.Fatal("expected the coarse dash to emit something")
+	}
+
+	// Giving up reports failure and contributes nothing, even when an earlier contour dashed successfully: the budget
+	// accumulates across contours, so the short contour prefixed here is fully dashed before the long one blows it.
+	twoContours := &path.Path{}
+	twoContours.MoveTo(0, -10)
+	twoContours.LineTo(100, -10)
+	twoContours.AddPath(src, path.AddPathAppend)
+	solo := &path.Path{}
+	recSolo := strokeRec(0)
+	if tooFine.FilterPath(solo, twoContours, &recSolo, nil, identity()) {
+		t.Error("a dash past maxDashCount should report failure")
+	}
+	if !solo.IsEmpty() {
+		t.Errorf("a dash that gave up left %d points behind", solo.CountPoints())
+	}
+
+	// Summed, the two share a dst: the bail-out must discard only its own (empty) contribution.
+	dst := &path.Path{}
+	rec := strokeRec(0)
+	if !MakeSum(coarse, tooFine).FilterPath(dst, src, &rec, nil, identity()) {
+		t.Fatal("the sum should report the coarse dash's success")
+	}
+	if !path.Equal(dst, want) {
+		t.Errorf("the dash bail-out erased the other effect's output: %d points, want %d", dst.CountPoints(),
+			want.CountPoints())
+	}
+}
+
+func TestComposeDiscardsFailedInnerOutput(t *testing.T) {
+	// The 1D stamp effect writes stamps as it walks and only then gives up, when its iteration governor trips.
+	stamp := line(0, 0, 1, 0)
+	inner := MakePath1D(stamp, 1, 0, Path1DTranslate)
+	src := line(0, 0, 200000, 0) // 200,000 advances, past maxReasonable1DIterations
+
+	recInner := strokeRec(0)
+	abandoned := &path.Path{}
+	if inner.FilterPath(abandoned, src, &recInner, nil, identity()) {
+		t.Fatal("precondition: the 1D governor should have tripped")
+	}
+	if abandoned.IsEmpty() {
+		t.Fatal("precondition: the failed 1D effect should have stamped before giving up")
+	}
+
+	// Trim ignores the stroke rec, so it still runs after the 1D effect has switched the rec to fill.
+	outer := MakeTrim(0, 0.5, TrimNormal)
+	want := &path.Path{}
+	recWant := strokeRec(0)
+	if !outer.FilterPath(want, src, &recWant, nil, identity()) {
+		t.Fatal("outer FilterPath failed")
+	}
+
+	dst := &path.Path{}
+	rec := strokeRec(0)
+	if !MakeCompose(outer, inner).FilterPath(dst, src, &rec, nil, identity()) {
+		t.Fatal("compose should report the outer effect's success")
+	}
+	if !path.Equal(dst, want) {
+		t.Errorf("compose kept geometry from the failed inner effect: %d points, want %d", dst.CountPoints(),
+			want.CountPoints())
+	}
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // FillPathWithPaint integration
 

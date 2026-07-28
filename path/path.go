@@ -186,8 +186,6 @@ type Path struct {
 	finite      bool
 	isVolatile  bool
 	isa         isAType
-	isaDir      geom.PathDirection
-	isaStart    uint8
 }
 
 // nextPathGenID hands out generation IDs; 0 and 1 (kEmptyGenID) are reserved.
@@ -264,8 +262,6 @@ func (p *Path) copyFrom(src *Path) {
 	p.isVolatile = src.isVolatile
 	p.genID = src.genID // same geometry, same identity
 	p.isa = src.isa
-	p.isaDir = src.isaDir
-	p.isaStart = src.isaStart
 }
 
 // resetFields restores the path's scalar fields (fill type, convexity, moveTo index) to their initial values, without
@@ -622,8 +618,9 @@ func (p *Path) Close() *Path {
 	return p
 }
 
-// Equal reports whether two paths have the same fill type, verbs, points and conic weights, using a bit-identical float
-// compare (so NaN points never compare equal, and 0 == -0).
+// Equal reports whether two paths have the same fill type, verbs, points and conic weights. Coordinates and conic
+// weights are compared with the IEEE == operator, so 0 compares equal to -0, while two distinct paths holding a NaN
+// never compare equal (a path is still equal to itself: that is answered by the pointer check, before any comparison).
 func Equal(a, b *Path) bool {
 	if a == b {
 		return true

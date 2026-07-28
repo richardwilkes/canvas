@@ -100,8 +100,6 @@ func (p *Path) transform(matrix *geom.Matrix, dst *Path) {
 	srcFinite := p.finite
 	srcBounds := p.bounds
 	srcIsA := p.isa
-	srcIsADir := p.isaDir
-	srcIsAStart := p.isaStart
 
 	if dst != p {
 		dst.verbs = append(dst.verbs[:0], p.verbs...)
@@ -142,7 +140,6 @@ func (p *Path) transform(matrix *geom.Matrix, dst *Path) {
 	// It's an oval/rrect only if rect stays rect.
 	if srcIsA != isAGeneral && matrix.RectStaysRect() {
 		dst.isa = srcIsA
-		dst.isaDir, dst.isaStart = transformDirAndStart(matrix, srcIsA == isARRect, srcIsADir, srcIsAStart)
 	} else {
 		dst.isa = isAGeneral
 	}
@@ -186,76 +183,6 @@ func isAxisAligned(pts []geom.Point) bool {
 		}
 	}
 	return true
-}
-
-// transformDirAndStart computes how an oval/rrect's direction and start index change under a rect-stays-rect matrix.
-func transformDirAndStart(matrix *geom.Matrix, isRRect bool, dir geom.PathDirection, start uint8) (newDir geom.PathDirection, newStart uint8) {
-	inStart := uint(start)
-	isCCW := dir == geom.DirectionCCW
-
-	rm := uint(0)
-	if isRRect {
-		// Degenerate rrect indices to oval indices and remember the remainder. Ovals have one index per side whereas
-		// rrects have two.
-		rm = inStart & 1
-		inStart /= 2
-	}
-	// antiDiag: is the antidiagonal non-zero (otherwise the diagonal is zero). topNeg: is the non-zero value in the top
-	// row (either scaleX or skewX) negative. sameSign: are the two non-zero diagonal or antidiagonal values the same
-	// sign.
-	var antiDiag, topNeg, sameSign uint
-	if matrix.Get(geom.MScaleX) != 0 {
-		antiDiag = 0b00
-		if matrix.Get(geom.MScaleX) > 0 {
-			topNeg = 0b00
-			if matrix.Get(geom.MScaleY) > 0 {
-				sameSign = 0b01
-			}
-		} else {
-			topNeg = 0b10
-			if matrix.Get(geom.MScaleY) <= 0 {
-				sameSign = 0b01
-			}
-		}
-	} else {
-		antiDiag = 0b01
-		if matrix.Get(geom.MSkewX) > 0 {
-			topNeg = 0b00
-			if matrix.Get(geom.MSkewY) > 0 {
-				sameSign = 0b01
-			}
-		} else {
-			topNeg = 0b10
-			if matrix.Get(geom.MSkewY) <= 0 {
-				sameSign = 0b01
-			}
-		}
-	}
-	var outStart uint
-	if sameSign != antiDiag {
-		// This is a rotation (and maybe scale). The direction is unchanged.
-		outStart = (inStart + 4 - (topNeg | antiDiag)) % 4
-		if isRRect {
-			outStart = 2*outStart + rm
-		}
-	} else {
-		// This is a mirror (and maybe scale). The direction is reversed.
-		isCCW = !isCCW
-		outStart = (6 + (topNeg | antiDiag) - inStart) % 4
-		if isRRect {
-			if rm != 0 {
-				outStart = 2 * outStart
-			} else {
-				outStart = 2*outStart + 1
-			}
-		}
-	}
-
-	outDir := geom.DirectionCW
-	if isCCW {
-		outDir = geom.DirectionCCW
-	}
-	return outDir, uint8(outStart)
 }
 
 //////////////////////////////////////////////////////////////////////////////

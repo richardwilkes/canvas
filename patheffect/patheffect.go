@@ -49,11 +49,15 @@ func MakeCompose(outer, inner stroke.PathEffect) stroke.PathEffect {
 }
 
 func (c *composeEffect) FilterPath(dst, src *path.Path, rec *stroke.Rec, cullRect *geom.Rect, ctm *geom.Matrix) bool {
+	// The inner effect gets a scratch path rather than dst: an effect that writes partial geometry and then fails (the
+	// 1D path effect abandons its stamps when its iteration governor trips) must leave nothing behind for the outer
+	// effect to append onto, and dst may already hold output the caller accumulated (MakeSum hands the same dst to both
+	// of its children).
+	tmp := path.Borrow()
+	defer path.Recycle(tmp)
 	ptr := src
-	if c.inner.FilterPath(dst, src, rec, cullRect, ctm) {
-		// Detach the built path into tmp and re-filter from there.
-		ptr = dst.Clone()
-		dst.Reset()
+	if c.inner.FilterPath(tmp, src, rec, cullRect, ctm) {
+		ptr = tmp
 	}
 	return c.outer.FilterPath(dst, ptr, rec, cullRect, ctm)
 }

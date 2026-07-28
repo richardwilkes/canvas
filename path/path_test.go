@@ -543,3 +543,38 @@ func TestCloneAndEqual(t *testing.T) {
 		t.Error("clone mutation leaked into original")
 	}
 }
+
+// TestEqualUsesIEEECompare pins the comparison Equal documents: coordinates and conic weights go through the IEEE ==
+// operator, not a bit comparison of their encodings, so -0 matches 0 and NaN matches nothing (other than through the
+// pointer-identity shortcut).
+func TestEqualUsesIEEECompare(t *testing.T) {
+	negZero := float32(math.Copysign(0, -1))
+	if math.Float32bits(negZero) == math.Float32bits(0) {
+		t.Fatal("precondition: -0 and 0 have different bit patterns")
+	}
+	p := New().MoveTo(negZero, negZero).LineTo(1, 2)
+	q := New().MoveTo(0, 0).LineTo(1, 2)
+	if !Equal(p, q) {
+		t.Error("-0 and 0 coordinates should compare equal")
+	}
+
+	nan := float32(math.NaN())
+	a := New().MoveTo(nan, 0).LineTo(1, 2)
+	b := New().MoveTo(nan, 0).LineTo(1, 2)
+	if Equal(a, b) {
+		t.Error("NaN coordinates should never compare equal")
+	}
+	if !Equal(a, a) {
+		t.Error("a path must be equal to itself even when it holds a NaN")
+	}
+
+	// Conic weights are compared the same way. ConicTo folds a NaN weight into a line, so the weight is poked in
+	// directly to reach the weight comparison.
+	c := New().MoveTo(0, 0).ConicTo(1, 1, 2, 0, 0.5)
+	d := c.Clone()
+	c.conicWeights[0] = nan
+	d.conicWeights[0] = nan
+	if Equal(c, d) {
+		t.Error("NaN conic weights should never compare equal")
+	}
+}

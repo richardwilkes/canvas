@@ -194,7 +194,14 @@ func filterMask(ctx *DirectContext, mf maskfilter.MaskFilter, srcView SurfacePro
 	srcBounds := geom.IRectSize(srcView.Proxy().Dimensions())
 	sdc := GaussianBlur(ctx, srcView, srcColorType, srcAlphaType, clipRect, srcBounds, xformedSigma,
 		xformedSigma, shaders.TileClamp, gpu.BackingFitApprox)
-	if sdc == nil || sdc.AsTextureProxy() == nil {
+	if sdc == nil {
+		return SurfaceProxyView{}
+	}
+	// The blurred mask is handed back as a plain view: the blur's own ops task holds the proxy ref that keeps it alive
+	// until flush (and hwCreateFilteredMask takes its own long-lived ref when it caches the view), so this context's
+	// ref is dropped rather than pinning the texture for the context's lifetime.
+	defer sdc.Release()
+	if sdc.AsTextureProxy() == nil {
 		return SurfaceProxyView{}
 	}
 
@@ -252,6 +259,9 @@ func hwCreateFilteredMask(ctx *DirectContext, sdc *SurfaceDrawContext, viewMatri
 
 	view = filterMask(ctx, filter, maskSDC.ReadSurfaceView(), maskSDC.ColorType(),
 		gpu.AlphaTypePremul, viewMatrix, maskRect)
+	// The blur's draws over the generated mask are recorded, so their ops task now owns the ref that keeps it alive
+	// until flush; the unfiltered mask is unreachable from here on.
+	maskSDC.Release()
 	if view.Proxy() == nil {
 		return SurfaceProxyView{}, geom.IRect{}, false
 	}

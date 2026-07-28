@@ -138,6 +138,7 @@ func runGPUBlur(t *testing.T, dc *gl.DirectContext, img *imagecore.Image, canvas
 	if sdc == nil {
 		t.Fatalf("GaussianBlur returned nil (sigma %v, mode %v)", sigma, mode)
 	}
+	defer sdc.Release() // the caller owns the blur result
 	if sdc.Dimensions() != (geom.ISize{Width: canvas, Height: canvas}) {
 		t.Fatalf("blur result dims = %v, want %dx%d", sdc.Dimensions(), canvas, canvas)
 	}
@@ -214,6 +215,7 @@ func TestLiveGaussianBlurAlpha8(t *testing.T) {
 	if sdc == nil {
 		t.Fatal("GaussianBlur(alpha8) returned nil")
 	}
+	defer sdc.Release() // the caller owns the blur result
 	got := gl.Pixels{
 		ColorType: gpu.ColorTypeAlpha8, Dims: geom.ISize{Width: canvas, Height: canvas},
 		RowBytes: canvas, Data: make([]byte, canvas*canvas),

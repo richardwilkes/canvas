@@ -20,6 +20,12 @@
 //   - rescaleIntoRepeatedLinear implements only the rescale configuration GaussianBlur uses (repeated bilinear
 //     halving/doubling over a texturable source); cubic and linear-gamma rescale lanes are unreachable in an sRGB-only
 //     pipeline.
+//
+// Context ownership: every SurfaceDrawContext made here holds a ref on its proxy, which in turn holds the ref that
+// keeps its backing texture out of the resource cache's purgeable/recyclable pools. Upstream these are unique_ptrs that
+// die with their creating scope; here each one is explicitly Released the moment it becomes unreachable — a recorded
+// draw's ops task already holds a target ref that keeps the texture alive until flush, so dropping the context's ref is
+// safe as soon as the reads of that texture have been recorded. GaussianBlur's own result is the caller's to Release.
 
 package gl
 
@@ -225,8 +231,14 @@ func twoPassGaussian(ctx *DirectContext, srcView SurfaceProxyView, srcColorType 
 	if radiusY == 0 {
 		return dstSDC
 	}
-	return convolveGaussian(ctx, srcView, srcColorType, srcAlphaType, srcBounds, dstBounds,
+	yPassSDC := convolveGaussian(ctx, srcView, srcColorType, srcAlphaType, srcBounds, dstBounds,
 		blurDirY, radiusY, sigmaY, mode, fit)
+	if dstSDC != nil {
+		// The X pass's result is read only by the Y pass just recorded, whose ops task holds the proxy ref that keeps
+		// the texture alive until flush, so the intermediate context's ref goes now.
+		dstSDC.Release()
+	}
+	return yPassSDC
 }
 
 // rescaleIntoRepeatedLinear implements the rescale configuration GaussianBlur drives (over a texturable source):
@@ -282,6 +294,11 @@ func rescaleIntoRepeatedLinear(ctx *DirectContext, srcView SurfaceProxyView, col
 		stepDst.FillRectToRectWithFP(srcRectF, stepDstRect, fp)
 
 		texView = stepDst.ReadSurfaceView()
+		if stepDst != dst {
+			// The step's draw is recorded, so its ops task now owns the ref keeping the texture alive for the next
+			// step's read; without this the ladder pins one texture per halving/doubling step forever.
+			stepDst.Release()
+		}
 		srcRect = geom.IRectSize(nextDims)
 		if srcRect.Size() == finalSize {
 			return true
@@ -313,7 +330,8 @@ func reexpand(ctx *DirectContext, src *SurfaceDrawContext, srcBounds geom.Rect, 
 
 // GaussianBlur blurs the dstBounds portion of an infinite blur of srcBounds within srcView, returning a new
 // SurfaceDrawContext with dstBounds' top-left at {0, 0}. Returns nil for an unblurrable request or an allocation
-// failure.
+// failure. The caller owns the returned context and must Release it once the draws that read its texture have been
+// recorded; every intermediate context the blur creates is released here.
 func GaussianBlur(ctx *DirectContext, srcView SurfaceProxyView, srcColorType gpu.ColorType, srcAlphaType gpu.AlphaType, dstBounds, srcBounds geom.IRect, sigmaX, sigmaY float32, mode shaders.TileMode, fit gpu.BackingFit) *SurfaceDrawContext {
 	if srcView.AsTextureProxy() == nil {
 		return nil
@@ -424,6 +442,9 @@ func GaussianBlur(ctx *DirectContext, srcView SurfaceProxyView, srcColorType gpu
 	if rescaledSDC == nil {
 		return nil
 	}
+	// Everything below reads the rescaled texture through draws recorded on this context's ops task, which holds the
+	// ref that keeps it alive until flush; the context's own ref is dropped on the way out.
+	defer rescaledSDC.Release()
 	if (padX != 0 || padY != 0) && mode == shaders.TileDecal {
 		rescaledSDC.Clear([4]float32{})
 	}
@@ -452,6 +473,8 @@ func GaussianBlur(ctx *DirectContext, srcView SurfaceProxyView, srcColorType gpu
 	if sdc == nil {
 		return nil
 	}
+	// The reduced-sigma blur is consumed entirely by the re-expand draw below.
+	defer sdc.Release()
 	// Select the fractional dst bounds from the integer-rounded blurred result during re-expand.
 	scaledDstBounds = scaledDstBounds.Offset(float32(-scaledDstBoundsI.Left),
 		float32(-scaledDstBoundsI.Top))

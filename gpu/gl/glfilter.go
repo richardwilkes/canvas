@@ -242,6 +242,10 @@ func (a *blurAlgorithm) Blur(sigma geom.Size, src *filtercore.SpecialImage, srcB
 		return nil
 	}
 	img := borrowTextureImage(ctx, sdc.ReadSurfaceView(), sdc.ColorType(), sdc.Dimensions())
+	// Same contract as the uploaded source above and as every other special image here: the blur's op stream keeps the
+	// result alive for as long as this evaluation needs it, so the blur context's ref is dropped once the blur has been
+	// recorded instead of pinning the texture for the context's lifetime.
+	sdc.Release()
 	return filtercore.NewSpecialImageDrawable(geom.IRectWH(dstBounds.Width(), dstBounds.Height()), img)
 }
 

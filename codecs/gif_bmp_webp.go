@@ -113,24 +113,51 @@ func bmpCodec() imagecore.Codec {
 ///////////////////////////////////////////////////////////////////////////////
 // WebP
 
-// webpHasAlpha sniffs the container for the alpha bit: the VP8X feature flag, the VP8L header's alpha_is_used bit, or
-// (plain lossy VP8) never.
-func webpHasAlpha(data []byte) bool {
-	if len(data) < 21 || !hasPrefix(data, []byte("RIFF")) || !bytes.Equal(data[8:12], []byte("WEBP")) {
+// webpHeaderHasAlpha sniffs the container for the VP8X feature flag. A set flag is authoritative: x/image/webp gates
+// its ALPH parsing on the same bit, so a lossy payload cannot produce alpha without it. A clear flag is not
+// authoritative, because a lossless payload's alpha does not come from an ALPH chunk at all — see webpAlpha.
+func webpHeaderHasAlpha(data []byte) bool {
+	return len(data) >= 21 && hasPrefix(data, []byte("RIFF")) && bytes.Equal(data[8:12], []byte("WEBP")) &&
+		bytes.Equal(data[12:16], []byte("VP8X")) && data[20]&0x10 != 0
+}
+
+// webpIsLossless reports whether the container's image payload is a VP8L chunk, either as the bare stream or inside a
+// VP8X container. The walk reads chunk headers only: a 4-byte FourCC, a 4-byte little-endian payload size, then the
+// payload padded to an even length.
+func webpIsLossless(data []byte) bool {
+	if len(data) < 12 || !hasPrefix(data, []byte("RIFF")) || !bytes.Equal(data[8:12], []byte("WEBP")) {
 		return false
 	}
-	switch {
-	case bytes.Equal(data[12:16], []byte("VP8X")):
-		return data[20]&0x10 != 0
-	case bytes.Equal(data[12:16], []byte("VP8L")):
-		if len(data) < 25 || data[20] != 0x2F {
-			return false
+	for off := 12; off+8 <= len(data); {
+		switch fourCC := data[off : off+4]; {
+		case bytes.Equal(fourCC, []byte("VP8L")):
+			return true
+		case bytes.Equal(fourCC, []byte("VP8 ")):
+			return false // the lossy payload; no later chunk produces the pixels
 		}
-		hdr := binary.LittleEndian.Uint32(data[21:])
-		return hdr>>28&1 != 0 // 14 bits w-1, 14 bits h-1, then alpha_is_used
-	default:
-		return false
+		size := int(binary.LittleEndian.Uint32(data[off+4:]))
+		off += 8 + size + (size & 1)
 	}
+	return false
+}
+
+// webpAlpha reports whether the decoded WebP carries alpha, given the image its decode produced. The VP8X feature bit
+// answers "yes" without looking at pixels, but nothing in the container answers "no" for a lossless payload: the VP8L
+// header's alpha_is_used bit is defined by the spec as a hint that "should not impact decoding", and x/image/webp
+// ignores it and always decodes the full ARGB plane. A non-conforming file with that bit clear therefore decodes to
+// real alpha, and trusting the hint stamped AlphaTypeOpaque on those pixels; the blend fast paths that branch on
+// IsOpaque then rendered them with their transparency dropped. The lossless lane is answered by scanning the decoded
+// pixels instead, the way the GIF lane is.
+func webpAlpha(data []byte, m image.Image) bool {
+	if webpHeaderHasAlpha(data) {
+		return true
+	}
+	// Opaque() is exact for every image type the decoder produces (and free for the lossy YCbCr forms, which have no
+	// alpha to scan); anything that does not implement it falls back to the per-pixel scan.
+	if o, ok := m.(interface{ Opaque() bool }); ok {
+		return !o.Opaque()
+	}
+	return hasAlpha(m)
 }
 
 func webpCodec() imagecore.Codec {
@@ -140,11 +167,22 @@ func webpCodec() imagecore.Codec {
 			return len(data) >= 12 && hasPrefix(data, []byte("RIFF")) && bytes.Equal(data[8:12], []byte("WEBP"))
 		},
 		DecodeInfo: func(data []byte) (imagecore.ImageInfo, bool) {
+			if !webpHeaderHasAlpha(data) && webpIsLossless(data) {
+				// A lossless payload's alpha cannot be answered from the header, so decode for it here the way
+				// the GIF lane does. Decode repeats the work, which is what keeps the two answers identical as
+				// the imagecore.Codec contract requires.
+				m, err := webp.Decode(bytes.NewReader(data))
+				if err != nil {
+					return imagecore.ImageInfo{}, false
+				}
+				b := m.Bounds()
+				return makeDecodedInfo(b.Dx(), b.Dy(), false, webpAlpha(data, m)), true
+			}
 			cfg, err := webp.DecodeConfig(bytes.NewReader(data))
 			if err != nil {
 				return imagecore.ImageInfo{}, false
 			}
-			return makeDecodedInfo(cfg.Width, cfg.Height, false, webpHasAlpha(data)), true
+			return makeDecodedInfo(cfg.Width, cfg.Height, false, webpHeaderHasAlpha(data)), true
 		},
 		Decode: func(data []byte) (*imagecore.Pixels, error) {
 			m, err := webp.Decode(bytes.NewReader(data))
@@ -152,7 +190,7 @@ func webpCodec() imagecore.Codec {
 				return nil, err
 			}
 			b := m.Bounds()
-			return pixelsFromImage(m, makeDecodedInfo(b.Dx(), b.Dy(), false, webpHasAlpha(data))), nil
+			return pixelsFromImage(m, makeDecodedInfo(b.Dx(), b.Dy(), false, webpAlpha(data, m))), nil
 		},
 	}
 }

@@ -25,10 +25,26 @@ import (
 	"github.com/richardwilkes/canvas/imagecore"
 )
 
+// readbackSize returns img's dimensions, ok=false when its reported info is not a valid one. The read-back buffer below
+// is sized from those dimensions, and ReadPixels — which validates them, through ValidConversion — only runs after the
+// buffer exists, so the validation would otherwise be defeated by the allocation that precedes it: an image reporting
+// hostile dimensions panics in image.New*RGBA's make, and a merely large one silently attempts a multi-gigabyte
+// allocation before being rejected.
+func readbackSize(img *imagecore.Image) (w, h int, ok bool) {
+	info := img.Info()
+	if !info.IsValid() {
+		return 0, 0, false
+	}
+	return int(info.Width), int(info.Height), true
+}
+
 // readNRGBA reads the image back as unpremultiplied RGBA bytes (the encoders' source form; the premul→unpremul
 // conversion runs through the standard pixel-conversion steps).
 func readNRGBA(img *imagecore.Image) *image.NRGBA {
-	w, h := int(img.Width()), int(img.Height())
+	w, h, ok := readbackSize(img)
+	if !ok {
+		return nil
+	}
 	info, _ := imagecore.MakeInfo(int32(w), int32(h), imagecore.ColorTypeRGBA8888, imagecore.AlphaTypeUnpremul)
 	out := image.NewNRGBA(image.Rect(0, 0, w, h))
 	if !img.ReadPixels(info, out.Pix, out.Stride, 0, 0, imagecore.CachingAllow) {
@@ -39,7 +55,10 @@ func readNRGBA(img *imagecore.Image) *image.NRGBA {
 
 // readRGBA reads the image back as premultiplied RGBA bytes.
 func readRGBA(img *imagecore.Image) *image.RGBA {
-	w, h := int(img.Width()), int(img.Height())
+	w, h, ok := readbackSize(img)
+	if !ok {
+		return nil
+	}
 	info, _ := imagecore.MakeInfo(int32(w), int32(h), imagecore.ColorTypeRGBA8888, imagecore.AlphaTypePremul)
 	out := image.NewRGBA(image.Rect(0, 0, w, h))
 	if !img.ReadPixels(info, out.Pix, out.Stride, 0, 0, imagecore.CachingAllow) {

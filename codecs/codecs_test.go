@@ -496,8 +496,8 @@ func TestWebPEncodeDecode(t *testing.T) {
 	if im.Width() != 8 || im.Height() != 6 {
 		t.Fatal("webp dims")
 	}
-	if !webpHasAlpha(enc) {
-		t.Fatal("alpha bit not sniffed")
+	if !webpIsLossless(enc) {
+		t.Fatal("lossless payload not sniffed")
 	}
 	if im.AlphaType() != imagecore.AlphaTypePremul {
 		t.Fatalf("webp alpha %v", im.AlphaType())
@@ -801,5 +801,144 @@ func TestGIFAnimationFirstFrameOnly(t *testing.T) {
 	tp := tim.PeekPixels(imagecore.CachingAllow)
 	if tp.Words[0] != 0 || tp.Words[1] != 0xFF0000FF {
 		t.Fatalf("truncated frame 0 pixels %08x %08x", tp.Words[0], tp.Words[1])
+	}
+}
+
+// hostilePNG builds a minimal PNG whose IHDR declares w x h and which carries no image data at all. png.DecodeConfig
+// parses it happily — Go rejects a PNG's dimensions only when the pixel count overflows an int — so a few dozen bytes
+// are enough to hand a codec dimensions no allocation could ever satisfy.
+func hostilePNG(w, h uint32) []byte {
+	ihdr := binary.BigEndian.AppendUint32(make([]byte, 0, 13), w)
+	ihdr = binary.BigEndian.AppendUint32(ihdr, h)
+	ihdr = append(ihdr, 8, 6, 0, 0, 0) // depth 8, truecolor+alpha, deflate, adaptive filtering, no interlace
+	out := append(make([]byte, 0, 33), pngMagic...)
+	out = binary.BigEndian.AppendUint32(out, uint32(len(ihdr)))
+	out = append(out, "IHDR"...)
+	out = append(out, ihdr...)
+	return binary.BigEndian.AppendUint32(out, crc32.ChecksumIEEE(out[len(out)-len(ihdr)-4:]))
+}
+
+// TestNewFromEncodedRejectsHostileDimensions pins the validation on the codec-reported info. A codec reports whatever
+// the encoded header declares, so before that check a 33-byte PNG produced an *Image with Width == 1<<30 that panicked
+// with "makeslice: len out of range" on every subsequent use — while NewRasterData given the same info returned nil.
+// The ICO lane inherits the hole through its PNG directory entries: its own DIB decoder is bounded by
+// maxICODimension, but the delegating png.DecodeConfig is not.
+func TestNewFromEncodedRejectsHostileDimensions(t *testing.T) {
+	const w, h = 1 << 30, 1 << 28
+	data := hostilePNG(w, h)
+	cfg, err := png.DecodeConfig(bytes.NewReader(data))
+	if err != nil {
+		t.Fatalf("fixture must be a PNG the stdlib config parser accepts, else it proves nothing: %v", err)
+	}
+	if cfg.Width != w || cfg.Height != h {
+		t.Fatalf("fixture config = %dx%d, want %dx%d", cfg.Width, cfg.Height, w, h)
+	}
+	if im := imagecore.NewFromEncoded(data); im != nil {
+		t.Fatalf("PNG declaring %dx%d produced an image reporting %dx%d", w, h, im.Width(), im.Height())
+	}
+
+	// The same PNG as an ICO directory entry. The entry must still be the one icoBest picks, so that the rejection
+	// is NewFromEncoded's and not an accident of the entry being dropped.
+	ico := []byte{0, 0, 1, 0, 1, 0} // reserved, type 1 (icon), one entry
+	entry := []byte{0, 0, 0, 0, 1, 0, 32, 0}
+	entry = binary.LittleEndian.AppendUint32(entry, uint32(len(data)))
+	entry = binary.LittleEndian.AppendUint32(entry, 22) // 6-byte header + one 16-byte directory entry
+	ico = append(append(ico, entry...), data...)
+	if _, ok := icoCodec().DecodeInfo(ico); !ok {
+		t.Fatal("fixture must reach the ICO codec's reported info, else it proves nothing")
+	}
+	if im := imagecore.NewFromEncoded(ico); im != nil {
+		t.Fatalf("ICO wrapping the same PNG produced an image reporting %dx%d", im.Width(), im.Height())
+	}
+}
+
+// TestEncodersRejectHostileInfoBeforeAllocating drives each encoder with an image whose reported info declares
+// dimensions no buffer can hold. ReadPixels is the only thing that validates those dimensions, and it runs after the
+// read-back buffer has already been sized from them, so without the guard ahead of the allocation every encoder here
+// panics inside image.New{,N}RGBA.
+func TestEncodersRejectHostileInfoBeforeAllocating(t *testing.T) {
+	p := imagecore.NewPixels(mustInfo(t, 1, 1, imagecore.ColorTypeRGBA8888, imagecore.AlphaTypePremul))
+	p.Info.Width = 1 << 30
+	p.Info.Height = 1 << 30
+	img := imagecore.FromPixels(p)
+	for _, tc := range []struct {
+		encode func() []byte
+		name   string
+	}{
+		{name: "EncodePNG", encode: func() []byte { return EncodePNG(img, 6) }},
+		{name: "EncodeJPEG", encode: func() []byte { return EncodeJPEG(img, 80) }},
+		{name: "EncodeWebP lossless", encode: func() []byte { return EncodeWebP(img, 100, false) }},
+		{name: "EncodeWebP lossy", encode: func() []byte { return EncodeWebP(img, 80, true) }},
+	} {
+		if got := tc.encode(); got != nil {
+			t.Errorf("%s returned %d bytes for an image with out-of-range dimensions", tc.name, len(got))
+		}
+	}
+}
+
+// TestWebPLosslessAlphaIgnoresHeaderHint clears the VP8L header's alpha_is_used bit on a file that really does carry
+// alpha. The bit is a hint the spec says "should not impact decoding", and x/image/webp does ignore it — it always
+// decodes the ARGB plane — so trusting it stamped AlphaTypeOpaque on translucent pixels and the blend fast paths that
+// branch on IsOpaque then rendered them with their transparency dropped.
+func TestWebPLosslessAlphaIgnoresHeaderHint(t *testing.T) {
+	src := testNRGBA() // alpha runs 255 down to 143 across x
+	im0 := imagecore.NewRasterData(
+		mustInfo(t, 8, 6, imagecore.ColorTypeRGBA8888, imagecore.AlphaTypeUnpremul),
+		src.Pix, src.Stride,
+	)
+	if im0 == nil {
+		t.Fatal("raster image nil")
+	}
+	enc := EncodeWebP(im0, 100, false)
+	if enc == nil {
+		t.Fatal("EncodeWebP nil")
+	}
+	if enc[20] != 0x2F {
+		t.Fatalf("fixture is not a bare VP8L stream (byte 20 = %#02x)", enc[20])
+	}
+	hdr := binary.LittleEndian.Uint32(enc[21:])
+	if hdr>>28&1 == 0 {
+		t.Fatal("encoder already left alpha_is_used clear; clearing it proves nothing")
+	}
+	binary.LittleEndian.PutUint32(enc[21:], hdr&^(1<<28))
+
+	im := decodeVia(t, enc)
+	if im.IsOpaque() {
+		t.Fatal("IsOpaque() is true for a lossless WebP holding translucent pixels")
+	}
+	if im.AlphaType() != imagecore.AlphaTypePremul {
+		t.Fatalf("alpha type %v, want premul", im.AlphaType())
+	}
+	// The pixels really do decode with alpha, so the reported info would have been a lie.
+	p := im.PeekPixels(imagecore.CachingAllow)
+	if a := p.Words[7] >> 24; a != 143 {
+		t.Fatalf("decoded alpha of the last pixel of row 0 = %d, want 143", a)
+	}
+	if p.Info.AlphaType != im.AlphaType() {
+		t.Fatalf("Decode reported %v but DecodeInfo reported %v", p.Info.AlphaType, im.AlphaType())
+	}
+}
+
+// TestWebPLosslessOpaqueStaysOpaque is the other half of the pixel scan: an opaque lossless WebP must keep the opaque
+// fast path rather than being labeled premul wholesale.
+func TestWebPLosslessOpaqueStaysOpaque(t *testing.T) {
+	src := image.NewNRGBA(image.Rect(0, 0, 8, 6))
+	for i := range src.Pix {
+		src.Pix[i] = 0xFF
+	}
+	im0 := imagecore.NewRasterData(
+		mustInfo(t, 8, 6, imagecore.ColorTypeRGBA8888, imagecore.AlphaTypeUnpremul),
+		src.Pix, src.Stride,
+	)
+	enc := EncodeWebP(im0, 100, false)
+	if enc == nil {
+		t.Fatal("EncodeWebP nil")
+	}
+	if !webpIsLossless(enc) {
+		t.Fatal("fixture is not a lossless payload")
+	}
+	im := decodeVia(t, enc)
+	if !im.IsOpaque() {
+		t.Fatalf("opaque lossless WebP reported %v", im.AlphaType())
 	}
 }

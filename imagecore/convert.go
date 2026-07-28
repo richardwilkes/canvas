@@ -95,6 +95,27 @@ func toUnorm(v, scale float32) uint32 {
 	return uint32(math.RoundToEven(float64(f)))
 }
 
+// alpha8FromHalf reproduces convert_to_alpha8's F16 lane, (uint8_t)(255 * half): faithful to Skia, it truncates toward
+// zero (no round-to-nearest) and does not clamp, so out-of-range extended F16 alphas wrap mod 256. The int32
+// intermediate reproduces that truncate-then-low-8-bits semantics deterministically instead of relying on Go's
+// implementation-defined out-of-range float→uint8 conversion. Every finite half satisfies |255*half| <= 255*65504, so
+// only the em >= 0x7C00 encodings can leave int32 range — halfToFloat maps those to ±Inf and NaN, and they are
+// caller-supplied because RGBA_F16 is a Supported() source type, so int32(+Inf) would be exactly the
+// implementation-defined conversion the truncation was written to avoid (255 on darwin/arm64, 0 on amd64). They are
+// therefore saturated first, the way ARMv8's FCVTZS does: NaN and -Inf take the low byte of INT32_MIN (0) and +Inf the
+// low byte of INT32_MAX (0xFF), on every target. The sibling toUnorm guards NaN for the same reason; the two F16 lanes
+// must not disagree about determinism.
+func alpha8FromHalf(bits uint16) byte {
+	f := 255.0 * halfToFloat(bits)
+	switch {
+	case !(f >= math.MinInt32): // false for NaN as well as -Inf
+		return 0
+	case f > math.MaxInt32:
+		return 0xFF
+	}
+	return byte(int32(f))
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // lowp integer pixel forms
 
@@ -300,13 +321,9 @@ func ConvertPixels(dstInfo ImageInfo, dst []byte, dstRowBytes int, src *Pixels) 
 			case ColorTypeRGBAF16:
 				s := src.U16s[y*int(src.RowElems):]
 				for x := range w {
-					// convert_to_alpha8's F16 lane is (uint8_t)(255 * half): faithful to Skia, it truncates
-					// toward zero (no round-to-nearest) and does not clamp, so out-of-range extended F16 alphas
-					// wrap mod 256. The int32 intermediate reproduces that truncate-then-low-8-bits semantics
-					// deterministically instead of relying on Go's implementation-defined out-of-range
-					// float→uint8 conversion; 255*half always fits int32 (|half| <= 65504), so this preserves
-					// the oracle-exact byte on every target.
-					row[x] = byte(int32(255.0 * halfToFloat(s[4*x+3])))
+					// See alpha8FromHalf for the truncate-then-low-8-bits semantics and the saturation
+					// that keeps the non-finite halves off Go's implementation-defined cast.
+					row[x] = alpha8FromHalf(s[4*x+3])
 				}
 			}
 		}

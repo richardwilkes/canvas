@@ -180,7 +180,12 @@ func NewRasterData(info ImageInfo, data []byte, rowBytes int) *Image {
 }
 
 // NewFromEncoded sniffs a registered codec, parses the header for the image info, and defers pixel decoding to first
-// use. Returns nil when no codec accepts the data (including when no codecs have been registered).
+// use. Returns nil when no codec accepts the data (including when no codecs have been registered) or when the codec's
+// reported info fails the same validation NewRasterData applies. A codec reports whatever the encoded header declares,
+// and several formats let a tiny file declare enormous dimensions (a 65-byte PNG can pass png.DecodeConfig with a
+// 1<<30 wide IHDR; the ICO codec's PNG entries inherit that), so without the check here an Image would carry
+// out-of-range dimensions that maxDimension exists to exclude and that every later use — PeekPixels, ReadPixels,
+// codecs.EncodePNG — would size an allocation from before anything could reject them.
 func NewFromEncoded(data []byte) *Image {
 	if len(data) == 0 {
 		return nil
@@ -190,7 +195,7 @@ func NewFromEncoded(data []byte) *Image {
 		return nil
 	}
 	info, ok := c.DecodeInfo(data)
-	if !ok {
+	if !ok || !info.IsValid() || !info.ColorType.Supported() {
 		return nil
 	}
 	return &Image{encoded: data, codec: c, info: info}

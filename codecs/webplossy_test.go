@@ -107,7 +107,7 @@ func TestWebPLossyOpaque(t *testing.T) {
 	if !bytes.Equal(data[12:16], []byte("VP8 ")) {
 		t.Fatalf("opaque image: first chunk %q, want the simple VP8 container", data[12:16])
 	}
-	if webpHasAlpha(data) {
+	if webpHeaderHasAlpha(data) {
 		t.Error("opaque image: alpha sniffed")
 	}
 	back, err := webp.Decode(bytes.NewReader(data))
@@ -153,7 +153,7 @@ func TestWebPLossyAlpha(t *testing.T) {
 			if !bytes.Equal(data[12:16], []byte("VP8X")) {
 				t.Fatalf("first chunk %q, want VP8X", data[12:16])
 			}
-			if !webpHasAlpha(data) {
+			if !webpHeaderHasAlpha(data) {
 				t.Error("alpha bit not sniffed from VP8X")
 			}
 			if wm1 := binary.LittleEndian.Uint32(data[24:]) & 0xFFFFFF; wm1 != w-1 {

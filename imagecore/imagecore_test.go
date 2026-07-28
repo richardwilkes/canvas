@@ -485,3 +485,104 @@ func TestConvertPixelsF16NaNIsDeterministic(t *testing.T) {
 		}
 	}
 }
+
+// TestConvertF16ToAlpha8NonFiniteIsDeterministic covers the halves that halfToFloat maps to ±Inf and NaN. F16 is a
+// Supported() source type, so those bits are caller-supplied, and int32(±Inf)/int32(NaN) is exactly the
+// implementation-defined conversion the lane's deliberate int32 intermediate was written to eliminate: before the
+// saturation in alpha8FromHalf, an alpha half of 0x7C00 measured 255 on darwin/arm64 and 0 on amd64. The bytes below
+// are the ARMv8 FCVTZS results the rest of the F16 lanes already mirror, and must now be the same on every target.
+func TestConvertF16ToAlpha8NonFiniteIsDeterministic(t *testing.T) {
+	halves := []uint16{0x7C00, 0xFC00, 0x7E00, 0xFE00, 0x7DFF}
+	want := []byte{
+		0xFF, // +Inf saturates to INT32_MAX, whose low byte is 0xFF
+		0x00, // -Inf saturates to INT32_MIN, whose low byte is 0
+		0x00, // NaN
+		0x00, // negative NaN
+		0x00, // NaN with a different payload
+	}
+	info, ok := MakeInfo(int32(len(halves)), 1, ColorTypeRGBAF16, AlphaTypePremul)
+	if !ok {
+		t.Fatal("MakeInfo rejected RGBA_F16/premul")
+	}
+	src := NewPixels(info)
+	for i, h := range halves {
+		src.U16s[4*i+3] = h
+	}
+	a8, ok := MakeInfo(int32(len(halves)), 1, ColorTypeAlpha8, AlphaTypePremul)
+	if !ok {
+		t.Fatal("MakeInfo rejected Alpha8/premul")
+	}
+	dst := make([]byte, len(halves))
+	if !ConvertPixels(a8, dst, len(halves), src) {
+		t.Fatal("convert failed")
+	}
+	for i := range want {
+		if dst[i] != want[i] {
+			t.Errorf("half %#04x: got %d, want %d (full % x)", halves[i], dst[i], want[i], dst)
+		}
+	}
+
+	// The finite halves keep the faithful truncate-then-low-8-bits behavior the saturation must not disturb; the
+	// largest finite half is the one nearest the int32 guard.
+	for _, tc := range []struct {
+		half uint16
+		want byte
+	}{
+		{half: floatToHalf(0.5), want: 127}, // 127.5 truncates rather than rounding to 128
+		{half: floatToHalf(1), want: 255},
+		{half: floatToHalf(2), want: 254}, // 510 wraps mod 256
+		{half: floatToHalf(-1), want: 1},  // -255 wraps mod 256
+		{half: 0x7BFF, want: 32},          // 255 * 65504 = 16703520, the largest finite product; low 8 bits
+		{half: 0xFBFF, want: 224},         // -16703520, low 8 bits
+	} {
+		if got := alpha8FromHalf(tc.half); got != tc.want {
+			t.Errorf("alpha8FromHalf(%#04x) = %d, want %d", tc.half, got, tc.want)
+		}
+	}
+}
+
+// TestNewFromEncodedValidatesReportedInfo pins the validation NewFromEncoded applies to whatever a codec reports. A
+// codec parses the encoded header and reports it verbatim, and several formats let a tiny file declare enormous
+// dimensions, so without this check maxDimension — which exists to keep the byte-offset and row-stride math in range —
+// was simply bypassed for every deferred-decode image, and the resulting *Image panicked on first use. NewRasterData
+// has always applied the same two tests.
+func TestNewFromEncodedValidatesReportedInfo(t *testing.T) {
+	magic := "imagecore-stub-codec"
+	var reported ImageInfo
+	var reportedOK bool
+	RegisterCodec(Codec{
+		Name:       "imagecore-test-stub",
+		Matches:    func(data []byte) bool { return len(data) >= len(magic) && string(data[:len(magic)]) == magic },
+		DecodeInfo: func([]byte) (ImageInfo, bool) { return reported, reportedOK },
+		Decode:     func([]byte) (*Pixels, error) { return nil, nil },
+	})
+	for _, tc := range []struct {
+		name  string
+		info  ImageInfo
+		ok    bool
+		valid bool
+	}{
+		{name: "valid", info: MakeN32Premul(4, 4), ok: true, valid: true},
+		{name: "at the dimension limit", info: MakeN32Premul(maxDimension, 1), ok: true, valid: true},
+		{name: "width past the limit", info: MakeN32Premul(maxDimension+1, 1), ok: true},
+		{name: "height past the limit", info: MakeN32Premul(1, maxDimension+1), ok: true},
+		{name: "the reproducing PNG's dimensions", info: MakeN32Premul(1<<30, 1<<28), ok: true},
+		{name: "zero height", info: MakeN32Premul(4, 0), ok: true},
+		{name: "negative width", info: MakeN32Premul(-4, 4), ok: true},
+		{name: "unsupported color type", info: ImageInfo{
+			Width: 4, Height: 4, ColorType: ColorTypeRGBA1010102,
+			AlphaType: AlphaTypePremul,
+		}, ok: true},
+		{name: "codec rejected the header", info: MakeN32Premul(4, 4)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			reported, reportedOK = tc.info, tc.ok
+			switch im := NewFromEncoded([]byte(magic)); {
+			case tc.valid && im == nil:
+				t.Fatalf("NewFromEncoded returned nil for %+v", tc.info)
+			case !tc.valid && im != nil:
+				t.Fatalf("NewFromEncoded accepted %+v", tc.info)
+			}
+		})
+	}
+}

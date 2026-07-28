@@ -36,10 +36,11 @@ func NewSoftwarePathRenderer(proxyProvider *ProxyProvider, allowCaching bool) *S
 // Name implements PathRenderer.
 func (r *SoftwarePathRenderer) Name() string { return "SW" }
 
-// OnGetStencilSupport implements PathRenderer (the base-class default; the chain never asks the SW renderer for stencil
-// work).
+// OnGetStencilSupport implements PathRenderer (the base-class default, matching OnStencilPath's panic and upstream's own
+// override: this renderer cannot stencil, and reporting anything else would make PathRendererStencilPath — which only
+// rejects StencilSupportNone — reach that panic).
 func (r *SoftwarePathRenderer) OnGetStencilSupport(*StyledShape) StencilSupport {
-	return StencilSupportNoRestriction
+	return StencilSupportNone
 }
 
 // OnCanDrawPath implements PathRenderer: pass on any style that applies — the caller will apply the style if a suitable

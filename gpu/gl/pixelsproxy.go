@@ -31,6 +31,9 @@ func FindOrCreatePixelsProxyView(ctx *DirectContext, key *gpu.UniqueKey, dims ge
 	swizzle := caps.ReadSwizzle(format, colorType)
 
 	proxyProvider := ctx.ProxyProvider()
+	// Registering the key with the context's LUT cache is what eventually unregisters it: these keys are per shader
+	// instance or per ramp bake, so nothing else ever invalidates them (see lutproxycache.go).
+	ctx.lutProxyKeys.track(proxyProvider, key)
 	if proxy := proxyProvider.FindOrCreateProxyByUniqueKey(key, UseAllocatorYes); proxy != nil {
 		return MakeSurfaceProxyView(proxy, gpu.OriginTopLeft, swizzle)
 	}

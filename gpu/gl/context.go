@@ -36,7 +36,10 @@ type DirectContext struct {
 	// gradientRampCache is a per-gradient-shader-style bitmap cache hung off the context (one per context, freed with
 	// it); see gradientbitmapcache.go.
 	gradientRampCache *gradientBitmapCache
-	stats             ContextStats
+	// lutProxyKeys bounds the uniquely-keyed LUT textures the pixels-proxy lane registers with the proxy provider; see
+	// lutproxycache.go.
+	lutProxyKeys *lutProxyKeyCache
+	stats        ContextStats
 }
 
 // ContextStats holds the counters consumed by this codebase (debug/test-only; these two feed the SW-path-mask cache
@@ -102,8 +105,10 @@ func NewDirectContext(g *Gpu) *DirectContext {
 	dc.textStrikeCache = text.NewStrikeCache()
 	dc.textBlobCache = text.NewTextBlobRedrawCoordinator()
 
-	// The gradient-LUT bitmap cache for the textured colorizer (per-context; see gradientbitmapcache.go).
+	// The gradient-LUT bitmap cache for the textured colorizer (per-context; see gradientbitmapcache.go), and the bound
+	// on the LUT texture proxies it and the perlin lane register (see lutproxycache.go).
 	dc.gradientRampCache = newGradientBitmapCache(maxNumCachedGradientBitmaps, gradientTextureSize)
+	dc.lutProxyKeys = newLUTProxyKeyCache(maxLiveLUTProxies)
 	return dc
 }
 

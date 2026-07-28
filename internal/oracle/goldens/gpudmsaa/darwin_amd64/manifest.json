@@ -373,7 +373,7 @@
 		},
 		{
 			"name": "imagefilter-dropshadow",
-			"sha256": "48af663adc4736a2f8a5f9fb5cf86b577b1b6ef6dfda106f100c15bcde644300",
+			"sha256": "510674068bfb60d17bb0b214cc4399678de5f9d8cce5f83d40e77cd7c209f381",
 			"width": 256,
 			"height": 256
 		},
@@ -403,7 +403,7 @@
 		},
 		{
 			"name": "imagefilter-matrix-transform",
-			"sha256": "029a347ecea8363c8d55703f75d2ce32b33a7e0bcde0bcaf60cb3fe150ac5f6a",
+			"sha256": "dd6c853943d385536207c22e7d34ad98687089cf0365e218c14b86ac90289680",
 			"width": 256,
 			"height": 256
 		},
@@ -421,7 +421,7 @@
 		},
 		{
 			"name": "imagefilter-offset",
-			"sha256": "91ed9e4eaee4e3cdbe236590be530a8946b590e28b91b163d225ecfb2f0b5f74",
+			"sha256": "16088a7ebbb831f830facdc556bde55fe23dd7c4870889736d9f2540acc1c086",
 			"width": 256,
 			"height": 256
 		},

@@ -403,7 +403,7 @@
 		},
 		{
 			"name": "imagefilter-matrix-transform",
-			"sha256": "30337c75c4d3662247f92b0e0fc0eef0d03927aa291469694b41867653537031",
+			"sha256": "47a068432185b88fe5ad6c5deeae6ed5e060c4c3171edabf6b6c3b6077a42b58",
 			"width": 256,
 			"height": 256
 		},

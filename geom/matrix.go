@@ -115,8 +115,11 @@ func (m *Matrix) setTypeMask(mask uint8) {
 	m.typeMask = mask
 }
 
+// orTypeMask goes through storedMask so that a zero-valued Matrix stays "unknown" rather than caching the OR'd bits as
+// a clean mask: PreScale is reachable without a prior Set*/Type() call, and its fixups must not claim the all-zero
+// matrix is a plain scale.
 func (m *Matrix) orTypeMask(mask uint8) {
-	m.typeMask |= mask
+	m.typeMask = m.storedMask() | mask
 }
 
 func (m *Matrix) clearTypeMask(mask uint8) {

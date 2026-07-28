@@ -9,7 +9,10 @@
 
 package geom
 
-import "testing"
+import (
+	"math/rand"
+	"testing"
+)
 
 // collectClipped drains the clipper into (verb, points) records.
 type clippedSeg struct {
@@ -187,6 +190,106 @@ func TestClipCubicHugeFallsBackToLine(t *testing.T) {
 	for _, s := range drainClipper(e) {
 		if s.verb != ClipVerbLine {
 			t.Errorf("expected line-only fallback for huge cubic, got verb %d", s.verb)
+		}
+	}
+}
+
+// clipperEmission drains the clipper, returning how many verbs and points the last Clip* call emitted.
+func clipperEmission(e *EdgeClipper) (verbs, points int) {
+	var pts [4]Point
+	for {
+		verb, ok := e.Next(pts[:])
+		if !ok {
+			return verbs, points
+		}
+		verbs++
+		switch verb {
+		case ClipVerbLine:
+			points += 2
+		case ClipVerbQuad:
+			points += 3
+		case ClipVerbCubic:
+			points += 4
+		}
+	}
+}
+
+func TestClipCubicSinglePieceWorstCase(t *testing.T) {
+	// A cubic with no extrema in either axis that crosses the clip on both sides is the per-piece worst case of the
+	// buffer-limit derivation in edgeclipper.go: a left vline, the clipped cubic, then a right vline (3 verbs, 8
+	// points).
+	clip := RectLTRB(0, 0, 100, 100)
+	e := NewEdgeClipper(false)
+	src := []Point{{X: -50, Y: 10}, {X: 0, Y: 30}, {X: 100, Y: 70}, {X: 150, Y: 90}}
+	if !e.ClipCubic(src, clip) {
+		t.Fatal("expected output")
+	}
+	segs := drainClipper(e)
+	if len(segs) != 3 {
+		t.Fatalf("segs = %+v, want 3", segs)
+	}
+	if segs[0].verb != ClipVerbLine || segs[1].verb != ClipVerbCubic || segs[2].verb != ClipVerbLine {
+		t.Errorf("verbs = %d/%d/%d, want line/cubic/line", segs[0].verb, segs[1].verb, segs[2].verb)
+	}
+	points := 0
+	for _, s := range segs {
+		points += len(s.pts)
+	}
+	if points != 8 {
+		t.Errorf("points = %d, want 8", points)
+	}
+}
+
+func TestEdgeClipperStaysWithinBufferLimits(t *testing.T) {
+	// Exercises the bound documented above edgeClipperMaxVerbs: a cubic yields at most 5 monotonic pieces of 3 verbs /
+	// 8 points, and a quad at most 3 pieces of 3 verbs / 7 points. Anything worse would index past the fixed arrays.
+	const (
+		cubicMaxVerbs  = 15
+		cubicMaxPoints = 40
+		quadMaxVerbs   = 9
+		quadMaxPoints  = 21
+	)
+	clip := RectLTRB(0, 0, 100, 100)
+	coords := []float32{-60, 20, 80, 170}
+	check := func(what string, verbs, points, wantVerbs, wantPoints int, src []Point) {
+		t.Helper()
+		if verbs > wantVerbs || points > wantPoints {
+			t.Fatalf("%s %v: emitted %d verbs / %d points, want at most %d / %d", what, src, verbs, points, wantVerbs,
+				wantPoints)
+		}
+		if verbs > edgeClipperMaxVerbs || points > edgeClipperMaxPoints {
+			t.Fatalf("%s %v: emitted %d verbs / %d points, past the %d / %d buffers", what, src, verbs, points,
+				edgeClipperMaxVerbs, edgeClipperMaxPoints)
+		}
+	}
+	for _, cull := range []bool{false, true} {
+		e := NewEdgeClipper(cull)
+		var src [4]Point
+		// Every combination of the grid coordinates covers the zigzags that produce 2 extrema in each axis.
+		for i := range 1 << (4 * 4) { // 4 points x (x,y) x 4 choices, encoded 2 bits at a time
+			for j := range 4 {
+				src[j].X = coords[(i>>(4*j))&3]
+				src[j].Y = coords[(i>>(4*j+2))&3]
+			}
+			e.ClipCubic(src[:], clip)
+			verbs, points := clipperEmission(e)
+			check("cubic", verbs, points, cubicMaxVerbs, cubicMaxPoints, src[:])
+			e.ClipQuad(src[:3], clip)
+			verbs, points = clipperEmission(e)
+			check("quad", verbs, points, quadMaxVerbs, quadMaxPoints, src[:3])
+		}
+		rng := rand.New(rand.NewSource(1))
+		for range 20000 {
+			for j := range 4 {
+				src[j].X = rng.Float32()*300 - 100
+				src[j].Y = rng.Float32()*300 - 100
+			}
+			e.ClipCubic(src[:], clip)
+			verbs, points := clipperEmission(e)
+			check("cubic", verbs, points, cubicMaxVerbs, cubicMaxPoints, src[:])
+			e.ClipQuad(src[:3], clip)
+			verbs, points = clipperEmission(e)
+			check("quad", verbs, points, quadMaxVerbs, quadMaxPoints, src[:3])
 		}
 	}
 }

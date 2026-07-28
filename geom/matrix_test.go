@@ -287,6 +287,38 @@ func TestMatrixZeroValueIsHonest(t *testing.T) {
 	}
 }
 
+func TestMatrixZeroValuePreScaleStaysHonest(t *testing.T) {
+	// PreScale is the one mask-fixup path reachable without a prior Set*/Type() call, so it must not stamp a clean mask
+	// onto a zero-valued Matrix. Every classification has to agree with an honest recompute of the same nine elements.
+	for _, sc := range []struct {
+		name   string
+		sx, sy float32
+	}{
+		{name: "nonzero", sx: 2, sy: 3},
+		{name: "zeroScaleX", sx: 0, sy: 3},
+		{name: "shrinkToOne", sx: 1, sy: 2},
+	} {
+		var m Matrix
+		m.PreScale(sc.sx, sc.sy)
+		honest := MatrixFrom9(m.As9())
+		if m.Type() != honest.Type() {
+			t.Errorf("%s: type = %#x, want %#x", sc.name, m.Type(), honest.Type())
+		}
+		if m.HasPerspective() != honest.HasPerspective() {
+			t.Errorf("%s: HasPerspective = %v, want %v", sc.name, m.HasPerspective(), honest.HasPerspective())
+		}
+		if m.RectStaysRect() != honest.RectStaysRect() {
+			t.Errorf("%s: RectStaysRect = %v, want %v", sc.name, m.RectStaysRect(), honest.RectStaysRect())
+		}
+		if _, ok := m.AsAffine(); ok {
+			t.Errorf("%s: AsAffine succeeded on the degenerate all-zero matrix", sc.name)
+		}
+		if m.IsIdentity() || m.IsScaleTranslate() || m.IsTranslate() {
+			t.Errorf("%s: zero matrix classified as identity/scale-translate/translate", sc.name)
+		}
+	}
+}
+
 func TestMatrixPreservesRightAngles(t *testing.T) {
 	cases := []struct {
 		name string

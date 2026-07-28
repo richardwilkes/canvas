@@ -23,8 +23,12 @@ const (
 	ClipVerbCubic
 )
 
-// EdgeClipper limits: max curvature in X and Y splits a cubic into 9 pieces, each of which can produce (2 vlines + 1
-// cubic), requiring 6 points.
+// EdgeClipper limits. ClipCubic chops at the Y extrema and then at the X extrema, but each axis' derivative is a single
+// quadratic, so there are at most 2 chops per axis over the whole curve (chopping in Y does not manufacture new X
+// extrema); at most 4 chops means at most 5 monotonic pieces reach clipMonoCubic. A piece emits at most 3 verbs and 8
+// points — the left vline (2), the clipped cubic (4), then the right vline (2) — for a worst case of 15 verbs and 40
+// points. Quads bound tighter (at most 1 chop per axis, so 3 pieces of 3 verbs / 7 points) and a clipped line yields at
+// most 3 verbs / 6 points, so the cubic case sets the limits below.
 const (
 	edgeClipperMaxVerbs  = 18
 	edgeClipperMaxPoints = 54

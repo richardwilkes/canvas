@@ -119,9 +119,7 @@ func TestFontProgramOmittedWhenUnavailable(t *testing.T) {
 	size := descriptor.Size()
 	written := buf.BytesWritten()
 	for _, data := range [][]byte{nil, {}} {
-		if insertFontProgram(doc, descriptor, data) {
-			t.Errorf("empty font program (%v) reported as embedded", data)
-		}
+		insertFontProgram(doc, descriptor, data)
 	}
 	if descriptor.Size() != size {
 		t.Errorf("empty font program added an entry to the descriptor: %s", emitToString(descriptor))
@@ -132,9 +130,7 @@ func TestFontProgramOmittedWhenUnavailable(t *testing.T) {
 
 	// A real program is embedded, with its uncompressed length in /Length1.
 	program := []byte(strings.Repeat("font program bytes; ", 32))
-	if !insertFontProgram(doc, descriptor, program) {
-		t.Fatal("non-empty font program not embedded")
-	}
+	insertFontProgram(doc, descriptor, program)
 	body := emitToString(descriptor)
 	mustContain(t, body, "/FontFile2")
 	if buf.BytesWritten() == written {

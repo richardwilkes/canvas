@@ -7,8 +7,8 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// A Form XObject wraps a content stream (used here by the gradient alpha (luminosity SMask) path; saveLayer
-// transparency groups reuse it in a later slice).
+// A Form XObject wraps a content stream. Two lanes use it: the gradient alpha (luminosity SMask) path, and saveLayer
+// transparency groups via Device.DrawDevice → makeFormXObjectFromDevice → makeFormXObjectFromDeviceBounds.
 
 package pdf
 

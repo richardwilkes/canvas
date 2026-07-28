@@ -10,7 +10,8 @@
 // The /ExtGState objects that carry a paint's alpha, blend mode, and (for strokes) line cap/join/width/ miter. Objects
 // are canonicalized on the document (fillGSMap / strokeGSMap) so identical paints share one indirect object. The
 // soft-mask graphic states (getSMaskGraphicState + the invert function) are used by the gradient alpha (luminosity
-// SMask) path; the mask-filter draw lane reuses them in a later slice.
+// SMask) path and by the mask-filter draw lane (Device.internalDrawPathWithFilter and internalDrawImageRect's
+// alpha-only lane).
 
 package pdf
 

@@ -39,7 +39,8 @@ func (m *offsetMap) markStartOfDocument(s stream.WStream) {
 	m.hasBase = true
 }
 
-// markStartOfObject records object referenceNumber's offset relative to the header.
+// markStartOfObject records object referenceNumber's offset relative to the header. Object numbers are 1-based; callers
+// screen out non-positive numbers (Document.EmitAt rejects an invalid IndirectReference) before reaching here.
 func (m *offsetMap) markStartOfObject(referenceNumber int, s stream.WStream) {
 	index := referenceNumber - 1
 	if index >= len(m.offsets) {
@@ -179,7 +180,8 @@ func NewDocument(w stream.WStream, metadata *Metadata) *Document {
 // Metadata returns the document's (clamped) metadata.
 func (d *Document) Metadata() *Metadata { return &d.metadata }
 
-// ReserveRef reserves an indirect object number; every returned reference must be passed to Emit exactly once.
+// ReserveRef reserves an indirect object number; every returned reference must be passed to EmitAt exactly once. (Emit
+// is the shorthand for the common case: it reserves its own reference and emits under it.)
 func (d *Document) ReserveRef() IndirectReference {
 	ref := IndirectReference{value: d.nextObjectNumber}
 	d.nextObjectNumber++
@@ -191,8 +193,12 @@ func (d *Document) Emit(object Object) IndirectReference {
 	return d.EmitAt(object, d.ReserveRef())
 }
 
-// EmitAt serializes object under ref.
+// EmitAt serializes object under ref and returns ref. A reference that does not point at an object (see
+// IndirectReference.IsValid) is rejected: nothing is written and the zero, invalid reference is returned.
 func (d *Document) EmitAt(object Object, ref IndirectReference) IndirectReference {
+	if !ref.IsValid() {
+		return IndirectReference{}
+	}
 	beginIndirectObject(&d.offsetMap, ref, d.stream)
 	object.emit(d.stream)
 	endIndirectObject(d.stream)
@@ -265,10 +271,13 @@ func (p *Page) InitialTransform() geom.Matrix { return p.initialTransform }
 // PageSize is the rasterized page size in device pixels (round(width*rasterScale)).
 func (p *Page) PageSize() geom.ISize { return p.pageSize }
 
-// BeginPage starts a new page. On the first page it writes the file header and emits the document information
-// dictionary (and, in PDF/A mode, the XMP metadata). It returns the Page whose content and resources the caller fills
-// before calling EndPage.
+// BeginPage starts a new page. A page left open by a missing EndPage is finished first, as upstream does. On the first
+// page it writes the file header and emits the document information dictionary (and, in PDF/A mode, the XMP metadata).
+// It returns the Page whose content and resources the caller fills before calling EndPage.
 func (d *Document) BeginPage(width, height float32) *Page {
+	// The open page's object number is already reserved, so overwriting it would drop its content and leave an in-use
+	// xref entry pointing at byte 0.
+	d.EndPage()
 	if len(d.pages) == 0 {
 		serializeHeader(&d.offsetMap, d.stream)
 		d.infoDict = d.Emit(MakeDocumentInformationDict(&d.metadata))
@@ -303,11 +312,17 @@ func (d *Document) BeginPage(width, height float32) *Page {
 }
 
 // BeginPageCanvas starts a page backed by a real PDF Device and returns a canvas that records draw ops into that
-// device's content stream. EndPage serializes the device's content and /Resources.
+// device's content stream. The canvas takes its coordinates in the page's nominal 72dpi point space, whatever the
+// metadata's RasterDPI. EndPage serializes the device's content and /Resources.
 func (d *Document) BeginPageCanvas(width, height float32) *canvas.Canvas {
 	p := d.BeginPage(width, height)
 	p.device = newDevice(p.pageSize, d, p.initialTransform)
-	return canvas.New(p.device)
+	c := canvas.New(p.device)
+	// The device (and any layer device it spawns) works at the rasterized scale, while the caller draws in nominal
+	// points; this scale bridges the two. The initial transform prepended to the content stream divides it back out on
+	// the way to PDF's 72dpi user space, so without it every draw would be shrunk by 72/RasterDPI.
+	c.Scale(d.rasterScale, d.rasterScale)
+	return c
 }
 
 // EndPage emits the current page's content stream and builds the Page dictionary (MediaBox, Resources, Contents,

@@ -19,6 +19,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/richardwilkes/canvas/canvas"
+	"github.com/richardwilkes/canvas/colorcore"
+	"github.com/richardwilkes/canvas/geom"
 	"github.com/richardwilkes/canvas/stream"
 )
 
@@ -414,6 +417,143 @@ func TestDocumentAbortDiscardsOpenPage(t *testing.T) {
 	data := out.Bytes()
 	if bytes.Contains(data, []byte("trailer")) || bytes.Contains(data, []byte("%%EOF")) {
 		t.Error("aborted document was finalized by Close")
+	}
+}
+
+// contentRectInUserSpace composes every "cm" operator preceding the first "re" in a content stream and returns the rect
+// that "re" covers in PDF user space — the same 72dpi space the page's /MediaBox is expressed in.
+func contentRectInUserSpace(t *testing.T, content string) geom.Rect {
+	t.Helper()
+	parse := func(s string) float32 {
+		v, err := strconv.ParseFloat(s, 32)
+		if err != nil {
+			t.Fatalf("bad numeric operand %q: %v", s, err)
+		}
+		return float32(v)
+	}
+	ctm := geom.IdentityMatrix()
+	for _, line := range strings.Split(content, "\n") {
+		fields := strings.Fields(line)
+		switch {
+		case len(fields) == 7 && fields[6] == "cm":
+			// PDF's [a b c d e f] is (scaleX, skewY, skewX, scaleY, transX, transY).
+			var cm geom.Matrix
+			cm.SetAll(parse(fields[0]), parse(fields[2]), parse(fields[4]),
+				parse(fields[1]), parse(fields[3]), parse(fields[5]), 0, 0, 1)
+			ctm.PreConcat(&cm)
+		case len(fields) == 5 && fields[4] == "re":
+			x, y := parse(fields[0]), parse(fields[1])
+			r, _ := ctm.MapRect(geom.Rect{Left: x, Top: y, Right: x + parse(fields[2]), Bottom: y + parse(fields[3])})
+			return r.Sorted()
+		}
+	}
+	t.Fatalf("no %q operator in content:\n%s", "re", content)
+	return geom.Rect{}
+}
+
+// TestDocumentRasterDPIScalesPageCanvas pins that a device-backed page's canvas takes coordinates in the page's nominal
+// 72dpi point space whatever the RasterDPI: content drawn at the page's point size must cover the whole MediaBox, not
+// 72/RasterDPI of it. The page device works at the rasterized scale (so image-filter layer devices get the extra
+// resolution), and the initial transform prepended to the content stream divides that scale back out.
+func TestDocumentRasterDPIScalesPageCanvas(t *testing.T) {
+	const w, h = 612, 792
+	for _, dpi := range []float32{72, 144, 288, 300} {
+		t.Run(fmt.Sprintf("dpi%g", dpi), func(t *testing.T) {
+			md := DefaultMetadata()
+			md.RasterDPI = dpi
+			var out stream.MemoryWStream
+			doc := NewDocument(&out, md)
+			c := doc.BeginPageCanvas(w, h)
+			paint := canvas.NewPaint()
+			paint.Color = colorcore.ARGB(255, 200, 30, 40)
+			c.DrawRect(geom.RectLTRB(0, 0, w, h), paint)
+			doc.EndPage()
+			doc.Close()
+
+			data := out.Bytes()
+			validatePDF(t, data)
+			// The MediaBox is always the nominal point size; only the device pixel grid behind it changes.
+			mustContain(t, dictContaining(data, "/MediaBox"), "/MediaBox [0 0 612 792]")
+			got := contentRectInUserSpace(t, pageContent(t, data))
+			want := geom.RectLTRB(0, 0, w, h)
+			const tol = 0.02 // 300dpi's 72/300 scale is not exact in float32
+			if abs32(got.Left-want.Left) > tol || abs32(got.Top-want.Top) > tol ||
+				abs32(got.Right-want.Right) > tol || abs32(got.Bottom-want.Bottom) > tol {
+				t.Errorf("full-page rect covers %v in user space, want the MediaBox %v", got, want)
+			}
+		})
+	}
+}
+
+func abs32(v float32) float32 {
+	if v < 0 {
+		return -v
+	}
+	return v
+}
+
+// TestDocumentEmitAtRejectsInvalidRef covers EmitAt with a reference that points at no object. Object numbers are
+// 1-based, so a non-positive one used to index offsets[-1] and panic; it must be rejected instead, leaving the stream
+// untouched and the document still serializable.
+func TestDocumentEmitAtRejectsInvalidRef(t *testing.T) {
+	var out stream.MemoryWStream
+	doc := NewDocument(&out, DefaultMetadata())
+	page := doc.BeginPage(100, 100) // writes the header and the info dict
+	writeText(page.Content(), "q Q\n")
+	before := out.BytesWritten()
+	for _, ref := range []IndirectReference{{}, {value: -1}, {value: -1000}} {
+		got := doc.EmitAt(NewDict(), ref)
+		if got.IsValid() {
+			t.Errorf("EmitAt(%d) returned valid reference %d", ref.value, got.value)
+		}
+	}
+	if out.BytesWritten() != before {
+		t.Errorf("EmitAt with an invalid reference wrote %d bytes", out.BytesWritten()-before)
+	}
+	doc.EndPage()
+	doc.Close()
+	validatePDF(t, out.Bytes())
+}
+
+// TestDocumentBeginPageFinishesOpenPage covers a BeginPage with no matching EndPage for the previous page. The open
+// page's object number was already reserved, so it must be finished rather than dropped — otherwise its content
+// disappears and the xref table gains an in-use entry pointing at byte 0.
+func TestDocumentBeginPageFinishesOpenPage(t *testing.T) {
+	var out stream.MemoryWStream
+	doc := NewDocument(&out, DefaultMetadata())
+	writeText(doc.BeginPage(100, 100).Content(), "q Q\n")
+	writeText(doc.BeginPage(200, 200).Content(), "n\n") // no EndPage for the first page
+	doc.EndPage()
+	doc.Close()
+
+	p := validatePDF(t, out.Bytes()) // catches the offset-0 xref entry and the /Size overcount
+	leaves := 0
+	for num := range p.objectOffsets {
+		if strings.Contains(p.object(num), "/Type /Page\n") {
+			leaves++
+		}
+	}
+	if leaves != 2 {
+		t.Errorf("leaf page count = %d, want 2", leaves)
+	}
+	for _, box := range []string{"/MediaBox [0 0 100 100]", "/MediaBox [0 0 200 200]"} {
+		if dictContaining(out.Bytes(), box) == "" {
+			t.Errorf("no page with %s", box)
+		}
+	}
+	if !bytes.Contains(out.Bytes(), []byte("q Q\n")) {
+		t.Error("the unfinished page's content stream was dropped")
+	}
+	// The result must be indistinguishable from the same two pages closed the normal way.
+	var want stream.MemoryWStream
+	doc2 := NewDocument(&want, DefaultMetadata())
+	writeText(doc2.BeginPage(100, 100).Content(), "q Q\n")
+	doc2.EndPage()
+	writeText(doc2.BeginPage(200, 200).Content(), "n\n")
+	doc2.EndPage()
+	doc2.Close()
+	if !bytes.Equal(out.Bytes(), want.Bytes()) {
+		t.Error("an implicit EndPage from BeginPage differs from an explicit one")
 	}
 }
 

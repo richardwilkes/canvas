@@ -182,8 +182,8 @@ func buildProgramDescReusing(desc *ProgramDesc, b *gpu.KeyBuilder, programInfo *
 	genProgramKey(b, programInfo, caps)
 }
 
-// DescribeProgram returns the human-readable field-by-field dump of the key (used by the GLSL parity parity harness and
-// debugging).
+// DescribeProgram returns the human-readable field-by-field dump of the key. Nothing in the module calls it; it exists
+// for debugging a program key by hand, which is why every key field carries a name.
 func DescribeProgram(programInfo *ProgramInfo, caps *Caps) string {
 	var key []uint32
 	b := gpu.NewStringKeyBuilder(&key)

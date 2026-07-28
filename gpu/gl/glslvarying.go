@@ -81,7 +81,6 @@ type VaryingHandler struct {
 	vertexInputs                 []ShaderVar
 	vertexOutputs                []ShaderVar
 	fragInputs                   []ShaderVar
-	fragOutputs                  []ShaderVar
 }
 
 func newVaryingHandler(program *ProgramBuilder) *VaryingHandler {
@@ -211,9 +210,8 @@ func (h *VaryingHandler) getVertexDecls(inputDecls, outputDecls *[]byte) {
 	h.appendDecls(h.vertexOutputs, outputDecls)
 }
 
-// getFragDecls appends the fragment shader's input and output variable declarations to inputDecls and outputDecls
-// respectively.
-func (h *VaryingHandler) getFragDecls(inputDecls, outputDecls *[]byte) {
+// getFragDecls appends the fragment shader's input variable declarations to inputDecls. The handler declares no
+// fragment outputs: the color outputs are declared by FragmentShaderBuilder itself.
+func (h *VaryingHandler) getFragDecls(inputDecls *[]byte) {
 	h.appendDecls(h.fragInputs, inputDecls)
-	h.appendDecls(h.fragOutputs, outputDecls)
 }

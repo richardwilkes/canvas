@@ -42,9 +42,6 @@ type Attachment struct {
 // Dimensions returns the attachment's pixel dimensions.
 func (a *Attachment) Dimensions() geom.ISize { return a.dims }
 
-// SupportedUsages returns the usage flags this attachment was created with.
-func (a *Attachment) SupportedUsages() AttachmentUsage { return a.usage }
-
 // NumSamples returns the MSAA sample count (1 for non-MSAA).
 func (a *Attachment) NumSamples() int { return a.sampleCnt }
 

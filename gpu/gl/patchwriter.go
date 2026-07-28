@@ -70,12 +70,13 @@ func (a *vertexChunkPatchAllocator) close() { a.builder.close() }
 //   - If nP4 < 0 and curveType >= 0, then a degenerate verb has been recorded so caps should be written when the
 //     deferred patch is ended (a lane this port's stroke iterator never takes, since it produces caps itself).
 //   - If nP4 > 0 and curveType >= 0, then this is a full deferred patch.
+//
+// Upstream also tracks the contour's first and last control points here, to synthesize caps and closes. This port's
+// stroke iterator produces its own caps and closes, so neither is tracked.
 type deferredPatchStorage struct {
-	data              []byte     // an entire patch, except with an undefined join control point
-	firstControlPoint geom.Point // the first control point of the contour, e.g. moveTo
-	lastControlPoint  geom.Point // the last control point written within the contour
-	curveType         float32    // the explicit curve type passed to writePatch
-	nP4               float32    // the parametric segment value to restore on linearTolerances
+	data      []byte  // an entire patch, except with an undefined join control point
+	curveType float32 // the explicit curve type passed to writePatch
+	nP4       float32 // the parametric segment value to restore on linearTolerances
 }
 
 func (d *deferredPatchStorage) disableDeferral() {
@@ -93,11 +94,9 @@ func (d *deferredPatchStorage) hasPending() bool {
 	return d.nP4 > 0
 }
 
-func (d *deferredPatchStorage) reset(moveTo geom.Point) {
+func (d *deferredPatchStorage) reset() {
 	d.curveType = -1
 	d.nP4 = -1
-	d.firstControlPoint = moveTo
-	d.lastControlPoint = moveTo
 }
 
 // patchWriter emits tessellation patches for the fill and stroke configurations.
@@ -164,7 +163,7 @@ func newStrokePatchWriter(attribs PatchAttribs, alloc patchAllocator) *patchWrit
 		alloc:                  alloc,
 	}
 	w.deferredPatch.data = make([]byte, w.stride)
-	w.deferredPatch.reset(geom.Point{})
+	w.deferredPatch.reset()
 	return w
 }
 
@@ -206,8 +205,7 @@ func (w *patchWriter) writeDeferredStrokePatch() {
 			copy(buf, w.deferredPatch.data)
 		}
 	}
-	// Remember the first control point in the event we need to produce a cap, or a close().
-	w.deferredPatch.reset(geom.Point{})
+	w.deferredPatch.reset()
 }
 
 // updateJoinControlPointAttrib sets the join control point directly; the join is then valid, so the next real patch
@@ -350,7 +348,6 @@ func (w *patchWriter) writePatch(p0, p1, p2, p3 geom.Point, explicitCurveType fl
 
 		// Automatically update the join control point for the next patch.
 		if w.trackJoinControlPoints {
-			w.deferredPatch.lastControlPoint = last
 			// Points are ordered in reverse order to get the outgoing tangent control point.
 			w.join = patchTangentPoint(last, p2, p1, p0)
 		}

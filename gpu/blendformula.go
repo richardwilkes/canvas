@@ -15,10 +15,6 @@ package gpu
 
 import "github.com/richardwilkes/canvas/raster"
 
-// BlendCoeffRefsSrc reports whether c depends on the source color or alpha. It exists as a free function alongside the
-// BlendCoeff.RefsSrc method for use in the formula tables below.
-func BlendCoeffRefsSrc(c BlendCoeff) bool { return c.RefsSrc() }
-
 // BlendCoeffsUseSrcColor reports whether this src/dst coefficient pair reads the source color.
 func BlendCoeffsUseSrcColor(srcCoeff, dstCoeff BlendCoeff) bool {
 	return srcCoeff != BlendCoeffZero || dstCoeff.RefsSrc()

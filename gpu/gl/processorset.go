@@ -113,7 +113,6 @@ func NewProcessorSetFromPaint(paint *Paint) *ProcessorSet {
 	}
 	paint.colorFragmentProcessor = nil
 	paint.coverageFragmentProcessor = nil
-	paint.initialized = false // the moved-from marker
 	return s
 }
 

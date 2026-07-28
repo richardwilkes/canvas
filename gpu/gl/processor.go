@@ -8,8 +8,8 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // ClassID enumerates every processor subclass (fragment processors, geometry processors, and transfer processors) in a
-// fixed order; class IDs are folded into program keys with 8 bits, and keeping the ordering stable keeps our keys
-// aligned with a reference numbering used by the GLSL parity parity harness.
+// fixed order; class IDs are folded into program keys with 8 bits, and keeping the ordering stable keeps a program key
+// comparable across builds.
 
 package gl
 

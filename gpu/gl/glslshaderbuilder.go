@@ -261,12 +261,10 @@ type FragmentShaderBuilder struct {
 	// fragOutputs holds the explicitly declared fragment outputs.
 	fragOutputs []ShaderVar
 	ShaderBuilder
-	projEmitted              bool
-	advBlendEqEnabled        bool
-	hasReadDstColorThisStage bool
-	primaryColorIsInOut      bool
-	hasSecondaryOutput       bool
-	forceHighPrecision       bool
+	projEmitted        bool
+	advBlendEqEnabled  bool
+	hasSecondaryOutput bool
+	forceHighPrecision bool
 }
 
 // declaredColorOutputName is the name of the declared primary fragment color output.
@@ -287,8 +285,6 @@ func newFragmentShaderBuilder(program *ProgramBuilder) *FragmentShaderBuilder {
 // DstColor returns the expression naming the sampled destination color, for shaders that read the existing destination
 // pixel (e.g. blend-mode compositing).
 func (f *FragmentShaderBuilder) DstColor() string {
-	f.hasReadDstColorThisStage = true
-
 	shaderCaps := f.programBuilder.gpu.Caps().ShaderCaps
 	if shaderCaps.FBFetchSupport {
 		// EXT_shader_framebuffer_fetch lanes are ES-only; unreachable with the desktop trim.
@@ -335,14 +331,6 @@ func (f *FragmentShaderBuilder) SecondaryColorOutputName() string {
 	return ""
 }
 
-// PrimaryColorOutputIsInOut reports whether the primary color output is also read as an input (used for
-// framebuffer-fetch-style blending).
-func (f *FragmentShaderBuilder) PrimaryColorOutputIsInOut() bool { return f.primaryColorIsInOut }
-
-func (f *FragmentShaderBuilder) debugResetPerStageVerification() {
-	f.hasReadDstColorThisStage = false
-}
-
 func (f *FragmentShaderBuilder) fsOnFinalize() {
 	// Declare the primary color output followed by any explicitly added outputs (secondary color).
 	if f.programBuilder.gpu.Caps().ShaderCaps.MustDeclareFragmentShaderOutput() {
@@ -356,9 +344,7 @@ func (f *FragmentShaderBuilder) fsOnFinalize() {
 		f.fragOutputs[i].AppendDecl(&f.shaderStrings[sectionOutputs])
 		f.outputs().append(";\n")
 	}
-	f.programBuilder.varyingHandler.getFragDecls(
-		&f.shaderStrings[sectionInputs], &f.shaderStrings[sectionOutputs],
-	)
+	f.programBuilder.varyingHandler.getFragDecls(&f.shaderStrings[sectionInputs])
 }
 
 // ensureBlendHelper emits one of the sksl_gpu.sksl helper functions (registry key) once per shader, emitting its own

@@ -16,17 +16,23 @@ package gpu
 // shader).
 const DitherLUTSize = 8
 
-// DitherRangeForColorType returns 1/(2^bitdepth - 1) per channel for the given color type, or 0 (no dithering) for
-// high-precision formats.
+// DitherRangeForColorType returns 1/(2^bitdepth - 1) per channel for the given color type, or 0 (no dithering) for the
+// float and unknown formats. The 16-bit unorm lane follows upstream's 1/32767 rather than the 1/65535 the formula
+// implies.
 func DitherRangeForColorType(ct ColorType) float32 {
 	switch ct {
-	case ColorTypeABGR4444:
+	case ColorTypeABGR4444, ColorTypeARGB4444, ColorTypeBGRA4444:
 		return 1 / 15.0
 	case ColorTypeBGR565, ColorTypeRGB565:
 		return 1 / 63.0
-	case ColorTypeAlpha8, ColorTypeGray8, ColorTypeRGB888x, ColorTypeRGBA8888,
-		ColorTypeRGBA8888SRGB, ColorTypeBGRA8888:
+	case ColorTypeAlpha8, ColorTypeGray8, ColorTypeGrayAlpha88, ColorTypeR8, ColorTypeRG88,
+		ColorTypeRGB888, ColorTypeRGB888x, ColorTypeRGBA8888, ColorTypeRGBA8888SRGB,
+		ColorTypeBGRA8888:
 		return 1 / 255.0
+	case ColorTypeRGBA1010102, ColorTypeBGRA1010102, ColorTypeRGB101010x, ColorTypeRGBA10x6:
+		return 1 / 1023.0
+	case ColorTypeAlpha16, ColorTypeR16, ColorTypeRG1616, ColorTypeRGBA16161616:
+		return 1 / 32767.0
 	default:
 		return 0 // no dithering
 	}

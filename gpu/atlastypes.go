@@ -11,7 +11,7 @@
 // AtlasLocator, PlotEvictionCallback, BulkUsePlotUpdater, Plot, and PlotList, plus Token/TokenTracker. These back the
 // GPU draw-op atlas in gpu/gl. Plot's pixel copy has no RGBA<->BGRA swizzle lane since this codebase's device/N32
 // format is RGBA8888 on every platform; the intrusive-list plumbing is an explicit intrusive list (PlotList); and
-// MaskFormatToColorType maps each mask format directly to the gpu.ColorType it uploads as.
+// MaskFormat.ColorType maps each mask format directly to the ColorType it uploads as.
 
 package gpu
 

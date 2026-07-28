@@ -10,6 +10,11 @@
 // Resolves the native GL entry points on macOS, using purego's dlopen/dlsym to load the system OpenGL framework. The
 // handle is kept open for the process lifetime, so libGL can never be unloaded out from under resolved procs — and the
 // OpenGL framework is never unloaded on macOS regardless.
+//
+// Two deliberate differences from the linux/windows loaders: there is no explicit current-context check (dlsym resolves
+// without one, and MakeAssembledGLInterface already returns nil when glGetString(GL_VERSION) comes back empty because
+// no context is current), and the standard sniff in MakeAssembledInterface is skipped, since OpenGL.framework only ever
+// hosts desktop GL — a CGL context is never ES or WebGL.
 
 package gl
 
@@ -25,11 +30,7 @@ func MakeNativeInterface() *Interface {
 		return nil
 	}
 	return MakeAssembledGLInterface(func(name string) uintptr {
-		handle := lib
-		if handle == 0 {
-			handle = purego.RTLD_DEFAULT
-		}
-		addr, dlerr := purego.Dlsym(handle, name)
+		addr, dlerr := purego.Dlsym(lib, name)
 		if dlerr != nil {
 			return 0
 		}

@@ -25,21 +25,19 @@ type Paint struct {
 	coverageFragmentProcessor FragmentProcessor
 	color                     colorcore.PMColor4f
 	notTrivial                bool
-	initialized               bool
 }
 
 // NewPaint returns a default paint (solid white, no XP factory, trivial).
 func NewPaint() *Paint {
-	return &Paint{color: colorcore.PMColor4f{R: 1, G: 1, B: 1, A: 1}, initialized: true}
+	return &Paint{color: colorcore.PMColor4f{R: 1, G: 1, B: 1, A: 1}}
 }
 
 // ClonePaint returns a deep copy of that, cloning its fragment processors.
 func ClonePaint(that *Paint) *Paint {
 	p := &Paint{
-		xpFactory:   that.xpFactory,
-		color:       that.color,
-		notTrivial:  that.notTrivial,
-		initialized: true,
+		xpFactory:  that.xpFactory,
+		color:      that.color,
+		notTrivial: that.notTrivial,
 	}
 	if that.colorFragmentProcessor != nil {
 		p.colorFragmentProcessor = that.colorFragmentProcessor.Clone()

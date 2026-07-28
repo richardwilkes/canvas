@@ -116,13 +116,12 @@ func (c *CpuBufferCache) MakeBuffer(size uint64, mustBeInitialized bool) *CpuBuf
 			result = &c.buffers[i]
 		}
 	}
-	var temp struct {
-		buffer  *CpuBuffer
-		cleared bool
-	}
 	if result == nil {
-		temp.buffer = MakeCpuBuffer(size)
-		result = &temp
+		// Not a cacheable size, or the cache is full: the buffer is owned solely by the caller, so the ref
+		// MakeCpuBuffer already took is the caller's. Taking a second one — as the cached paths below do, where one ref
+		// belongs to the cache — would leave a phantom reference the caller's single Unref could never drop. A fresh
+		// allocation is already zeroed, so mustBeInitialized needs nothing extra.
+		return MakeCpuBuffer(size)
 	}
 	if mustBeInitialized && !result.cleared {
 		result.cleared = true

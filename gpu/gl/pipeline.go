@@ -240,25 +240,9 @@ func (p *Pipeline) VisitProxies(f func(*SurfaceProxy, gpu.Mipmapped)) {
 	}
 }
 
-// GenKey appends this pipeline's contribution to the program descriptor key: its flags (other than the
-// shader-implemented snap-to-pixel-centers bit) and its blend state.
-func (p *Pipeline) GenKey(b *gpu.KeyBuilder, caps *Caps) {
-	// PipelineSnapVerticesToPixelCenters is implemented in a shader.
-	ignoredFlags := PipelineSnapVerticesToPixelCenters
-	b.Add32(uint32(p.flags&^ignoredFlags), "flags")
-
-	blendInfo := xpGetBlendInfo(p.XferProcessor())
-
-	const blendCoeffSize = 5
-	const blendEquationSize = 5
-
-	b.AddBool(blendInfo.WritesColor, "writesColor")
-	b.AddBits(blendCoeffSize, uint32(blendInfo.SrcBlend), "srcBlend")
-	b.AddBits(blendCoeffSize, uint32(blendInfo.DstBlend), "dstBlend")
-	b.AddBits(blendEquationSize, uint32(blendInfo.Equation), "equation")
-	b.AddBool(p.UsesDstInputAttachment(), "inputAttach")
-	_ = caps
-}
+// Upstream's GrPipeline::genKey (pipeline flags plus the resolved blend state) is not ported: only the Vulkan, Metal
+// and D3D caps call it, to key their pipeline-state objects. The GL program key covers the same ground through
+// genXPKey and the snap-vertices/write-swizzle bits genProgramKey adds directly.
 
 // SetDstTextureUniforms sets the uniforms a shader needs to sample the destination-read texture, if the program
 // declared one.

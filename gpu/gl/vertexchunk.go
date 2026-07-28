@@ -31,6 +31,10 @@ type vertexChunkBuilder struct {
 	minVerticesPerChunk     int
 	currChunkVertexCount    int
 	currChunkVertexCapacity int
+	// currChunkOpen reports whether the last entry in *chunks is the chunk being written, i.e. whether close() still
+	// has a count to finalize. A failed allocChunk clears it: the previous chunk's count is already final at that
+	// point, and overwriting it with the reset counter would discard geometry that is already in the GPU buffer.
+	currChunkOpen bool
 }
 
 func newVertexChunkBuilder(target *OpFlushState, chunks *[]vertexChunk, stride uint64, minVerticesPerChunk int) *vertexChunkBuilder {
@@ -48,7 +52,7 @@ func newVertexChunkBuilder(target *OpFlushState, chunks *[]vertexChunk, stride u
 // close returns the unused reserve to the vertex pool and finalizes the current chunk's count. It must be called once
 // writing is complete.
 func (b *vertexChunkBuilder) close() {
-	if len(*b.chunks) != 0 {
+	if b.currChunkOpen {
 		b.target.PutBackVertices(b.currChunkVertexCapacity-b.currChunkVertexCount, b.stride)
 		(*b.chunks)[len(*b.chunks)-1].count = b.currChunkVertexCount
 	}
@@ -71,7 +75,7 @@ func (b *vertexChunkBuilder) appendVertices(count int) []byte {
 // allocChunk finalizes the current chunk (if any) and allocates a new one from the vertex pool with room for at least
 // minCount vertices.
 func (b *vertexChunkBuilder) allocChunk(minCount int) bool {
-	if len(*b.chunks) != 0 {
+	if b.currChunkOpen {
 		// No need to put back vertices; the buffer is full.
 		(*b.chunks)[len(*b.chunks)-1].count = b.currChunkVertexCount
 	}
@@ -82,11 +86,14 @@ func (b *vertexChunkBuilder) allocChunk(minCount int) bool {
 	if data == nil || buffer == nil || capacity < minCount {
 		b.currChunkVertexData = nil
 		b.currChunkVertexCapacity = 0
+		// The chunk just finalized above (if any) keeps its count; there is no new chunk to finalize at close().
+		b.currChunkOpen = false
 		return false
 	}
 	*b.chunks = append(*b.chunks, vertexChunk{buffer: buffer, base: base})
 	b.currChunkVertexData = data
 	b.currChunkVertexCapacity = capacity
+	b.currChunkOpen = true
 	b.minVerticesPerChunk *= 2
 	return true
 }

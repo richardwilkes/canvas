@@ -53,7 +53,7 @@ func (v *SurfaceProxyView) Dimensions() geom.ISize { return v.proxy.Dimensions()
 
 // Mipmapped reports the mipmap state of the underlying texture proxy, or MipmappedNo if the proxy isn't a texture.
 func (v *SurfaceProxyView) Mipmapped() gpu.Mipmapped {
-	if t := v.proxy.AsTextureProxy(); t != nil {
+	if t := v.AsTextureProxy(); t != nil {
 		return t.Mipmapped()
 	}
 	return gpu.MipmappedNo

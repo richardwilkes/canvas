@@ -11,12 +11,14 @@ package text
 
 import (
 	"os"
+	"sync"
 	"testing"
 
 	"github.com/richardwilkes/canvas/canvas"
 	"github.com/richardwilkes/canvas/font"
 	"github.com/richardwilkes/canvas/geom"
 	"github.com/richardwilkes/canvas/gpu"
+	"github.com/richardwilkes/canvas/raster"
 	"github.com/richardwilkes/canvas/stroke"
 	"github.com/richardwilkes/canvas/textblob"
 )
@@ -446,4 +448,48 @@ func TestGlyphVectorResolution(t *testing.T) {
 	if gv.Strike() == nil {
 		t.Fatal("text strike must be resolved")
 	}
+}
+
+// TestPathSubRunConcurrentPathCreation pins that the lazy glyph-ID→path conversion in a path subrun is safe when the
+// same cached blob is used from more than one goroutine, which BlobRedrawCoordinator's mutex implies is possible. The
+// conversion nulls the strike as its last step, so an unsynchronized second caller could observe the cleared strike
+// before the paths it produced and nil-deref. Run under -race to see an unsynchronized version fail.
+//
+// This exercises the conversion only, not a full concurrent Draw: the converted paths are shared, and path.Path caches
+// its bounds lazily, so drawing the same glyph path from two goroutines races inside path itself.
+func TestPathSubRunConcurrentPathCreation(t *testing.T) {
+	f := loadTestFont(t, "Roboto-Regular.ttf", 300)
+	list := runListForText(t, f, "AB", geom.Pt(0, 300))
+	positionMatrix := geom.IdentityMatrix()
+
+	container := MakeSubRuns(list, &positionMatrix, fillPaint(), nil, noSDFTControl())
+	sub, ok := container.SubRuns()[0].(*PathSubRun)
+	if !ok {
+		t.Fatalf("subrun type = %T, want PathSubRun", container.SubRuns()[0])
+	}
+
+	const callers = 8
+	var wg sync.WaitGroup
+	wg.Add(callers)
+	for i := 0; i < callers; i++ {
+		go func() {
+			defer wg.Done()
+			sub.pathDrawing.ensurePaths()
+			// Every caller must see a fully converted submitter, whichever one ran the conversion.
+			for j := range sub.pathDrawing.idsOrPaths {
+				if sub.pathDrawing.idsOrPaths[j].path == nil {
+					t.Errorf("glyph %d has no path after ensurePaths", j)
+				}
+			}
+		}()
+	}
+	wg.Wait()
+
+	if sub.pathDrawing.strike != nil {
+		t.Error("the strike ref must be dropped once the paths are created")
+	}
+
+	// Drawing still works after the concurrent conversion.
+	c := canvas.NewForPixmap(raster.NewPixmap(64, 64))
+	sub.Draw(c, geom.Pt(0, 0), fillPaint(), nil)
 }

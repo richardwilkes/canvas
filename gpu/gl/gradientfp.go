@@ -863,14 +863,12 @@ func makeLoopingBinaryColorizer(colors []colorcore.Color4f, positions []float32)
 	for roundedSize < intervalCount {
 		roundedSize *= 2
 	}
+	// roundedSize is always a multiple of 4, so this also leaves the thresholds padded to a whole number of float4
+	// chunks, which is how the colorizer uploads them.
 	for ; intervalCount < roundedSize; intervalCount++ {
 		thresholds = append(thresholds, thresholds[intervalCount-1])
 		scales = append(scales, scales[4*(intervalCount-1):4*intervalCount]...)
 		biases = append(biases, biases[4*(intervalCount-1):4*intervalCount]...)
-	}
-	// Pad thresholds to a whole number of float4 chunks.
-	for len(thresholds)%4 != 0 {
-		thresholds = append(thresholds, 0)
 	}
 	return makeLoopingColorizer(intervalCount, scales, biases, thresholds)
 }

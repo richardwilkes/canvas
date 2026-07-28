@@ -365,8 +365,8 @@ func (i *ellipseClipFPImpl) EmitCode(args *FPEmitArgs) {
 	// d is the offset to the ellipse center.
 	f.CodeAppendf("vec2 d = %s - %s.xy;", fragCoord, ellipseName)
 	// If we're on a device with a "real" mediump then we'll do the distance computation in a space that is normalized
-	// by the larger radius or 128, whichever is smaller. The scale uniform is (scale, 1/scale); the inverse squared
-	// radii uniform values are already in this normalized space; the center is not.
+	// by the larger radius. The scale uniform is (scale, 1/scale); the inverse squared radii uniform values are already
+	// in this normalized space; the center is not.
 	if fp.medPrecision {
 		f.CodeAppendf("d *= %s.y;", scaleName)
 	}

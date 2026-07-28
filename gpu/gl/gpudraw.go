@@ -129,9 +129,9 @@ func (g *Gpu) prepareToDraw(primitiveType gpu.PrimitiveType) uint32 {
 }
 
 // NumGLDraws returns the number of GL geometry draw calls issued since the last ResetGLDrawStats. Together with the
-// number of ops recorded for the frame it is the batching-effectiveness metric of batching effectiveness (ops recorded
-// vs GL draws issued): the closer draws-issued is to draws-recorded-worth of primitives, the worse the batching. Read
-// it only on the GL context thread.
+// number of ops recorded for the frame it is the batching-effectiveness metric (ops recorded vs GL draws issued): the
+// closer draws-issued is to draws-recorded-worth of primitives, the worse the batching. Read it only on the GL context
+// thread.
 func (g *Gpu) NumGLDraws() int { return g.numGLDraws }
 
 // ResetGLDrawStats zeroes the GL-draw-call counter. Callers take a per-frame reading by resetting before recording and

@@ -30,8 +30,6 @@ type FlushInfo struct {
 	SubmittedProc func(success bool)
 }
 
-func (i *FlushInfo) isEmpty() bool { return i.FinishedProc == nil && i.SubmittedProc == nil }
-
 // DrawingManager owns the render-task DAG for a context.
 type DrawingManager struct {
 	lastRenderTasks      map[gpu.ResourceUniqueID]RenderTask
@@ -678,8 +676,10 @@ func (dm *DrawingManager) Flush(proxies []*SurfaceProxy, info FlushInfo) bool {
 		return false
 	}
 
-	// As of now we only short-circuit if we got an explicit list of surfaces to flush.
-	if len(proxies) > 0 && info.isEmpty() {
+	// As of now we only short-circuit if we got an explicit list of surfaces to flush. A finished proc has to observe a
+	// real submission, so it blocks the short-circuit; a submitted proc does not, since it is called below. (Upstream
+	// also blocks on pending semaphores, which this trim has none of.)
+	if len(proxies) > 0 && info.FinishedProc == nil {
 		allUnused := true
 		for _, proxy := range proxies {
 			for _, task := range dm.dag {

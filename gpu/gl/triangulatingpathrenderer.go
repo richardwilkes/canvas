@@ -128,6 +128,22 @@ func (a *staticVertexAllocator) unlock(actualCount int) {
 	a.lockStride = 0
 }
 
+// release drops whatever the allocator is still holding, so an abandoned triangulation doesn't leave the static GPU
+// vertex buffer it created pinned in the resource cache by its construction ref. Upstream leans on the allocator's
+// destructor for this.
+func (a *staticVertexAllocator) release() {
+	if a.vertexData != nil {
+		a.vertexData.Unref()
+		a.vertexData = nil
+	}
+	if a.vertexBuffer != nil {
+		a.vertexBuffer.Unref()
+		a.vertexBuffer = nil
+	}
+	a.vertices = nil
+	a.lockStride = 0
+}
+
 // detachVertexData returns the locked vertex data and clears the allocator's reference to it.
 func (a *staticVertexAllocator) detachVertexData() *VertexData {
 	if a.lockStride != 0 || a.vertices != nil || a.vertexBuffer != nil || a.vertexData == nil {
@@ -302,6 +318,9 @@ func (o *triangulatingPathOp) createNonAAMesh(target *OpFlushState) {
 	var isLinear bool
 	vertexCount := o.triangulate(allocator, tol, &isLinear)
 	if vertexCount == 0 {
+		// The ear clipper can lock vertex space and then emit nothing, which still leaves a static GPU buffer wrapped
+		// in the allocator's vertex data; drop it rather than pinning it for the context's lifetime.
+		allocator.release()
 		return
 	}
 

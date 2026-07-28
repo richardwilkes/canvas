@@ -154,6 +154,10 @@ func (f *Functions) GetUniformLocationString(program uint32, name string) int32 
 // ShaderSourceStrings uploads Go strings as the shader source, passing explicit lengths so no NUL terminators are
 // needed.
 func (f *Functions) ShaderSourceStrings(shader uint32, srcs []string) {
+	if len(srcs) == 0 {
+		f.ShaderSource(shader, 0, 0, nil)
+		return
+	}
 	ptrs := make([]*byte, len(srcs))
 	lens := make([]int32, len(srcs))
 	for i, s := range srcs {

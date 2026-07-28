@@ -129,11 +129,9 @@ func (pb *ProgramBuilder) nameExpression(output *string, baseName string) {
 	}
 }
 
-// advanceStage moves to the next processor's stage, resetting the per-stage debug verification state and opening a
-// fresh fragment-shader code section.
+// advanceStage moves to the next processor's stage, opening a fresh fragment-shader code section.
 func (pb *ProgramBuilder) advanceStage() {
 	pb.stageIndex++
-	pb.fs.debugResetPerStageVerification()
 	pb.fs.nextStage()
 }
 
@@ -538,7 +536,9 @@ func CreateProgram(g *Gpu, desc *ProgramDesc, programInfo *ProgramInfo) *Program
 }
 
 // compileAndAttachShader compiles source as shaderType and attaches it to programID, panicking with the compiler's info
-// log on failure; the new shader is appended to shadersToDelete for later cleanup.
+// log on failure; the new shader is appended to shadersToDelete for later cleanup. On a compile failure every GL object
+// created so far — the failing shader, any already-attached shaders, and the program itself — is deleted before the
+// panic, so a recovered panic leaks nothing (the same discipline the link-failure path in finalize follows).
 func (pb *ProgramBuilder) compileAndAttachShader(programID, shaderType uint32, source []byte, shadersToDelete *[]uint32) bool {
 	g := pb.gpu
 	shaderID := g.fns().CreateShader(shaderType)
@@ -568,6 +568,10 @@ func (pb *ProgramBuilder) compileAndAttachShader(programID, shaderType uint32, s
 			log = string(buf[:written])
 		}
 		g.fns().DeleteShader(shaderID)
+		for _, id := range *shadersToDelete {
+			g.fns().DeleteShader(id)
+		}
+		g.fns().DeleteProgram(programID)
 		panic("shader compile failed: " + log + "\n" + string(source))
 	}
 

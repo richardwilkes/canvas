@@ -201,3 +201,20 @@ func TestCompute2DBlurOffsets(t *testing.T) {
 		}
 	}
 }
+
+// TestMaxLinearBlurSigmaFitsSampleBudget pins the relationship MaxLinearBlurSigma's doc states: the largest sigma a
+// single linear-filtered 1D pass handles needs radius 12 and hence 13 samples, comfortably inside the MaxBlurSamples
+// budget the shader's uniform array is sized for.
+func TestMaxLinearBlurSigmaFitsSampleBudget(t *testing.T) {
+	radius := BlurSigmaRadius(MaxLinearBlurSigma)
+	if radius != 12 {
+		t.Errorf("BlurSigmaRadius(%v) = %d, want 12", float32(MaxLinearBlurSigma), radius)
+	}
+	width := BlurLinearKernelWidth(radius)
+	if width != 13 {
+		t.Errorf("BlurLinearKernelWidth(%d) = %d, want 13", radius, width)
+	}
+	if width > MaxBlurSamples {
+		t.Errorf("linear kernel width %d exceeds the %d-sample budget", width, MaxBlurSamples)
+	}
+}

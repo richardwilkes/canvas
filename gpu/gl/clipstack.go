@@ -1525,9 +1525,7 @@ func (cs *ClipStack) Apply(sdc *SurfaceDrawContext, op DrawOp, aa gpu.AAType, ou
 		if len(elementsForMask) > 0 || clipFP != nil {
 			panic("mask elements without a needed scissor")
 		}
-		if opClippedInternally {
-			return ClipEffectClipped
-		}
+		// opClippedInternally cannot be set here: the only path that reaches op.ClipToShape sets scissorIsNeeded first.
 		return ClipEffectUnclipped
 	}
 

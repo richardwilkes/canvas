@@ -148,11 +148,15 @@ func chopConic(src []geom.Point, dst *[4]geom.Conic, weight float32) int {
 		var first, second [2]geom.Conic
 		conicCnt2 := splitConic(dstTemp[0].Pts[:], &first, dstTemp[0].W)
 		dst[0] = first[0]
-		dst[1] = first[1]
-		cnt := conicCnt2 + splitConic(dstTemp[1].Pts[:], &second, dstTemp[1].W)
+		if conicCnt2 == 2 {
+			dst[1] = first[1]
+		}
+		secondCnt := splitConic(dstTemp[1].Pts[:], &second, dstTemp[1].W)
 		dst[conicCnt2] = second[0]
-		dst[conicCnt2+1] = second[1]
-		conicCnt = cnt
+		if secondCnt == 2 {
+			dst[conicCnt2+1] = second[1]
+		}
+		conicCnt = conicCnt2 + secondCnt
 	} else {
 		dst[0] = dstTemp[0]
 	}

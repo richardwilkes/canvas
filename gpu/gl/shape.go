@@ -682,10 +682,12 @@ func rrectInnerBounds(rr geom.RRect) geom.Rect {
 	dh := r.Y + r.Y
 
 	// Area removed by shifting left/right, by shifting top/bottom, and by insetting all edges to the corner ellipses'
-	// maximal inscribed point (sqrt(2)/2 * (rx, ry), so shifts scale by 1 - sqrt(2)/2).
+	// maximal inscribed point (sqrt(2)/2 * (rx, ry), so shifts scale by 1 - sqrt(2)/2). The scale is slightly increased
+	// so that the shifted corners land safely inside the curves; sitting exactly on them lets numerical error push a
+	// corner marginally outside, which fails the containment the inner bounds assert.
 	horizArea := (innerBounds.Width() - dw) * innerBounds.Height()
 	vertArea := (innerBounds.Height() - dh) * innerBounds.Width()
-	const scale = 1 - float32(math.Sqrt2)/2
+	const scale = 1 - float32(math.Sqrt2)/2 + 1e-5
 	innerArea := (innerBounds.Width() - scale*dw) * (innerBounds.Height() - scale*dh)
 
 	switch {

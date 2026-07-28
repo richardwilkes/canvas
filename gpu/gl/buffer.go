@@ -8,7 +8,8 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // A GPU buffer object (vertex, index, or transfer), flattened into one type since GL is the only backend. Desktop
-// trims: the Chromium map-buffer and NV-PBO transfer lanes are unreachable and dropped.
+// trims: the Chromium map-buffer and NV-PBO transfer lanes are unreachable and dropped, as is the
+// has-been-attached-to-a-texture flag, which only serves the GL_TEXTURE_BUFFER lane this trim does not port.
 
 package gl
 
@@ -23,12 +24,11 @@ type Buffer struct {
 	g      *Gpu
 	mapPtr unsafe.Pointer
 	gpu.ResourceBase
-	sizeInBytes          uint64
-	intendedType         gpu.BufferType
-	accessPattern        gpu.AccessPattern
-	bufferID             uint32
-	usage                uint32
-	hasAttachedToTexture bool
+	sizeInBytes   uint64
+	intendedType  gpu.BufferType
+	accessPattern gpu.AccessPattern
+	bufferID      uint32
+	usage         uint32
 }
 
 // bufferMapType is how a buffer is mapped for CPU access, determined entirely by the buffer type.
@@ -123,12 +123,6 @@ func (b *Buffer) IntendedType() gpu.BufferType { return b.intendedType }
 
 // AccessPattern returns the buffer's access pattern (static/dynamic/stream).
 func (b *Buffer) AccessPattern() gpu.AccessPattern { return b.accessPattern }
-
-// SetHasAttachedToTexture records that this buffer has been attached to a texture.
-func (b *Buffer) SetHasAttachedToTexture() { b.hasAttachedToTexture = true }
-
-// HasAttachedToTexture reports whether this buffer has been attached to a texture.
-func (b *Buffer) HasAttachedToTexture() bool { return b.hasAttachedToTexture }
 
 // IsMapped reports whether the buffer is currently mapped for CPU access.
 func (b *Buffer) IsMapped() bool { return b.mapPtr != nil }

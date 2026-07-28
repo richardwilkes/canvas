@@ -18,6 +18,7 @@ package text
 
 import (
 	"math"
+	"sync"
 
 	"github.com/richardwilkes/canvas/canvas"
 	"github.com/richardwilkes/canvas/colorcore"
@@ -270,14 +271,16 @@ type idOrPath struct {
 	glyphID uint16
 }
 
-// pathOpSubmitter holds glyph IDs until drawing, when they are converted to paths through the strike.
+// pathOpSubmitter holds glyph IDs until drawing, when they are converted to paths through the strike. The conversion
+// mutates the submitter, and a cached blob can be handed to more than one goroutine by BlobRedrawCoordinator, so it
+// runs under a sync.Once: without it a second drawer could observe the cleared strike before the converted paths.
 type pathOpSubmitter struct {
 	strike              *font.Strike // strong ref keeping the strike alive; dropped after conversion
 	idsOrPaths          []idOrPath
 	positions           []geom.Point
+	createPaths         sync.Once
 	strikeToSourceScale float32
 	isAntiAliased       bool
-	pathsAreCreated     bool
 }
 
 // makePathOpSubmitter returns a pathOpSubmitter for the accepted glyphs.
@@ -313,10 +316,11 @@ func asABlur(mf maskfilter.MaskFilter) (blurQuery, bool) {
 	return b, true
 }
 
-// submitDraws draws each glyph as an outline path, converting glyph IDs to paths on first use.
-func (p *pathOpSubmitter) submitDraws(c *canvas.Canvas, drawOrigin geom.Point, paint *canvas.Paint) {
-	// Convert the glyph IDs to paths if it hasn't been done yet.
-	if !p.pathsAreCreated {
+// ensurePaths converts the glyph IDs to paths the first time it is called, and does nothing thereafter. The once is
+// load-bearing rather than an optimization: it publishes the converted paths to every other caller, which a plain
+// "already done" flag would not, and it keeps a second caller from observing the cleared strike ref before them.
+func (p *pathOpSubmitter) ensurePaths() {
+	p.createPaths.Do(func() {
 		glyphIDs := make([]uint16, len(p.idsOrPaths))
 		for i := range p.idsOrPaths {
 			glyphIDs[i] = p.idsOrPaths[i].glyphID
@@ -327,8 +331,12 @@ func (p *pathOpSubmitter) submitDraws(c *canvas.Canvas, drawOrigin geom.Point, p
 		}
 		// Drop the ref to the strike so that it can be purged from the cache if needed.
 		p.strike = nil
-		p.pathsAreCreated = true
-	}
+	})
+}
+
+// submitDraws draws each glyph as an outline path, converting glyph IDs to paths on first use.
+func (p *pathOpSubmitter) submitDraws(c *canvas.Canvas, drawOrigin geom.Point, paint *canvas.Paint) {
+	p.ensurePaths()
 
 	runPaint := *paint
 	runPaint.AntiAlias = p.isAntiAliased

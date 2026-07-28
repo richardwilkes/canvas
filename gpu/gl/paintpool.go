@@ -38,7 +38,7 @@ var paintPool = sync.Pool{New: func() any { return &Paint{} }}
 // byte-identical in state to NewPaint()'s result.
 func borrowPaint() *Paint {
 	p := paintPool.Get().(*Paint)
-	*p = Paint{color: colorcore.PMColor4f{R: 1, G: 1, B: 1, A: 1}, initialized: true}
+	*p = Paint{color: colorcore.PMColor4f{R: 1, G: 1, B: 1, A: 1}}
 	return p
 }
 

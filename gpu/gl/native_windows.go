@@ -29,7 +29,7 @@ func MakeNativeInterface() *Interface {
 	if err != nil || wglGetCurrentContext == 0 {
 		return nil
 	}
-	if r, _, _ := syscall.SyscallN(wglGetCurrentContext); r == 0 {
+	if rawCall(wglGetCurrentContext) == 0 {
 		return nil
 	}
 	wglGetProcAddress, err := syscall.GetProcAddress(module, "wglGetProcAddress")
@@ -41,7 +41,11 @@ func MakeNativeInterface() *Interface {
 			return addr
 		}
 		cname := cString(name)
-		addr, _, _ := syscall.SyscallN(wglGetProcAddress, uintptr(unsafe.Pointer(cname)))
+		// rawCall, not syscall.SyscallN directly: the //go:uintptrescapes forwarder is what heap-forces the converted
+		// pointer for the duration of the call, exactly as the linux leg does. SyscallN's own //go:uintptrkeepalive
+		// covers only conversions written at its own call site and needs an all-nosplit caller chain, which this closure
+		// is not; cString's non-constant allocation happens to heap-allocate today, but that is incidental.
+		addr := rawCall(wglGetProcAddress, uintptr(unsafe.Pointer(cname)))
 		keepAlive(cname)
 		return addr
 	})

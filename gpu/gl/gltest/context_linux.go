@@ -121,15 +121,27 @@ func xErrorHandlerCallback() uintptr {
 	return xErrorHandlerCB
 }
 
+// initTeardown runs init's teardown steps in the one order that is safe: the failure teardown first, then the X error
+// handler restore. Tearing down a half-built context/pbuffer is the most likely place for a follow-on X protocol error,
+// which must still be swallowed by the handler installed during setup — with the default Xlib handler back in place it
+// would exit() the process instead of letting the GPU tests skip. Registering the two as separate defers would run them
+// in LIFO order, i.e. restore first, which is exactly the window this ordering closes. The restore also runs on the
+// success path, which is why it is unconditional.
+func initTeardown(ok bool, destroy, restoreXErrorHandler func()) {
+	if !ok {
+		destroy()
+	}
+	restoreXErrorHandler()
+}
+
 func (p *platformContext) init() error {
 	runtime.LockOSThread()
 	p.locked = true
 	ok := false
-	defer func() {
-		if !ok {
-			p.destroy()
-		}
-	}()
+	// restoreXErrorHandler is installed below, once xSetErrorHandler has been resolved. Both teardown steps run from one
+	// defer (see initTeardown) because their order matters and two defers would run in the wrong one.
+	restoreXErrorHandler := func() {}
+	defer func() { initTeardown(ok, p.destroy, restoreXErrorHandler) }()
 
 	glLib, err := purego.Dlopen("libGL.so.1", purego.RTLD_LAZY|purego.RTLD_GLOBAL)
 	if err != nil {
@@ -174,7 +186,7 @@ func (p *platformContext) init() error {
 	// default Xlib handler calling exit(). glXCreateContextAttribsARB is the classic offender: a rejected
 	// version/profile raises a GLXBadFBConfig/BadMatch X error, which would otherwise terminate the process.
 	prevHandler := glxRawCall(p.xSetErrorHandler, xErrorHandlerCallback())
-	defer glxRawCall(p.xSetErrorHandler, prevHandler)
+	restoreXErrorHandler = func() { glxRawCall(p.xSetErrorHandler, prevHandler) }
 
 	// Open the default X display (Xvfb's in CI, via DISPLAY). No server => headless, so skip.
 	p.display = glxRawCall(p.xOpenDisplay, 0)

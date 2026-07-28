@@ -744,7 +744,6 @@ type triangulator struct {
 	// implementation; nil selects the base implementation.
 	tessellateOverride       func(vertices *triVertexList, c triComparator) (*triPoly, bool)
 	breadcrumbList           breadcrumbTriangleList
-	numMonotonePolys         int
 	numEdges                 int
 	mergeCollinearStackCount int
 	// Internal control knobs.
@@ -1028,7 +1027,6 @@ func (tri *triangulator) applyFillType(winding int) bool {
 }
 
 func (tri *triangulator) allocateMonotonePoly(edge *triEdge, side triSide, winding int) *triMonotonePoly {
-	tri.numMonotonePolys++
 	m := &triMonotonePoly{side: side, winding: winding}
 	m.addEdge(edge)
 	return m

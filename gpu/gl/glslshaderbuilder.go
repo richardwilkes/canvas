@@ -264,7 +264,6 @@ type FragmentShaderBuilder struct {
 	projEmitted        bool
 	advBlendEqEnabled  bool
 	hasSecondaryOutput bool
-	forceHighPrecision bool
 }
 
 // declaredColorOutputName is the name of the declared primary fragment color output.
@@ -292,10 +291,6 @@ func (f *FragmentShaderBuilder) DstColor() string {
 	}
 	return fsDstColorName
 }
-
-// ForceHighPrecision requests high-precision float math for the remainder of this shader. Desktop GLSL has no precision
-// qualifiers, so this is tracked but has no effect on the emitted text.
-func (f *FragmentShaderBuilder) ForceHighPrecision() { f.forceHighPrecision = true }
 
 // HasSecondaryOutput reports whether dual-source (secondary) blending output has been enabled.
 func (f *FragmentShaderBuilder) HasSecondaryOutput() bool { return f.hasSecondaryOutput }

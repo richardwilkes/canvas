@@ -44,7 +44,7 @@ func (lumaFilter) IsAlphaUnchanged() bool { return false }
 // becomes zero.
 func (lumaFilter) AppendStages(p *shaders.Pipeline, _ bool) bool {
 	p.AppendColorFunc(func(r, g, b, _ float32) (float32, float32, float32, float32) {
-		return 0, 0, 0, saturate(0.2126*r + 0.7152*g + 0.0722*b)
+		return 0, 0, 0, saturate(colorcore.LumCoeffR*r + colorcore.LumCoeffG*g + colorcore.LumCoeffB*b)
 	})
 	return true
 }
@@ -116,7 +116,7 @@ func (f *highContrastFilter) AppendStages(p *shaders.Pipeline, _ bool) bool {
 	gray, invertStyle, contrast := f.grayscale, f.invertStyle, f.contrast
 	p.AppendColorFunc(func(r, g, b, a float32) (float32, float32, float32, float32) {
 		if gray {
-			y := 0.2126*r + 0.7152*g + 0.0722*b
+			y := colorcore.LumCoeffR*r + colorcore.LumCoeffG*g + colorcore.LumCoeffB*b
 			r, g, b = y, y, y
 		}
 		switch invertStyle {

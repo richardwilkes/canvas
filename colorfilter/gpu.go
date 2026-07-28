@@ -75,7 +75,7 @@ func EvalTransferFn(tf *shaders.TransferFn, x float32) float32 { return colorcor
 // one unpremul linear color — the CPU reference for the GPU FP's constant folding.
 func EvalHighContrast(grayscale bool, invertStyle HighContrastInvertStyle, contrast, r, g, b float32) (outR, outG, outB float32) {
 	if grayscale {
-		y := 0.2126*r + 0.7152*g + 0.0722*b
+		y := colorcore.LumCoeffR*r + colorcore.LumCoeffG*g + colorcore.LumCoeffB*b
 		r, g, b = y, y, y
 	}
 	switch invertStyle {

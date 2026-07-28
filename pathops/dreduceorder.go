@@ -56,7 +56,7 @@ func reductionLineCountQuad(reduction dQuad) int {
 
 // reduceQuad reduces a quad to its lowest-order form, returning 1 (point), 2 (line), or 3 (proper quad).
 func (r *reduceOrder) reduceQuad(quad dQuad) int {
-	var minX, maxX, minY, maxY int
+	var minX, minY int
 	minXSet, minYSet := 0, 0
 	for index := 1; index < 3; index++ {
 		if quad.pts[minX].x > quad.pts[index].x {
@@ -64,12 +64,6 @@ func (r *reduceOrder) reduceQuad(quad dQuad) int {
 		}
 		if quad.pts[minY].y > quad.pts[index].y {
 			minY = index
-		}
-		if quad.pts[maxX].x < quad.pts[index].x {
-			maxX = index
-		}
-		if quad.pts[maxY].y < quad.pts[index].y {
-			maxY = index
 		}
 	}
 	for index := 0; index < 3; index++ {
@@ -228,7 +222,7 @@ func checkLinearCubic(cubic dCubic, reduction *dCubic) int {
 // Unlike the quad reducer, the coincidence test here uses a magnitude-relative half-epsilon comparison of each
 // coordinate.
 func (r *reduceOrder) reduceCubic(cubic dCubic, allow quadratics) int {
-	var minX, maxX, minY, maxY int
+	var minX, minY int
 	minXSet, minYSet := 0, 0
 	for index := 1; index < 4; index++ {
 		if cubic.pts[minX].x > cubic.pts[index].x {
@@ -236,12 +230,6 @@ func (r *reduceOrder) reduceCubic(cubic dCubic, allow quadratics) int {
 		}
 		if cubic.pts[minY].y > cubic.pts[index].y {
 			minY = index
-		}
-		if cubic.pts[maxX].x < cubic.pts[index].x {
-			maxX = index
-		}
-		if cubic.pts[maxY].y < cubic.pts[index].y {
-			maxY = index
 		}
 	}
 	for index := 0; index < 4; index++ {

@@ -224,13 +224,8 @@ func blurRect(sigma float32, src geom.Rect, style BlurStyle, createMode maskCrea
 	dst.RowBytes = dst.Bounds.Width()
 
 	sw := int(geom.FloorToInt(src.Width()))
-	sh := int(geom.FloorToInt(src.Height()))
 
 	if createMode == justComputeBounds {
-		if style == BlurInner {
-			dst.Bounds = src.Round() // restore trimmed bounds
-			dst.RowBytes = int32(sw)
-		}
 		return margin, true
 	}
 
@@ -264,36 +259,15 @@ func blurRect(sigma float32, src geom.Rect, style BlurStyle, createMode maskCrea
 		}
 	}
 
-	switch style {
-	case BlurInner:
-		// now we allocate the "real" dst, mirror the size of src
-		srcSize := int(src.Width() * src.Height())
-		if srcSize == 0 {
-			return geom.IPoint{}, false // too big to allocate, abort
-		}
-		inner := make([]uint8, srcSize)
-		for y := 0; y < sh; y++ {
-			copy(inner[y*sw:y*sw+sw], dp[(y+pad)*dstWidth+pad:])
-		}
-		dst.Image = inner
-		dst.Bounds = src.Round() // restore trimmed bounds
-		dst.RowBytes = int32(sw)
-	case BlurOuter:
-		for y := pad; y < dstHeight-pad; y++ {
-			row := dp[y*dstWidth+pad : y*dstWidth+pad+sw]
-			for i := range row {
-				row[i] = 0
-			}
-		}
-	case BlurSolid:
+	// Only the normal and solid styles reach here: filterRectsToNine rejects the inner and outer styles before any
+	// analytic rect blur is attempted. Normal needs no fixup; solid punches the source rect back to full coverage.
+	if style == BlurSolid {
 		for y := pad; y < dstHeight-pad; y++ {
 			row := dp[y*dstWidth+pad : y*dstWidth+pad+sw]
 			for i := range row {
 				row[i] = 0xFF
 			}
 		}
-	default:
-		// normal and solid styles are the same for analytic rect blurs
 	}
 	return margin, true
 }

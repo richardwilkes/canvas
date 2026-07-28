@@ -708,12 +708,11 @@ func writeVertexPosition(vertBuilder *VertexShaderBuilder, uniformHandler *Unifo
 	if inPos.Type() != GLSLTypeFloat2 && inPos.Type() != GLSLTypeFloat3 {
 		panic("position must be float2 or float3")
 	}
-	outName := vertBuilder.NewTmpVarName(inPos.Name())
-
 	if matrix.IsIdentity() && !caps.ReducedShaderMode {
 		writePassthroughVertexPosition(vertBuilder, inPos, outPos)
 		return
 	}
+	outName := vertBuilder.NewTmpVarName(inPos.Name())
 
 	useCompactTransform := matrix.IsScaleTranslate() && !caps.ReducedShaderMode
 	uniType := GLSLTypeFloat3x3

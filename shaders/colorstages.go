@@ -68,15 +68,6 @@ func (p *Pipeline) AppendClamp01() {
 	})
 }
 
-// AppendClampA01 appends the clamp_a_01 stage.
-func (p *Pipeline) AppendClampA01() {
-	p.append(func(z *lanes) {
-		for i := range z.n {
-			z.a[i] = clamp01(z.a[i])
-		}
-	})
-}
-
 // AppendMoveSrcDst appends the move_src_dst stage.
 func (p *Pipeline) AppendMoveSrcDst() {
 	p.append(func(z *lanes) {

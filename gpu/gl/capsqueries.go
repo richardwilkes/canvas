@@ -709,9 +709,3 @@ func (c *Caps) CanCopyAsBlit(dstFormat Format, dstSampleCnt int, dstTypeIfTextur
 	}
 	return true
 }
-
-// CanCopyAsDraw reports whether a textured draw can be used to copy into dstFormat. (The Mali scaling-copy workaround
-// is trimmed.)
-func (c *Caps) CanCopyAsDraw(dstFormat Format, srcIsTexturable bool) bool {
-	return c.IsFormatRenderable(dstFormat, 1) && srcIsTexturable
-}

@@ -323,21 +323,9 @@ func ComposeFP(f, g FragmentProcessor) FragmentProcessor {
 		return f
 	}
 
-	// Run an optimization pass on this composition.
-	series := []FragmentProcessor{g, f}
-	info := NewColorFragmentProcessorAnalysis(AnalysisColorUnknown(), series)
-	knownColor, leadingFPsToEliminate := info.InitialProcessorsToEliminate()
-	switch leadingFPsToEliminate {
-	case 1:
-		// Replace the first processor with a constant color.
-		return newComposeFP(series[1], MakeColorFP(knownColor))
-	case 2:
-		// Replace the entire composition with a constant color.
-		return MakeColorFP(knownColor)
-	default:
-		// Compose the two processors as requested.
-		return newComposeFP(series[1], series[0])
-	}
+	// Upstream runs a constant-folding analysis here, but its input color is unknown by construction, so no leading
+	// processor can ever be eliminated; the composition is always emitted as requested.
+	return newComposeFP(f, g)
 }
 
 func newComposeFP(f, g FragmentProcessor) FragmentProcessor {

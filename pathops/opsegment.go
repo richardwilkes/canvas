@@ -388,9 +388,7 @@ func (s *opSegment) sortAngles() bool {
 				if toAngle != nil {
 					span.upCast().setToAngle(nil)
 				}
-				baseAngle = nil
 			}
-			_ = baseAngle
 		}
 		if span.final() {
 			break

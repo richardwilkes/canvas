@@ -1183,15 +1183,11 @@ func tSectEndsEqual(sect1, sect2 *tSect, in *intersections) int {
 
 // closestRecord is a candidate intersection at a pair of near-touching span endpoints.
 type closestRecord struct {
-	c1Span   *tSpan
-	c2Span   *tSpan
-	c1StartT float64
-	c1EndT   float64
-	c2StartT float64
-	c2EndT   float64
-	closest  float64
-	c1Index  int
-	c2Index  int
+	c1Span  *tSpan
+	c2Span  *tSpan
+	closest float64
+	c1Index int
+	c2Index int
 }
 
 // addIntersection records this record's matched endpoint pair into in.
@@ -1220,10 +1216,6 @@ func (r *closestRecord) findEnd(span1, span2 *tSpan, c1Index, c2Index int) {
 	}
 	r.c1Span = span1
 	r.c2Span = span2
-	r.c1StartT = span1.startT
-	r.c1EndT = span1.endT
-	r.c2StartT = span2.startT
-	r.c2EndT = span2.endT
 	r.c1Index = c1Index
 	r.c2Index = c2Index
 	r.closest = dist
@@ -1250,14 +1242,6 @@ func (r *closestRecord) merge(mate *closestRecord) {
 // reset marks r as having no candidate match yet.
 func (r *closestRecord) reset() {
 	r.closest = math.MaxFloat32
-}
-
-// update widens r's t ranges to also cover mate's.
-func (r *closestRecord) update(mate *closestRecord) {
-	r.c1StartT = math.Min(r.c1StartT, mate.c1StartT)
-	r.c1EndT = math.Max(r.c1EndT, mate.c1EndT)
-	r.c2StartT = math.Min(r.c2StartT, mate.c2StartT)
-	r.c2EndT = math.Max(r.c2EndT, mate.c2EndT)
 }
 
 // closestSect is the set of distinct closest-endpoint records gathered at the end of the search. The slot at index used
@@ -1293,7 +1277,6 @@ func (s *closestSect) find(span1, span2 *tSpan) bool {
 			if test.closest > rec.closest {
 				test.merge(rec)
 			}
-			test.update(rec)
 			rec.reset()
 			return false
 		}

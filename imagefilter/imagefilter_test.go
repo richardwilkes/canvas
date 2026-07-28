@@ -179,6 +179,53 @@ func TestMergeFilter(t *testing.T) {
 	}
 }
 
+// Merge is the only factory that takes a slice, so it is the only place a caller's backing array could reach the DAG.
+// The DAG is immutable after construction, so a later write to that slice must not rewire the built filter.
+func TestMergeCopiesInputSlice(t *testing.T) {
+	left := imagefilter.Offset(-10, 0, nil, nil)
+	right := imagefilter.Offset(10, 0, nil, nil)
+	inputs := []filtercore.Filter{left, right}
+	merged := imagefilter.Merge(inputs, nil)
+	inputs[0] = imagefilter.Empty()
+	inputs[1] = nil // nil would additionally mean "the dynamic source image"
+	base := merged.Base()
+	if base.CountInputs() != 2 {
+		t.Fatalf("CountInputs = %d, want 2", base.CountInputs())
+	}
+	if base.Input(0) != left || base.Input(1) != right {
+		t.Fatal("Merge retained the caller's slice")
+	}
+	pix := drawSquare(t, func(p *canvas.Paint) { p.ImageFilter = merged })
+	if a := alphaOf(pixel(pix, 15, 30)); a != 255 {
+		t.Fatalf("left copy missing, alpha=%d", a)
+	}
+	if a := alphaOf(pixel(pix, 45, 30)); a != 255 {
+		t.Fatalf("right copy missing, alpha=%d", a)
+	}
+}
+
+// Assigning the result back into the slice that produced it must not make the filter its own input, which would make
+// every recursive walk of the DAG run until the stack overflows.
+func TestMergeSelfAssignmentIsNotACycle(t *testing.T) {
+	inner := imagefilter.Offset(10, 0, nil, nil)
+	s := []filtercore.Filter{inner}
+	s[0] = imagefilter.Merge(s, nil)
+	// Check the edge before running any of the walks below: with the input aliased to s[0] they never return.
+	if s[0].Base().Input(0) != inner {
+		t.Fatal("Merge aliased its own result as its input")
+	}
+	if filtercore.AffectsTransparentBlack(s[0]) {
+		t.Fatal("offset does not affect transparent black")
+	}
+	if got := filtercore.CTMCapability(s[0]); got != filtercore.MatrixCapabilityComplex {
+		t.Fatalf("CTMCapability = %v", got)
+	}
+	pix := drawSquare(t, func(p *canvas.Paint) { p.ImageFilter = s[0] })
+	if a := alphaOf(pixel(pix, 45, 30)); a != 255 {
+		t.Fatalf("offset copy missing, alpha=%d", a)
+	}
+}
+
 func TestComposeFilter(t *testing.T) {
 	// offset(5,0) ∘ offset(0,7) == offset(5,7)
 	composed := drawSquare(t, func(p *canvas.Paint) {

@@ -21,7 +21,8 @@ type mergeFilter struct {
 	filterDefaults
 }
 
-// Merge builds a filter that src-over stacks the given filters, optionally cropped to cropRect.
+// Merge builds a filter that src-over stacks the given filters, optionally cropped to cropRect. The slice is not
+// retained: the caller remains free to reuse or mutate it.
 func Merge(filters []filtercore.Filter, cropRect *geom.Rect) filtercore.Filter {
 	if len(filters) == 0 {
 		return Empty()

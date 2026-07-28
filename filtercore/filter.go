@@ -15,6 +15,7 @@
 package filtercore
 
 import (
+	"slices"
 	"sync/atomic"
 
 	"github.com/richardwilkes/canvas/colorcore"
@@ -93,7 +94,11 @@ func newFilterBase(inputs []Filter, usesSrc bool) FilterBase {
 	for id == 0 {
 		id = nextFilterUniqueID.Add(1)
 	}
-	return FilterBase{inputs: inputs, usesSrc: usesSrc, uniqueID: id}
+	// The inputs are copied because a caller may pass a slice it continues to own (imagefilter.Merge takes one and
+	// spreads it), and the DAG is immutable after construction: aliasing the caller's backing array would let a later
+	// write rewire an already-built filter, including into a cycle that makes the recursive walks
+	// (AffectsTransparentBlack, CTMCapability, ChildOutput) overflow the stack.
+	return FilterBase{inputs: slices.Clone(inputs), usesSrc: usesSrc, uniqueID: id}
 }
 
 // CountInputs returns the number of input filters.

@@ -99,13 +99,14 @@ func clamp01(v float32) float32 {
 func (f *colorMatrixFP) constantOutputForConstantInput(input colorcore.PMColor4f) colorcore.PMColor4f {
 	c := fpConstantOutputForConstantInput(f.ChildProcessor(0), input)
 	v := [4]float32{c.R, c.G, c.B, c.A}
-	if f.unpremulInput && v[3] != 0 {
-		inv := 1 / v[3]
-		v[0] *= inv
-		v[1] *= inv
-		v[2] *= inv
-	} else if f.unpremulInput {
-		v[0], v[1], v[2] = 0, 0, 0
+	if f.unpremulInput {
+		// This must reproduce what EmitCode emits (rgb / max(a, 0.0001)) exactly, since the FP declares
+		// FPConstantOutputForConstantInput and a folded draw must render the same as the unfolded one. A plain 1/a with a
+		// zero-alpha special case diverges for a premul input with 0 < a < 1e-4.
+		a := max32(v[3], 1e-4)
+		v[0] /= a
+		v[1] /= a
+		v[2] /= a
 	}
 	var out [4]float32
 	for row := 0; row < 4; row++ {

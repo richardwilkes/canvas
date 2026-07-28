@@ -410,3 +410,78 @@ func TestElemsPerPixel(t *testing.T) {
 		t.Fatalf("element index of (2,1) = %d, want 20", got)
 	}
 }
+
+// TestToUnormNaNIsZero pins toUnorm's NaN handling. NaN reaches it on the highp path (loadHighp's F16 lane returns
+// halfToFloat of arbitrary caller-supplied halves, and F16 is a Supported() source type), where a plain `f < 0 … else
+// if f > scale` clamp lets it straight through to a float→uint32 cast whose result the Go spec leaves
+// implementation-dependent. 0 is what the ARMv8 lane this mirrors produces (FCVTNU of NaN is 0), and it matches the
+// F16→Alpha8 lane's deliberate int32 intermediate: the two must not disagree about a determinism property this project
+// pins goldens on.
+func TestToUnormNaNIsZero(t *testing.T) {
+	nan := float32(math.NaN())
+	for _, scale := range []float32{255, 63, 31} {
+		if got := toUnorm(nan, scale); got != 0 {
+			t.Errorf("toUnorm(NaN, %v) = %d, want 0", scale, got)
+		}
+	}
+	// The ordinary clamp and round-to-nearest-even are unchanged.
+	for _, tc := range []struct {
+		v, scale float32
+		want     uint32
+	}{
+		{v: 0, scale: 255, want: 0},
+		{v: 1, scale: 255, want: 255},
+		{v: -0.5, scale: 255, want: 0},
+		{v: 1.5, scale: 255, want: 255},
+		{v: 0.5, scale: 255, want: 128}, // 127.5 ties to even
+		{v: 0.5, scale: 31, want: 16},   // 15.5 ties to even
+		{v: float32(math.Inf(-1)), scale: 255, want: 0},
+		{v: float32(math.Inf(1)), scale: 255, want: 255},
+	} {
+		if got := toUnorm(tc.v, tc.scale); got != tc.want {
+			t.Errorf("toUnorm(%v, %v) = %d, want %d", tc.v, tc.scale, got, tc.want)
+		}
+	}
+}
+
+// TestConvertPixelsF16NaNIsDeterministic drives the same NaN through the real conversion path an external caller can
+// reach: an F16 source (whose halves are caller-supplied) converted to 8888, which runs the highp pipeline because the
+// F16 endpoint forces it. Every channel must land on a defined byte rather than an implementation-dependent cast.
+func TestConvertPixelsF16NaNIsDeterministic(t *testing.T) {
+	srcInfo, ok := MakeInfo(2, 1, ColorTypeRGBAF16, AlphaTypeUnpremul)
+	if !ok {
+		t.Fatal("MakeInfo rejected RGBA_F16/unpremul")
+	}
+	src := NewPixels(srcInfo)
+	for i := range src.U16s {
+		src.U16s[i] = 0x7E00 // a quiet NaN half
+	}
+	dstInfo, ok := MakeInfo(2, 1, ColorTypeRGBA8888, AlphaTypePremul)
+	if !ok {
+		t.Fatal("MakeInfo rejected RGBA_8888/premul")
+	}
+	dst := make([]byte, 8)
+	if !ConvertPixels(dstInfo, dst, 8, src) {
+		t.Fatal("ConvertPixels failed")
+	}
+	for i, b := range dst {
+		if b != 0 {
+			t.Fatalf("dst[%d] = %d, want 0 (NaN must convert to transparent black)", i, b)
+		}
+	}
+
+	// The 565 store quantizers take the same lane; NaN must not smear into the packed bit fields either.
+	d565Info, ok := MakeInfo(2, 1, ColorTypeRGB565, AlphaTypeOpaque)
+	if !ok {
+		t.Fatal("MakeInfo rejected RGB565")
+	}
+	d565 := make([]byte, 4)
+	if !ConvertPixels(d565Info, d565, 4, src) {
+		t.Fatal("ConvertPixels to 565 failed")
+	}
+	for i, b := range d565 {
+		if b != 0 {
+			t.Fatalf("565 dst[%d] = %d, want 0", i, b)
+		}
+	}
+}

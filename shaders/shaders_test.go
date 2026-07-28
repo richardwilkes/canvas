@@ -10,6 +10,7 @@
 package shaders
 
 import (
+	"math"
 	"testing"
 
 	"github.com/richardwilkes/canvas/colorcore"
@@ -164,6 +165,90 @@ func TestGradientStopFixing(t *testing.T) {
 	}
 }
 
+// TestPinFloatPinsNaNLow locks pinFloat's unordered-compare behavior against the SkTPin it stands in for: NaN pins to
+// lo. The package's own minf/maxf propagate their second argument on an unordered compare, so the obvious
+// maxf(lo, minf(x, hi)) spelling pins NaN to hi instead — the opposite end of the range.
+func TestPinFloatPinsNaNLow(t *testing.T) {
+	nan := float32(math.NaN())
+	if got := pinFloat(nan, 0.25, 0.75); got != 0.25 {
+		t.Fatalf("pinFloat(NaN, 0.25, 0.75) = %v, want 0.25", got)
+	}
+	if got := pinFloat(nan, 0, 1); got != 0 {
+		t.Fatalf("pinFloat(NaN, 0, 1) = %v, want 0", got)
+	}
+	// The ordinary clamp is unchanged.
+	for _, tc := range []struct{ x, lo, hi, want float32 }{
+		{x: 0.5, lo: 0, hi: 1, want: 0.5},
+		{x: -3, lo: 0, hi: 1, want: 0},
+		{x: 7, lo: 0, hi: 1, want: 1},
+		{x: 0.25, lo: 0.5, hi: 0.75, want: 0.5},
+		{x: 0.9, lo: 0.5, hi: 0.75, want: 0.75},
+	} {
+		if got := pinFloat(tc.x, tc.lo, tc.hi); got != tc.want {
+			t.Fatalf("pinFloat(%v, %v, %v) = %v, want %v", tc.x, tc.lo, tc.hi, got, tc.want)
+		}
+	}
+}
+
+// TestGradientNaNStopDoesNotCollapse is the observable consequence of the pin above. Stop preprocessing pins each
+// position into [prev, 1], so a NaN position pinned to 1 forces prev = 1, which pins every following stop to 1 and
+// collapses the whole gradient into a hard stop at t = 1. Pinned low it merely coincides with its predecessor, leaving
+// the rest of the ramp intact.
+func TestGradientNaNStopDoesNotCollapse(t *testing.T) {
+	colors := []colorcore.Color{0xFFFF0000, 0xFF00FF00, 0xFF0000FF, 0xFFFFFFFF}
+	pos := []float32{0, float32(math.NaN()), 0.5, 1}
+	s := NewLinearGradient(geom.Point{}, geom.Point{X: 2}, colors, pos, TileClamp, nil)
+	g, ok := s.(*LinearGradient)
+	if !ok {
+		t.Fatalf("unexpected shader type %T", s)
+	}
+	want := []float32{0, 0, 0.5, 1}
+	got := g.Positions()
+	if len(got) != len(want) {
+		t.Fatalf("positions %v, want %v", got, want)
+	}
+	for i, p := range got {
+		if p != want[i] {
+			t.Fatalf("positions %v, want %v", got, want)
+		}
+	}
+	// Pixel 0 has center 0.5, so t = 0.25: halfway from green (pinned to 0) to blue (at 0.5). Under the old high pin
+	// the surviving stops were {red at 0, green at 1, white at 1} and this read 75% red.
+	colorNear(t, shadeAt(t, s, geom.IdentityMatrix(), 0, 0),
+		colorcore.PMColor4f{G: 0.5, B: 0.5, A: 1}, 1e-6, "gradient past a NaN stop")
+}
+
+// TestGradientPinToOneBeforeImplicitLastStop locks the stop preprocessing for the one case the removed
+// lastStopIsImplicit write inside the position-fixing loop was about: a position pins to 1.0 before the last stop while
+// the trailing stop is implicit. Both counts are fixed before the loop and nothing downstream reads the flag, so the
+// output must be exactly what it was with the write in place.
+func TestGradientPinToOneBeforeImplicitLastStop(t *testing.T) {
+	colors := []colorcore.Color{0xFFFF0000, 0xFF00FF00, 0xFF0000FF}
+	// positions[1] pins to 1 (out of range), positions[2] then pins to prev = 1, and the trailing 0.6 != 1 made the
+	// last stop implicit when the counts were taken.
+	s := NewLinearGradient(geom.Point{}, geom.Point{X: 100}, colors, []float32{0, 1.5, 0.6}, TileClamp, nil)
+	g, ok := s.(*LinearGradient)
+	if !ok {
+		t.Fatalf("unexpected shader type %T", s)
+	}
+	wantPos := []float32{0, 1, 1}
+	if got := g.Positions(); len(got) != len(wantPos) {
+		t.Fatalf("positions %v, want %v", got, wantPos)
+	} else {
+		for i, p := range got {
+			if p != wantPos[i] {
+				t.Fatalf("positions %v, want %v", got, wantPos)
+			}
+		}
+	}
+	if len(g.Colors()) != 3 {
+		t.Fatalf("expected 3 stop colors, got %d", len(g.Colors()))
+	}
+	id := geom.IdentityMatrix()
+	colorNear(t, shadeAt(t, s, id, 0, 0), colorcore.PMColor4f{R: 0.995, G: 0.005, A: 1}, 1e-5, "hard stop ramp")
+	colorNear(t, shadeAt(t, s, id, 150, 0), colorcore.PMColor4f{B: 1, A: 1}, 1e-6, "past the hard stop")
+}
+
 func TestTileModes(t *testing.T) {
 	id := geom.IdentityMatrix()
 	colors := []colorcore.Color{0xFFFF0000, 0xFF0000FF}
@@ -286,6 +371,28 @@ func TestApplyForFragmentProcessorIgnoresCTM(t *testing.T) {
 	if _, ok = singular.ApplyForFragmentProcessor(&post); ok {
 		t.Fatal("singular pending local matrix must fail")
 	}
+}
+
+// TestApplyForFragmentProcessorPanicsAfterCTMApplied pins the other half of that contract, the one the doc now records:
+// a record that already went through the CPU lane's apply is not a GPU-lane record, and reusing it here would
+// double-transform the sample coordinates, so the call aborts rather than returning ok=false.
+func TestApplyForFragmentProcessorPanicsAfterCTMApplied(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Error("expected a panic once the CTM has been applied")
+		}
+	}()
+	var ctm geom.Matrix
+	ctm.SetScaleTranslate(2, 0.5, 7, -3)
+	identity := geom.IdentityMatrix()
+	base := newMatrixRec(ctm)
+	applied, ok := base.apply(&Pipeline{}, &identity)
+	if !ok {
+		t.Fatal("apply failed on an invertible CTM")
+	}
+	post := geom.TranslateMatrix(3, 4)
+	applied.ApplyForFragmentProcessor(&post) //nolint:errcheck // the call must not return at all
+	t.Error("ApplyForFragmentProcessor returned instead of panicking")
 }
 
 func TestSweepGradient(t *testing.T) {
@@ -446,6 +553,33 @@ func TestBlendShader(t *testing.T) {
 		A: 1,
 	}
 	colorNear(t, got, want, 1e-4, "srcover blend shader over gradient")
+}
+
+// TestBlendClearCollapsesToConstantColor locks NewBlend's Clear collapse. The clear blend stage already yields
+// transparent black, so this is not about the pixels: a *BlendShader reports IsConstant() == false, so both children's
+// stage trees get compiled and evaluated per pixel and the blitter's constant-color collapse is missed for a draw whose
+// answer is known to be one color everywhere.
+func TestBlendClearCollapsesToConstantColor(t *testing.T) {
+	gradient := NewLinearGradient(geom.Point{}, geom.Point{X: 100},
+		[]colorcore.Color{0xFFFF0000, 0xFF0000FF}, nil, TileClamp, nil)
+	s := NewBlend(raster.BlendClear, NewColor(0xFF00FF00), gradient)
+	if _, isBlend := s.(*BlendShader); isBlend {
+		t.Fatal("Clear must not build a BlendShader")
+	}
+	if !s.IsConstant() {
+		t.Fatal("the collapsed Clear shader must report IsConstant")
+	}
+	if s.IsOpaque() {
+		t.Fatal("transparent black is not opaque")
+	}
+	id := geom.IdentityMatrix()
+	for _, x := range []int32{0, 50, 99} {
+		colorNear(t, shadeAt(t, s, id, x, 0), colorcore.PMColor4f{}, 0, "cleared blend")
+	}
+	// Still nil-guarded ahead of the collapse: Clear with a missing child cannot draw.
+	if NewBlend(raster.BlendClear, nil, gradient) != nil {
+		t.Fatal("Clear with a nil child must still yield nil")
+	}
 }
 
 func TestDitherStage(t *testing.T) {

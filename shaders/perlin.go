@@ -128,8 +128,8 @@ func (s *PerlinNoiseShader) StitchData() (w, h int32) { return s.stitchDataInX, 
 // UniqueID returns the process-unique identifier used to key the GPU noise textures.
 func (s *PerlinNoiseShader) UniqueID() uint32 { return s.uniqueID }
 
-// PermutationsBitmap returns the A8 256x1 lattice-selector table, one byte per lattice index. The The fragment
-// processor uploads it as the permutations texture, sampled RepeatX/Nearest.
+// PermutationsBitmap returns the A8 256x1 lattice-selector table, one byte per lattice index. The fragment processor
+// uploads it as the permutations texture, sampled RepeatX/Nearest.
 func (s *PerlinNoiseShader) PermutationsBitmap() []byte {
 	out := make([]byte, perlinBlockSize)
 	copy(out, s.latticeSelector[:])

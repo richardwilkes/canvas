@@ -61,21 +61,25 @@ func dot3(a0, a1, a2, b0, b1, b2 float32) float32 {
 const maxLinearMorphologyRadius = 14
 
 // MorphologyShader is the linear (radius-unrolled) or sparse (two-tap) morphology kernel over one child. flip is +1 for
-// dilate (max) and -1 for erode (the max() calls become min()).
+// dilate (max) and -1 for erode (the max() calls become min()). The form is carried by its own flag rather than
+// inferred from radius: a linear radius of 0 is legal and means the single center tap, which is not the sparse form's
+// ±offset tap pair.
 type MorphologyShader struct {
 	child  Shader
 	offset geom.Point
 	flip   float32
-	radius int32 // 0 = sparse form (single ±offset tap pair)
+	radius int32
+	linear bool
 }
 
-// NewLinearMorphology builds a morphology shader with (2*radius+1) taps along offset's axis.
+// NewLinearMorphology builds a morphology shader with (2*radius+1) taps along offset's axis. A radius of 0 (or less)
+// yields exactly the one center tap.
 func NewLinearMorphology(child Shader, offset geom.Point, dilate bool, radius int32) Shader {
 	flip := float32(-1)
 	if dilate {
 		flip = 1
 	}
-	return &MorphologyShader{child: child, offset: offset, flip: flip, radius: radius}
+	return &MorphologyShader{child: child, offset: offset, flip: flip, radius: radius, linear: true}
 }
 
 // NewSparseMorphology builds a morphology shader with two taps at ±offset.
@@ -96,8 +100,12 @@ func (s *MorphologyShader) Offset() geom.Point { return s.offset }
 // Flip returns the aggregate sign: +1 for dilate (max), -1 for erode (for the GPU FP conversion).
 func (s *MorphologyShader) Flip() float32 { return s.flip }
 
-// Radius returns the linear radius, or 0 for the sparse form (for the GPU FP conversion).
+// Radius returns the linear radius; it is meaningful only for the linear form (for the GPU FP conversion).
 func (s *MorphologyShader) Radius() int32 { return s.radius }
+
+// IsLinear reports whether this is the linear (radius-unrolled) form rather than the sparse two-tap form (for the GPU
+// FP conversion).
+func (s *MorphologyShader) IsLinear() bool { return s.linear }
 
 // IsOpaque implements Shader.
 func (s *MorphologyShader) IsOpaque() bool { return false }
@@ -164,7 +172,7 @@ func (s *MorphologyShader) appendStages(p *Pipeline, m MatrixRec) bool { //nolin
 	c.flip = s.flip
 	p.appendStoreCoords(&c.coords)
 
-	if s.radius > 0 {
+	if s.linear {
 		// Linear form: aggregate = flip * child.eval(coord), then for each delta up to radius: aggregate =
 		// max(aggregate, max(flip*eval(coord+delta), flip*eval(coord-delta))).
 		if !p.appendChildOrTransparent(s.child, &seeded) {

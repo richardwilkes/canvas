@@ -142,6 +142,11 @@ func (m *MatrixRec) Concat(lm geom.Matrix) MatrixRec { return m.concat(&lm) }
 // matrix-effect wrapper applies to the FP's sample coords. The coordinates provided to the root shader's FP are already
 // in local space, so the CTM is never inverted here — only the pending local matrix is. Returns ok=false when it is not
 // invertible.
+//
+// It panics when the record has already applied the CTM: that record belongs to the CPU raster-pipeline lane (apply),
+// and mixing the two lanes' matrix state would silently double-transform the sample coordinates. Callers on the GPU leg
+// always start from NewMatrixRec/Concat, which never set the flag, so the panic reports a programming error rather than
+// a runtime condition to recover from.
 func (m *MatrixRec) ApplyForFragmentProcessor(postInv *geom.Matrix) (geom.Matrix, bool) {
 	if m.ctmApplied {
 		panic("CTM already applied (FPs always receive raw local coords)")

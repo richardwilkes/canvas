@@ -128,11 +128,9 @@ func (g *gradientBase) initGradientBase(colors []colorcore.Color4f, positions []
 		curr := float32(1)
 		if i != descColorCount {
 			curr = pinFloat(positions[i], prev, 1)
-			// If a value is clamped to 1.0 before the last stop, the last stop actually isn't implicit if we thought it
-			// was.
-			if curr == 1 && lastStopIsImplicit {
-				lastStopIsImplicit = false
-			}
+			// (Upstream also clears lastStopIsImplicit here when a value pins to 1.0 before the last stop, because it
+			// serializes that member. Nothing below reads it — colorCount and count were both fixed before this loop —
+			// and there is no serialization here, so the write is omitted rather than left dead.)
 		}
 		if !geom.ScalarNearlyEqual(uniformStep, curr-prev) {
 			uniformStops = false
@@ -178,9 +176,20 @@ func (g *gradientBase) initGradientBase(colors []colorcore.Color4f, positions []
 	g.positions = g.positions[:dedupedColorCount]
 }
 
-// pinFloat clamps x to the inclusive range [lo, hi].
+// pinFloat clamps x to the inclusive range [lo, hi], pinning NaN to lo. It spells out max(lo, min(x, hi)) with the
+// C++ comparison order it replaces — std::min/std::max return their first argument only when the compare is true, so an
+// unordered compare against NaN falls through to x for the min and to lo for the max. The package's own minf/maxf
+// propagate the other operand and would pin NaN to hi instead, which a NaN stop position would then smear across every
+// following stop (each one pins to the running prev).
 func pinFloat(x, lo, hi float32) float32 {
-	return maxf(lo, minf(x, hi))
+	v := x
+	if hi < v { // std::min(x, hi): false for NaN, leaving v = NaN
+		v = hi
+	}
+	if !(lo < v) { // std::max(lo, v): false for NaN, so NaN pins to lo
+		v = lo
+	}
+	return v
 }
 
 // isOpaqueBase implements the shared IsOpaque logic (ConicalGradient overrides it).

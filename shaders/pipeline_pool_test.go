@@ -483,6 +483,7 @@ func filterKernelCases(child Shader) []struct {
 		{name: "matrix-conv", sh: NewMatrixConv(child, kernel, geom.ISize{Width: 3, Height: 3},
 			geom.IPoint{X: 1, Y: 1}, 1, 0, true)},
 		{name: "arithmetic", sh: NewArithmeticBlend([4]float32{0.5, 0.25, 0.25, 0}, false, child, child)},
+		{name: "filter-decal", sh: NewFilterDecal(child, bounds)},
 	}
 }
 

@@ -9,7 +9,8 @@
 
 // Package stream provides the write-stream types that are publicly reachable: a dynamic memory stream with read-back
 // and a file stream. Writes report success as a bool, and a failed file stream latches into an error state rather than
-// returning Go errors per call.
+// returning Go errors per call; FileWStream.Failed reads that latched state, including a failure that first surfaced at
+// Flush or Close.
 package stream
 
 import (
@@ -125,6 +126,14 @@ func (s *FileWStream) Write(buf []byte) bool {
 // BytesWritten returns the total bytes successfully handed to the OS.
 func (s *FileWStream) BytesWritten() int64 {
 	return s.written
+}
+
+// Failed reports whether the stream has latched into its error state. It is the only way to observe a failure that
+// surfaced outside a Write — a failed Flush, or a failed Close (where the OS may report an error deferred from earlier
+// buffered writes, e.g. ENOSPC). A caller that writes a file to completion must check this after Close before treating
+// the file as valid: every Write may have returned true and the file still be truncated.
+func (s *FileWStream) Failed() bool {
+	return s.err
 }
 
 // Flush syncs any buffered writes to the underlying file. A failed sync latches the error state.

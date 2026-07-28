@@ -105,13 +105,14 @@ type Pipeline struct {
 	// a static stage instead of heap-allocating a capturing closure per compile. Values only — no external references
 	// to drop on recycle.
 	constColorCtxs []*colorcore.PMColor4f
-	// The image-filter runtime-kernel contexts (filterkernels.go): one per morphology/displacement/
-	// normal/lighting/matrix-convolution/arithmetic shader this pipeline compiled (a shader tree can nest kernels, so
-	// each nextXxxCtx hands out a distinct one), retained across pooled compiles so a repeated filter draw rebuilds no
-	// per-kernel scratch. Each holds only values + inline register-file scratch (no external references), so
-	// RecyclePipeline needs only counter resets.
-	morphCtxs []*morphologyCtx
-	decalCtxs []*decalTileCtx
+	// The image-filter runtime-kernel contexts (filterkernels.go, plus filterdecal.go's ramp): one per
+	// morphology/displacement/normal/lighting/matrix-convolution/arithmetic/filter-decal shader this pipeline compiled
+	// (a shader tree can nest kernels, so each nextXxxCtx hands out a distinct one), retained across pooled compiles so
+	// a repeated filter draw rebuilds no per-kernel scratch. Each holds only values + inline register-file scratch (no
+	// external references), so RecyclePipeline needs only counter resets.
+	morphCtxs       []*morphologyCtx
+	filterDecalCtxs []*filterDecalCtx
+	decalCtxs       []*decalTileCtx
 	// blendShaderCtxs holds one blendShaderCtx per BlendShader this pipeline compiled (a nested blend shader inlines
 	// another, so a single shared ctx would clobber; nextBlendShaderCtx hands out a distinct one), retained across
 	// pooled compiles so a repeated blend draw rebuilds no store/load scratch.
@@ -127,6 +128,7 @@ type Pipeline struct {
 	constColorCtxN  int
 	gatherCtxN      int
 	morphCtxN       int
+	filterDecalCtxN int
 	colorFuncCtxN   int
 	normalCtxN      int
 	blendCtxN       int
@@ -215,6 +217,7 @@ func RecyclePipeline(p *Pipeline) {
 	p.samplerCtxN = 0
 	p.decalCtxN = 0
 	p.morphCtxN = 0
+	p.filterDecalCtxN = 0
 	p.dispCtxN = 0
 	p.normalCtxN = 0
 	p.lightingCtxN = 0

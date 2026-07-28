@@ -33,9 +33,12 @@ func NewBlur(style BlurStyle, sigma float32, respectCTM bool) MaskFilter {
 	return nil
 }
 
-// AcceptsColorMask reports whether filterMask on an ARGB32 (color glyph) source would succeed for this filter: only the
-// blur filter blurs color masks, by extracting the alpha plane (its dst is A8); the table and shader mask filters guard
-// on A8 masks and return false. The color-glyph scaler lanes consult this instead of carrying a format on raster.Mask.
+// AcceptsColorMask reports whether FilterMask on an ARGB32 (color glyph) source would produce a meaningful result for
+// this filter: only the blur filter handles color masks, by extracting the alpha plane (its dst is A8). The table and
+// shader mask filters treat every byte of src.Image as one coverage value, which is wrong for ARGB32 — and, because
+// raster.Mask carries no format, they cannot detect it and reject the mask themselves the way upstream's format check
+// does. This gate is therefore the whole guard, not a fast path in front of one: the color-glyph scaler lanes must
+// consult it before handing any filter an ARGB32 mask.
 func AcceptsColorMask(mf MaskFilter) bool {
 	_, ok := mf.(*blurMaskFilter)
 	return ok

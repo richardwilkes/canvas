@@ -43,6 +43,24 @@ func (s *FilterDecalShader) IsOpaque() bool { return false }
 // IsConstant implements Shader.
 func (s *FilterDecalShader) IsConstant() bool { return false }
 
+// filterDecalCtx holds the decal kernel's saved coordinates plus the ramp bounds (copied from the shader) in reused
+// pipeline storage, so the weight stage reads them through z.ctx instead of a per-compile new([2][stride]float32) plus
+// two capturing closures. coords is written in full by appendStoreCoords before the weight stage reads it within each
+// ShadeSpan chunk, so pooled reuse needs no zeroing.
+type filterDecalCtx struct {
+	coords     [2][stride]float32
+	l, t, r, b float32
+}
+
+func (p *Pipeline) nextFilterDecalCtx() *filterDecalCtx {
+	if p.filterDecalCtxN == len(p.filterDecalCtxs) {
+		p.filterDecalCtxs = append(p.filterDecalCtxs, &filterDecalCtx{})
+	}
+	c := p.filterDecalCtxs[p.filterDecalCtxN]
+	p.filterDecalCtxN++
+	return c
+}
+
 // appendStages evaluates main(coord): resolve the local coords, remember them, run the child at the same coords, then
 // scale by the decal weights.
 func (s *FilterDecalShader) appendStages(p *Pipeline, m MatrixRec) bool { //nolint:gocritic // see Shader.appendStages
@@ -51,30 +69,32 @@ func (s *FilterDecalShader) appendStages(p *Pipeline, m MatrixRec) bool { //noli
 	if !ok {
 		return false
 	}
-	coords := new([2][stride]float32)
-	p.append(func(z *lanes) {
-		coords[0] = z.r
-		coords[1] = z.g
-	})
+	c := p.nextFilterDecalCtx()
+	c.l, c.t, c.r, c.b = s.decalBounds.Left, s.decalBounds.Top, s.decalBounds.Right, s.decalBounds.Bottom
+	p.appendStoreCoords(&c.coords)
 	if !s.image.appendStages(p, seeded) {
 		return false
 	}
-	l, t, r, b := s.decalBounds.Left, s.decalBounds.Top, s.decalBounds.Right, s.decalBounds.Bottom
-	p.append(func(z *lanes) {
-		for i := range z.n {
-			x := coords[0][i]
-			y := coords[1][i]
-			// d = saturate((bounds - coord.xyxy) * (-1,-1,1,1) + 0.5)
-			dx0 := clamp01(x - l + 0.5)
-			dy0 := clamp01(y - t + 0.5)
-			dx1 := clamp01(r - x + 0.5)
-			dy1 := clamp01(b - y + 0.5)
-			w := dx0 * dy0 * dx1 * dy1
-			z.r[i] *= w
-			z.g[i] *= w
-			z.b[i] *= w
-			z.a[i] *= w
-		}
-	})
+	p.appendCtx(filterDecalWeightStage, c)
 	return true
+}
+
+// filterDecalWeightStage scales the child's output by the decal ramp weight at the saved coordinates.
+func filterDecalWeightStage(z *lanes) {
+	c := z.ctx.(*filterDecalCtx)
+	l, t, r, b := c.l, c.t, c.r, c.b
+	for i := range z.n {
+		x := c.coords[0][i]
+		y := c.coords[1][i]
+		// d = saturate((bounds - coord.xyxy) * (-1,-1,1,1) + 0.5)
+		dx0 := clamp01(x - l + 0.5)
+		dy0 := clamp01(y - t + 0.5)
+		dx1 := clamp01(r - x + 0.5)
+		dy1 := clamp01(b - y + 0.5)
+		w := dx0 * dy0 * dx1 * dy1
+		z.r[i] *= w
+		z.g[i] *= w
+		z.b[i] *= w
+		z.a[i] *= w
+	}
 }

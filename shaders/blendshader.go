@@ -11,7 +11,10 @@
 
 package shaders
 
-import "github.com/richardwilkes/canvas/raster"
+import (
+	"github.com/richardwilkes/canvas/colorcore"
+	"github.com/richardwilkes/canvas/raster"
+)
 
 // BlendShader combines a dst and src shader through a blend mode.
 type BlendShader struct {
@@ -20,12 +23,16 @@ type BlendShader struct {
 }
 
 // NewBlend builds a shader that blends dst and src with mode: nil children yield nil, BlendSrc collapses to src,
-// BlendDst to dst.
+// BlendDst to dst, and BlendClear to a transparent-black color shader. The clear collapse is not just a stage saving:
+// the constant color shader reports IsConstant, which lets the blitter take its constant-color path instead of
+// compiling and evaluating both children's stage trees per pixel for a result that is transparent black everywhere.
 func NewBlend(mode raster.BlendMode, dst, src Shader) Shader {
 	if dst == nil || src == nil {
 		return nil
 	}
 	switch mode {
+	case raster.BlendClear:
+		return NewColor(colorcore.Transparent)
 	case raster.BlendSrc:
 		return src
 	case raster.BlendDst:
@@ -38,8 +45,9 @@ func NewBlend(mode raster.BlendMode, dst, src Shader) Shader {
 // SetBlend re-initializes s to blend dst and src with mode, the scratch-construction counterpart of NewBlend (the
 // SetImage discipline): a caller reuses one BlendShader value across draws — the DrawAtlas per-sprite color-modulation
 // lane — instead of allocating a fresh *BlendShader per sprite. The caller must have handled NewBlend's nil-child and
-// kSrc/kDst collapse cases itself (they do not produce a BlendShader). Only for transient scratch shaders consumed
-// synchronously within a draw.
+// Src/Dst collapse cases itself (they do not produce a BlendShader). Clear may be passed — it evaluates correctly as
+// transparent black — but it forgoes NewBlend's collapse to a constant color shader. Only for transient scratch shaders
+// consumed synchronously within a draw.
 func (s *BlendShader) SetBlend(mode raster.BlendMode, dst, src Shader) {
 	s.mode = mode
 	s.dst = dst

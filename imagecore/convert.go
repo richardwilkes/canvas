@@ -80,11 +80,16 @@ func unpremulChannelRP(c, a uint32) uint32 {
 }
 
 // toUnorm scales v by scale and rounds to the nearest integer, ties to even (ARMv8 semantics), clamping to [0, scale].
+// NaN maps to 0: it is reachable (loadHighp's F16 lane returns halfToFloat of arbitrary caller-supplied halves, and F16
+// is a Supported() source type), a plain `f < 0` clamp would let it through to a cast whose result the Go spec leaves
+// implementation-dependent, and 0 is what the ARMv8 lane this mirrors produces (FCVTNU of NaN is 0). The negated
+// comparison, rather than a separate IsNaN test, keeps the in-range path a single compare.
 func toUnorm(v, scale float32) uint32 {
 	f := v * scale
-	if f < 0 {
+	switch {
+	case !(f >= 0): // false for both negatives and NaN
 		f = 0
-	} else if f > scale {
+	case f > scale:
 		f = scale
 	}
 	return uint32(math.RoundToEven(float64(f)))

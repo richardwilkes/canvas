@@ -65,7 +65,8 @@ type morphologyFP struct {
 	FPBase
 	offset [2]float32
 	flip   float32
-	radius int32 // 0 = sparse form
+	radius int32 // meaningful only for the linear form
+	linear bool  // linear (radius-unrolled) form; false = sparse (single ±offset tap pair)
 }
 
 // makeMorphologyFP converts a MorphologyShader: the linear form is a radius-uniform loop over the fixed
@@ -76,7 +77,7 @@ func makeMorphologyFP(s *shaders.MorphologyShader, args *FPArgs, mRec *shaders.M
 		return nil
 	}
 	off := s.Offset()
-	fp := &morphologyFP{offset: [2]float32{off.X, off.Y}, flip: s.Flip(), radius: s.Radius()}
+	fp := &morphologyFP{offset: [2]float32{off.X, off.Y}, flip: s.Flip(), radius: s.Radius(), linear: s.IsLinear()}
 	fp.initFP(GLSLFPClassID, 0)
 	fp.setUsesSampleCoordsDirectly()
 	registerChildOf(fp, child, ExplicitSampleUsage())
@@ -86,7 +87,7 @@ func makeMorphologyFP(s *shaders.MorphologyShader, args *FPArgs, mRec *shaders.M
 func (f *morphologyFP) Name() string { return "Morphology" }
 
 func (f *morphologyFP) Clone() FragmentProcessor {
-	clone := &morphologyFP{offset: f.offset, flip: f.flip, radius: f.radius}
+	clone := &morphologyFP{offset: f.offset, flip: f.flip, radius: f.radius, linear: f.linear}
 	clone.initFP(GLSLFPClassID, f.optimizationFlags())
 	clone.setUsesSampleCoordsDirectly()
 	cloneAndRegisterAllChildProcessors(clone, f)
@@ -94,7 +95,7 @@ func (f *morphologyFP) Clone() FragmentProcessor {
 }
 
 func (f *morphologyFP) onAddToKey(_ *gpu.ShaderCaps, b *gpu.KeyBuilder) {
-	if f.radius > 0 {
+	if f.linear {
 		b.Add32(uint32(runtimeFPLinearMorphology), "runtimeFPKind")
 	} else {
 		b.Add32(uint32(runtimeFPSparseMorphology), "runtimeFPKind")
@@ -103,7 +104,7 @@ func (f *morphologyFP) onAddToKey(_ *gpu.ShaderCaps, b *gpu.KeyBuilder) {
 
 func (f *morphologyFP) onIsEqual(other FragmentProcessor) bool {
 	o, ok := other.(*morphologyFP)
-	return ok && f.offset == o.offset && f.flip == o.flip && f.radius == o.radius
+	return ok && f.offset == o.offset && f.flip == o.flip && f.radius == o.radius && f.linear == o.linear
 }
 
 func (f *morphologyFP) onMakeProgramImpl() FPProgramImpl { return &morphologyFPImpl{} }
@@ -125,7 +126,7 @@ func (i *morphologyFPImpl) EmitCode(args *FPEmitArgs) {
 		GLSLTypeHalf, "flip")
 	coord := args.SampleCoord
 	child := func(coordExpr string) string { return i.InvokeChildWithCoords(0, "", args, coordExpr) }
-	if fp.radius > 0 {
+	if fp.linear {
 		// The linear morphology loop bound is the fixed maxLinearMorphologyRadius, with the actual radius kept as a
 		// uniform, so every linear radius value shares one compiled program.
 		var radiusName string
@@ -153,7 +154,7 @@ func (i *morphologyFPImpl) onSetData(pdman *ProgramDataManager, fp FragmentProce
 	f := fp.(*morphologyFP)
 	pdman.Set2f(i.offsetUni, f.offset[0], f.offset[1])
 	pdman.Set1f(i.flipUni, f.flip)
-	if f.radius > 0 {
+	if f.linear {
 		pdman.Set1i(i.radiusUni, f.radius)
 	}
 }

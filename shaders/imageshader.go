@@ -10,7 +10,10 @@
 // ImageShader: the CPU raster-pipeline image shader. Trims: no mipmapped sampling — the CPU leg always samples the base
 // level, degrading mipmap requests to the requested filter (mipmaps would be built on demand — recorded as a
 // divergence); subset and raw shader variants are unreachable through this package's public surface (subset shaders
-// exist only for special images, raw ones have no entry point), so raw is always false.
+// exist only for special images, raw ones have no entry point), so raw is always false. The clamp-as-if-unpremul
+// variant is unreachable for the same reason (upstream sets it only for the raw/subset constructors), so it is not
+// modeled at all: a bicubic source clamps to [0,1] exactly when its alpha type is unpremul, and to the premul gamut
+// otherwise.
 
 package shaders
 
@@ -25,11 +28,10 @@ import (
 // resolve pixels through cpuImage (MakeNonTextureImage — the identity for a raster image, a readback for a texture
 // image).
 type ImageShader struct {
-	img               imagecore.DrawableImage
-	sampling          SamplingOptions
-	tileX, tileY      TileMode
-	raw               bool
-	clampAsIfUnpremul bool
+	img          imagecore.DrawableImage
+	sampling     SamplingOptions
+	tileX, tileY TileMode
+	raw          bool
 }
 
 // optimizeTile reports that mirror/repeat on a 1px axis is equivalent to clamping, while decal still transitions to
@@ -101,7 +103,6 @@ func SetImage(s *ImageShader, img *imagecore.Image, tmx, tmy TileMode, sampling 
 	s.tileX = optimizeTile(tmx, img.Width())
 	s.tileY = optimizeTile(tmy, img.Height())
 	s.raw = false
-	s.clampAsIfUnpremul = false
 	return true
 }
 
@@ -200,12 +201,12 @@ func (s *ImageShader) appendStages(p *Pipeline, mRec MatrixRec) bool { //nolint:
 		sampling = tweakSampling(sampling, &baseInv)
 	}
 
+	// The updated record is discarded: the sampling stages below take explicit coordinates, so nothing downstream of
+	// here consumes it.
 	identity := geom.IdentityMatrix()
-	mRec, applyOK := mRec.apply(p, &identity)
-	if !applyOK {
+	if _, applyOK := mRec.apply(p, &identity); !applyOK {
 		return false
 	}
-	_ = mRec
 
 	// The gather/sampler/decal contexts come from the pipeline's pooled free lists (retained across recycled compiles;
 	// the gatherCtx's px is dropped on recycle so an idle pooled pipeline does not pin the source pixels — see
@@ -244,7 +245,7 @@ func (s *ImageShader) appendStages(p *Pipeline, mRec MatrixRec) bool { //nolint:
 
 		// Bicubic filtering naturally produces out of range values on both sides of [0,1].
 		if sampling.UseCubic {
-			if at == imagecore.AlphaTypeUnpremul || s.clampAsIfUnpremul {
+			if at == imagecore.AlphaTypeUnpremul {
 				p.AppendClamp01()
 			} else {
 				p.AppendClampGamut()

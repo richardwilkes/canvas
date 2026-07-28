@@ -184,6 +184,71 @@ func TestThreadSafeCacheDropUniqueRefsOlderThan(t *testing.T) {
 	}
 }
 
+// TestThreadSafeCacheAddRefreshesLRU covers the add-on-existing-key collision paths: both the is-newer-better
+// replacement and the keep-the-incumbent branch touch the entry, so a just-written (or just-handed-back) entry moves to
+// the LRU head and gets a fresh last-access stamp. Without that, DropUniqueRefsOlderThan can purge a freshly written
+// entry ahead of colder ones.
+func TestThreadSafeCacheAddRefreshesLRU(t *testing.T) {
+	for _, c := range []struct {
+		name    string
+		replace bool
+	}{
+		{name: "replacement", replace: true},
+		{name: "incumbent kept", replace: false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			cache := NewThreadSafeCache()
+
+			// Two entries; the collision target is added first, so it starts as the LRU tail.
+			target := tscTestKey(1, []byte{0})
+			first := tscTestVerts(1)
+			first.Ref()
+			r, _ := cache.AddVertsWithData(&target, first, func(_, _ []byte) bool { return false })
+			r.Unref()
+			first.Unref() // uniquely held by the cache
+
+			other := tscTestKey(2, []byte{0})
+			second := tscTestVerts(2)
+			second.Ref()
+			r2, _ := cache.AddVertsWithData(&other, second, func(_, _ []byte) bool { return false })
+			r2.Unref()
+			second.Unref()
+
+			// Stamp the target as cold, then collide with it.
+			base := time.Now()
+			cache.entries[target.MapKey()].lastAccess = base.Add(-2 * time.Hour)
+			cache.entries[other.MapKey()].lastAccess = base.Add(-time.Hour)
+
+			replacement := tscTestVerts(3)
+			replacement.Ref()
+			got, _ := cache.AddVertsWithData(&target, replacement,
+				func(_, _ []byte) bool { return c.replace })
+			got.Unref()
+			replacement.Unref()
+
+			entry := cache.entries[target.MapKey()]
+			if entry == nil {
+				t.Fatal("the collided-with entry must still be cached")
+			}
+			if entry.lastAccess.Before(base) {
+				t.Errorf("last access = %v, want a fresh stamp (>= %v)", entry.lastAccess, base)
+			}
+			if cache.head != entry {
+				t.Error("the collided-with entry must be moved to the LRU head")
+			}
+
+			// A purge older than the other (untouched) entry must take that one, not the just-written one.
+			cache.DropUniqueRefsOlderThan(base.Add(-30 * time.Minute))
+			if cache.entries[target.MapKey()] == nil {
+				t.Error("the just-written entry must survive the age purge")
+			}
+			if cache.entries[other.MapKey()] != nil {
+				t.Error("the colder entry must be purged")
+			}
+		})
+	}
+}
+
 func TestThreadSafeCacheDropAllRefs(t *testing.T) {
 	c := NewThreadSafeCache()
 	for i := uint32(0); i < 4; i++ {
@@ -383,6 +448,12 @@ func TestThreadSafeCacheViewSameProxyCollision(t *testing.T) {
 	proxy := view.Proxy()
 	c.Add(&key, view) // the cache adopts the constructor's ref
 
+	// Add a second, unrelated entry so the incumbent above is no longer at the LRU head, and stamp the incumbent cold.
+	otherKey := tscTestKey(111, nil)
+	c.Add(&otherKey, tscTestView())
+	cold := time.Now().Add(-2 * time.Hour)
+	c.entries[key.MapKey()].lastAccess = cold
+
 	// A second caller arrives with its own ref on the same proxy.
 	proxy.Ref()
 	got := c.Add(&key, MakeSurfaceProxyView(proxy, gpu.OriginTopLeft, gpu.SwizzleRGBA))
@@ -393,8 +464,12 @@ func TestThreadSafeCacheViewSameProxyCollision(t *testing.T) {
 		t.Fatalf("same-proxy collision must drop the caller's redundant ref: refCnt = %d, want 1",
 			proxy.RefCnt())
 	}
-	if c.NumEntries() != 1 {
-		t.Fatalf("entries = %d, want 1", c.NumEntries())
+	if c.NumEntries() != 2 {
+		t.Fatalf("entries = %d, want 2", c.NumEntries())
+	}
+	// The collision is an access of the incumbent, so it is refreshed like a find: LRU head, fresh stamp.
+	if entry := c.entries[key.MapKey()]; entry != c.head || !entry.lastAccess.After(cold) {
+		t.Error("a colliding add must move the incumbent to the LRU head and restamp it")
 	}
 
 	// With no leaked ref the entry is uniquely held, so it purges normally.

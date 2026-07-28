@@ -300,14 +300,19 @@ func (c *ThreadSafeCache) AddVertsWithData(key *gpu.UniqueKey, vertData *VertexD
 		c.listAddToHead(e)
 		c.stats.Adds++
 	case isNewerBetter(e.key.CustomData(), key.CustomData()):
-		// This orphans any existing uses of the prior vertex data but ensures the best version is in the cache.
+		// This orphans any existing uses of the prior vertex data but ensures the best version is in the cache. Touching
+		// the entry keeps its LRU position and last-access time honest — a freshly written entry must not be purged by
+		// DropUniqueRefsOlderThan ahead of colder ones.
+		c.makeExistingEntryMRU(e)
 		e.vertData.Unref()
 		e.key = *key
 		e.vertData = vertData
 		e.vertData.Ref()
 		c.stats.Replacements++
 	default:
-		// The incumbent stays; drop the caller's payload ref and hand back the incumbent.
+		// The incumbent stays; drop the caller's payload ref and hand back the incumbent. It was still just accessed, so
+		// refresh it exactly as a find would.
+		c.makeExistingEntryMRU(e)
 		vertData.Unref()
 		e.vertData.Ref()
 		return e.vertData, e.key.CustomData()
@@ -362,6 +367,8 @@ func (c *ThreadSafeCache) FindWithData(key *gpu.UniqueKey) (v SurfaceProxyView, 
 func (c *ThreadSafeCache) internalAddView(key *gpu.UniqueKey, view SurfaceProxyView) (v SurfaceProxyView, data []byte) {
 	if e := c.entries[key.MapKey()]; e != nil {
 		if e.tag == tscTagView {
+			// The incumbent was just accessed, so refresh its LRU position and last-access time exactly as a find would.
+			c.makeExistingEntryMRU(e)
 			view.Proxy().Unref()
 			return e.view, e.key.CustomData()
 		}

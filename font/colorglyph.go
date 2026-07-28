@@ -12,8 +12,10 @@
 //   - COLRv0: each layer's outline is filled in device space with its CPAL palette color (or the foreground color for
 //     palette index 0xFFFF) into the ARGB32 mask through the raster package's solid src-over blitter.
 //   - Bitmap strikes (the sbix/CBDT PNG lane): the strike PNG is decoded, premultiplied, and drawn scaled into the mask
-//     with a linear-filtered image shader over the strike-to-device transform. sbix 'jpg '/'tif ' graphic types and B&W
-//     strikes are not decodable here and fall through to the outline lane too.
+//     with a linear-filtered image shader over the strike-to-device transform. sbix 'jpg '/'tif ' graphic types, B&W
+//     strikes, and SVG-table glyphs have no lane here and fall through to the outline lane, which fills the
+//     spec-required fallback outline every such glyph must also carry (glyphOutlinePath loads it raw for exactly that
+//     reason).
 //
 // The mask buffer is premultiplied RGBA in the device word layout (raster.Pixmap), this library's N32.
 
@@ -65,7 +67,7 @@ func (c *ScalerContext) renderCOLRv0(g *Glyph) {
 		if !colorOK {
 			continue
 		}
-		devPath := glyphRawOutlinePath(c.typeface, layer.GlyphID, c.mapDesignPoint)
+		devPath := glyphOutlinePath(c.typeface, layer.GlyphID, c.mapDesignPoint)
 		if devPath == nil {
 			continue
 		}
@@ -87,7 +89,7 @@ func (c *ScalerContext) renderBitmap(g *Glyph) {
 	if !ok || bm.Format != tsfont.PNG {
 		return
 	}
-	img := decodePremulPNG(bm.Data)
+	img := decodePremulPNG(bm.Data, bm.Width, bm.Height)
 	if img == nil {
 		return
 	}
@@ -144,7 +146,22 @@ type decodedImage struct {
 }
 
 // decodePremulPNG decodes PNG bytes into an N32-premul imagecore image, premultiplying with round-to-nearest rounding.
-func decodePremulPNG(data []byte) *decodedImage {
+//
+// strikeW/strikeH are the strike's own declared dimensions, and they gate the decode: png.Decode allocates the full
+// image from the IHDR width/height before it reads a single IDAT byte, so a few-hundred-byte strike claiming
+// 65535x65535 would otherwise force a multi-gigabyte allocation out of untrusted font data. The header is therefore
+// read with DecodeConfig (which allocates nothing) and must agree with the strike metrics, and both must stay under the
+// glyph-mask ceiling — a strike bigger than the largest mask that can be allocated has nothing to contribute anyway.
+// FreeType's Load_SBit_Png makes the same equality check against known metrics (CBDT/EBDT) and bounds the dimensions it
+// takes from the header (sbix).
+func decodePremulPNG(data []byte, strikeW, strikeH int) *decodedImage {
+	if strikeW <= 0 || strikeH <= 0 || strikeW >= maxGlyphWidth || strikeH >= maxGlyphHeight {
+		return nil
+	}
+	cfg, err := png.DecodeConfig(bytes.NewReader(data))
+	if err != nil || cfg.Width != strikeW || cfg.Height != strikeH {
+		return nil
+	}
 	src, err := png.Decode(bytes.NewReader(data))
 	if err != nil {
 		return nil

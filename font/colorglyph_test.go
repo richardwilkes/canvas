@@ -16,13 +16,20 @@ package font
 
 import (
 	"bytes"
+	"compress/zlib"
 	"encoding/binary"
+	"hash/crc32"
+	"image"
+	"image/color"
 	"image/png"
 	"os"
+	"runtime"
 	"slices"
 	"testing"
 
+	tsfont "github.com/go-text/typesetting/font"
 	"github.com/go-text/typesetting/font/opentype"
+
 	"github.com/richardwilkes/canvas/colorcore"
 	"github.com/richardwilkes/canvas/geom"
 	"github.com/richardwilkes/canvas/maskfilter"
@@ -270,6 +277,88 @@ func TestBitmapGlyphImageNativeSize(t *testing.T) {
 	}
 }
 
+// appendPNGChunk appends one PNG chunk (typeAndData is the 4-byte type followed by the chunk data) with its length and
+// CRC.
+func appendPNGChunk(dst, typeAndData []byte) []byte {
+	dst = binary.BigEndian.AppendUint32(dst, uint32(len(typeAndData)-4))
+	dst = append(dst, typeAndData...)
+	return binary.BigEndian.AppendUint32(dst, crc32.ChecksumIEEE(typeAndData))
+}
+
+// craftedPNG builds a few-hundred-byte PNG whose 8-bit RGBA IHDR claims w x h and whose IDAT holds a valid but far too
+// short zlib stream. png.Decode allocates the whole w*h*4 image the moment it starts the IDAT, well before it runs out
+// of row data, so this is the shape a hostile bitmap strike takes.
+func craftedPNG(t *testing.T, w, h uint32) []byte {
+	t.Helper()
+	ihdr := append([]byte("IHDR"), make([]byte, 0, 13)...)
+	ihdr = binary.BigEndian.AppendUint32(ihdr, w)
+	ihdr = binary.BigEndian.AppendUint32(ihdr, h)
+	ihdr = append(ihdr, 8, 6, 0, 0, 0) // bit depth, color type (RGBA), compression, filter, interlace
+	var z bytes.Buffer
+	zw := zlib.NewWriter(&z)
+	if _, err := zw.Write(make([]byte, 128)); err != nil {
+		t.Fatal(err)
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	out := []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1A, '\n'}
+	out = appendPNGChunk(out, ihdr)
+	out = appendPNGChunk(out, append([]byte("IDAT"), z.Bytes()...))
+	return appendPNGChunk(out, []byte("IEND"))
+}
+
+func TestDecodePremulPNGValidatesStrikeDimensions(t *testing.T) {
+	// png.Decode allocates the full image from the IHDR before reading a single IDAT byte, so the strike's own
+	// dimensions have to gate the decode. A real 4x3 strike decodes; the same bytes under mismatched strike metrics
+	// (the CBDT/EBDT hazard, where the metrics are independent of the PNG) do not; and a header claiming 65535x65535 in
+	// 33 bytes must be refused without allocating.
+	var buf bytes.Buffer
+	src := image.NewNRGBA(image.Rect(0, 0, 4, 3))
+	src.Set(1, 1, color.NRGBA{R: 255, A: 128})
+	if err := png.Encode(&buf, src); err != nil {
+		t.Fatal(err)
+	}
+	good := buf.Bytes()
+	if img := decodePremulPNG(good, 4, 3); img == nil {
+		t.Fatal("a strike whose metrics match its PNG must decode")
+	}
+	for _, c := range []struct {
+		name string
+		w, h int
+	}{
+		{name: "width disagrees", w: 5, h: 3},
+		{name: "height disagrees", w: 4, h: 4},
+		{name: "zero", w: 0, h: 0},
+		{name: "negative", w: -4, h: -3},
+		{name: "past the mask ceiling", w: maxGlyphWidth, h: maxGlyphHeight},
+	} {
+		if img := decodePremulPNG(good, c.w, c.h); img != nil {
+			t.Errorf("%s: strike %dx%d decoded a 4x3 PNG", c.name, c.w, c.h)
+		}
+	}
+
+	// The allocation guard itself: a few-hundred-byte strike claiming a size at the mask ceiling must cost nothing.
+	// Unguarded, png.Decode reaches for maxGlyphWidth*maxGlyphHeight*4 (256MB) here, and 65535x65535 would be ~17GB.
+	huge := craftedPNG(t, maxGlyphWidth, maxGlyphHeight)
+	if len(huge) > 1024 {
+		t.Fatalf("the crafted strike is %d bytes; it is meant to be tiny", len(huge))
+	}
+	cfg, err := png.DecodeConfig(bytes.NewReader(huge))
+	if err != nil || int32(cfg.Width) != int32(maxGlyphWidth) || int32(cfg.Height) != int32(maxGlyphHeight) {
+		t.Fatalf("crafted header did not parse at the mask ceiling: %v %v", cfg, err)
+	}
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	if img := decodePremulPNG(huge, maxGlyphWidth, maxGlyphHeight); img != nil {
+		t.Error("a strike at the mask ceiling must be refused")
+	}
+	runtime.ReadMemStats(&after)
+	if grew := after.TotalAlloc - before.TotalAlloc; grew > 1<<20 {
+		t.Errorf("refusing the oversized strike allocated %d bytes", grew)
+	}
+}
+
 // delta returns the max per-channel byte difference between two device words.
 func delta(a, b uint32) int {
 	m := 0
@@ -423,13 +512,15 @@ func TestCOLRv0LayerIsItselfAColorGlyph(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// The hazard itself: the COLR-preferring lookup has no outline for this glyph, the raw accessor does. The mapping
-	// is mapDesignPoint for size 50 at upem 1000 with an identity device matrix.
-	mapPt := func(x, y float32) geom.Point { return geom.Pt(x/1000*50, -y/1000*50) }
-	if p := glyphOutlinePath(tf, colorLayerGID, mapPt); p != nil {
-		t.Fatalf("gid %d unexpectedly resolves an outline through GlyphData", colorLayerGID)
+	// The hazard itself: go-text's preference-ordered lookup answers with this glyph's COLR entry rather than its
+	// outline, so glyphOutlinePath must go through the raw accessor to find anything to fill. The mapping is
+	// mapDesignPoint for size 50 at upem 1000 with an identity device matrix.
+	if _, isOutline := tf.face.GlyphData(opentype.GID(colorLayerGID)).(tsfont.GlyphOutline); isOutline {
+		t.Fatalf("gid %d resolves an outline through GlyphData; it no longer exercises the preference order",
+			colorLayerGID)
 	}
-	raw := glyphRawOutlinePath(tf, colorLayerGID, mapPt)
+	mapPt := func(x, y float32) geom.Point { return geom.Pt(x/1000*50, -y/1000*50) }
+	raw := glyphOutlinePath(tf, colorLayerGID, mapPt)
 	if raw == nil || raw.Bounds().IsEmpty() {
 		t.Fatalf("gid %d has no raw outline to fill", colorLayerGID)
 	}

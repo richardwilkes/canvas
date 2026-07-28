@@ -194,23 +194,19 @@ func (st *strike) glyphPath(gid uint16) *path.Path {
 	return glyphOutlinePath(st.t, gid, st.mapDesign)
 }
 
-// glyphOutlinePath converts gid's outline segments to a path through the given design-space point mapping. Contours are
-// explicitly closed, as FT_Outline_Decompose's consumers do. Returns nil when the glyph has no outline data.
+// glyphOutlinePath converts gid's raw 'glyf'/'CFF ' outline segments to a path through the given design-space point
+// mapping. Contours are explicitly closed, as FT_Outline_Decompose's consumers do. Returns nil when the glyph has no
+// outline data.
+//
+// The raw accessor is deliberate: go-text's GlyphData prefers a glyph's COLR/bitmap/SVG entry over its outline, and
+// every caller here wants the outline specifically. The color lanes need it because a COLRv0 layer (or a COLRv1
+// PaintGlyph) outline is frequently a glyph that itself carries a color entry — often the base glyph's own gid — which
+// GlyphData would answer with instead, silently dropping the layer. The outline lane needs it because the lanes that
+// set neverRequestPath cover only COLR and PNG strikes: an SVG glyph, an sbix 'jpg '/'tif ' graphic, or a B&W strike
+// reaches the outline lane, and through GlyphData it would resolve no outline at all and render blank (go-text hands
+// the spec-required fallback outline back in GlyphSVG.Outline/GlyphBitmap.Outline, so it is only the preference order
+// that loses it).
 func glyphOutlinePath(t *Typeface, gid uint16, mapPt func(x, y float32) geom.Point) *path.Path {
-	data := t.faceGlyphData(opentype.GID(gid))
-	outline, ok := data.(tsfont.GlyphOutline)
-	if !ok {
-		return nil
-	}
-	return outlineToPath(outline, mapPt)
-}
-
-// glyphRawOutlinePath is glyphOutlinePath over gid's raw 'glyf'/'CFF ' outline, bypassing GlyphData's
-// COLR → bitmap → SVG → outline preference. The COLR lanes need this: a layer (or PaintGlyph) outline is frequently a
-// glyph that itself carries a COLR/sbix/CBDT/EBDT/SVG entry — often the base glyph's own gid — and GlyphData would then
-// answer with that entry instead of the outline the layer must be filled with, silently dropping the layer. Returns nil
-// when the glyph has no outline data.
-func glyphRawOutlinePath(t *Typeface, gid uint16, mapPt func(x, y float32) geom.Point) *path.Path {
 	outline, ok := t.faceGlyphOutline(opentype.GID(gid))
 	if !ok {
 		return nil

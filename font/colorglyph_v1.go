@@ -49,6 +49,13 @@ import (
 // defends against pathologically deep — not cyclic — graphs.
 const colrV1MaxDepth = 64
 
+// colrV1MaxLayerBytes bounds the pixels held by all live compositing layers at once. Every PaintComposite node pushes
+// two full-mask ARGB layers that stay live while the source subtree is walked, so the depth cap alone would allow ~126
+// of them — a ~128x amplification over a mask that is itself allowed to reach maxGlyphWidth x maxGlyphHeight. The
+// budget bounds that product instead: ordinary color glyphs (a few hundred pixels a side) never come near it, while a
+// crafted font's nesting stops allocating once the total would exceed it, exactly as the depth cap stops recursing.
+const colrV1MaxLayerBytes = 64 << 20
+
 // colrF214 converts a 2.14 fixed-point table value (F2Dot14) to float.
 func colrF214(v tables.Fixed214) float32 { return float32(v) / (1 << 14) }
 
@@ -83,23 +90,28 @@ type colrV1SaveRec struct {
 // colrV1Canvas is the minimal canvas the walker needs: a CTM, an AA clip stack, and saveLayer compositing onto the
 // glyph's ARGB32 mask through the raster package's blitters and blend modes.
 type colrV1Canvas struct {
-	devs  []*raster.Pixmap   // device stack: devs[0] is the glyph mask, one entry per active layer above
-	modes []raster.BlendMode // restore blend mode per active layer (parallel to devs[1:])
-	clips *raster.ClipStack
-	saves []colrV1SaveRec
-	ctm   geom.Matrix
-	w, h  int32
+	devs        []*raster.Pixmap   // device stack: devs[0] is the glyph mask, one entry per active layer above
+	modes       []raster.BlendMode // restore blend mode per active layer (parallel to devs[1:])
+	clips       *raster.ClipStack
+	saves       []colrV1SaveRec
+	ctm         geom.Matrix
+	layerBudget int64 // bytes still available for live layers (colrV1MaxLayerBytes at construction)
+	w, h        int32
 }
 
 func newColrV1Canvas(mask *raster.Pixmap, w, h int32, ctm geom.Matrix) *colrV1Canvas {
 	return &colrV1Canvas{
-		devs:  []*raster.Pixmap{mask},
-		clips: raster.NewRasterClipStack(w, h),
-		ctm:   ctm,
-		w:     w,
-		h:     h,
+		devs:        []*raster.Pixmap{mask},
+		clips:       raster.NewRasterClipStack(w, h),
+		ctm:         ctm,
+		layerBudget: colrV1MaxLayerBytes,
+		w:           w,
+		h:           h,
 	}
 }
+
+// layerBytes is the allocation one saveLayer costs: a full-mask ARGB32 pixmap.
+func (cv *colrV1Canvas) layerBytes() int64 { return int64(cv.w) * int64(cv.h) * 4 }
 
 // device is the pixmap draws currently target (the top of the device stack).
 func (cv *colrV1Canvas) device() *raster.Pixmap { return cv.devs[len(cv.devs)-1] }
@@ -114,12 +126,19 @@ func (cv *colrV1Canvas) save() {
 }
 
 // saveLayer pushes a fresh transparent layer the size of the mask whose pixels composite onto the device below with
-// mode at restore (the only paint field the walker uses).
-func (cv *colrV1Canvas) saveLayer(mode raster.BlendMode) {
+// mode at restore (the only paint field the walker uses). It reports false — pushing nothing, so the caller's save
+// stack stays balanced — when the layer would exceed the live-layer budget.
+func (cv *colrV1Canvas) saveLayer(mode raster.BlendMode) bool {
+	need := cv.layerBytes()
+	if need > cv.layerBudget {
+		return false
+	}
+	cv.layerBudget -= need
 	cv.saves = append(cv.saves, colrV1SaveRec{ctm: cv.ctm, isLayer: true})
 	cv.clips.Save()
 	cv.devs = append(cv.devs, raster.NewPixmap(cv.w, cv.h))
 	cv.modes = append(cv.modes, mode)
+	return true
 }
 
 // restore pops the clip and CTM, and composites a popped layer onto the device below through the clip in effect at its
@@ -136,6 +155,7 @@ func (cv *colrV1Canvas) restore() {
 		mode := cv.modes[len(cv.modes)-1]
 		cv.devs = cv.devs[:len(cv.devs)-1]
 		cv.modes = cv.modes[:len(cv.modes)-1]
+		cv.layerBudget += cv.layerBytes()
 		// The layer draws back as a full-coverage image over the clip: every clipped pixel blends, which matters for
 		// modes that act where the source is transparent (Clear, SrcIn, DstIn, ...).
 		blitter := raster.NewImageSpriteBlitter(cv.device(), layer, 0, 0, 0xFF, mode)
@@ -375,12 +395,17 @@ func (w *colrV1Walker) traverseDraw(paint tables.PaintTable) bool {
 	case tables.PaintComposite:
 		// COMPOSITE: an isolated group (saveLayer) for the backdrop, then a second layer whose restore blends the
 		// source onto the backdrop with the composite mode. Both layers (and this node's save) pop through the caller's
-		// deferred restoreToCount, in reverse (LIFO) order.
-		w.canvas.saveLayer(raster.BlendSrcOver)
+		// deferred restoreToCount, in reverse (LIFO) order. A layer the live-layer budget cannot cover fails the
+		// subtree, the same way the depth cap does.
+		if !w.canvas.saveLayer(raster.BlendSrcOver) {
+			return false
+		}
 		if !w.traverse(p.BackdropPaint) {
 			return false
 		}
-		w.canvas.saveLayer(colrBlendMode(p.CompositeMode))
+		if !w.canvas.saveLayer(colrBlendMode(p.CompositeMode)) {
+			return false
+		}
 		return w.traverse(p.SourcePaint)
 	case tables.PaintSolid, tables.PaintVarSolid,
 		tables.PaintLinearGradient, tables.PaintVarLinearGradient,
@@ -446,10 +471,10 @@ func (w *colrV1Walker) traverseBounds(paint tables.PaintTable) bool {
 }
 
 // glyphLayerPath returns gid's outline in layer space (font units, y negated), loading the glyph unscaled and
-// untransformed at upem ppem. The raw-outline accessor bypasses the COLR-preferring lookup, since PaintGlyph outlines
-// frequently reuse the base glyph's own gid.
+// untransformed at upem ppem. glyphOutlinePath's raw-outline accessor bypasses the COLR-preferring lookup, which
+// matters here because PaintGlyph outlines frequently reuse the base glyph's own gid.
 func (w *colrV1Walker) glyphLayerPath(gid uint16) *path.Path {
-	return glyphRawOutlinePath(w.t, gid, colrPt)
+	return glyphOutlinePath(w.t, gid, colrPt)
 }
 
 // colrIsFillPaint reports whether p is one of the four fill formats eligible for the drawPath fast path.

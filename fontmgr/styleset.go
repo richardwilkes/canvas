@@ -55,9 +55,19 @@ func (s *StyleSet) MatchStyle(pattern font.Style) *font.Typeface {
 	return nil
 }
 
+// css3SlantBits and css3WeightBits are the field widths css3Score reserves for the tiers below the one being shifted:
+// the slant addend spans [1, 3] and the weight addend [0, 1000] (font.NewStyle pins weight to WeightExtraBlack), so two
+// and ten bits hold them exactly. Upstream Skia's matchStyleCSS3 shifts by 8 for both, which is one bit too few for the
+// weight tier: any weight score >= 256 carries into the slant field and inverts the documented priority, e.g. an
+// italic 400 face outscoring an upright 900 face for an upright 400 request.
+const (
+	css3SlantBits  = 2
+	css3WeightBits = 10
+)
+
 // css3Score computes the CSS3 match score of one candidate style against the pattern. Width (CSS stretch) has the
-// greatest priority, then slant, then weight; each tier shifts left so it dominates the tiers below. Higher scores are
-// better.
+// greatest priority, then slant, then weight; each tier shifts left by the width of the tiers below so it dominates
+// them. Higher scores are better.
 func css3Score(pattern, current font.Style) int {
 	score := 0
 
@@ -75,7 +85,7 @@ func css3Score(pattern, current font.Style) int {
 			score += current.Width()
 		}
 	}
-	score <<= 8
+	score <<= css3SlantBits + css3WeightBits
 
 	// CSS style (normal, italic, oblique) / font.Style's Slant. Takes priority over all valid weights.
 	slantScore := [3][3]int{
@@ -86,7 +96,7 @@ func css3Score(pattern, current font.Style) int {
 		/* [pattern] */
 	}
 	score += slantScore[pattern.Slant()][current.Slant()]
-	score <<= 8
+	score <<= css3WeightBits
 
 	// CSS weight / font.Style's Weight. The closer to the target weight, the higher the score. 1000 is the heaviest
 	// recognized weight.

@@ -103,15 +103,8 @@ func (t *Typeface) faceGlyphExtents(gid opentype.GID) (tsfont.GlyphExtents, bool
 	return t.face.GlyphExtents(gid)
 }
 
-// faceGlyphData returns the glyph data (outline segments) for gid under the face lock.
-func (t *Typeface) faceGlyphData(gid opentype.GID) tsfont.GlyphData {
-	t.faceMu.Lock()
-	defer t.faceMu.Unlock()
-	return t.face.GlyphData(gid)
-}
-
 // faceGlyphOutline returns gid's raw 'glyf'/'CFF ' outline under the face lock, bypassing GlyphData's bitmap/SVG/COLR
-// preference. The COLRv1 walker needs this to load the outlines of glyphs that are themselves COLR base glyphs.
+// preference. It is the only outline accessor: see glyphOutlinePath for why the preference order is never wanted here.
 func (t *Typeface) faceGlyphOutline(gid opentype.GID) (tsfont.GlyphOutline, bool) {
 	t.faceMu.Lock()
 	defer t.faceMu.Unlock()

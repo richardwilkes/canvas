@@ -410,6 +410,81 @@ func TestCOLRv1NestedPaintGlyph(t *testing.T) {
 	}
 }
 
+func TestCOLRv1CompositeLayerBudget(t *testing.T) {
+	// Every PaintComposite pushes two full-mask ARGB layers that stay live while its source subtree is walked, so the
+	// depth cap alone would allow 2*colrV1MaxDepth of them at once over a mask that may itself approach
+	// maxGlyphWidth x maxGlyphHeight. saveLayer must refuse once the budget is spent, leave the stacks untouched when
+	// it does (so the caller's restoreToCount stays balanced), and hand the bytes back when a layer pops.
+	const side = 64
+	cv := newColrV1Canvas(raster.NewPixmap(side, side), side, side, geom.IdentityMatrix())
+	if cv.layerBudget != colrV1MaxLayerBytes {
+		t.Errorf("fresh canvas budget %d, want %d", cv.layerBudget, int64(colrV1MaxLayerBytes))
+	}
+	cv.layerBudget = 2 * cv.layerBytes() // room for exactly two layers
+	for i := range 2 {
+		if !cv.saveLayer(raster.BlendSrcOver) {
+			t.Fatalf("saveLayer %d was refused inside the budget", i)
+		}
+	}
+	saves, devs, modes := cv.saveCount(), len(cv.devs), len(cv.modes)
+	if cv.saveLayer(raster.BlendSrcOver) {
+		t.Fatal("saveLayer past the budget must be refused")
+	}
+	if cv.saveCount() != saves || len(cv.devs) != devs || len(cv.modes) != modes {
+		t.Errorf("a refused saveLayer disturbed the stacks: saves %d->%d devs %d->%d modes %d->%d",
+			saves, cv.saveCount(), devs, len(cv.devs), modes, len(cv.modes))
+	}
+	cv.restore()
+	if !cv.saveLayer(raster.BlendSrcOver) {
+		t.Error("popping a layer must return its bytes to the budget")
+	}
+
+	// The shipped budget is well clear of what a real color glyph needs: a mask at the atlas ceiling can still push a
+	// full depth cap's worth of composites (two layers each).
+	const big = SideTooBigForAtlas
+	ordinary := newColrV1Canvas(raster.NewPixmap(big, big), big, big, geom.IdentityMatrix())
+	for i := range 2 * colrV1MaxDepth {
+		if !ordinary.saveLayer(raster.BlendSrcOver) {
+			t.Fatalf("layer %d of a %dx%d mask was refused; the budget is too tight for ordinary glyphs", i, big, big)
+		}
+	}
+}
+
+func TestCOLRv1CompositeBudgetFailsTheSubtree(t *testing.T) {
+	// End to end through the walker: a composite chain whose layers the budget cannot cover fails the traversal the
+	// same way the depth cap does, and unwinds to a balanced canvas. PaintSolid with palette index 0xFFFF resolves to
+	// the (zero) foreground color without touching the face, so no real typeface is needed.
+	build := func(nesting int) tables.PaintTable {
+		solid := tables.PaintSolid{PaletteIndex: 0xFFFF, Alpha: 1 << 14}
+		var p tables.PaintTable = solid
+		for range nesting {
+			p = tables.PaintComposite{BackdropPaint: solid, SourcePaint: p}
+		}
+		return p
+	}
+	const side = 32
+	for _, c := range []struct {
+		nesting int
+		want    bool
+	}{{nesting: 2, want: true}, {nesting: 3, want: false}} {
+		cv := newColrV1Canvas(raster.NewPixmap(side, side), side, side, geom.IdentityMatrix())
+		cv.layerBudget = 5 * cv.layerBytes() // enough for two nested composites, one layer short of three
+		w := &colrV1Walker{c: &ScalerContext{}, t: &Typeface{}, canvas: cv, visited: map[uint16]bool{}}
+		if got := w.traverse(build(c.nesting)); got != c.want {
+			t.Errorf("%d nested composites: traverse = %v, want %v", c.nesting, got, c.want)
+		}
+		cv.restoreToCount(0)
+		if len(cv.devs) != 1 || len(cv.modes) != 0 {
+			t.Errorf("%d nested composites: unwound to %d devices / %d modes, want 1/0",
+				c.nesting, len(cv.devs), len(cv.modes))
+		}
+		if cv.layerBudget != 5*cv.layerBytes() {
+			t.Errorf("%d nested composites: budget %d after unwinding, want %d",
+				c.nesting, cv.layerBudget, 5*cv.layerBytes())
+		}
+	}
+}
+
 func TestCOLRv1DepthGuard(t *testing.T) {
 	// A synthetic non-cyclic chain deeper than colrV1MaxDepth must fail the traversal (the walker cannot recurse
 	// without bound); a shallow chain succeeds. Bounds mode exercises the shared guard without needing a scaler

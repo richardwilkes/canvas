@@ -13,6 +13,7 @@
 package fontmgr
 
 import (
+	"math"
 	"testing"
 
 	"github.com/richardwilkes/canvas/font"
@@ -67,6 +68,72 @@ func TestMatchStyleCSS3(t *testing.T) {
 					want.Weight(), want.Width(), want.Slant())
 			}
 		}
+	}
+}
+
+// TestCSS3ScoreTierPriority pins the priority css3Score documents — width, then slant, then weight — as a strict tier
+// ordering: no difference in a lower tier may ever outrank a difference in a higher one. Upstream Skia shifts both
+// tiers by 8 bits, which is one bit too few for a weight addend that reaches 1000, so a weight score >= 256 carries
+// into the slant field.
+func TestCSS3ScoreTierPriority(t *testing.T) {
+	pattern := font.NewStyle(font.WeightNormal, font.WidthNormal, font.SlantUpright)
+	weights := []int{
+		font.WeightInvisible, font.WeightThin, font.WeightLight, font.WeightNormal,
+		font.WeightMedium, font.WeightBold, font.WeightBlack, font.WeightExtraBlack,
+	}
+	// Both lists run from the pattern's best match to its worst, per the tier's own scoring: the slant table's upright
+	// row is upright > oblique > italic, and the width score for a normal-width pattern falls off toward condensed and
+	// then jumps below every condensed width for the expanded ones.
+	slants := []font.Slant{font.SlantUpright, font.SlantOblique, font.SlantItalic}
+	widths := []int{
+		font.WidthNormal, font.WidthSemiCondensed, font.WidthCondensed, font.WidthExtraCondensed,
+		font.WidthUltraCondensed, font.WidthSemiExpanded, font.WidthExpanded, font.WidthExtraExpanded,
+		font.WidthUltraExpanded,
+	}
+
+	// Within one width, every slant tier must sit entirely above the next: the worst score of the better slant beats
+	// the best score of the worse one, whatever the weights are.
+	for _, width := range widths {
+		prevLow, prevSlant := math.MaxInt, font.SlantUpright
+		for _, slant := range slants {
+			low, high := math.MaxInt, math.MinInt
+			for _, weight := range weights {
+				s := css3Score(pattern, font.NewStyle(weight, width, slant))
+				low, high = min(low, s), max(high, s)
+			}
+			if high >= prevLow {
+				t.Errorf("width %d: slant %d scores up to %d, at or above slant %d's floor of %d — the weight tier "+
+					"carries into the slant tier", width, slant, high, prevSlant, prevLow)
+			}
+			prevLow, prevSlant = low, slant
+		}
+	}
+
+	// And every width tier must sit entirely above the next, whatever the slants and weights are.
+	prevLow, prevWidth := math.MaxInt, font.WidthNormal
+	for _, width := range widths {
+		low, high := math.MaxInt, math.MinInt
+		for _, slant := range slants {
+			for _, weight := range weights {
+				s := css3Score(pattern, font.NewStyle(weight, width, slant))
+				low, high = min(low, s), max(high, s)
+			}
+		}
+		if high >= prevLow {
+			t.Errorf("width %d scores up to %d, at or above width %d's floor of %d — a lower tier carries into the "+
+				"width tier", width, high, prevWidth, prevLow)
+		}
+		prevLow, prevWidth = low, width
+	}
+
+	// The reported case: for an upright 400 request, an exact-weight italic face must not outrank an upright 900 one.
+	italic400 := font.NewStyle(font.WeightNormal, font.WidthNormal, font.SlantItalic)
+	upright900 := font.NewStyle(font.WeightBlack, font.WidthNormal, font.SlantUpright)
+	set := []font.Style{italic400, upright900}
+	order := rankStylesCSS3(pattern, len(set), func(i int) font.Style { return set[i] })
+	if got := set[order[0]]; got != upright900 {
+		t.Errorf("upright 400 request ranked (%d,%d,%d) first, want the upright 900 face",
+			got.Weight(), got.Width(), got.Slant())
 	}
 }
 

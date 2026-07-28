@@ -445,7 +445,7 @@ func (c *ScalerContext) generateMetrics(packedID PackedGlyphID) glyphMetrics {
 		var bounds geom.Rect
 		if layers, isV0 := paint.(tables.PaintColrLayersResolved); isV0 {
 			for _, layer := range layers {
-				if layerPath := glyphRawOutlinePath(t, layer.GlyphID, c.mapDesignPoint); layerPath != nil {
+				if layerPath := glyphOutlinePath(t, layer.GlyphID, c.mapDesignPoint); layerPath != nil {
 					if b := layerPath.Bounds(); !b.IsEmpty() {
 						bounds.Join(b)
 					}

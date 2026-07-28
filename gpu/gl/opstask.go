@@ -930,6 +930,12 @@ func (t *OpsTask) recordOp(op Op, usesMSAA bool, processorAnalysis ProcessorAnal
 	// (GetOpsRenderPass → EnsureDynamicMSAAAttachment).
 
 	if !op.opBase().Bounds().IsFinite() {
+		// The op is dropped, so nothing downstream takes over the reference setupDstProxyView left on the dst proxy (the
+		// merge path releases it, makeOpChain transfers it into the chain); release it here or the backing texture never
+		// returns to the resource cache.
+		if dstProxyView != nil {
+			releaseDstProxy(dstProxyView)
+		}
 		return
 	}
 

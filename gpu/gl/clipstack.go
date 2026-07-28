@@ -330,10 +330,12 @@ func drawToSWMask(helper *swMaskHelper, e *ClipElement, clearMask bool) {
 	}
 
 	if invert {
-		// Draw the inverse-filled version of the shape with 0 coverage to erase everything outside the element.
-		inverted := e.Shape
+		// Draw the inverse-filled version of the shape with 0 coverage to erase everything outside the element. The
+		// shape must be cloned rather than copied: a struct copy shares the path member with the live clip element, and
+		// Shape.SetInverted toggles that path's fill type in place, which would leave the element itself inverted.
+		inverted := cloneShape(&e.Shape)
 		inverted.SetInverted(true)
-		helper.drawShape(&inverted, &e.LocalToDevice, e.AA, alpha)
+		helper.drawShape(inverted, &e.LocalToDevice, e.AA, alpha)
 	} else {
 		helper.drawShape(&e.Shape, &e.LocalToDevice, e.AA, alpha)
 	}

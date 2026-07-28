@@ -319,6 +319,44 @@ func TestSWMaskHelperPixels(t *testing.T) {
 	}
 }
 
+func TestSWMaskInvertLaneLeavesElementUnchanged(t *testing.T) {
+	var h swMaskHelper
+	if !h.init(geom.IRect{Left: 0, Top: 0, Right: 16, Bottom: 16}) {
+		t.Fatal("init failed")
+	}
+	at := func(x, y int32) uint8 { return h.pixels[int(y)*16+int(x)] }
+	identity := geom.IdentityMatrix()
+
+	// A leading intersect covering the whole mask, so the path element that follows takes the invert lane.
+	drawToSWMask(&h, &ClipElement{
+		Shape: MakeShapeRect(geom.Rect{Right: 16, Bottom: 16}), LocalToDevice: identity,
+		Op: raster.ClipIntersect, AA: gpu.AANo,
+	}, true)
+
+	p := &path.Path{}
+	p.AddRect(geom.Rect{Left: 2, Top: 2, Right: 10, Bottom: 10}, geom.DirectionCW)
+	e := &ClipElement{
+		Shape: MakeShapePath(p), LocalToDevice: identity,
+		Op: raster.ClipIntersect, AA: gpu.AANo,
+	}
+	held := e.Shape.Path() // the live path the element holds; the invert lane must not touch it
+	drawToSWMask(&h, e, false)
+
+	if e.Shape.Inverted() {
+		t.Fatal("the invert lane left the clip element inverted")
+	}
+	if held.IsInverseFillType() {
+		t.Fatal("the invert lane toggled the clip element's live path fill type")
+	}
+	// The mask still has to reflect the intersect: inside the path keeps coverage, outside is erased.
+	if at(6, 6) != 0xFF {
+		t.Fatalf("inside path element = %d, want 255", at(6, 6))
+	}
+	if at(13, 13) != 0x00 {
+		t.Fatalf("outside path element = %d, want 0", at(13, 13))
+	}
+}
+
 //////////////////////////////////////////////////////////////////////////////
 // ClipStack bookkeeping
 
@@ -644,6 +682,56 @@ func TestClipStackApplySWMask(t *testing.T) {
 	cs.Restore()
 	if len(cs.masks) != 0 {
 		t.Fatalf("masks after restore = %d, want 0", len(cs.masks))
+	}
+}
+
+func TestClipStackApplySWMaskTwoPaths(t *testing.T) {
+	dc := newFakeDirectContext(t)
+	sdc := newDrawTestSDC(t, dc, 64, 64)
+	defer sdc.Release()
+	identity := geom.IdentityMatrix()
+
+	// Two concave AA paths both land in the SW mask lane, so the second one is rendered through the inverse-fill
+	// erase. Rendering the mask must not mutate the stack's elements: a later apply walks them again and rejects any
+	// inverted element.
+	concave := func(dx float32) *path.Path {
+		p := &path.Path{}
+		p.MoveTo(10+dx, 10)
+		p.LineTo(54+dx, 10)
+		p.LineTo(32+dx, 30) // notch back toward the center
+		p.LineTo(54+dx, 54)
+		p.LineTo(10+dx, 54)
+		p.Close()
+		return p
+	}
+	cs := NewClipStack(deviceBounds64(), false)
+	first := concave(0)
+	second := concave(4)
+	cs.ClipPath(&identity, first, gpu.AAYes, raster.ClipIntersect)
+	cs.ClipPath(&identity, second, gpu.AAYes, raster.ClipIntersect)
+
+	op, bounds := applyTestOp(geom.Rect{Left: 0, Top: 0, Right: 64, Bottom: 64})
+	out := MakeAppliedClip(sdc.Dimensions())
+	if effect := cs.Apply(sdc, op, gpu.AATypeCoverage, &out, &bounds); effect != ClipEffectClipped {
+		t.Fatalf("two-path effect = %v, want clipped", effect)
+	}
+	if len(cs.masks) != 1 {
+		t.Fatalf("masks recorded = %d, want 1", len(cs.masks))
+	}
+	for i, e := range cs.elements {
+		if e.Shape.Inverted() {
+			t.Fatalf("element %d was left inverted by the mask render", i)
+		}
+	}
+	if first.IsInverseFillType() || second.IsInverseFillType() {
+		t.Fatal("the mask render toggled a caller-supplied path's fill type")
+	}
+
+	// The second apply walks the same elements; with a mutated element it panics on the inverted-element check.
+	op, bounds = applyTestOp(geom.Rect{Left: 0, Top: 0, Right: 64, Bottom: 64})
+	out = MakeAppliedClip(sdc.Dimensions())
+	if effect := cs.Apply(sdc, op, gpu.AATypeCoverage, &out, &bounds); effect != ClipEffectClipped {
+		t.Fatalf("second two-path effect = %v, want clipped", effect)
 	}
 }
 

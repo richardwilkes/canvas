@@ -294,13 +294,17 @@ func (dc *DirectContext) PerformDeferredCleanup(notUsedSince time.Duration, opts
 	dc.ResourceCache().PurgeResourcesNotUsedSince(purgeTime, opts)
 }
 
-// Destroy tears down the context, flushing and releasing all resources. The context must be current.
+// Destroy tears down the context, flushing and releasing all resources, and leaves it abandoned. The context must be
+// current. Calling it more than once (or after AbandonContext) does nothing.
 func (dc *DirectContext) Destroy() {
-	if !dc.Abandoned() {
-		dc.FlushAndSubmit(false)
-		// Make sure all work is finished on the GPU before releasing resources.
-		dc.gpu.FinishOutstandingGpuWork()
+	if dc.Abandoned() {
+		// Everything this would release is already gone, and re-running the flush would drive an emptied cache.
+		return
 	}
-	dc.drawingManager.destroy()
-	dc.ResourceCache().ReleaseAll()
+	dc.FlushAndSubmit(false)
+	// ReleaseResourcesAndAbandonContext does the rest — including the Gpu's own GL objects (the linked programs, the
+	// temp/stencil-clear FBOs, the mipmap programs and the sampler-object cache), which are not gpu.Resources and so
+	// survive a bare ResourceCache().ReleaseAll(); it also fires the registered finished callbacks and marks the Gpu
+	// abandoned so a second Destroy is a no-op.
+	dc.ReleaseResourcesAndAbandonContext()
 }

@@ -305,6 +305,33 @@ func TestOpContourHeadAppendRemove(t *testing.T) {
 	head.remove(&head.opContour)
 }
 
+// TestJoinAllSegmentsAfterSort checks that joinAllSegments starts its walk at listHead: once sortContourList re-seats
+// the head, a contour that sorts ahead of the physically-first (embedded) contour must still have its segment ends
+// joined. Walking from &h.opContour instead would silently skip it.
+func TestJoinAllSegmentsAfterSort(t *testing.T) {
+	head, state := newTestContourHead()
+	// The embedded contour gets the lower (larger-top) bounds, so the appended one sorts ahead of it.
+	head.addLine([]geom.Point{pt(0, 50), pt(100, 150)})
+	head.setBounds()
+	c2 := head.appendContour()
+	c2.init(state, false, false)
+	c2.addLine([]geom.Point{pt(0, 0), pt(10, 10)})
+	c2.setBounds()
+	if !sortContourList(head, false, false) {
+		t.Fatal("sortContourList reported no contour with geometry")
+	}
+	if head.listHead() != c2 {
+		t.Fatal("the smaller-bounds contour should have been re-seated as the list head")
+	}
+	head.joinAllSegments()
+	for name, c := range map[string]*opContour{"re-seated head": c2, "embedded": &head.opContour} {
+		seg := c.first()
+		if !seg.tail.ptT.containsPtT(&seg.head.ptT) {
+			t.Errorf("%s contour's segment ends were not joined", name)
+		}
+	}
+}
+
 func equalFloats(a, b []float64) bool {
 	if len(a) != len(b) {
 		return false

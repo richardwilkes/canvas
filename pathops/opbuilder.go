@@ -104,7 +104,7 @@ func fixWinding(p *path.Path) (*path.Path, bool) {
 		return p, true
 	}
 	woundPath := newPathWriter(fillType)
-	for test := &head.opContour; test != nil; test = test.next {
+	for test := head.listHead(); test != nil; test = test.next {
 		if test.count == 0 {
 			continue
 		}

@@ -731,8 +731,10 @@ func (s *opSegment) markAndChaseWindingBinary(start, end *opSpanBase, winding, o
 		if spanStart.windSum != skMinS32 {
 			if s.operand() == other.operand() {
 				if spanStart.windSum != winding || spanStart.oppSum != oppWinding {
-					s.globalState().setWindingFailed()
-					return true // ... but let it succeed anyway
+					// The already-assigned sums disagree with the ones being chased, so the angle sort produced an
+					// inconsistent walk. There is no abort path for that: stop chasing and report success, leaving
+					// whichever sums were assigned first in place.
+					return true
 				}
 			} else {
 				if spanStart.windSum != oppWinding {

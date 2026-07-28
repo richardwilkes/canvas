@@ -9,9 +9,9 @@
 
 // The segment construction surface: a monotonic curve of a contour holding the span list threaded from head (t==0) to
 // tail (t==1). This slice builds the data model and inserts intersection t values: init,
-// addLine/addQuad/addConic/addCubic, addT, insert, the geometry accessors, and the point-matching helpers. The
-// walking/winding/angle/coincidence machinery (activeOp, findNext*, calcAngles, moveNearby, subDivide, …) arrives with
-// its consumers.
+// addLine/addQuad/addConic/addCubic, addT, insert, subDivide, the geometry accessors, the point-matching helpers, and
+// the angle-loop build/sort (calcAngles, sortAngles). The walking/winding/coincidence machinery (activeOp, findNext*,
+// moveNearby, …) lives with its consumers.
 
 package pathops
 

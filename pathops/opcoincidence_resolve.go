@@ -726,6 +726,9 @@ func (co *opCoincidence) addOrOverlap(coinSeg, oppSeg *opSegment, coinTs, coinTe
 	if csExisting != nil && csExisting == ceExisting {
 		return false
 	}
+	// Deliberately asymmetric with the os/oe block below: the matching middle guard here — csExisting != nil &&
+	// (csExisting == ce || csExisting.containsPtT(pickPtT(ceExisting, ce))) — is commented out upstream, so it is
+	// omitted rather than transcribed. Restoring it rejects runs that are currently accepted.
 	if ceExisting != nil && (ceExisting == cs || ceExisting.containsPtT(pickPtT(csExisting, cs))) {
 		return false
 	}

@@ -26,7 +26,6 @@ type intersections struct {
 	isCoin     [2]uint16      // per-curve coincident-t bitfields
 	nearlySame [2]bool        // true if an end pair nearly matches
 	allowNear  bool           // whether near (not just exact) matches are accepted
-	swap       bool           // whether curve one/two are swapped in insertSwap
 }
 
 // newIntersections returns a zeroed intersections with reset() applied; the caller must set max before inserting.
@@ -37,7 +36,8 @@ func newIntersections() *intersections {
 	return in
 }
 
-// reset clears the used count and coincidence bits, leaving swap and max alone.
+// reset clears the used count and coincidence bits and re-enables near matching, leaving max alone. Because merge()
+// resets, a setAllowNear(false) does not survive it; callers that need near matching off must re-apply it.
 func (in *intersections) reset() {
 	in.allowNear = true
 	in.used = 0
@@ -177,17 +177,9 @@ func (in *intersections) insertNear(one, two float64, pt1 dPoint) {
 	in.insert(one, two, pt1)
 }
 
-// insertSwap inserts (one, two) swapped when the swap flag is set.
-func (in *intersections) insertSwap(one, two float64, pt dPoint) int {
-	if in.swap {
-		return in.insert(two, one, pt)
-	}
-	return in.insert(one, two, pt)
-}
-
-// insertCoincident inserts (swap-aware) and marks the resulting entry coincident. Returns the insertion index or -1.
+// insertCoincident inserts and marks the resulting entry coincident. Returns the insertion index or -1.
 func (in *intersections) insertCoincident(one, two float64, pt dPoint) int {
-	index := in.insertSwap(one, two, pt)
+	index := in.insert(one, two, pt)
 	if index >= 0 {
 		in.setCoincident(index)
 	}

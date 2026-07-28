@@ -40,7 +40,6 @@ type opGlobalState struct {
 	contourHead     *opContourHead
 	nested          int
 	allocatedOpSpan bool
-	windingFailed   bool
 	phase           opPhase
 }
 
@@ -59,9 +58,6 @@ func (g *opGlobalState) setContourHead(head *opContourHead) { g.contourHead = he
 
 // setCoincidence records the coincidence tracker used by this run.
 func (g *opGlobalState) setCoincidence(coincidence *opCoincidence) { g.coincidence = coincidence }
-
-// setWindingFailed flags that the run has failed, called in the rare cases where angles sort incorrectly.
-func (g *opGlobalState) setWindingFailed() { g.windingFailed = true }
 
 // setPhase updates the walker's phase; opPhaseNoChange leaves the phase untouched.
 func (g *opGlobalState) setPhase(phase opPhase) {

@@ -22,7 +22,8 @@ import "math"
 //
 // The multipliers on the machine epsilons are empirical: they were chosen to make the suite pass, not derived from an
 // error analysis, and there is no metric that says a given value is right. dblEpsilonErr in particular sets the slack
-// of the five precisely* predicates below, so changing it shifts pathops output across the board.
+// of six of the seven precisely* predicates below (preciselyZeroWhenComparedTo is the exception; it scales the plain
+// dblEpsilon by its comparand), so changing it shifts pathops output across the board.
 const (
 	fltEpsilon             = 1.1920928955078125e-07 // float32 machine epsilon == 2^-23
 	dblEpsilon             = 2.2204460492503131e-16 // float64 machine epsilon == 2^-52

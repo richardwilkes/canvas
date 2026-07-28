@@ -10,8 +10,7 @@
 // The line, quad, and cubic lanes of degenerate-curve reduction: collapse a curve to the lowest-order form it actually
 // represents (point/line/quad/cubic). The reduced geometry is stored in the receiver's line/quad/cubic fields (only one
 // is populated per call, playing the role a union would in C). Also includes the
-// reduceOrderQuad/reduceOrderConic/reduceOrderCubic verb classifiers (a conic reduces via its quad control points). The
-// conic reduce lane arrives with a later curve-pair solver slice.
+// reduceOrderQuad/reduceOrderConic/reduceOrderCubic verb classifiers (a conic reduces via its quad control points).
 
 package pathops
 

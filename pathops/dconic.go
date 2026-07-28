@@ -10,9 +10,8 @@
 // The double-precision rational-quadratic (conic) primitive. Present are the members reachable from the conic/line
 // intersection layer (set/debugSet, ptAtT, the weight, and the conic polynomial eval helpers) and the curve-vs-curve
 // members the conic solver consumes (hullIntersects in all three forms, dxdyAtT, conicFindExtrema, subDivide,
-// collapsed, controlsInside, otherPts, the monotonic checks — most delegating to the underlying dQuad pts). The conic
-// bounds live in drect.go (setBoundsConic). The remaining members (align, subDivide(a,c,…)) arrive with the opSegment
-// slice.
+// subDivideAC, collapsed, controlsInside, otherPts, the monotonic checks — most delegating to the underlying dQuad
+// pts). The conic bounds live in drect.go (setBoundsConic).
 
 package pathops
 
@@ -202,9 +201,9 @@ func (c dConic) subDivide(t1, t2 float64) dConic {
 	return dst
 }
 
-// subDivideAC returns the middle control point and new weight of the sub-conic over [t1, t2]. The endpoint arguments a
-// and c are ignored — the caller has already set the endpoints exactly — so only the interior control point and weight
-// are computed.
+// subDivideAC returns the middle control point and new weight of the sub-conic over [t1, t2]. The caller already has
+// the endpoints (a and c) exactly, so they are neither recomputed nor returned; only the interior control point and the
+// weight are.
 func (c dConic) subDivideAC(t1, t2 float64) (mid dPoint, weight float32) {
 	chopped := c.subDivide(t1, t2)
 	return chopped.pts.pts[1], chopped.weight

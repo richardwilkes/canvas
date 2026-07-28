@@ -9,8 +9,9 @@
 
 // The contour construction surface: a contour holds a forward-linked list of segments (the first stored by value as
 // head), plus opContourHead (the list head with appendContour/remove) and opContourBuilder (the line-combining front
-// end the edge builder drives). This slice covers the pieces that build the data model; the walking helpers
-// (calcAngles, sortAngles, toPath, missingCoincidence, …) arrive with their consumers.
+// end the edge builder drives). Also holds the per-contour fan-out of the walking helpers (calcAngles, sortAngles,
+// toPath/toReversePath, missingCoincidence, …), each of which just runs its segment-level counterpart across the
+// contour's segment list.
 
 package pathops
 
@@ -288,7 +289,7 @@ func (h *opContourHead) remove(contour *opContour) {
 // joinAllSegments runs joinSegments on every non-empty contour in the list (fixWinding calls this before the
 // fix-winding ray-cast walk).
 func (h *opContourHead) joinAllSegments() {
-	for next := &h.opContour; next != nil; next = next.next {
+	for next := h.listHead(); next != nil; next = next.next {
 		if next.count == 0 {
 			continue
 		}

@@ -216,7 +216,14 @@ func (w *pathWriter) assemble() {
 	if !w.someAssemblyRequired() {
 		return
 	}
-	runs := w.endPtTs // starts, ends of partial contours (shares backing with fEndPtTs)
+	// The partials are consumed into w.builder below (or abandoned, when the link walk cannot continue), so they must
+	// not survive into the next contour: opContour.toPath/toReversePath call assemble() once per contour on a writer
+	// shared across the whole path, and stale partials would be re-walked and their geometry emitted a second time.
+	defer func() {
+		w.partials = nil
+		w.endPtTs = nil
+	}()
+	runs := w.endPtTs // starts, ends of partial contours (shares backing with w.endPtTs)
 	endCount := len(w.endPtTs)
 	// lengthen any partial contour adjacent to a simple segment
 	for pIndex := 0; pIndex < endCount; pIndex++ {

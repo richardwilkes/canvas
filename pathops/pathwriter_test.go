@@ -174,3 +174,52 @@ func TestPathWriterConic(t *testing.T) {
 		t.Fatal("expected a conic verb in the output")
 	}
 }
+
+// TestPathWriterAssembleClearsPartials checks that assemble() consumes the partial contours it stitches. Contours share
+// one writer across a whole path (opContour.toPath/toReversePath each call assemble()), so partials left behind by one
+// contour would be re-walked and re-emitted by the next.
+func TestPathWriterAssembleClearsPartials(t *testing.T) {
+	w := newPathWriter(path.FillWinding)
+	// t values away from 0 and 1 keep assemble's "lengthen adjacent simple segment" walk off these span-less nodes.
+	a := selfPtT(0, 0)
+	a.t = 0.5
+	b := selfPtT(10, 0)
+	b.t = 0.5
+	w.deferredMove(a)
+	if !w.deferredLine(b) {
+		t.Fatal("deferredLine should have accepted a point that does not close the contour")
+	}
+	w.finishContour()
+	if len(w.partials) != 1 || len(w.endPtTs) != 2 {
+		t.Fatalf("open contour should be stashed: %d partials, %d endPtTs; want 1, 2", len(w.partials), len(w.endPtTs))
+	}
+
+	w.assemble()
+	first := pathVerbs(w.nativePath())
+	if len(first) == 0 {
+		t.Fatal("assemble should have emitted the partial contour into the output")
+	}
+	if len(w.partials) != 0 || len(w.endPtTs) != 0 {
+		t.Fatalf("assemble left %d partials / %d endPtTs behind", len(w.partials), len(w.endPtTs))
+	}
+
+	// The next contour's assemble() must find nothing left to do rather than re-emitting the same geometry.
+	w.assemble()
+	if second := pathVerbs(w.nativePath()); len(second) != len(first) {
+		t.Fatalf("second assemble() re-emitted stale partials: verbs %v, want %v", second, first)
+	}
+}
+
+// pathVerbs returns the verb sequence of p.
+func pathVerbs(p *path.Path) []path.Verb {
+	var verbs []path.Verb
+	it := path.NewRawIter(p)
+	for {
+		verb, _, _, ok := it.Next()
+		if !ok {
+			break
+		}
+		verbs = append(verbs, verb)
+	}
+	return verbs
+}

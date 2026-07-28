@@ -12,9 +12,8 @@
 // machinery cubicCoefficients/cubicRootsReal/cubicRootsValidT/cubicFindExtrema/ findInflections plus the
 // searchRoots/binarySearch used when a solved root does not land on the axis) and the curve-vs-curve members the cubic
 // solver consumes (hullIntersects in all three forms over convexHull, otherPts, dxdyAtT, chopAt, subDivide, collapsed,
-// controlsInside), plus the edge-builder members (findMaxCurvature, calcPrecision, toFloatPoints, complexBreak). The
-// convex-hull machinery lives in dcubichull.go. The remaining members (align, subDivide(a,d,…), toQuad, top, …) arrive
-// with the opSegment slice.
+// controlsInside), the edge-builder members (findMaxCurvature, calcPrecision, toFloatPoints, complexBreak), and the
+// opSegment members (align, subDivideAD). The convex-hull machinery lives in dcubichull.go.
 
 package pathops
 

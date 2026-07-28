@@ -349,21 +349,6 @@ func TestTCoincidentMarkCoincident(t *testing.T) {
 	}
 }
 
-func TestTSpanLinearT(t *testing.T) {
-	c := tq(dq(0, 0, 1, 1e-7, 2, 0)) // essentially the segment (0,0)->(2,0)
-	s := newTSpan(c)
-	s.init(c)
-	if got := s.linearT(dPoint{x: 1, y: 0}); math.Abs(got-0.5) > 1e-6 {
-		t.Errorf("linearT(mid)=%g want 0.5", got)
-	}
-	if got := s.linearT(s.pointFirst()); math.Abs(got) > 1e-9 {
-		t.Errorf("linearT(first)=%g want 0", got)
-	}
-	if got := s.linearT(s.pointLast()); math.Abs(got-1) > 1e-9 {
-		t.Errorf("linearT(last)=%g want 1", got)
-	}
-}
-
 func TestTSpanLinearsIntersect(t *testing.T) {
 	mk := func(q dQuad) *tSpan {
 		s := newTSpan(tq(q))

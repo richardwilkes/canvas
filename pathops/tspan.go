@@ -230,15 +230,6 @@ func (s *tSpan) initBounds(c tCurve) bool {
 	return s.bounds.valid()
 }
 
-// linearT returns the parameter along the span's chord (from first to last point) that pt projects to.
-func (s *tSpan) linearT(pt dPoint) float64 {
-	length := s.pointLast().sub(s.pointFirst())
-	if math.Abs(length.x) > math.Abs(length.y) {
-		return (pt.x - s.pointFirst().x) / length.x
-	}
-	return (pt.y - s.pointFirst().y) / length.y
-}
-
 // linearIntersects treats this (near-linear) span's extreme points as a line and tests which side of it q2's points
 // fall on. Returns 0 (all one side), 1 (crosses or exactly on), or 3 (approximately on).
 func (s *tSpan) linearIntersects(q2 tCurve) int {

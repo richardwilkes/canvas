@@ -7,11 +7,10 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// The point-and-t records threaded through a segment: opPtT, opSpanBase, and opSpan. This slice provides the structures
-// and their construction/addT surface (the pt-t loop machinery, the span linked list, containment queries). The
-// intersection-time methods that depend on the coincidence tracker and the angle sort (addOpp's merge,
-// merge/mergeMatches/release, the winding sums, calcAngles) arrive with those pieces; the fields are declared now so
-// the data model has its final shape.
+// The point-and-t records threaded through a segment: opPtT, opSpanBase, and opSpan. Provides the structures and their
+// construction/addT surface (the pt-t loop machinery, the span linked list, containment queries) plus the
+// intersection-time methods that fold spans together and carry the walk's bookkeeping (addOpp, merge, mergeMatches,
+// release, setWindSum/setOppSum). The angle loops those spans point at are built in opsegment.go.
 
 package pathops
 
@@ -33,22 +32,20 @@ const (
 // opPtT is a point/t value on a segment, linked into a loop of coincident points across segments (or aliases on the
 // same curve).
 type opPtT struct {
-	span        *opSpanBase
-	next        *opPtT     // intersection on the opposite curve or alias on this curve
-	t           float64    // the curve parameter
-	pt          geom.Point // cache of the point value at t
-	deleted     bool
-	duplicatePt bool // set if an identical pt is somewhere in the next loop
-	coincident  bool // set if at some point a coincident span pointed here
+	span       *opSpanBase
+	next       *opPtT     // intersection on the opposite curve or alias on this curve
+	t          float64    // the curve parameter
+	pt         geom.Point // cache of the point value at t
+	deleted    bool
+	coincident bool // set if at some point a coincident span pointed here
 }
 
 // init sets up the pt-t record as a fresh, single-element loop (next points to itself).
-func (p *opPtT) init(span *opSpanBase, t float64, pt geom.Point, duplicate bool) {
+func (p *opPtT) init(span *opSpanBase, t float64, pt geom.Point) {
 	p.t = t
 	p.pt = pt
 	p.span = span
 	p.next = p
-	p.duplicatePt = duplicate
 	p.deleted = false
 	p.coincident = false
 }
@@ -237,7 +234,7 @@ type opSpanBase struct {
 // initBase sets up the shared span-base fields, starting the pt-t and coincident-end loops as single-element loops.
 func (b *opSpanBase) initBase(segment *opSegment, prev *opSpan, t float64, pt geom.Point) {
 	b.segment = segment
-	b.ptT.init(b, t, pt, false)
+	b.ptT.init(b, t, pt)
 	b.coinEnd = b
 	b.fromAngleP = nil
 	b.prev = prev
@@ -542,25 +539,25 @@ func (s *opSpan) setNext(next *opSpanBase) { s.next = next }
 func (s *opSpan) setDone(done bool)        { s.done = done }
 func (s *opSpan) markAdded()               { s.alreadyAdded = true }
 func (s *opSpan) toAngle() *opAngle        { return s.toAngleP }
-func (s *opSpan) setToAngle(angle *opAngle) {
-	// fromCoincidence never sets a toAngle; only calcAngles/sortAngles do.
-	s.toAngleP = angle
-}
 
-// setWindSum assigns the winding sum unless it was already set to a different value, in which case the boolean
-// operation has failed.
+// setToAngle records the angle leading out of this span. Only the angle-loop build and sort (calcAngles/sortAngles in
+// opsegment.go) call it; the coincidence machinery never assigns a toAngle.
+func (s *opSpan) setToAngle(angle *opAngle) { s.toAngleP = angle }
+
+// setWindSum assigns the winding sum, ignoring the assignment if the sum was already set to a different value. Such a
+// conflict means the angle sort produced an inconsistent walk, but there is no abort path: the first value assigned
+// wins and the run continues, so Op/Simplify can return an inconsistently wound result rather than reporting failure.
 func (s *opSpan) setWindSum(windSum int) {
 	if s.windSum != skMinS32 && s.windSum != windSum {
-		s.globalState().setWindingFailed()
 		return
 	}
 	s.windSum = windSum
 }
 
-// setOppSum assigns the opposite-operand winding sum unless it was already set to a different value.
+// setOppSum assigns the opposite-operand winding sum, ignoring the assignment on a conflict for the same reason (and
+// with the same consequence) as setWindSum.
 func (s *opSpan) setOppSum(oppSum int) {
 	if s.oppSum != skMinS32 && s.oppSum != oppSum {
-		s.globalState().setWindingFailed()
 		return
 	}
 	s.oppSum = oppSum

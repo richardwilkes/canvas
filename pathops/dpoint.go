@@ -8,9 +8,9 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // Double-precision 2D vector and point primitives used throughout the pathops geometry, since the boolean-operation
-// math needs more precision than the float32 host types (geom.Point) provide. Only the members reachable from the
-// currently-implemented line intersection layer and its tests are present; the curve-dependent statics (dPointMid,
-// dPointWayRoughlyEqual, …) arrive with the quad/cubic slices.
+// math needs more precision than the float32 host types (geom.Point) provide. Covers the members the line intersection
+// layer reaches plus the curve-dependent free functions (dPointMid, dPointWayRoughlyEqual, …) the quad/cubic layers
+// use.
 
 package pathops
 

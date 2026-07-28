@@ -229,8 +229,8 @@ func (lc *lineCubicIntersections) addExactEndPoints() {
 	}
 }
 
-// addNearEndPoints adds the cubic endpoints that lie near (but not exactly on) the line. Note that this does not look
-// for endpoints of the line near the cubic; those are found later by addLineNearEndPoints / checkCoincident.
+// addNearEndPoints adds the cubic endpoints that lie near (but not exactly on) the line, then adds the line's endpoints
+// that lie near the cubic.
 func (lc *lineCubicIntersections) addNearEndPoints() {
 	for cIndex := 0; cIndex < 4; cIndex += 3 {
 		cubicT := float64(cIndex >> 1)

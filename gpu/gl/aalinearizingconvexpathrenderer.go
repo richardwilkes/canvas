@@ -28,25 +28,99 @@ import (
 // rendering above this stroke width.
 const aaLinearizingMaxStrokeWidth = float32(20.0)
 
-// aaFlatteningExtractVerts writes the tessellator's result vertices and indices (position, color, optional local
-// coords, coverage per vertex).
+// aaFlatteningMaxVertices is the most vertices one draw can address: the indices are uint16 and recordDraw hands
+// vertexCount-1 to the mesh as its maximum index value.
+const aaFlatteningMaxVertices = int(^uint16(0))
+
+// aaFlatteningPutVert writes one of the tessellator's vertices (position, color, optional local coords, coverage). It is
+// the single definition of the vertex layout createLinesOnlyGP declares, shared by the batched and split lanes.
+func aaFlatteningPutVert(tess *aaConvexTessellator, i int, localCoordsMatrix *geom.Matrix, verts *quadVertexWriter, color colorcore.PMColor4f, wideColor bool) {
+	pt := tess.point(i)
+	verts.putF32(pt.X)
+	verts.putF32(pt.Y)
+	verts.putColor(color, wideColor)
+	if localCoordsMatrix != nil {
+		lc := localCoordsMatrix.MapPoint(pt)
+		verts.putF32(lc.X)
+		verts.putF32(lc.Y)
+	}
+	verts.putF32(tess.coverage(i))
+}
+
+// aaFlatteningExtractVerts writes the tessellator's result vertices and indices, biasing each index by the vertices
+// already accumulated in the batch. The caller guarantees firstIndex+numPts stays inside the uint16 index range.
 func aaFlatteningExtractVerts(tess *aaConvexTessellator, localCoordsMatrix *geom.Matrix, verts *quadVertexWriter, color colorcore.PMColor4f, wideColor bool, firstIndex uint16, idxs []uint16) {
 	for i := 0; i < tess.numPts(); i++ {
-		pt := tess.point(i)
-		verts.putF32(pt.X)
-		verts.putF32(pt.Y)
-		verts.putColor(color, wideColor)
-		if localCoordsMatrix != nil {
-			lc := localCoordsMatrix.MapPoint(pt)
-			verts.putF32(lc.X)
-			verts.putF32(lc.Y)
-		}
-		verts.putF32(tess.coverage(i))
+		aaFlatteningPutVert(tess, i, localCoordsMatrix, verts, color, wideColor)
 	}
 
 	for i := 0; i < tess.numIndices(); i++ {
 		idxs[i] = uint16(tess.index(i)) + firstIndex
 	}
+}
+
+// aaFlatteningBatch is the vertex/index staging buffer OnPrepare accumulates draws into. The buffers (and the split
+// lane's remap scratch) are kept across draws so a long batch or a split path reuses one allocation.
+type aaFlatteningBatch struct {
+	vertices     []byte
+	indices      []uint16
+	remap        []int32
+	vertexCount  int
+	indexCount   int
+	vertexStride uint64
+}
+
+// reserve grows the buffers so extraVerts more vertices and extraIndices more indices fit past what is accumulated.
+func (b *aaFlatteningBatch) reserve(extraVerts, extraIndices int) {
+	need := (uint64(b.vertexCount) + uint64(extraVerts)) * b.vertexStride
+	if uint64(len(b.vertices)) < need {
+		b.vertices = append(b.vertices, make([]byte, need-uint64(len(b.vertices)))...)
+	}
+	if len(b.indices) < b.indexCount+extraIndices {
+		b.indices = append(b.indices, make([]uint16, b.indexCount+extraIndices-len(b.indices))...)
+	}
+}
+
+// writer returns a vertex writer positioned just past the accumulated vertices. Only valid until the next reserve.
+func (b *aaFlatteningBatch) writer() *quadVertexWriter {
+	return &quadVertexWriter{buf: b.vertices, offset: b.vertexCount * int(b.vertexStride)}
+}
+
+// aaFlatteningBuildSplitChunk stages the longest run of tess's triangles starting at firstTri that one draw can address,
+// copying in only the vertices that run references and remapping their indices into the chunk's own range (a vertex
+// shared by two chunks is written to both). The batch must be empty; returns the number of triangles staged. This is how
+// a tessellation with more than aaFlatteningMaxVertices vertices is drawn: the batched lane's uint16 indices cannot
+// reach past that, and emitting them anyway wraps every index and renders scrambled triangles.
+func aaFlatteningBuildSplitChunk(b *aaFlatteningBatch, tess *aaConvexTessellator, firstTri int, localCoordsMatrix *geom.Matrix, color colorcore.PMColor4f, wideColor bool) int {
+	// Each triangle adds at most three vertices, so a run this long always fits without checking mid-triangle.
+	const maxTris = aaFlatteningMaxVertices / 3
+	if b.vertexCount != 0 || b.indexCount != 0 {
+		panic("split chunks must be staged into an empty batch")
+	}
+	tris := min(maxTris, tess.numIndices()/3-firstTri)
+	if tris <= 0 {
+		return 0
+	}
+	if cap(b.remap) < tess.numPts() {
+		b.remap = make([]int32, tess.numPts())
+	}
+	remap := b.remap[:tess.numPts()]
+	for i := range remap {
+		remap[i] = -1
+	}
+	b.reserve(3*tris, 3*tris)
+	verts := b.writer()
+	for i := 3 * firstTri; i < 3*(firstTri+tris); i++ {
+		src := tess.index(i)
+		if remap[src] < 0 {
+			remap[src] = int32(b.vertexCount)
+			aaFlatteningPutVert(tess, src, localCoordsMatrix, verts, color, wideColor)
+			b.vertexCount++
+		}
+		b.indices[b.indexCount] = uint16(remap[src])
+		b.indexCount++
+	}
+	return tris
 }
 
 // localCoordsInverse returns the inverse of viewMatrix, for use as the local-coordinates matrix. A non-invertible view
@@ -206,6 +280,27 @@ func (o *aaFlatteningConvexPathOp) recordDraw(state *OpFlushState, vertexCount i
 	o.meshes = append(o.meshes, mesh)
 }
 
+// recordBatch records whatever the batch has accumulated as a single draw and empties it.
+func (o *aaFlatteningConvexPathOp) recordBatch(state *OpFlushState, b *aaFlatteningBatch) {
+	o.recordDraw(state, b.vertexCount, b.vertexStride, b.vertices, b.indexCount, b.indices)
+	b.vertexCount = 0
+	b.indexCount = 0
+}
+
+// recordSplitDraws records a tessellation that a single draw's uint16 indices cannot address as a series of
+// self-contained draws (see aaFlatteningBuildSplitChunk).
+func (o *aaFlatteningConvexPathOp) recordSplitDraws(state *OpFlushState, b *aaFlatteningBatch, tess *aaConvexTessellator, localCoordsMatrix *geom.Matrix, color colorcore.PMColor4f) {
+	numTris := tess.numIndices() / 3
+	for firstTri := 0; firstTri < numTris; {
+		tris := aaFlatteningBuildSplitChunk(b, tess, firstTri, localCoordsMatrix, color, o.wideColor)
+		if tris == 0 {
+			break
+		}
+		firstTri += tris
+		o.recordBatch(state, b)
+	}
+}
+
 // OnPrepare implements Op.
 func (o *aaFlatteningConvexPathOp) OnPrepare(state *OpFlushState) {
 	if o.programInfo == nil {
@@ -215,12 +310,9 @@ func (o *aaFlatteningConvexPathOp) OnPrepare(state *OpFlushState) {
 		}
 	}
 
-	vertexStride := uint64(o.programInfo.GeomProc().gpBase().VertexStride())
-
-	vertexCount := 0
-	indexCount := 0
-	var vertices []byte
-	var indices []uint16
+	batch := aaFlatteningBatch{
+		vertexStride: uint64(o.programInfo.GeomProc().gpBase().VertexStride()),
+	}
 	for i := range o.paths {
 		args := &o.paths[i]
 		tess := newAAConvexTessellator(args.style, args.strokeWidth, args.join,
@@ -230,39 +322,33 @@ func (o *aaFlatteningConvexPathOp) OnPrepare(state *OpFlushState) {
 			continue
 		}
 
-		currentVertices := tess.numPts()
-		if vertexCount+currentVertices > int(^uint16(0)) {
-			// If we added the current instance, we would overflow the indices we can store in a uint16. Draw what we've
-			// got so far and reset.
-			o.recordDraw(state, vertexCount, vertexStride, vertices, indexCount, indices)
-			vertexCount = 0
-			indexCount = 0
-			vertices = vertices[:0]
-			indices = indices[:0]
-		}
-		currentIndices := tess.numIndices()
-
-		need := (uint64(vertexCount) + uint64(currentVertices)) * vertexStride
-		if uint64(len(vertices)) < need {
-			vertices = append(vertices, make([]byte, need-uint64(len(vertices)))...)
-		}
-		if len(indices) < indexCount+currentIndices {
-			indices = append(indices, make([]uint16, indexCount+currentIndices-len(indices))...)
-		}
-
 		var localCoordsMatrix *geom.Matrix
 		if o.helper.UsesLocalCoords() {
 			ivm := localCoordsInverse(&args.viewMatrix)
 			localCoordsMatrix = &ivm
 		}
 
-		writer := &quadVertexWriter{buf: vertices, offset: vertexCount * int(vertexStride)}
-		aaFlatteningExtractVerts(tess, localCoordsMatrix, writer,
-			args.color, o.wideColor, uint16(vertexCount), indices[indexCount:])
-		vertexCount += currentVertices
-		indexCount += currentIndices
+		currentVertices := tess.numPts()
+		if currentVertices > aaFlatteningMaxVertices {
+			// This one path's vertices cannot all be addressed by a uint16 index, so no bias into a shared batch can make
+			// it fit. Flush what came before (keeping the draw order) and give the path its own split draws.
+			o.recordBatch(state, &batch)
+			o.recordSplitDraws(state, &batch, tess, localCoordsMatrix, args.color)
+			continue
+		}
+		if batch.vertexCount+currentVertices > aaFlatteningMaxVertices {
+			// If we added the current instance, we would overflow the indices we can store in a uint16. Draw what we've
+			// got so far and reset.
+			o.recordBatch(state, &batch)
+		}
+		currentIndices := tess.numIndices()
+		batch.reserve(currentVertices, currentIndices)
+		aaFlatteningExtractVerts(tess, localCoordsMatrix, batch.writer(),
+			args.color, o.wideColor, uint16(batch.vertexCount), batch.indices[batch.indexCount:])
+		batch.vertexCount += currentVertices
+		batch.indexCount += currentIndices
 	}
-	o.recordDraw(state, vertexCount, vertexStride, vertices, indexCount, indices)
+	o.recordBatch(state, &batch)
 }
 
 // OnExecute implements Op.

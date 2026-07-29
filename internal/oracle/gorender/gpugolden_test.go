@@ -22,8 +22,7 @@ import (
 
 // gpuGoldenDir is the per-platform self-captured GPU golden directory (relative to this package, since `go test` runs
 // with the package directory as the working directory). The goldens are the library's own output, captured by `oracle
-// bless` on the platform's software GL stack; the archived Skia-era renders live under ../goldens-skia and are not
-// gated.
+// bless` on the platform's software GL stack.
 func gpuGoldenDir() string {
 	return filepath.Join("..", "goldens", "gpu", runtime.GOOS+"_"+runtime.GOARCH)
 }

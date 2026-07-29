@@ -37,15 +37,11 @@ type Entry struct {
 
 // Manifest indexes a golden directory.
 //
-// Schema history:
-//   - Schema 1: Platform + Entries only — the Skia-era sets (now frozen archives; see the goldens READMEs). A schema-1
-//     manifest reads fine through this struct: the schema-2 fields are simply zero-valued.
-//   - Schema 2: adds Lane, GLRenderer/GLVersion, and CapturedAt — written by `oracle bless` for the self-captured
-//     per-platform sets. GLRenderer/GLVersion pin the GL stack a GPU-lane set was captured on so a gate can diagnose
-//     "the GL stack moved" as a one-line renderer-string mismatch instead of a wall of pixel diffs; they are empty for
-//     the raster lane, which has no environment exposure (pure Go). `oracle gen` also writes schema 2 (leaving all of
-//     the added fields empty) — its output is a scratch comparison set rather than a blessed one, but it is still the
-//     library's own current output, which is exactly what schema 1 does not mean.
+// Schema 2 is the only schema in use, and the only one `oracle bless` will write or overwrite. GLRenderer/GLVersion
+// pin the GL stack a GPU-lane set was captured on so a gate can diagnose "the GL stack moved" as a one-line
+// renderer-string mismatch instead of a wall of pixel diffs; they are empty for the raster lane, which has no
+// environment exposure (pure Go). `oracle gen` writes schema 2 as well, leaving Lane and the GL fields empty — its
+// output is a scratch comparison set rather than a blessed one.
 type Manifest struct {
 	Platform   string  `json:"platform"`              // GOOS_GOARCH that generated the goldens
 	Lane       string  `json:"lane,omitempty"`        // "raster", "gpu", or "gpudmsaa" (schema 2)

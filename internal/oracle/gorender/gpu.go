@@ -129,9 +129,8 @@ func RenderSceneGPU(g *GPUContext, width, height int, label string, draw func(*g
 }
 
 // createOffscreenFBO builds a caller-owned offscreen FBO — an RGBA8 color renderbuffer plus a packed DEPTH24_STENCIL8
-// renderbuffer for the GL backend clip/path stenciling — the FBO shape a windowing embedder hands the library (and the
-// same formats, attachments, and clear the removed C oracle's FBO helper used, so the archived goldens-skia renders
-// were captured over an identical target). It leaves the FBO bound; the caller re-syncs the direct
+// renderbuffer for the GL backend clip/path stenciling — the FBO shape a windowing embedder hands the library. It
+// leaves the FBO bound; the caller re-syncs the direct
 // context's GL-state shadow before wrapping it. Returns the FBO name and its two renderbuffer names (for teardown), and
 // ok=false if the FBO is incomplete.
 func createOffscreenFBO(f *gl.Functions, w, h int32) (fbo, colorRB, dsRB uint32, ok bool) {

@@ -442,15 +442,15 @@ func TestBlessCapturesOverDamagedPriorGolden(t *testing.T) {
 	}
 }
 
-// TestBlessRefusesSchema1 verifies bless will not overwrite a schema-1 manifest — the frozen Skia-era sets must be
-// moved aside to goldens-skia/, never silently replaced.
-func TestBlessRefusesSchema1(t *testing.T) {
+// TestBlessRefusesForeignSchema verifies bless will not overwrite a manifest whose schema it does not write: a golden
+// set it cannot read as its own is not one it may silently capture over.
+func TestBlessRefusesForeignSchema(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "goldens", "gpu", "test_platform")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	skia := golden.Manifest{Schema: 1, Platform: "test_platform"}
-	if err := golden.WriteManifest(dir, &skia); err != nil {
+	foreign := golden.Manifest{Schema: blessSchema + 1, Platform: "test_platform"}
+	if err := golden.WriteManifest(dir, &foreign); err != nil {
 		t.Fatal(err)
 	}
 	before, err := os.ReadFile(filepath.Join(dir, golden.ManifestName))
@@ -466,15 +466,15 @@ func TestBlessRefusesSchema1(t *testing.T) {
 		newSession: sessionFactory(solidRender(10), "", ""),
 	}
 	blessErr := bless(&cfg)
-	if blessErr == nil || !strings.Contains(blessErr.Error(), "goldens-skia") {
-		t.Fatalf("bless over a schema-1 manifest: err = %v, want a refusal pointing at goldens-skia/", blessErr)
+	if blessErr == nil || !strings.Contains(blessErr.Error(), "refusing to overwrite") {
+		t.Fatalf("bless over a schema-%d manifest: err = %v, want a refusal to overwrite", foreign.Schema, blessErr)
 	}
 	after, err := os.ReadFile(filepath.Join(dir, golden.ManifestName))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !bytes.Equal(before, after) {
-		t.Fatalf("bless modified the schema-1 manifest it refused to overwrite")
+		t.Fatalf("bless modified the schema-%d manifest it refused to overwrite", foreign.Schema)
 	}
 }
 

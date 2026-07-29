@@ -14,7 +14,7 @@
 // the golden gates drive the library exactly as unison does.
 //
 // It is the harness's only renderer; every gate in this package reads its reference side from ../goldens rather than
-// rendering it. A frozen, non-gating archive of the retired C Skia oracle's renders sits under ../goldens-skia.
+// rendering it.
 package gorender
 
 import (

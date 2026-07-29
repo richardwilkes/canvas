@@ -61,8 +61,8 @@ type soakConfig struct {
 // mid-soak (darwin_arm64 gpu, 2026-07-27). It is deliberately not a general tolerance: every other beyond-envelope
 // difference still fails.
 //
-// The full corpus soaks in every lane, including the text scenarios the Skia-era shared raster set excluded: the
-// self-captured raster sets are per-platform, so platform-scaler-dependent output is in scope for them too.
+// The full corpus soaks in every lane, text scenarios included: the self-captured raster sets are per-platform, so
+// platform-scaler-dependent output is in scope for them too.
 //
 // Rendered inline on the calling goroutine — for the GPU lanes the GL context is thread-bound (see laneSession).
 func soak(cfg *soakConfig) error {

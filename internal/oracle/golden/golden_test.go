@@ -78,13 +78,12 @@ func TestManifestSchema2RoundTrip(t *testing.T) {
 	}
 }
 
-// TestManifestSchema1ArchiveRead reads a schema-1 manifest exactly as the checked-in Skia-era sets store it (schema
-// key first, no lane/GL/date fields) and verifies the schema-2 fields come back zero-valued — archives must keep
-// reading fine.
-func TestManifestSchema1ArchiveRead(t *testing.T) {
+// TestManifestOptionalFieldsAbsent reads a manifest carrying only the always-written keys and verifies the optional
+// ones come back zero-valued rather than erroring — a raster set records no GL stack, so this is the shape half the
+// committed manifests have on disk.
+func TestManifestOptionalFieldsAbsent(t *testing.T) {
 	dir := t.TempDir()
 	raw := `{
-	"schema": 1,
 	"platform": "darwin_arm64",
 	"entries": [
 		{
@@ -93,22 +92,23 @@ func TestManifestSchema1ArchiveRead(t *testing.T) {
 			"width": 256,
 			"height": 256
 		}
-	]
+	],
+	"schema": 2
 }
 `
 	if err := os.WriteFile(filepath.Join(dir, ManifestName), []byte(raw), 0o644); err != nil {
-		t.Fatalf("writing schema-1 manifest: %v", err)
+		t.Fatalf("writing manifest: %v", err)
 	}
 	got, err := ReadManifest(dir)
 	if err != nil {
 		t.Fatalf("ReadManifest: %v", err)
 	}
 	want := Manifest{
-		Schema:   1,
+		Schema:   2,
 		Platform: "darwin_arm64",
 		Entries:  []Entry{{Name: "arcs", Width: 256, Height: 256, SHA256: "cc"}},
 	}
 	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("schema-1 archive read mismatch (new fields must be zero-valued):\ngot  %+v\nwant %+v", got, want)
+		t.Fatalf("manifest read mismatch (absent optional fields must be zero-valued):\ngot  %+v\nwant %+v", got, want)
 	}
 }

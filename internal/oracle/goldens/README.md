@@ -2,8 +2,7 @@
 
 These are the gating reference for every rendering lane: the corpus rendered through **the port's own backends**,
 captured by `oracle bless` and committed after review. A golden here answers "did the port's output change at all?" —
-not "does the port agree with some other renderer?" (that era's reference renders are archived under
-`../goldens-skia/`).
+not "does the port agree with some other renderer?"
 
 Each set is a plain directory of PNGs plus a `manifest.json`. The PNGs store the surface's RGBA8888-**premul** bytes
 verbatim in the PNG samples (byte-exact round trip; viewers show dark fringes where alpha < 255 — expected). For the
@@ -45,8 +44,7 @@ Written by `oracle bless` (`../golden/golden.go`):
   mismatch, so a runner-image driver bump surfaces as one line instead of a wall of pixel differences.
 - `captured_at` — UTC date of capture.
 - `entries` — per scenario: name, dimensions, and the SHA-256 of the raw premul RGBA bytes (not the PNG file).
-- `schema` — 2. Schema-1 manifests mark the frozen Skia-era archive sets; `oracle bless` and `capture.sh` refuse to
-  overwrite them.
+- `schema` — 2, the only schema in use. `oracle bless` refuses to overwrite a set carrying any other.
 
 ## Regenerating
 

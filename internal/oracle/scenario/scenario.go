@@ -12,8 +12,7 @@
 // data so a backend can materialize them natively. This package is cgo-free.
 //
 // The gating references are the library's own per-platform self-captured sets under ../goldens, regenerated
-// deliberately via `oracle bless` and the capture-goldens workflow whenever rendering changes intentionally. A frozen,
-// non-gating archive of the retired C Skia oracle's renders sits under ../goldens-skia.
+// deliberately via `oracle bless` and the capture-goldens workflow whenever rendering changes intentionally.
 package scenario
 
 import (

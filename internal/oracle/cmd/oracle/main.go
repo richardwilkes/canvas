@@ -37,9 +37,7 @@
 //
 // gen renders through the canvas library (internal/oracle/gorender). The checked-in goldens under ../../goldens are
 // the library's own output, captured per platform by `bless`, so `gen` + `diff` against a raster set is a pure change
-// detector: a failure means rendering changed on this platform, full stop. A frozen archive of the retired C Skia
-// oracle's renders sits, non-gating, under ../../goldens-skia; `diff` with the cpu/text/gpu tolerance profiles exists
-// for comparing against that archive.
+// detector: a failure means rendering changed on this platform, full stop.
 package main
 
 import (
@@ -86,7 +84,7 @@ func main() {
 		fs := flag.NewFlagSet("diff", flag.ExitOnError)
 		a := fs.String("a", "", "first golden directory (required)")
 		b := fs.String("b", "", "second golden directory (required)")
-		profileName := fs.String("profile", "exact", "threshold profile: exact, exact1, cpu, text, gpu")
+		profileName := fs.String("profile", "exact", "threshold profile: exact, exact1, gpu")
 		artifacts := fs.String("artifacts", "", "directory for failure artifacts (side-by-side + heatmap PNGs)")
 		if err := fs.Parse(os.Args[2:]); err != nil {
 			fatal(err)
@@ -205,10 +203,9 @@ func gen(dir string, useGPU bool) error {
 
 // writeGoldens renders scenarios through render and writes the golden PNGs + manifest to dir.
 //
-// The manifest is schema 2, the same schema `bless` writes: schema 1 means "a frozen Skia-era archive set" (see
-// golden.Manifest), which both bless and capture.sh refuse to overwrite, so stamping gen's freshly rendered
-// output with it would poison the directory against any later capture with a diagnosis naming an archive that was
-// never there. The lane and GL-stack fields stay empty — gen's output is a scratch comparison set, not a blessed one.
+// The manifest is schema 2, the same schema `bless` writes: bless refuses to overwrite a set carrying any other
+// schema, so stamping gen's freshly rendered output with one would poison the directory against every later capture.
+// The lane and GL-stack fields stay empty — gen's output is a scratch comparison set, not a blessed one.
 func writeGoldens(dir string, scenarios []scenario.Scenario, render func(scenario.Scenario) []byte) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err

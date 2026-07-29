@@ -70,9 +70,8 @@ type blessConfig struct {
 // gets written is always the capture pass — the first context in a fresh process, the most reproducible render
 // available (cold renders of separate processes agree within the same envelope).
 //
-// It refuses to replace a schema-1 manifest: those are the frozen Skia-era archive sets, which live only under
-// goldens-skia/ and must never be silently overwritten — finding one under goldens/ means the working tree is in a
-// state bless should not touch.
+// It refuses to replace a manifest whose schema it does not write: a set it cannot read as its own is not a set it may
+// silently capture over.
 //
 // It also repairs the disk state a previously interrupted commit swap can leave behind before doing anything else (see
 // recoverInterruptedSwap), so re-running bless after that failure cannot destroy the preserved prior set.
@@ -292,8 +291,7 @@ func recoverInterruptedSwap(cfg *blessConfig) error {
 }
 
 // priorManifest loads the manifest already at dir, if any. It refuses (error) when the manifest is unreadable or is
-// not schema 2 — in particular a schema-1 manifest marks a frozen Skia-era set that must never be overwritten in
-// place.
+// not the schema bless writes: a golden set bless cannot read as its own is not one it may capture over.
 func priorManifest(dir string) (m golden.Manifest, hasPrior bool, err error) {
 	m, err = golden.ReadManifest(dir)
 	switch {
@@ -302,10 +300,6 @@ func priorManifest(dir string) (m golden.Manifest, hasPrior bool, err error) {
 	case err != nil:
 		return golden.Manifest{}, false, fmt.Errorf("bless: unreadable existing manifest in %s (fix or remove it): %w",
 			dir, err)
-	case m.Schema == 1:
-		return golden.Manifest{}, false, fmt.Errorf(
-			"bless: %s holds a schema-1 manifest — a frozen Skia-era golden set; move it aside to goldens-skia/ "+
-				"before capturing (refusing to overwrite it)", dir)
 	case m.Schema != blessSchema:
 		return golden.Manifest{}, false, fmt.Errorf(
 			"bless: %s holds an unexpected schema-%d manifest (refusing to overwrite it)", dir, m.Schema)

@@ -29,9 +29,9 @@ func writeTestSet(t *testing.T, dir string, render func(scenario.Scenario) []byt
 	}
 }
 
-// TestGenWritesBlessableSchema pins gen's manifest schema. Schema 1 means "a frozen Skia-era archive set" — a
-// designation both bless and capture.sh refuse to overwrite — so stamping it on freshly rendered output poisons
-// the directory against every later capture, with a diagnosis naming an archive that was never there.
+// TestGenWritesBlessableSchema pins gen's manifest schema to the one bless writes. bless refuses to overwrite a set
+// carrying any other schema, so stamping one on freshly rendered output poisons the directory against every later
+// capture.
 func TestGenWritesBlessableSchema(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "gen")
 	writeTestSet(t, dir, solidRender(10))

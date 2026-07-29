@@ -17,8 +17,6 @@ verified against. It is a **separate Go module**; nothing outside this directory
   samples (byte-exact round trip; viewers show dark fringes where alpha < 255 — expected).
 - `goldens/` — the gating reference: per-platform, per-lane golden sets captured from the port's own output by `oracle
   bless`. See `goldens/README.md`.
-- `goldens-skia/` — the frozen, non-gating archive of the C Skia library's final renders, kept for historical
-  comparison. See `goldens-skia/README.md`.
 - `cmd/oracle` — CLI: `list`, `gen -out DIR [-gpu]`, `diff -a DIR -b DIR [-profile P] [-artifacts DIR]`,
   `soak -n N [-gpu|-dmsaa]` (the determinism proof: renders the corpus N times in fresh sessions and fails on any
   pass-to-pass divergence), and `bless -lane {raster|gpu|gpudmsaa}` (captures a golden set, double-rendering in fresh
@@ -53,10 +51,9 @@ CI steps run `-v`.
   GL command streams still produce ±1-differing output — see the `oracle soak` doc comment for the evidence), and the
   blessed capture is one representative of that envelope. Real rendering breaks measure ≥32 LSB, so the envelope costs
   no detection power.
-- **`cpu`**, **`text`**, **`gpu`** — the tolerance profiles from the era when the reference was a foreign renderer. No
-  golden gate uses them; they remain for `oracle diff` comparisons against the `goldens-skia/` archive (and the `gpu`
-  profile also bounds `gorender`'s atlas CPU-vs-GPU self-consistency cross-check, which compares two live backends, not
-  goldens).
+- **`gpu`** — the one loose, cross-renderer tolerance left. No golden gate uses it; it bounds `gorender`'s atlas
+  CPU-vs-GPU self-consistency cross-check, which compares the port's two live backends against each other rather than
+  against goldens.
 
 ### Report-not-gate exclusions
 
@@ -119,8 +116,8 @@ What capture-time failures mean:
 - **GL-stack mismatch** (a gate failing on the `GL_RENDERER` string): the GL stack moved underneath the goldens — a
   runner-image driver bump, or a local run on the wrong stack. If the move is intentional, recapture; the new manifest
   records the new stack.
-- **bless refusing a schema-1 manifest**: the target directory holds a frozen Skia-era archive set, which must never be
-  overwritten in place (those belong under `goldens-skia/`).
+- **bless refusing a manifest's schema**: the target directory holds a golden set bless cannot read as its own, which
+  it will not silently capture over. Diagnose how it got there rather than deleting it.
 
 ## Probe comparison policy
 

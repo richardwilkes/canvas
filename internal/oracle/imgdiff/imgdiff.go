@@ -13,9 +13,8 @@
 // The gating profiles are (near-)bit-exact: the golden references are the library's own per-platform output, so the
 // gates ask "did the output change at all?", not "are two renderers visually equivalent?". Exact gates the raster
 // lane; Exact1 gates the GPU lanes, tolerating only the ±1 LSB driver-internal wobble of software GL rasterizers. The
-// looser CPU/Text/GPU profiles are cross-renderer tolerances that no golden gate uses: they remain for `oracle diff`
-// comparisons against the archived Skia renders in ../goldens-skia, and GPU also bounds gorender's atlas CPU-vs-GPU
-// self-consistency cross-check between the library's two live backends.
+// looser GPU profile gates no goldens at all: it bounds gorender's atlas CPU-vs-GPU self-consistency cross-check
+// between the library's two live backends, where the two rasterizers legitimately differ at antialiased edges.
 package imgdiff
 
 import (
@@ -36,19 +35,17 @@ type Profile struct {
 // is "exact modulo ±1 LSB" — every channel delta must be ≤ 1 and zero pixels may exceed it — and gates the GPU lanes:
 // software GL rasterizers wobble ±1 intermittently between GL sessions, proven driver-internal (identical inputs and
 // GL command streams still produce ±1-differing output; see the oracle soak command's doc comment), while real breaks
-// measure ≥32 LSB. CPU, Text, and GPU are cross-renderer tolerances kept for archive comparisons: Text is looser than
-// CPU because the archived glyph masks came from a platform scaler, and GPU looser still because drivers vary.
+// measure ≥32 LSB. GPU is the one cross-renderer tolerance left, loose enough to absorb the drift between the
+// library's raster and GL backends drawing the same scene.
 var (
 	Exact  = Profile{Name: "exact", MaxChannelDelta: 0, MaxDiffFraction: 0}
 	Exact1 = Profile{Name: "exact1", MaxChannelDelta: 1, MaxDiffFraction: 0}
-	CPU    = Profile{Name: "cpu", MaxChannelDelta: 2, MaxDiffFraction: 0.005}
-	Text   = Profile{Name: "text", MaxChannelDelta: 2, MaxDiffFraction: 0.02}
 	GPU    = Profile{Name: "gpu", MaxChannelDelta: 4, MaxDiffFraction: 0.01}
 )
 
 // ProfileByName returns the named profile.
 func ProfileByName(name string) (Profile, bool) {
-	for _, p := range []Profile{Exact, Exact1, CPU, Text, GPU} {
+	for _, p := range []Profile{Exact, Exact1, GPU} {
 		if p.Name == name {
 			return p, true
 		}

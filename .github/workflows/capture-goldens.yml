@@ -82,8 +82,7 @@ jobs:
           fi
       # Bless writes into goldens/<lane>/<GOOS_GOARCH>/ inside this checkout, over the committed self-captured sets —
       # a prior schema-2 manifest is what gives bless its per-scenario old-vs-new change summary. Its refusal to
-      # replace a schema-1 (Skia-era) manifest remains as a guard, but the archived Skia sets live under goldens-skia/
-      # and nothing writes there, so it can only trip if something is badly wrong with the checkout.
+      # replace a manifest carrying any other schema remains as a guard on a checkout that is badly wrong.
       # Build the CLI once; on Windows the Mesa DLLs are staged beside the binary so its WGL context comes up on
       # llvmpipe (same technique as build.yml's oracle-windows job).
       - name: Build oracle CLI

@@ -18,6 +18,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"golang.org/x/image/webp"
@@ -285,12 +286,14 @@ func TestQualityMonotonicity(t *testing.T) {
 	}
 }
 
-// TestRoundTripRealImages runs the round-trip and reconstruction invariants over checked-in rendered scenes (the frozen
-// Skia-era oracle renders: antialiased paths, gradients, complex path content), when present. The archive set is used
-// rather than the live self-captured goldens because it is platform-independent and never regenerated — stable inputs
-// for an encoder test that only needs realistic image content.
+// TestRoundTripRealImages runs the round-trip and reconstruction invariants over checked-in rendered scenes (the
+// oracle's raster goldens for this platform: antialiased paths, gradients, complex path content), when present. Only
+// the realism of the content matters here — every assertion compares the encoder against its own reconstruction, never
+// against the golden — so it costs nothing that those sets are per-platform and get recaptured when rendering changes.
+// A platform with no raster set skips.
 func TestRoundTripRealImages(t *testing.T) {
-	dir := filepath.Join("..", "..", "..", "internal", "oracle", "goldens-skia")
+	dir := filepath.Join("..", "..", "..", "internal", "oracle", "goldens", "raster",
+		runtime.GOOS+"_"+runtime.GOARCH)
 	names := []string{"gradient-radial.png", "fill-rects-aa.png", "arcs.png", "path-star-selfintersect.png"}
 	for _, name := range names {
 		raw, err := os.ReadFile(filepath.Join(dir, name))

@@ -10,9 +10,7 @@
 #
 # Each goldens-<GOOS_GOARCH> artifact holds that leg's self-captured goldens/<lane>/<GOOS_GOARCH>/ subtrees; the legs
 # are platform-disjoint, so all artifacts merge cleanly into goldens/. Any lane/platform directory being replaced is
-# removed first so stale scenarios cannot linger. The one thing this script refuses to do is clobber a schema-1
-# (Skia-era) set: those live only in the goldens-skia/ archive, so finding one under goldens/ means the working tree is
-# in a state this script should not touch.
+# removed first so stale scenarios cannot linger.
 
 set -euo pipefail
 
@@ -30,19 +28,6 @@ gh run download "$1" --pattern 'goldens-*' --dir "$tmp"
 
 shopt -s nullglob
 merged=0
-for artifact in "$tmp"/goldens-*/; do
-	for dir in "$artifact"*/*/; do # <lane>/<GOOS_GOARCH>/ directories within one leg's artifact
-		rel=${dir#"$artifact"}
-		rel=${rel%/}
-		dest="goldens/$rel"
-		if [ -f "$dest/manifest.json" ] && grep -q '"schema": 1' "$dest/manifest.json"; then
-			echo "refusing: $dest holds a schema-1 (Skia-era) golden set." >&2
-			echo "Skia-era sets belong only in the goldens-skia/ archive; finding one under goldens/ means the" >&2
-			echo "working tree is in an unexpected state. Nothing has been overwritten." >&2
-			exit 1
-		fi
-	done
-done
 for artifact in "$tmp"/goldens-*/; do
 	# An artifact holds only the lanes its leg actually blessed, staged as <lane>/<GOOS_GOARCH>/ (the workflow's
 	# staging step filters on the captured-lane list, so a lane that skipped or failed contributes nothing rather than

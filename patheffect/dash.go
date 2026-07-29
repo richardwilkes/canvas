@@ -329,11 +329,15 @@ func dashInternalFilter(dst, src *path.Path, rec *stroke.Rec, cullRect *geom.Rec
 	// The maxDashCount bail-out below throws away everything this call produced, so when dst already holds output from
 	// an earlier effect (MakeSum hands the same dst to both of its children) the dashed segments have to accumulate in a
 	// scratch path that can be dropped on its own. Otherwise the bail-out would erase the caller's contribution too,
-	// violating the "appending the result to dst" contract in stroke.PathEffect. dst is empty in the common case, so the
-	// scratch path (and the copy it costs) is only paid for when it is actually needed.
+	// violating the "appending the result to dst" contract in stroke.PathEffect. The scratch starts as a copy of what
+	// dst already holds and is copied back wholesale at the end, rather than starting empty and being appended:
+	// Path.AddPath replaces a destination holding a single verb instead of appending to it (a lone MoveTo counts as
+	// effectively empty), which would silently drop that contour. dst is empty in the common case, so the scratch path
+	// (and the two copies it costs) is only paid for when it is actually needed.
 	out := dst
 	if !dst.IsEmpty() {
 		out = path.Borrow()
+		out.Set(dst)
 		defer path.Recycle(out)
 	}
 
@@ -447,7 +451,7 @@ func dashInternalFilter(dst, src *path.Path, rec *stroke.Rec, cullRect *geom.Rec
 	}
 
 	if out != dst {
-		dst.AddPath(out, path.AddPathAppend)
+		dst.Set(out)
 	}
 	return true
 }

@@ -575,6 +575,47 @@ func TestSumAndCompose(t *testing.T) {
 	}
 }
 
+func TestDashKeepsLoneMoveToInDst(t *testing.T) {
+	// A dst holding exactly one verb is non-empty, but Path.AddPath treats it as replaceable and copies over it rather
+	// than appending, so merging the dash's scratch path back with AddPath would silently drop that contour. MakeSum
+	// reaches this: its first child can leave nothing but a MoveTo behind before the dash runs. The special-line lane
+	// is the one that shows it — its AddPoly appends a fresh contour, where the measure lane's leading MoveTo would
+	// collapse the pre-existing one either way.
+	pe := MakeDash([]float32{10, 10}, 0)
+	src := line(0, 0, 100, 0)
+
+	dashOnly := &path.Path{}
+	recDash := strokeRec(4)
+	if !pe.FilterPath(dashOnly, src, &recDash, nil, identity()) {
+		t.Fatal("FilterPath failed")
+	}
+
+	dst := &path.Path{}
+	dst.MoveTo(-50, -50)
+	rec := strokeRec(4)
+	if !pe.FilterPath(dst, src, &rec, nil, identity()) {
+		t.Fatal("FilterPath failed")
+	}
+	if got, want := dst.CountVerbs(), dashOnly.CountVerbs()+1; got != want {
+		t.Fatalf("dst verb count = %d, want %d (the pre-existing MoveTo plus the dashes)", got, want)
+	}
+	if got, want := dst.CountPoints(), dashOnly.CountPoints()+1; got != want {
+		t.Fatalf("dst point count = %d, want %d", got, want)
+	}
+	if got := dst.Point(0); got != geom.Pt(-50, -50) {
+		t.Errorf("dst's first point = %v, want the pre-existing MoveTo at (-50,-50)", got)
+	}
+	for i := range dashOnly.CountPoints() {
+		if got, want := dst.Point(i+1), dashOnly.Point(i); got != want {
+			t.Fatalf("dst point %d = %v, want %v", i+1, got, want)
+		}
+	}
+	// The dropped MoveTo was observable through the bounds, which is what the discard would have changed.
+	if got, want := dst.Bounds(), geom.RectLTRB(-50, -50, 90, 2); got != want {
+		t.Errorf("dst bounds = %v, want %v", got, want)
+	}
+}
+
 func TestDashOverflowKeepsPriorOutput(t *testing.T) {
 	// Two segments rather than a straight line, so the dash takes the measure-based lane and leaves the stroke rec
 	// alone (the special-line lane would switch it to fill, and the second dash would then decline the source).

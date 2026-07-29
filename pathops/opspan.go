@@ -436,8 +436,10 @@ func (b *opSpanBase) merge(span *opSpan) {
 // each coincident pt-t in the loop it asks the coincidence tracker to mark it collapsed, then releases the deleted
 // records.
 func (b *opSpanBase) checkForCollapsedCoincidence() {
+	// The tracker is nil for runs that never build one (fixWinding's global state, for one), matching the guard in
+	// opSpan.release.
 	coins := b.globalState().coincidence
-	if coins.isEmpty() {
+	if coins == nil || coins.isEmpty() {
 		return
 	}
 	head := &b.ptT

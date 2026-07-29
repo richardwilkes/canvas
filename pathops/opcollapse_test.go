@@ -43,6 +43,31 @@ func TestOpSegmentMarkAllDone(t *testing.T) {
 	}
 }
 
+// TestCheckForCollapsedCoincidenceWithoutTracker covers a global state that never built a coincidence tracker —
+// fixWinding constructs one that way — so the field is nil for the whole run. checkForCollapsedCoincidence must fall
+// out the way opSpan.release does rather than dereferencing it.
+func TestCheckForCollapsedCoincidenceWithoutTracker(t *testing.T) {
+	head, state := newTestContourHead()
+	if state.coincidence != nil {
+		t.Fatal("precondition: a global state with no newOpCoincidence call should have a nil tracker")
+	}
+	seg := head.addLine([]geom.Point{pt(0, 0), pt(10, 0)})
+	mid := seg.addT(0.5)
+	mid.coincident = true // the loop body would ask the nil tracker to mark this collapsed
+	if seg.count != 2 {
+		t.Fatalf("span count = %d, want 2 (head + one interior)", seg.count)
+	}
+	seg.head.checkForCollapsedCoincidence()
+	if seg.count != 2 {
+		t.Fatalf("span count = %d, want 2 (the call should have changed nothing)", seg.count)
+	}
+	// opSpan.release reads the same field and already guards it; the two readers must agree about it being nil.
+	mid.span.upCast().release(&seg.head.ptT)
+	if seg.count != 1 {
+		t.Fatalf("span count after release = %d, want 1", seg.count)
+	}
+}
+
 // TestOpSpanRelease releases an interior span and checks the list is re-linked, the counts drop, and every pt-t that
 // named the released span is repointed at the kept span.
 func TestOpSpanRelease(t *testing.T) {

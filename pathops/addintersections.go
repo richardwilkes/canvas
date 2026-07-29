@@ -199,6 +199,12 @@ func addIntersectResults(ts *intersections, wt, wn *intersectionHelper, swap boo
 			testTAt = wt.segment.addT(ts.tVal(swapIdx, pt))
 			nextTAt = wn.segment.addT(ts.tVal(1-swapIdx, pt))
 		}
+		if testTAt == nil || nextTAt == nil {
+			// A malformed insert (a t outside [0,1] reaching the head or the tail) yields no pt-t to thread. Drop this
+			// point, and any coincident run it was going to close, rather than dereferencing nil.
+			coinIndex = -1
+			continue
+		}
 		if !testTAt.containsPtT(nextTAt) {
 			oppPrev := testTAt.oppPrev(nextTAt) // nil if the pair already shares a pt-t loop
 			if oppPrev != nil {

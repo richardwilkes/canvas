@@ -10,6 +10,7 @@
 package pathops
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/richardwilkes/canvas/geom"
@@ -260,6 +261,52 @@ func TestAddIntersectQuadLine(t *testing.T) {
 	}
 	if !coincidence.isEmpty() {
 		t.Fatalf("coincidence should be empty, got %d runs", coincidenceCount(coincidence))
+	}
+}
+
+// TestAddIntersectResultsMalformedInsert drives addIntersectResults over a result set whose middle entry carries a t
+// outside [0,1]. addTPt has no span to hand back for such a t — it walks off the head or the tail and returns nil, as
+// documented — so the caller has to skip that entry the way every other addT/addTPt caller does. The intersections
+// insert() refuses an out-of-range t, so the entry is planted directly: the guard is a consistency guarantee, not a
+// reachable input today.
+func TestAddIntersectResultsMalformedInsert(t *testing.T) {
+	p := path.New()
+	p.MoveTo(0, 0).LineTo(20, 0).LineTo(20, 20).LineTo(0, 20).Close()
+	head, state := buildOpModel(t, p)
+	coincidence := newOpCoincidence(state)
+	segs := segsOf(realContours(head)[0])
+	wt := intersectionHelper{segment: segs[0]} // (0,0)->(20,0)
+	wn := intersectionHelper{segment: segs[1]} // (20,0)->(20,20)
+
+	// Precondition: a t before the head has nowhere to go on the second segment.
+	if got := wn.segment.addT(-1); got != nil {
+		t.Fatalf("addT(-1) = %v, want nil (no span precedes the head)", got)
+	}
+
+	ts := newIntersections()
+	ts.setMax(3)
+	ts.used = 3
+	ts.pts[0], ts.ts[0][0], ts.ts[1][0] = dPoint{x: 5, y: 0.5}, 0.25, 0.25
+	ts.pts[1], ts.ts[0][1], ts.ts[1][1] = dPoint{x: 10, y: 0.5}, 0.5, -1 // malformed on wn
+	ts.pts[2], ts.ts[0][2], ts.ts[1][2] = dPoint{x: 15, y: 0.5}, 0.75, 0.75
+	for i := range 3 {
+		ts.setCoincident(i)
+	}
+
+	addIntersectResults(ts, &wt, &wn, false, coincidence)
+
+	// The first entry left a pending coincident pair. Dropping the malformed entry has to drop that pair too, or the
+	// third entry would close a run across a gap that was never established.
+	if !coincidence.isEmpty() {
+		t.Fatalf("coincident run count = %d, want 0 (the pending pair should have been dropped)",
+			coincidenceCount(coincidence))
+	}
+	// The well-formed entries around the malformed one were still threaded in.
+	got := spanTs(segs[1])
+	for _, want := range []float64{0.25, 0.75} {
+		if !slices.Contains(got, want) {
+			t.Errorf("second segment spans = %v, missing the well-formed t %v", got, want)
+		}
 	}
 }
 

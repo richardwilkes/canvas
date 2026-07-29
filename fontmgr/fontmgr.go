@@ -13,7 +13,8 @@
 // styles come from a lightweight table read (font.DescribeFaceFile) on demand; style matching uses the CSS3
 // style-matching scoring in css3Score; character fallback probes the footprints' cmap-derived rune coverage with
 // BCP-47 hints ordered least-to-most significant, then verifies the chosen face really maps the character through its
-// own cmap before answering.
+// own cmap before answering — with another table-only read (font.FaceCoversRuneFile), so a rejected candidate never
+// becomes a fully parsed, permanently cached font.
 //
 // This is one host-independent implementation where a platform library would have three hosts (CoreText, fontconfig,
 // DirectWrite), so its behavior is the documented font-manager contract plus the majority host behavior rather than any
@@ -70,6 +71,12 @@ type faceRec struct {
 	infoOK   bool
 	infoOnce sync.Once
 	tfOnce   sync.Once
+
+	// The single-entry memo behind covers: the most recently probed rune and its verdict.
+	coverMu    sync.Mutex
+	coverRune  rune
+	coverVal   bool
+	coverKnown bool
 }
 
 // faceInfo returns the lazily-loaded lightweight description (family/style names + style).
@@ -98,6 +105,31 @@ func (f *faceRec) style() font.Style {
 func (f *faceRec) styleName() string {
 	info, _ := f.faceInfo()
 	return info.StyleName
+}
+
+// covers reports whether the face's own cmap maps r to a real glyph, reading only the cmap (and OS/2, which selects its
+// encoding) instead of loading the typeface: the character-fallback scans reject most of their candidates, and a
+// typeface, once loaded, is cached — with the whole font file inside it — for the life of the manager, so verifying
+// through typeface() made one MatchFamilyStyleCharacter call retain a large fraction of the system inventory. Only the
+// answering candidate is loaded now.
+//
+// The answer is memoized for the most recently probed rune, which is all the scans need: a face reached through the
+// default-family tier is re-probed by the all-visible-families tier, a face in a BCP-47 restricted set is re-probed by
+// the unrestricted scan, and a run of text falls back for the same character repeatedly. Nothing but the one rune and
+// its verdict is retained.
+func (f *faceRec) covers(r rune) bool {
+	f.coverMu.Lock()
+	defer f.coverMu.Unlock()
+	if !f.coverKnown || f.coverRune != r {
+		f.coverRune = r
+		f.coverKnown = true
+		if f.path != "" {
+			f.coverVal = font.FaceCoversRuneFile(f.path, f.index, r)
+		} else {
+			f.coverVal = font.FaceCoversRuneData(f.data, f.index, r)
+		}
+	}
+	return f.coverVal
 }
 
 // typeface loads (and caches) the full typeface for this face; nil if the file no longer parses.
@@ -358,8 +390,11 @@ func (m *Manager) matchCoveringTiered(faces []*faceRec, style font.Style, r rune
 // The footprint rune sets overcount: go-text's scanner counts cmap entries that map to glyph 0 (fontforge-built fonts
 // commonly carry U+0000 and U+FFFF segments mapping to .notdef — ubuntu's DejaVuSans-ExtraLight does), and no host
 // treats a .notdef mapping as coverage: FreeType's charcode iteration skips glyph-0 entries, so fontconfig charsets
-// never contain them, and the CoreText/DirectWrite cmap lookups yield the missing glyph. The loaded face's own cmap is
-// therefore the final word — a ranked candidate only answers when it really maps r.
+// never contain them, and the CoreText/DirectWrite cmap lookups yield the missing glyph. The face's own cmap is
+// therefore the final word — a ranked candidate only answers when it really maps r. That verdict comes from faceRec's
+// cmap-only probe (covers), so the walk loads a typeface only for the candidate that is about to be returned; a
+// character that many footprints claim and few really map used to load, and permanently cache, one full font per
+// rejection.
 func matchCovering(faces []*faceRec, pattern font.Style, r rune, approx bool) *font.Typeface {
 	var covering []*faceRec
 	for _, f := range faces {
@@ -374,7 +409,14 @@ func matchCovering(faces []*faceRec, pattern font.Style, r rune, approx bool) *f
 		return covering[i].style()
 	}
 	for _, idx := range rankStylesCSS3(pattern, len(covering), styleAt) {
-		if tf := covering[idx].typeface(); tf != nil && tf.UnicharToGlyph(r) != 0 {
+		f := covering[idx]
+		if !f.covers(r) {
+			continue
+		}
+		// The probe already answered the cmap question; re-asking the loaded typeface costs one lookup and keeps the
+		// contract ("the returned face always maps character through its own cmap") true of the object handed back, not
+		// just of the file it came from.
+		if tf := f.typeface(); tf != nil && tf.UnicharToGlyph(r) != 0 {
 			return tf
 		}
 	}

@@ -379,6 +379,95 @@ func TestManagerMatchCharacterBCP47Fallthrough(t *testing.T) {
 	}
 }
 
+// loadedTypefaces counts the manager's faces whose full typeface has been loaded, and is therefore cached — with the
+// whole font file's bytes inside it — for the life of the manager. Safe to read directly: the caller is the only
+// goroutine touching the manager.
+func loadedTypefaces(m *Manager) int {
+	n := 0
+	for _, f := range m.all {
+		if f.tf != nil {
+			n++
+		}
+	}
+	return n
+}
+
+func TestManagerCharacterFallbackLoadsOnlyTheAnswer(t *testing.T) {
+	// Character-fallback candidates are verified from their cmap alone (faceRec.covers). Verifying by loading instead
+	// retained one fully parsed font — file bytes included — per rejected candidate for the life of the manager, and the
+	// footprint rune sets over-claim exactly the characters that reject the most candidates (U+0000/U+FFFF .notdef
+	// sentinels), so a single call could retain most of a system inventory.
+	m := newTestManager(t)
+	// U+FFFF: the DejaVu subset and both test.ttc faces claim it in their footprints via the cmap4 sentinel segment and
+	// none of them maps it. The answer is nil, and no candidate may be loaded to establish that.
+	if tf := m.MatchFamilyStyleCharacter("", font.NormalStyle(), nil, 0xFFFF); tf != nil {
+		t.Fatalf("footprint-only coverage (U+FFFF) = %v, want nil", tf)
+	}
+	if n := loadedTypefaces(m); n != 0 {
+		t.Errorf("%d typefaces cached rejecting 3 lying footprints, want 0", n)
+	}
+	// The same walk with a real answer at the end of it: the higher-ranked liar (family-sorted, so it is scored first)
+	// must be rejected without a load, and only the answering face ends up cached.
+	liar := newTestFaceRec(t, "DejaVuSans.subset.ttf", 0)
+	liar.runes.Add(0)
+	roboto := newTestFaceRec(t, "Roboto-Regular.ttf", 0)
+	m2 := newManager([]*faceRec{liar, roboto})
+	if tf := m2.MatchFamilyStyleCharacter("", font.NormalStyle(), nil, 0); tf == nil || tf.FamilyName() != "Roboto" {
+		t.Fatalf("NUL = %v, want the genuinely covering Roboto", tf)
+	}
+	if liar.tf != nil {
+		t.Error("the rejected candidate's typeface was loaded and cached")
+	}
+	if roboto.tf == nil {
+		t.Error("the answering candidate's typeface was not cached")
+	}
+	if n := loadedTypefaces(m2); n != 1 {
+		t.Errorf("%d typefaces cached, want 1 (the answer only)", n)
+	}
+	// The named-family pass verifies the same way: "Test" claims U+FFFF in both its faces and maps it in neither.
+	m3 := newTestManager(t)
+	if tf := m3.MatchFamilyStyleCharacter("Test", font.NormalStyle(), nil, 0xFFFF); tf != nil {
+		t.Fatalf("footprint-only coverage in a named family = %v, want nil", tf)
+	}
+	if n := loadedTypefaces(m3); n != 0 {
+		t.Errorf("%d typefaces cached rejecting a named family's lying footprints, want 0", n)
+	}
+}
+
+func TestFaceRecCovers(t *testing.T) {
+	// covers answers from the cmap without loading the typeface, and its single-entry memo must not let one rune's
+	// verdict answer for another.
+	f := newTestFaceRec(t, "Roboto-Regular.ttf", 0)
+	for i := range 2 {
+		if !f.covers('A') {
+			t.Errorf("pass %d: Roboto does not cover 'A'", i)
+		}
+		if f.covers(0x4E2D) {
+			t.Errorf("pass %d: Roboto covers U+4E2D", i)
+		}
+		if !f.covers('A') {
+			t.Errorf("pass %d: Roboto does not cover 'A' on re-probe", i)
+		}
+	}
+	if f.tf != nil {
+		t.Error("covers loaded the typeface")
+	}
+	// The in-memory branch (a faceRec with data rather than a path) answers identically.
+	data, err := os.ReadFile("../font/testdata/Roboto-Regular.ttf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	inMem := &faceRec{key: "roboto", data: data}
+	if !inMem.covers('A') || inMem.covers(0x4E2D) {
+		t.Error("in-memory face disagrees with the file-backed one")
+	}
+	// An unloadable face covers nothing rather than reporting the footprint's claim.
+	ghost := &faceRec{key: "ghost", path: "../font/testdata/does-not-exist.ttf"}
+	if ghost.covers('A') {
+		t.Error("a vanished file reported coverage")
+	}
+}
+
 func TestManagerUnloadableFace(t *testing.T) {
 	// A face whose file has vanished since the scan: metadata falls back to the footprint aspect, typeface creation
 	// fails, and style matching skips it in rank order rather than failing.

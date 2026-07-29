@@ -116,11 +116,6 @@ func TestSDFTMaskSpecGlyph(t *testing.T) {
 		t.Errorf("SDF at strongest A8 texel = %d, want > 128 (inside)", inside)
 	}
 
-	// The digest gate rejects at atlas size: the padded max dimension governs.
-	if sdfGlyph.MaxDimension() > SideTooBigForAtlas {
-		t.Fatalf("test glyph unexpectedly larger than the atlas gate")
-	}
-
 	// An empty glyph (space) drops.
 	var spaceGlyphs [1]uint16
 	if f.TextToGlyphs([]byte(" "), TextEncodingUTF8, spaceGlyphs[:]) == 1 && spaceGlyphs[0] != 0 {
@@ -139,5 +134,34 @@ func TestSDFTActionRejectsNonSDFFormats(t *testing.T) {
 	strike := spec.FindOrCreateStrike()
 	if _, action := strike.DigestFor(ActionSDFT, PackGlyphID(gid)); action != GlyphActionReject {
 		t.Errorf("A8 glyph kSDFT action = %v, want reject", action)
+	}
+}
+
+// TestSDFTActionRejectsAtAtlasSize covers the other half of the kSDFT gate: the glyph must also fit the atlas, judged
+// on the padded SDF dimensions rather than the A8 ones the field is generated from. The text sizes below bracket the
+// bound ('A' grows a bit under a pixel per point), so the walk sees the action flip.
+func TestSDFTActionRejectsAtAtlasSize(t *testing.T) {
+	accepted, rejected := 0, 0
+	for size := float32(320); size <= 400; size += 4 {
+		f := loadSDFTestFont(t, size)
+		f.SetEdging(EdgingAntiAlias)
+		f.SetSubpixel(false)
+		gid := sdfGlyphID(t, f)
+		spec := MakeSDFTMaskSpec(f, nil)
+		strike := spec.FindOrCreateStrike()
+		g, action := strike.DigestFor(ActionSDFT, PackGlyphID(gid))
+		want := GlyphActionReject
+		if g.MaxDimension() <= SideTooBigForAtlas {
+			want = GlyphActionAccept
+			accepted++
+		} else {
+			rejected++
+		}
+		if action != want {
+			t.Errorf("size %v: %dx%d SDF glyph kSDFT action = %v, want %v", size, g.Width, g.Height, action, want)
+		}
+	}
+	if accepted == 0 || rejected == 0 {
+		t.Fatalf("the size walk saw %d accepts and %d rejects; it must cross the atlas bound", accepted, rejected)
 	}
 }

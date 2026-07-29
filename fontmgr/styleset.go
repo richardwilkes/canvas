@@ -7,7 +7,7 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// The per-family face list, with CSS3 style-matching scoring (css3Score, ranked by rankStylesCSS3) used as the one
+// The per-family face list, with CSS3 style-matching scoring (css3Score, walked by selectStyleCSS3) used as the one
 // style-distance algorithm on every platform (the CoreText host's squared-metric variant agrees on exact matches, but
 // can prefer a different face at unequal distances).
 
@@ -46,13 +46,12 @@ func (s *StyleSet) CreateTypeface(index int) *font.Typeface {
 // MatchStyle returns the best CSS3 style match in the set; nil only for the empty set (or when no face in the set
 // loads).
 func (s *StyleSet) MatchStyle(pattern font.Style) *font.Typeface {
-	order := rankStylesCSS3(pattern, len(s.faces), func(i int) font.Style { return s.faces[i].style() })
-	for _, idx := range order {
-		if tf := s.faces[idx].typeface(); tf != nil {
-			return tf
-		}
-	}
-	return nil
+	var match *font.Typeface
+	selectStyleCSS3(pattern, len(s.faces), func(i int) font.Style { return s.faces[i].style() }, func(i int) bool {
+		match = s.faces[i].typeface()
+		return match != nil
+	})
+	return match
 }
 
 // css3SlantBits and css3WeightBits are the field widths css3Score reserves for the tiers below the one being shifted:
@@ -69,6 +68,13 @@ const (
 // greatest priority, then slant, then weight; each tier shifts left by the width of the tiers below so it dominates
 // them. Higher scores are better.
 func css3Score(pattern, current font.Style) int {
+	// font.Style is an exported int32 whose packed layout is the documented round-trip (font.Style(storedInt32)) and it
+	// has no validating constructor from a raw value, so a style that never came from font.NewStyle can carry any
+	// component: a slant above SlantOblique indexes slantScore out of range and panics, and an out-of-range width or
+	// weight yields a tier addend too wide for its field, carrying into the tier above and inverting the documented
+	// priority. Re-pinning both styles through the validating constructor is this port's stand-in for upstream Skia's
+	// enum-typed constructor plus SkASSERT.
+	pattern, current = pinStyle(pattern), pinStyle(current)
 	score := 0
 
 	// CSS stretch / font.Style's Width. Takes priority over everything else.
@@ -129,25 +135,44 @@ func css3Score(pattern, current font.Style) int {
 	return score
 }
 
-// rankStylesCSS3 returns candidate indices in descending css3Score order (stable, so equal scores keep first-wins
-// preference), empty for an empty set. It is the one style-distance algorithm: MatchStyle and matchCovering both walk
-// it, so an unloadable face falls back to the next-best style rather than failing the match.
-func rankStylesCSS3(pattern font.Style, count int, styleAt func(int) font.Style) []int {
-	type scored struct{ idx, score int }
-	list := make([]scored, count)
-	for i := range count {
-		list[i] = scored{idx: i, score: css3Score(pattern, styleAt(i))}
+// pinStyle re-pins a style's components to their legal ranges by round-tripping it through the validating constructor.
+// A style built by font.NewStyle (every style this package produces itself) is returned unchanged.
+func pinStyle(s font.Style) font.Style { return font.NewStyle(s.Weight(), s.Width(), s.Slant()) }
+
+// selectStyleCSS3 walks the candidates in descending css3Score order — ties keep first-wins preference — handing each
+// index to accept until it returns true, and reports whether any did. It is the one style-distance algorithm:
+// MatchStyle and matchCovering both walk it, so an unloadable face falls through to the next-best style rather than
+// failing the match.
+//
+// The walk selects partially: the scores are computed once, then each step extracts the maximum of the candidates not
+// yet visited, so the common case — the best-scoring face loads and answers — costs two linear passes instead of a
+// full ordering. That matters on the cross-family fallback path, where the candidate set is every face covering the
+// character rather than one family's faces: matchCoveringTiered calls matchCovering once per tier and
+// MatchFamilyStyleCharacter calls matchCoveringTiered once per BCP-47 tag, over a set that a full Noto install pushes
+// into the thousands. Upstream Skia's matchStyleCSS3 is a single max scan with no fallthrough at all.
+func selectStyleCSS3(pattern font.Style, count int, styleAt func(int) font.Style, accept func(int) bool) bool {
+	if count == 0 {
+		return false
 	}
-	for i := 1; i < len(list); i++ { // insertion sort keeps it stable
-		for j := i; j > 0 && list[j-1].score < list[j].score; j-- {
-			list[j-1], list[j] = list[j], list[j-1]
+	pattern = pinStyle(pattern)
+	scores := make([]int, count)
+	for i := range count {
+		scores[i] = css3Score(pattern, styleAt(i))
+	}
+	visited := make([]bool, count)
+	for range count {
+		best := -1
+		for i := range count {
+			if !visited[i] && (best == -1 || scores[i] > scores[best]) {
+				best = i
+			}
+		}
+		visited[best] = true
+		if accept(best) {
+			return true
 		}
 	}
-	order := make([]int, count)
-	for i, s := range list {
-		order[i] = s.idx
-	}
-	return order
+	return false
 }
 
 // styleFromAspect maps a fontscan footprint aspect (CSS weight, stretch ratio, italic flag) to the nearest font.Style.

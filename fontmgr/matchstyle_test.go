@@ -7,17 +7,31 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// A 36-set / 277-case corpus exercising the CSS3 style match (rankStylesCSS3's top-ranked candidate; style names
+// A 36-set / 277-case corpus exercising the CSS3 style match (selectStyleCSS3's first candidate; style names
 // camel-cased). The invalidFontStyle sentinel marks cases expected to produce a null match (empty set).
 
 package fontmgr
 
 import (
 	"math"
+	"sort"
 	"testing"
 
 	"github.com/richardwilkes/canvas/font"
 )
+
+// rankStylesCSS3 materializes the whole descending-score walk by never accepting a candidate, which is also the
+// fallthrough path every caller relies on when a face fails to load.
+func rankStylesCSS3(pattern font.Style, count int, styleAt func(int) font.Style) []int {
+	order := make([]int, 0, count)
+	if selectStyleCSS3(pattern, count, styleAt, func(i int) bool {
+		order = append(order, i)
+		return false
+	}) {
+		panic("selectStyleCSS3 reported a match when nothing was accepted")
+	}
+	return order
+}
 
 var (
 	invalidFontStyle = font.NewStyle(101, font.WidthNormal, font.SlantUpright)
@@ -43,7 +57,7 @@ var (
 	normalNormal900 = font.NewStyle(font.WeightBlack, font.WidthNormal, font.SlantUpright)
 )
 
-// TestMatchStyleCSS3 exercises the style match MatchStyle performs — the top-ranked rankStylesCSS3 candidate — against
+// TestMatchStyleCSS3 exercises the style match MatchStyle performs — the first selectStyleCSS3 candidate — against
 // the corpus above.
 func TestMatchStyleCSS3(t *testing.T) {
 	for ti, test := range matchStyleCSS3Tests {
@@ -134,6 +148,210 @@ func TestCSS3ScoreTierPriority(t *testing.T) {
 	if got := set[order[0]]; got != upright900 {
 		t.Errorf("upright 400 request ranked (%d,%d,%d) first, want the upright 900 face",
 			got.Weight(), got.Width(), got.Slant())
+	}
+}
+
+// TestSelectStyleCSS3WalkOrder pins the order the partial selection walks: exactly the stable descending-score order a
+// full sort of the candidates produces. The walk extracts one maximum at a time so the common case (the first
+// candidate answers) never orders the rest, and every caller depends on the remainder still arriving best-first, with
+// ties keeping first-wins preference.
+func TestSelectStyleCSS3WalkOrder(t *testing.T) {
+	sets := make([][]font.Style, 0, len(matchStyleCSS3Tests)+1)
+	for _, test := range matchStyleCSS3Tests {
+		sets = append(sets, test.set)
+	}
+	// A tie-heavy set: every style appears three times, so first-wins preference is what fixes the order.
+	ties := make([]font.Style, 0, 18)
+	for range 3 {
+		ties = append(ties, normalNormal100, normalNormal400, normalNormal900,
+			condensedItalic100, expandedObliqu900, normalNormal400)
+	}
+	sets = append(sets, ties)
+
+	patterns := []font.Style{
+		normalNormal400, normalNormal900, condensedItalic100, expandedObliqu900, condensedNormal900,
+	}
+	for si, set := range sets {
+		for _, pattern := range patterns {
+			want := make([]int, len(set))
+			for i := range want {
+				want[i] = i
+			}
+			// The reference ordering: a stable sort by descending score, which leaves equal scores in index order.
+			sort.SliceStable(want, func(a, b int) bool {
+				return css3Score(pattern, set[want[a]]) > css3Score(pattern, set[want[b]])
+			})
+			got := rankStylesCSS3(pattern, len(set), func(i int) font.Style { return set[i] })
+			if len(got) != len(want) {
+				t.Fatalf("set %d: walked %d candidates, want %d", si, len(got), len(want))
+			}
+			for i := range want {
+				if got[i] != want[i] {
+					t.Errorf("set %d pattern (%d,%d,%d): walk order %v, want %v", si,
+						pattern.Weight(), pattern.Width(), pattern.Slant(), got, want)
+					break
+				}
+			}
+		}
+	}
+}
+
+// TestSelectStyleCSS3Fallthrough covers the reason the walk exists at all: a candidate the caller turns down (a face
+// that no longer loads) must hand the next-best one over, and the walk must report whether anything was accepted.
+func TestSelectStyleCSS3Fallthrough(t *testing.T) {
+	set := []font.Style{normalNormal100, normalNormal400, normalNormal500, normalNormal900}
+	pattern := normalNormal400
+	styleAt := func(i int) font.Style { return set[i] }
+	order := rankStylesCSS3(pattern, len(set), styleAt)
+
+	// Turning down the first k candidates must yield the (k+1)-th in the same order, one at a time.
+	for k := range len(set) {
+		var visited []int
+		if !selectStyleCSS3(pattern, len(set), styleAt, func(i int) bool {
+			visited = append(visited, i)
+			return len(visited) > k
+		}) {
+			t.Fatalf("rejecting %d candidates reported no match", k)
+		}
+		if len(visited) != k+1 {
+			t.Fatalf("rejecting %d candidates visited %d, want %d", k, len(visited), k+1)
+		}
+		for i, idx := range visited {
+			if idx != order[i] {
+				t.Errorf("rejecting %d candidates visited %v, want the walk order %v", k, visited, order[:k+1])
+				break
+			}
+		}
+	}
+
+	// Turning every candidate down visits them all and reports no match.
+	visits := 0
+	if selectStyleCSS3(pattern, len(set), styleAt, func(int) bool {
+		visits++
+		return false
+	}) {
+		t.Error("rejecting every candidate reported a match")
+	}
+	if visits != len(set) {
+		t.Errorf("rejecting every candidate visited %d, want %d", visits, len(set))
+	}
+
+	// An empty set never calls accept and reports no match.
+	if selectStyleCSS3(pattern, 0, styleAt, func(int) bool {
+		t.Error("empty set called accept")
+		return true
+	}) {
+		t.Error("empty set reported a match")
+	}
+}
+
+// TestCSS3ScoreRawStyleComponents covers styles that never passed through font.NewStyle. font.Style is an exported
+// int32 whose packed form is the documented round-trip, so a caller can hand any component in: an out-of-range slant
+// used to index the 3x3 slant table out of range and panic, and an out-of-range width or weight overflows its tier's
+// field. Each component must instead score as its pinned equivalent.
+func TestCSS3ScoreRawStyleComponents(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		raw    font.Style
+		pinned font.Style
+	}{
+		{
+			name:   "slant above oblique",
+			raw:    font.Style(3 << 24),
+			pinned: font.NewStyle(font.WeightInvisible, font.WidthUltraCondensed, font.SlantOblique),
+		},
+		{
+			name:   "slant far above oblique",
+			raw:    font.Style(127<<24 | font.WidthNormal<<16 | font.WeightNormal),
+			pinned: font.NewStyle(font.WeightNormal, font.WidthNormal, font.SlantOblique),
+		},
+		{
+			name:   "every component saturated",
+			raw:    font.Style(-1),
+			pinned: font.NewStyle(font.WeightExtraBlack, font.WidthUltraExpanded, font.SlantOblique),
+		},
+		{
+			name:   "width above ultra-expanded",
+			raw:    font.Style(255<<16 | font.WeightNormal),
+			pinned: font.NewStyle(font.WeightNormal, font.WidthUltraExpanded, font.SlantUpright),
+		},
+		{
+			name:   "width below ultra-condensed",
+			raw:    font.Style(font.WeightNormal),
+			pinned: font.NewStyle(font.WeightNormal, font.WidthUltraCondensed, font.SlantUpright),
+		},
+		{
+			name:   "weight above extra-black",
+			raw:    font.Style(font.WidthNormal<<16 | 0xFFFF),
+			pinned: font.NewStyle(font.WeightExtraBlack, font.WidthNormal, font.SlantUpright),
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			// Both as the pattern and as a candidate: css3Score reads the same fields of each.
+			for _, other := range []font.Style{normalNormal400, condensedItalic900, expandedObliqu100} {
+				if got, want := css3Score(test.raw, other), css3Score(test.pinned, other); got != want {
+					t.Errorf("as pattern against (%d,%d,%d): score %d, want the pinned style's %d",
+						other.Weight(), other.Width(), other.Slant(), got, want)
+				}
+				if got, want := css3Score(other, test.raw), css3Score(other, test.pinned); got != want {
+					t.Errorf("as candidate against (%d,%d,%d): score %d, want the pinned style's %d",
+						other.Weight(), other.Width(), other.Slant(), got, want)
+				}
+			}
+		})
+	}
+}
+
+// TestMatchRawStyleThroughPublicAPI walks the raw-style panic out through the exported entry points that reach
+// css3Score, over the hermetic corpus.
+func TestMatchRawStyleThroughPublicAPI(t *testing.T) {
+	m := newTestManager(t)
+	raw := font.Style(3 << 24) // slant 3: one past SlantOblique
+	if tf := m.MatchFamily("Test").MatchStyle(raw); tf == nil {
+		t.Error("StyleSet.MatchStyle with a raw slant found no face")
+	}
+	if tf := m.MatchFamilyStyle("Roboto", raw); tf == nil {
+		t.Error("MatchFamilyStyle with a raw slant found no face")
+	}
+	if tf := m.MatchFamilyStyleCharacter("", raw, nil, 'x'); tf == nil {
+		t.Error("MatchFamilyStyleCharacter with a raw slant found no face")
+	}
+}
+
+// benchmarkStyleSet builds count distinct-ish styles, the shape of a cross-family fallback candidate set.
+func benchmarkStyleSet(count int) []font.Style {
+	weights := []int{
+		font.WeightThin, font.WeightLight, font.WeightNormal, font.WeightMedium, font.WeightBold, font.WeightBlack,
+	}
+	slants := []font.Slant{font.SlantUpright, font.SlantItalic, font.SlantOblique}
+	set := make([]font.Style, count)
+	for i := range set {
+		set[i] = font.NewStyle(weights[i%len(weights)], font.WidthUltraCondensed+(i/len(weights))%9,
+			slants[(i/7)%len(slants)])
+	}
+	return set
+}
+
+// BenchmarkSelectStyleCSS3FirstAccepted measures the common case on the cross-family fallback path: a large candidate
+// set whose best-scoring face answers immediately. The walk costs two linear passes — measured at n=3000, ~50x less
+// than the full insertion sort it replaced (51 µs against 2.5 ms).
+func BenchmarkSelectStyleCSS3FirstAccepted(b *testing.B) {
+	set := benchmarkStyleSet(3000)
+	pattern := font.NewStyle(font.WeightNormal, font.WidthNormal, font.SlantUpright)
+	styleAt := func(i int) font.Style { return set[i] }
+	for b.Loop() {
+		selectStyleCSS3(pattern, len(set), styleAt, func(int) bool { return true })
+	}
+}
+
+// BenchmarkSelectStyleCSS3FullWalk measures the worst case the partial selection cannot improve on: every candidate
+// turned down, so the walk orders the whole set.
+func BenchmarkSelectStyleCSS3FullWalk(b *testing.B) {
+	set := benchmarkStyleSet(300)
+	pattern := font.NewStyle(font.WeightNormal, font.WidthNormal, font.SlantUpright)
+	styleAt := func(i int) font.Style { return set[i] }
+	for b.Loop() {
+		selectStyleCSS3(pattern, len(set), styleAt, func(int) bool { return false })
 	}
 }
 

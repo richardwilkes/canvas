@@ -21,7 +21,7 @@
 // single host byte-for-byte. The inventory is fontscan's on-disk scan, so it can include families a host has not
 // activated and miss host-virtual families; hidden (dot-prefixed) families are excluded from enumeration but stay
 // matchable by name and reachable through character fallback; enumeration is ordered by normalized family name; family
-// lookup is case- and space-insensitive with no fontconfig-style alias substitution; rankStylesCSS3 is the one
+// lookup is case- and space-insensitive with no fontconfig-style alias substitution; selectStyleCSS3 is the one
 // style-distance algorithm on every platform; and when nothing covers a character, matchFamilyStyleCharacter returns
 // nil per the documented contract.
 
@@ -408,19 +408,23 @@ func matchCovering(faces []*faceRec, pattern font.Style, r rune, approx bool) *f
 		}
 		return covering[i].style()
 	}
-	for _, idx := range rankStylesCSS3(pattern, len(covering), styleAt) {
+	var match *font.Typeface
+	selectStyleCSS3(pattern, len(covering), styleAt, func(idx int) bool {
 		f := covering[idx]
 		if !f.covers(r) {
-			continue
+			return false
 		}
 		// The probe already answered the cmap question; re-asking the loaded typeface costs one lookup and keeps the
 		// contract ("the returned face always maps character through its own cmap") true of the object handed back, not
 		// just of the file it came from.
-		if tf := f.typeface(); tf != nil && tf.UnicharToGlyph(r) != 0 {
-			return tf
+		tf := f.typeface()
+		if tf == nil || tf.UnicharToGlyph(r) == 0 {
+			return false
 		}
-	}
-	return nil
+		match = tf
+		return true
+	})
+	return match
 }
 
 // MakeFromData loads a typeface from font data; nil when the data is not a usable font or the collection index is out

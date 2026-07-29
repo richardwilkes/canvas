@@ -78,10 +78,12 @@ func TestDefaultManagerMatching(t *testing.T) {
 		t.Errorf("MatchFamilyStyle(%q, bold) returned nil", fam)
 	}
 
-	// A plain ASCII letter should be covered by some system family.
+	// A plain ASCII letter must be covered by some system family: this machine has font families (the skip above), so a
+	// nil here means the whole cross-family character-fallback lane (matchCoveringTiered/matchCovering) is broken —
+	// MatchFamilyStyleCharacter's primary regression mode, and skipping on it would take the assertions below with it.
 	tf := mgr.MatchFamilyStyleCharacter("", font.NormalStyle(), nil, 'A')
 	if tf == nil {
-		t.Skip("no system family covers 'A'")
+		t.Fatal("no system family covers 'A'")
 	}
 	if tf.UnicharToGlyph('A') == 0 {
 		t.Error("matched face does not actually cover 'A'")

@@ -118,6 +118,37 @@ func maskInk(g *Glyph) int {
 	return total
 }
 
+// blankEdges counts the fully-zero rows at the top and bottom, and the fully-zero columns at the left and right, of an
+// A8 glyph mask — how much empty margin the glyph's bounds carry on each side.
+func blankEdges(g *Glyph) (top, bottom, left, right int) {
+	w, h, rowBytes := int(g.Width), int(g.Height), int(g.RowBytes())
+	rowInk := func(y int) (total int) {
+		for x := range w {
+			total += int(g.Image[y*rowBytes+x])
+		}
+		return total
+	}
+	colInk := func(x int) (total int) {
+		for y := range h {
+			total += int(g.Image[y*rowBytes+x])
+		}
+		return total
+	}
+	for top < h && rowInk(top) == 0 {
+		top++
+	}
+	for bottom < h-top && rowInk(h-1-bottom) == 0 {
+		bottom++
+	}
+	for left < w && colInk(left) == 0 {
+		left++
+	}
+	for right < w-left && colInk(w-1-right) == 0 {
+		right++
+	}
+	return top, bottom, left, right
+}
+
 func TestStrikeMaskGeneration(t *testing.T) {
 	tf := loadTypeface(t, "Roboto-Regular.ttf", 0)
 	f := NewFont(tf, 24, 1, 0)
@@ -153,11 +184,18 @@ func TestStrikeMaskGeneration(t *testing.T) {
 		t.Errorf("advance %v, measuring %v", g.AdvanceX, st.glyphAdvance(gid))
 	}
 
-	// Rows at the extremes have ink (bounds are tight for the control-box recipe on 'A').
-	top := g.Image[:g.Width]
-	bottom := g.Image[(g.Height-1)*g.RowBytes():]
-	if allZero(top) && allZero(bottom) {
-		t.Error("expected ink near mask edges")
+	// The bounds are tight: the mask spans the glyph's outline bounds rounded out to whole pixels, so one extreme row
+	// or column can still round to zero coverage — Roboto 'A' at 24 does exactly that at its apex row — but two blank
+	// rows or columns at any one edge mean the bounds carry real slop (saturateGlyphBounds outsetting, say).
+	top, bottom, left, right := blankEdges(g)
+	for _, edge := range []struct {
+		name  string
+		blank int
+	}{{"top", top}, {"bottom", bottom}, {"left", left}, {"right", right}} {
+		if edge.blank > 1 {
+			t.Errorf("%s edge has %d blank rows/columns (mask %dx%d); bounds are not tight",
+				edge.name, edge.blank, g.Width, g.Height)
+		}
 	}
 
 	// A space glyph is empty and drops.
@@ -168,6 +206,58 @@ func TestStrikeMaskGeneration(t *testing.T) {
 	}
 	if sg.AdvanceX == 0 {
 		t.Error("space should still carry an advance")
+	}
+}
+
+// TestAtlasActionSizeGates drives the two atlas-bound mask actions across their bound: kDirectMask takes glyphs up to
+// SideTooBigForAtlas, kMask stops two pixels short of it for the bilerp padding, and both must reject everything above.
+// The text sizes bracket the crossing ('A' grows a bit under a pixel per point), so the walk sees each action flip —
+// and sees kMask flip first, which is the whole point of the -2.
+func TestAtlasActionSizeGates(t *testing.T) {
+	tf := loadTypeface(t, "Roboto-Regular.ttf", 0)
+	gid := tf.UnicharToGlyph('A')
+	if gid == 0 {
+		t.Fatal("Roboto should map 'A'")
+	}
+	tests := []struct {
+		name        string
+		action      ActionType
+		limit       int32
+		firstReject float32
+	}{
+		{name: "kDirectMask", action: ActionDirectMask, limit: SideTooBigForAtlas},
+		{name: "kMask", action: ActionMask, limit: SideTooBigForAtlas - 2},
+	}
+	for i, test := range tests {
+		accepted, rejected := 0, 0
+		for size := float32(320); size <= 400; size += 4 {
+			spec := MakeWithNoDeviceSpec(NewFont(tf, size, 1, 0), nil)
+			strike := spec.FindOrCreateStrike()
+			g, action := strike.DigestFor(test.action, PackGlyphID(gid))
+			want := GlyphActionReject
+			if g.MaxDimension() <= test.limit {
+				want = GlyphActionAccept
+				accepted++
+			} else {
+				if rejected == 0 {
+					tests[i].firstReject = size
+				}
+				rejected++
+			}
+			if action != want {
+				t.Errorf("%s at size %v: %dx%d glyph action = %v, want %v",
+					test.name, size, g.Width, g.Height, action, want)
+			}
+		}
+		if accepted == 0 || rejected == 0 {
+			t.Fatalf("%s: the size walk saw %d accepts and %d rejects; it must cross the atlas bound",
+				test.name, accepted, rejected)
+		}
+	}
+	// kMask's two pixels of bilerp padding must cost it a real size: it gives up before kDirectMask does.
+	if tests[1].firstReject >= tests[0].firstReject {
+		t.Errorf("kMask first rejects at size %v, kDirectMask at %v; kMask must give up first",
+			tests[1].firstReject, tests[0].firstReject)
 	}
 }
 
@@ -297,15 +387,6 @@ func TestStrikeAliasedEdgingMask(t *testing.T) {
 	if spec := MakeSDFTMaskSpec(f, nil); spec.Rec.Flags&recFlagAliased != 0 {
 		t.Error("the SDF rec must not carry the aliased flag")
 	}
-}
-
-func allZero(b []uint8) bool {
-	for _, v := range b {
-		if v != 0 {
-			return false
-		}
-	}
-	return true
 }
 
 func TestStrikeSubpixelMasksDiffer(t *testing.T) {

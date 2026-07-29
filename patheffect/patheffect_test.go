@@ -225,6 +225,28 @@ func TestDashAsPoints(t *testing.T) {
 	if pe.AsPoints(&pd, line(0, 0, 20, 20), &rec, ctm, &cull) {
 		t.Error("angled butt-capped line should be rejected")
 	}
+
+	// Round caps are rejected outright, both axis-aligned and angled, so the circle form is never returned.
+	roundSpec := stroke.PaintSpec{Style: stroke.PaintStyleStroke, Width: 2, MiterLimit: 4, Cap: stroke.CapRound}
+	recRound := stroke.NewStrokeRecFromPaint(&roundSpec, 1)
+	if recRound.Cap() != stroke.CapRound {
+		t.Fatalf("stroke rec cap: got %v, want CapRound", recRound.Cap())
+	}
+	if pe.AsPoints(&pd, line(0, 5, 20, 5), &recRound, ctm, &cull) {
+		t.Error("round-capped horizontal line should be rejected")
+	}
+	if pe.AsPoints(&pd, line(0, 0, 20, 20), &recRound, ctm, &cull) {
+		t.Error("round-capped angled line should be rejected")
+	}
+
+	// An accepted call always reports square points, clearing any flags the caller left in the results.
+	pd.Flags = stroke.CirclesPointFlag
+	if !pe.AsPoints(&pd, line(0, 5, 20, 5), &rec, ctm, &cull) {
+		t.Fatal("AsPoints should handle an integer on==off horizontal line")
+	}
+	if pd.Flags != 0 {
+		t.Errorf("flags: got %#x, want 0 (no implemented effect produces the circle form)", pd.Flags)
+	}
 }
 
 ///////////////////////////////////////////////////////////////////////////////

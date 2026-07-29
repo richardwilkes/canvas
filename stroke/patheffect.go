@@ -26,8 +26,10 @@ type PointData struct {
 	Flags  uint32       // flags that impact the drawing of the points
 }
 
-// PointData flags. Only CirclesPointFlag is produced by the implemented effects; a "use path" or "use clip" flag is not
-// supported here either.
+// PointData flags. CirclesPointFlag is the only flag defined; a "use path" or "use clip" flag is not supported here.
+// None of the effects implemented in this module set it — dash's AsPoints, the only AsPoints implementation, accepts
+// butt caps only, so it always reports square points — but the canvas honors it, so an effect supplied by a caller can
+// request the circle form.
 const (
 	CirclesPointFlag uint32 = 0x01 // draw points as circles (instead of rects)
 )

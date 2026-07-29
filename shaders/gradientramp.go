@@ -26,7 +26,8 @@ import (
 // explicit stop positions when the stops are not evenly spaced (nil selects the evenly-spaced fill stage; the GPU
 // caller always passes explicit positions, forcing the bake to take the searched stage). premul applies the final
 // interpolated-to-dst premultiplication — pass it as !allOpaque so opaque ramps skip the no-op, matching both the
-// interpolated-to-dst stage and the analytic colorizers' color-transform lane.
+// interpolated-to-dst stage and the analytic colorizers' color-transform lane. colors must hold at least one stop, and
+// positions, when non-nil, must be at least as long as colors; a single stop bakes that color across the whole ramp.
 func EvalGradientRamp(colors []colorcore.Color4f, positions []float32, premul bool, dst []colorcore.PMColor4f) {
 	p := borrowPipeline()
 	defer RecyclePipeline(p)

@@ -23,6 +23,7 @@ import (
 	"github.com/richardwilkes/canvas/gpu"
 	"github.com/richardwilkes/canvas/raster"
 	"github.com/richardwilkes/canvas/shaders"
+	"github.com/richardwilkes/canvas/surface"
 )
 
 func newTestTextureProxyView(t *testing.T, dc *DirectContext, w, h int32) SurfaceProxyView {
@@ -585,6 +586,60 @@ func TestMakePaintLanes(t *testing.T) {
 	}
 	if _, isCustom := gpuPaint.XPFactory().(*customXPFactory); !isCustom {
 		t.Fatalf("advanced mode factory is %T, want customXPFactory", gpuPaint.XPFactory())
+	}
+}
+
+// TestAlwaysDitherSurfaceProp checks that surface.AlwaysDitherFlag on the draw context's props forces the dither FP on
+// for a paint whose own dither flag is off, and that a paint with no color FP still has nothing to wrap.
+func TestAlwaysDitherSurfaceProp(t *testing.T) {
+	dc := newShaderRecordingContext(t)
+	defer dc.Destroy()
+	makeSDC := func(props *surface.Props) *SurfaceDrawContext {
+		sdc := MakeSurfaceDrawContextWithProps(dc, gpu.ColorTypeRGBA8888, geom.ISize{Width: 8, Height: 8},
+			gpu.BackingFitExact, 1, gpu.MipmappedNo, gpu.OriginTopLeft, gpu.BudgetedYes, "dither-props-test",
+			props)
+		if sdc == nil {
+			t.Fatal("MakeSurfaceDrawContextWithProps failed")
+		}
+		t.Cleanup(sdc.Release)
+		return sdc
+	}
+	ctm := geom.IdentityMatrix()
+	shader := shaders.NewLinearGradient(geom.Point{}, geom.Point{X: 8},
+		[]colorcore.Color{0xFF101010, 0xFF181818}, nil, shaders.TileClamp, nil)
+	white := colorcore.Color4f{R: 1, G: 1, B: 1, A: 1}
+
+	// Control: with default props, a non-dithering paint is not wrapped.
+	gpuPaint, ok := MakePaint(makeSDC(nil), &PaintParams{
+		Color:     white,
+		BlendMode: raster.BlendSrcOver,
+		Shader:    shader,
+	}, ctm)
+	if !ok {
+		t.Fatal("default-props conversion failed")
+	}
+	if _, isDither := gpuPaint.ColorFragmentProcessor().(*ditherFP); isDither {
+		t.Fatal("paint without the dither flag must not dither on a default-props surface")
+	}
+
+	// The same paint on an always-dither surface is wrapped in the dither FP.
+	alwaysDither := makeSDC(&surface.Props{Flags: surface.AlwaysDitherFlag})
+	gpuPaint, ok = MakePaint(alwaysDither, &PaintParams{
+		Color:     white,
+		BlendMode: raster.BlendSrcOver,
+		Shader:    shader,
+	}, ctm)
+	if !ok {
+		t.Fatal("always-dither conversion failed")
+	}
+	if _, isDither := gpuPaint.ColorFragmentProcessor().(*ditherFP); !isDither {
+		t.Fatalf("always-dither surface FP is %T, want ditherFP", gpuPaint.ColorFragmentProcessor())
+	}
+
+	// A plain color paint produces no color FP at all, so there is nothing for the prop to wrap.
+	gpuPaint, ok = MakePaint(alwaysDither, &PaintParams{Color: white, BlendMode: raster.BlendSrcOver}, ctm)
+	if !ok || gpuPaint.HasColorFragmentProcessor() {
+		t.Fatal("a color-only paint must not gain an FP from the always-dither prop")
 	}
 }
 

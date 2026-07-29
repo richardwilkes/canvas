@@ -36,7 +36,9 @@ const (
 	UseDeviceIndependentFontsFlag uint32 = 1 << 0
 	// DynamicMSAAFlag uses internal MSAA to render to non-MSAA GPU surfaces.
 	DynamicMSAAFlag uint32 = 1 << 1
-	// AlwaysDitherFlag requests dithering even where it would otherwise be skipped.
+	// AlwaysDitherFlag requests dithering even where it would otherwise be skipped: on the GPU backend every draw with
+	// a color fragment processor dithers, whatever the paint's own dither flag says. The raster backend ignores it and
+	// dithers from the paint flag alone.
 	AlwaysDitherFlag uint32 = 1 << 2
 )
 

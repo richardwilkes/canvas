@@ -25,6 +25,7 @@ import (
 	"github.com/richardwilkes/canvas/imagecore"
 	"github.com/richardwilkes/canvas/raster"
 	"github.com/richardwilkes/canvas/shaders"
+	"github.com/richardwilkes/canvas/surface"
 )
 
 // FPArgs carries the context, caps, and destination color type needed to build fragment processors for a draw, with
@@ -274,6 +275,14 @@ type PaintParams struct {
 	HasImageFilter bool // participates in ShouldDither only
 }
 
+// shouldDitherDraw reports whether a draw should apply dithering: the surface's always-dither prop forces it on for
+// every draw that has a color FP, whatever the paint's own dither flag and destination color type say, and otherwise
+// the paint decides. This is upstream's `surfaceProps.isAlwaysDither() || SkPaintPriv::ShouldDither(...)`; only the GPU
+// backend honors the prop (the raster blitters key on the paint flag alone, as upstream's do).
+func shouldDitherDraw(props surface.Props, pp *PaintParams, dstCT gpu.ColorType) bool {
+	return props.Flags&surface.AlwaysDitherFlag != 0 || shouldDitherPaint(pp, dstCT)
+}
+
 // shouldDitherPaint reports whether the paint's draw should apply dithering for the destination color type.
 func shouldDitherPaint(pp *PaintParams, dstCT gpu.ColorType) bool {
 	// The paint dither flag can veto.
@@ -419,7 +428,7 @@ func makePaintImpl(sdc *SurfaceDrawContext, pp *PaintParams, ctm geom.Matrix, sh
 		}
 	}
 
-	if paintFP != nil && shouldDitherPaint(pp, args.DstColorType) {
+	if paintFP != nil && shouldDitherDraw(sdc.SurfaceProps(), pp, args.DstColorType) {
 		ditherRange := gpu.DitherRangeForColorType(args.DstColorType)
 		paintFP = makeDitherEffectFP(args.Ctx, paintFP, ditherRange, args.Caps)
 	}

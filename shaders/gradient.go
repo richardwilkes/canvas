@@ -391,8 +391,10 @@ func (g *gradientBase) appendFillStages(p *Pipeline) {
 			lastStop = count - 2
 		}
 	} else {
+		// count is 1 or 2 here; lastStop must still be the final stop index, or a single-stop ramp would walk one stop
+		// past the end of the slices below.
 		firstStop = 0
-		lastStop = 1
+		lastStop = count - 1
 	}
 
 	stopCount := 0

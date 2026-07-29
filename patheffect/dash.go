@@ -577,8 +577,9 @@ func cullLine(pts *[2]geom.Point, rec *stroke.Rec, ctm *geom.Matrix, cullRect *g
 }
 
 // AsPoints implements the point-representation acceleration for a dashed line. Currently more restrictive than it needs
-// to be: it requires a two-interval integer on==off pattern on a line with butt or round caps under a rect-stays-rect
-// matrix.
+// to be: it requires a two-interval integer on==off pattern on an axis-aligned line with butt caps under a
+// rect-stays-rect matrix. Because round caps are rejected outright, the returned points are always the square form and
+// results.Flags is always 0 (see the TODOs below for the circle form upstream also leaves unimplemented).
 func (d *dashEffect) AsPoints(results *stroke.PointData, src *path.Path, rec *stroke.Rec, ctm *geom.Matrix, cullRect *geom.Rect) bool {
 	// width < 0 -> fill && width == 0 -> hairline so requiring width > 0 rules both out
 	if rec.Width() <= 0 {
@@ -632,17 +633,15 @@ func (d *dashEffect) AsPoints(results *stroke.PointData, src *path.Path, rec *st
 	case geom.ScalarNearlyEqual(1, tangent.Y) || geom.ScalarNearlyEqual(-1, tangent.Y):
 		results.Size = geom.Point{X: 0.5 * rec.Width(), Y: 0.5 * d.intervals[0]}
 		isXAxis = false
-	case rec.Cap() != stroke.CapRound:
-		// Angled lines don't have axis-aligned boxes.
+	default:
+		// Angled lines don't have axis-aligned boxes. Upstream lets round caps through here (their points are circles,
+		// so orientation does not matter), but the butt-cap requirement above has already rejected them.
 		return false
 	}
 
+	// Square points: the circle form would need the round caps the butt-cap check rejects.
 	results.Flags = 0
 	clampedInitialDashLength := min(length, d.initialDashLength)
-
-	if rec.Cap() == stroke.CapRound {
-		results.Flags |= stroke.CirclesPointFlag
-	}
 
 	numPoints := 0
 	len2 := length

@@ -97,8 +97,8 @@ func init() {
 		p := Stroke(blue, 14)
 		p.Cap = CapSquare
 		c.DrawPoints(PointModePoints, pts, p)
-		// Points mode, butt cap: Skia draws nothing for zero-length butt segments... except points mode promotes them
-		// to squares? Both engines must agree — keep AA on.
+		// Points mode, butt cap: nothing is drawn for zero-length butt segments... except points mode promotes them
+		// to squares? Every lane must agree with its goldens — keep AA on.
 		pts2 := make([]geom.Point, len(pts))
 		for i, pt := range pts {
 			pts2[i] = geom.Point{X: pt.X, Y: pt.Y + 80}

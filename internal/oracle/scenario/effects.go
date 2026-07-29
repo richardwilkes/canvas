@@ -65,7 +65,7 @@ type PathEffectSpec struct {
 	Radius    float32     // corner
 	SegLength float32     // discrete
 	Deviation float32     // discrete
-	Seed      uint32      // discrete (seedAssist; both engines share Skia's LCG)
+	Seed      uint32      // discrete (seedAssist, fed through the ported Skia LCG)
 	Start     float32     // trim
 	Stop      float32     // trim
 	Trim      TrimMode    // trim

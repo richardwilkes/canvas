@@ -164,11 +164,11 @@ func init() {
 	})
 
 	reg("gradient-200-stops", func(c Canvas) {
-		// The textured colorizer: gradients past the GPU looping colorizer's 128-color limit, which both GL backends
-		// render through a 256×1 LUT texture (make_textured_colorizer) — the analytic colorizers cannot represent them.
-		// The CPU lane renders the same stops analytically, so this also pins Go-raster vs C-raster at high stop
-		// counts. Stops are evenly spaced (the public surface's nil-positions form); colors are a deterministic modular
-		// walk so both backends build identical stop lists.
+		// The textured colorizer: gradients past the GPU looping colorizer's 128-color limit, which the GL backend
+		// renders through a 256×1 LUT texture (make_textured_colorizer) — the analytic colorizers cannot represent
+		// them. The raster lane renders the same stops analytically, so this pins the raster and GPU lanes against
+		// their own self-captured goldens at high stop counts. Stops are evenly spaced (the public surface's
+		// nil-positions form); colors are a deterministic modular walk so both lanes build identical stop lists.
 		c.Clear(white)
 		p := NewPaint()
 		p.AA = true

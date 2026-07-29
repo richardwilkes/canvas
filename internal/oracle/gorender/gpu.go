@@ -225,5 +225,10 @@ func renderScenarioGPUWrappedFBOWithProps(g *GPUContext, sc scenario.Scenario, p
 	f.DeleteFramebuffers(1, &fbo)
 	f.DeleteRenderbuffers(1, &colorRB)
 	f.DeleteRenderbuffers(1, &dsRB)
+	// Teardown is the symmetric mutation to the setup above — an unbind plus three deletes performed behind the
+	// context's back — so it needs the same re-sync. Without it the context's GL-state shadow still believes the
+	// now-deleted FBO is bound, and the library skips redundant framebuffer binds: a later render on this same context
+	// whose render target is handed the recycled FBO id would have its bind elided and draw into framebuffer 0.
+	g.dc.ResetContext(gl.AllBackendState)
 	return buf
 }

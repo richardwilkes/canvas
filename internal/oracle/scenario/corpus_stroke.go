@@ -119,7 +119,7 @@ func init() {
 	})
 
 	reg("patheffect-discrete", func(c Canvas) {
-		// Skia's discrete effect is seeded (Skia's LCGRandom over seedAssist), so both engines produce the identical
+		// The discrete effect is seeded (the ported LCGRandom over seedAssist), so every render produces the identical
 		// jitter — this is a determinism check as much as a rendering one.
 		c.Clear(white)
 		for i := range 5 {

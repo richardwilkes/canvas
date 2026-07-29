@@ -317,14 +317,23 @@ func priorManifest(dir string) (m golden.Manifest, hasPrior bool, err error) {
 // blessSummary prints the per-scenario old-vs-new change summary: unchanged/changed/new/removed, with imgdiff stats
 // for every changed image and optional side-by-side + heatmap artifacts. This runs before the staged set replaces the
 // prior one, while the old PNGs are still in place.
+//
+// Nothing about the optional -artifacts output may abort the capture, for exactly the reason the damaged-prior-golden
+// paths below give: this summary is informational and runs after both render passes have already verified the new set,
+// so returning an error here would trip bless's keepStaging defer and delete a two-full-corpus-pass verified capture
+// because a cosmetic side-by-side or heatmap PNG could not be written (a bad -artifacts path, a full disk). Artifact
+// failures are reported on cfg.out and the capture continues.
 func blessSummary(cfg *blessConfig, prior, next *golden.Manifest, staging string) error {
 	priorByName := make(map[string]golden.Entry, len(prior.Entries))
 	for _, e := range prior.Entries {
 		priorByName[e.Name] = e
 	}
-	if cfg.artifacts != "" {
-		if err := os.MkdirAll(cfg.artifacts, 0o755); err != nil {
-			return err
+	artifacts := cfg.artifacts
+	if artifacts != "" {
+		if err := os.MkdirAll(artifacts, 0o755); err != nil {
+			fmt.Fprintf(cfg.out, "note: change artifacts disabled — %s could not be created (%v); the capture "+
+				"continues\n", artifacts, err)
+			artifacts = ""
 		}
 	}
 	unchanged, changed, added := 0, 0, 0
@@ -371,15 +380,11 @@ func blessSummary(cfg *blessConfig, prior, next *golden.Manifest, staging string
 			return err
 		}
 		fmt.Fprintf(cfg.out, "CHANGED   %-32s %s\n", ne.Name, res)
-		if cfg.artifacts != "" {
-			if err = writeImagePNG(filepath.Join(cfg.artifacts, ne.Name+"-diff.png"),
-				imgdiff.SideBySide(oldPix, newPix, ne.Width, ne.Height)); err != nil {
-				return err
-			}
-			if err = writeImagePNG(filepath.Join(cfg.artifacts, ne.Name+"-heat.png"),
-				imgdiff.Heatmap(oldPix, newPix, ne.Width, ne.Height)); err != nil {
-				return err
-			}
+		if artifacts != "" {
+			writeChangeArtifact(cfg.out, filepath.Join(artifacts, ne.Name+"-diff.png"),
+				imgdiff.SideBySide(oldPix, newPix, ne.Width, ne.Height))
+			writeChangeArtifact(cfg.out, filepath.Join(artifacts, ne.Name+"-heat.png"),
+				imgdiff.Heatmap(oldPix, newPix, ne.Width, ne.Height))
 		}
 	}
 	removedNames := make([]string, 0, len(priorByName))
@@ -401,6 +406,15 @@ func priorCaptureLabel(m *golden.Manifest) string {
 		return "date unknown"
 	}
 	return m.CapturedAt
+}
+
+// writeChangeArtifact writes one optional old-vs-new change artifact. A failure is reported on out and swallowed
+// rather than returned: the artifacts are cosmetic review aids, and propagating the error would delete the verified
+// capture staged beside the target directory (see blessSummary).
+func writeChangeArtifact(out io.Writer, path string, img image.Image) {
+	if err := writeImagePNG(path, img); err != nil {
+		fmt.Fprintf(out, "note: could not write the change artifact %s (%v); the capture continues\n", path, err)
+	}
 }
 
 // writeImagePNG encodes img to path.

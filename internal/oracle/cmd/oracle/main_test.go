@@ -13,6 +13,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/richardwilkes/canvas/internal/oracle/golden"
@@ -90,5 +91,95 @@ func TestDiffReadsPassingGoldenPNGs(t *testing.T) {
 	}
 	if _, err = diff(aDir, bDir, imgdiff.Exact, ""); err == nil {
 		t.Fatal("diff over a truncated golden PNG returned no error")
+	}
+}
+
+// TestDiffCrossChecksPNGsWhenManifestsDiffer is the regression test for the manifest/PNG cross-check that used to run
+// only inside the equal-hashes branch. A golden PNG replaced without updating manifest.json leaves that side's entry
+// hash permanently stale, so the two manifest hashes never match, the pixel comparison is the only thing that ever
+// runs, and the desynchronization reports ok forever — the entry's integrity hash written but never verified.
+func TestDiffCrossChecksPNGsWhenManifestsDiffer(t *testing.T) {
+	root := t.TempDir()
+	aDir := filepath.Join(root, "a")
+	bDir := filepath.Join(root, "b")
+	writeTestSet(t, aDir, solidRender(10))
+	writeTestSet(t, bDir, solidRender(20))
+	want := len(testScenarios())
+	failures, err := diff(aDir, bDir, imgdiff.Exact, "")
+	if err != nil {
+		t.Fatalf("diff over two differing sets: %v", err)
+	}
+	if failures != want {
+		t.Fatalf("diff over two differing sets: %d failure(s), want %d", failures, want)
+	}
+
+	// Take b's image for alpha without taking b's manifest entry — a hand edit or a partial merge. The pixels now
+	// match, so the comparison passes; only re-hashing against a's own entry can catch that a's manifest is stale.
+	alpha := testScenarios()[0]
+	bpx, w, h, err := golden.ReadPNG(filepath.Join(bDir, alpha.Name+".png"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = golden.WritePNG(filepath.Join(aDir, alpha.Name+".png"), bpx, w, h); err != nil {
+		t.Fatal(err)
+	}
+	failures, err = diff(aDir, bDir, imgdiff.Exact, "")
+	if err != nil {
+		t.Fatalf("diff with a golden desynchronized from its manifest: %v", err)
+	}
+	if failures != want {
+		t.Fatalf("diff with a golden whose pixels no longer hash to its own manifest entry: %d failure(s), want %d "+
+			"— the desynchronized entry reported ok", failures, want)
+	}
+}
+
+// TestDiffRejectsUnusableManifests covers diff's degenerate-input hole: golden.ReadManifest accepts any well-formed
+// JSON, so `{}`, `null`, and a schema-2 manifest listing nothing all unmarshal without error into something both of
+// diff's loops skip entirely — failures stays 0 and the run prints "all 0 scenarios pass". `oracle gen` + `oracle
+// diff` is the raster lane's only gate, so a manifest that cannot describe a golden set has to be a hard error.
+func TestDiffRejectsUnusableManifests(t *testing.T) {
+	root := t.TempDir()
+	aDir := filepath.Join(root, "a")
+	bDir := filepath.Join(root, "b")
+	dirs := []string{aDir, bDir}
+	writeManifestBytes := func(data string) {
+		t.Helper()
+		for _, d := range dirs {
+			if err := os.MkdirAll(d, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(d, golden.ManifestName), []byte(data), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	for _, data := range []string{"{}\n", "null\n"} {
+		writeManifestBytes(data)
+		_, err := diff(aDir, bDir, imgdiff.Exact, "")
+		if err == nil {
+			t.Fatalf("diff over two %q manifests reported success, want a refusal", strings.TrimSpace(data))
+		}
+		if !strings.Contains(err.Error(), "schema") {
+			t.Fatalf("diff over two %q manifests: err = %v, want a missing-schema diagnosis",
+				strings.TrimSpace(data), err)
+		}
+	}
+	for _, d := range dirs {
+		m := golden.Manifest{Schema: blessSchema, Platform: "test_platform"}
+		if err := golden.WriteManifest(d, &m); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_, err := diff(aDir, bDir, imgdiff.Exact, "")
+	if err == nil || !strings.Contains(err.Error(), "no entries") {
+		t.Fatalf("diff over two entry-less manifests: err = %v, want a nothing-to-compare refusal", err)
+	}
+
+	// A real set on both sides still compares normally — the guard must not reject usable input.
+	writeTestSet(t, aDir, solidRender(10))
+	writeTestSet(t, bDir, solidRender(10))
+	failures, err := diff(aDir, bDir, imgdiff.Exact, "")
+	if err != nil || failures != 0 {
+		t.Fatalf("diff over two identical real sets: %d failure(s), err = %v; want 0 and no error", failures, err)
 	}
 }

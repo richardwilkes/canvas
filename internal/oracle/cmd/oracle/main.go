@@ -231,6 +231,23 @@ func writeGoldens(dir string, scenarios []scenario.Scenario, render func(scenari
 	return golden.WriteManifest(dir, &m)
 }
 
+// checkDiffManifest rejects a manifest that cannot describe a golden set. golden.ReadManifest accepts any well-formed
+// JSON — `{}`, `null`, and a truncated-then-repaired file all unmarshal into a zero Manifest without error — so a
+// manifest carrying no schema or no entries reaches diff looking exactly like a set with nothing to compare. Both of
+// diff's loops are then no-ops, failures stays 0, and the run reports "all 0 scenarios pass": a green gate over a
+// corrupt manifest. Since `oracle gen` + `oracle diff` is the raster lane's only gate, that has to be a hard error
+// rather than a pass.
+func checkDiffManifest(dir string, m *golden.Manifest) error {
+	if m.Schema == 0 {
+		return fmt.Errorf("the manifest in %s carries no schema version — %s is corrupt, truncated, or not a golden "+
+			"manifest", dir, filepath.Join(dir, golden.ManifestName))
+	}
+	if len(m.Entries) == 0 {
+		return fmt.Errorf("the manifest in %s lists no entries — there is nothing to compare", dir)
+	}
+	return nil
+}
+
 // diff compares two golden directories under profile.
 func diff(aDir, bDir string, profile imgdiff.Profile, artifacts string) (failures int, err error) {
 	am, err := golden.ReadManifest(aDir)
@@ -240,6 +257,12 @@ func diff(aDir, bDir string, profile imgdiff.Profile, artifacts string) (failure
 	bm, err := golden.ReadManifest(bDir)
 	if err != nil {
 		return 0, fmt.Errorf("reading manifest in %s: %w", bDir, err)
+	}
+	if err = checkDiffManifest(aDir, &am); err != nil {
+		return 0, err
+	}
+	if err = checkDiffManifest(bDir, &bm); err != nil {
+		return 0, err
 	}
 	bByName := make(map[string]golden.Entry, len(bm.Entries))
 	for _, e := range bm.Entries {
@@ -281,15 +304,19 @@ func diff(aDir, bDir string, profile imgdiff.Profile, artifacts string) (failure
 			failures++
 			continue
 		}
+		// Each PNG has to be the pixels its own manifest entry describes, on both paths. Doing this only where the two
+		// manifests happen to agree would mean the entry's integrity hash is written but never verified on the path
+		// that actually compares pixels: a golden PNG replaced by hand or by a partial merge without updating
+		// manifest.json leaves that side's hash permanently stale, the two manifest hashes then never match, and the
+		// desynchronization would go unreported forever while the comparison keeps saying ok.
+		aHash, bHash := golden.HashPixels(apx), golden.HashPixels(bpx)
+		if aHash != ae.SHA256 || bHash != be.SHA256 {
+			fmt.Printf("FAIL %-32s png content disagrees with its manifest entry (%s: png %s vs manifest %s, "+
+				"%s: png %s vs manifest %s)\n", ae.Name, aDir, aHash, ae.SHA256, bDir, bHash, be.SHA256)
+			failures++
+			continue
+		}
 		if ae.SHA256 == be.SHA256 {
-			// Equal manifest hashes still have to be the hashes of these two files: a PNG whose pixels no longer hash
-			// to its own entry is a damaged golden, however well the two manifests agree with each other.
-			if aHash, bHash := golden.HashPixels(apx), golden.HashPixels(bpx); aHash != ae.SHA256 || bHash != be.SHA256 {
-				fmt.Printf("FAIL %-32s png content disagrees with its manifest entry (%s: %s, %s: %s, manifest: %s)\n",
-					ae.Name, aDir, aHash, bDir, bHash, ae.SHA256)
-				failures++
-				continue
-			}
 			fmt.Printf("ok   %-32s identical\n", ae.Name)
 			continue
 		}

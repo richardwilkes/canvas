@@ -577,6 +577,86 @@ func blessOverPrior(t *testing.T, dir string) *blessConfig {
 	}
 }
 
+// assertNewSetInPlace checks dir holds the solidRender(20) set a blessOverPrior re-bless captures.
+func assertNewSetInPlace(t *testing.T, dir string) {
+	t.Helper()
+	m, err := golden.ReadManifest(dir)
+	if err != nil {
+		t.Fatalf("ReadManifest: %v", err)
+	}
+	for i, s := range testScenarios() {
+		want := golden.HashPixels(solidRender(20)(s))
+		if m.Entries[i].SHA256 != want {
+			t.Fatalf("%s: the captured set was not swapped into place", s.Name)
+		}
+		pixels, _, _, pngErr := golden.ReadPNG(filepath.Join(dir, s.Name+".png"))
+		if pngErr != nil {
+			t.Fatalf("ReadPNG %s: %v", s.Name, pngErr)
+		}
+		if golden.HashPixels(pixels) != want {
+			t.Fatalf("%s: PNG is not the captured set's render", s.Name)
+		}
+	}
+}
+
+// TestBlessKeepsCaptureWhenArtifactsCannotBeCreated pins the rule that nothing about the optional -artifacts output may
+// abort a capture: the artifacts directory cannot be created (a regular file sits at that path), and a two-pass
+// verified capture must still land rather than being deleted by the keepStaging defer on the way out.
+func TestBlessKeepsCaptureWhenArtifactsCannotBeCreated(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "goldens", "raster", "test_platform")
+	cfg := blessOverPrior(t, dir)
+	artifacts := filepath.Join(root, "artifacts")
+	if err := os.WriteFile(artifacts, []byte("not a directory"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	cfg.out = &out
+	cfg.artifacts = artifacts
+	if err := bless(cfg); err != nil {
+		t.Fatalf("bless with an uncreatable -artifacts directory: %v, want the verified capture to land anyway", err)
+	}
+	if !strings.Contains(out.String(), "change artifacts disabled") {
+		t.Fatalf("bless did not report that artifacts were disabled:\n%s", out.String())
+	}
+	assertNewSetInPlace(t, dir)
+	if _, err := os.Stat(dir + ".staging"); !os.IsNotExist(err) {
+		t.Fatalf("bless left its staging directory behind")
+	}
+}
+
+// TestBlessKeepsCaptureWhenAnArtifactWriteFails is the same rule one level down: a single cosmetic side-by-side PNG
+// cannot be written (a directory occupies its path). The capture must land, the failure must be reported, and the
+// remaining artifacts must still be produced.
+func TestBlessKeepsCaptureWhenAnArtifactWriteFails(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "goldens", "raster", "test_platform")
+	cfg := blessOverPrior(t, dir)
+	artifacts := filepath.Join(root, "artifacts")
+	if err := os.MkdirAll(filepath.Join(artifacts, "alpha-diff.png"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	cfg.out = &out
+	cfg.artifacts = artifacts
+	if err := bless(cfg); err != nil {
+		t.Fatalf("bless with an unwritable change artifact: %v, want the verified capture to land anyway", err)
+	}
+	text := out.String()
+	if !strings.Contains(text, "could not write the change artifact") {
+		t.Fatalf("bless did not report the failed change artifact:\n%s", text)
+	}
+	for _, name := range []string{"alpha-heat.png", "beta-diff.png", "beta-heat.png"} {
+		if _, err := os.Stat(filepath.Join(artifacts, name)); err != nil {
+			t.Fatalf("one artifact failure stopped the others: %s missing (%v)", name, err)
+		}
+	}
+	assertNewSetInPlace(t, dir)
+	if _, err := os.Stat(dir + ".staging"); !os.IsNotExist(err) {
+		t.Fatalf("bless left its staging directory behind")
+	}
+}
+
 // assertPriorSetIntact checks dir still holds the solidRender(10) set the first bless wrote.
 func assertPriorSetIntact(t *testing.T, dir string) {
 	t.Helper()

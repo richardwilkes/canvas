@@ -9,7 +9,8 @@
 
 // StrikeCache and Strike: the GPU-side strike cache mapping strike specs to Strikes, each of which owns the
 // Glyph records (packed ID + atlas locator) for one scaler configuration. Strikes are keyed on the comparable
-// font.StrikeSpec, the same way the CPU strike cache does (see font/strikecache.go). The cache is only used from the
+// font.StrikeSpec, the same way the CPU strike cache does (see font/strikecache.go) — including its rule that a spec
+// carrying an unhashable effect skips the cache rather than panicking on the map key. The cache is only used from the
 // single-threaded flush path, but stays lock-protected as a defensive measure.
 
 package text
@@ -86,10 +87,21 @@ func NewStrikeCache() *StrikeCache {
 }
 
 // FindOrCreateStrike returns the Strike for spec, creating it if not already cached. A cache hit does not move the
-// strike to the LRU head.
+// strike to the LRU head. A spec the map cannot key (font.StrikeSpec.Keyable — an effect whose dynamic type Go refuses
+// to hash) gets a fresh uncached strike: in neither the map nor the LRU list, and pre-marked removed so its glyph
+// records stay out of the cache's accounting.
 func (c *StrikeCache) FindOrCreateStrike(spec *font.StrikeSpec) *Strike {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	if !spec.Keyable() {
+		return &Strike{
+			strikeCache: c,
+			spec:        *spec,
+			cache:       make(map[font.PackedGlyphID]*Glyph),
+			memoryUsed:  textStrikeOverhead,
+			removed:     true,
+		}
+	}
 	if cached := c.strikes[*spec]; cached != nil {
 		return cached
 	}

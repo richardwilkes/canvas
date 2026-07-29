@@ -79,6 +79,50 @@ func TestColorGlyphNeedsCurrentColor(t *testing.T) {
 	}
 }
 
+func TestMeasuredBoundsCoverColorAndBitmapLanes(t *testing.T) {
+	// The measuring lane must report the extent the glyph actually draws: the base outline's control box misses COLR
+	// layers, a COLRv1 clip box, and a bitmap strike's quad entirely, so a caller sizing a surface or an invalidation
+	// rect from MeasureText/GlyphBounds would clip the emoji.
+	const size = 32
+	for _, file := range []string{"colr.ttf", "sbix.ttf", "cbdt.ttf", "test_glyphs-glyf_colr_1.ttf"} {
+		t.Run(file, func(t *testing.T) {
+			tf := loadColorTypeface(t, file)
+			f := NewFont(tf, size, 1, 0)
+			identity := geom.IdentityMatrix()
+			spec := MakeMaskSpec(f, nil, &identity, nil)
+			strike := spec.FindOrCreateStrike()
+
+			// What the drawing scaler produces at the identity device matrix is the reference: the measuring strike has
+			// the same text matrix and no post 2x2, so the two must agree exactly, on every glyph of the font.
+			nonEmpty := 0
+			bounds := make([]geom.Rect, 1)
+			for gid := range uint16(tf.nGlyphs) {
+				g, _ := strike.DigestFor(ActionDirectMaskCPU, PackGlyphID(gid))
+				drawn := g.IRect()
+				want := geom.Rect{}
+				if !drawn.IsEmpty() {
+					nonEmpty++
+					want = geom.RectLTRB(float32(drawn.Left), float32(drawn.Top), float32(drawn.Right),
+						float32(drawn.Bottom))
+				}
+				f.GlyphBounds([]uint16{gid}, bounds)
+				if bounds[0] != want {
+					t.Errorf("glyph %d: GlyphBounds %v, drawn %v", gid, bounds[0], want)
+				}
+				// MeasureText joins the same per-glyph bounds, so it covers the drawn extent too.
+				var measured geom.Rect
+				f.MeasureText([]byte{uint8(gid), uint8(gid >> 8)}, TextEncodingGlyphID, &measured, nil)
+				if measured != want {
+					t.Errorf("glyph %d: MeasureText bounds %v, drawn %v", gid, measured, want)
+				}
+			}
+			if nonEmpty == 0 {
+				t.Fatal("no glyph in the font drew anything")
+			}
+		})
+	}
+}
+
 func TestFaceColorPaintMalformedCOLR(t *testing.T) {
 	// hasCOLR is set from the mere presence of nonempty COLR table bytes, but typesetting leaves face.COLR nil when
 	// ParseCOLR fails on a malformed table. Simulate that state (bytes present, parse failed) with a non-COLR face and a

@@ -399,9 +399,13 @@ func generateDistanceFieldFromImage(distanceField, paddedImage []uint8, width, h
 		e += dataWidth + 1
 	}
 
-	// Backwards in y.
-	curr = dataWidth*(dataHeight-2) - 1 // skip the outer buffer
-	e = dataWidth*(dataHeight-2) - 1
+	// Backwards in y. The start is the first interior texel of the last interior row — (dataHeight-2, 1) — mirroring
+	// the forward pass's (1, 1). (Upstream Skia starts two texels earlier, at (dataHeight-3, dataWidth-1), which shifts
+	// every row's window two columns left: the two rightmost columns of each row never get backward propagation and
+	// column 0's b1 reads the previous row's last column. That asymmetry is invisible in a rendered glyph only because
+	// DistanceFieldInset trims the affected padding, so it is fixed here rather than ported.)
+	curr = dataWidth*(dataHeight-2) + 1 // skip the outer buffer
+	e = dataWidth*(dataHeight-2) + 1
 	for j := 1; j < dataHeight-1; j++ {
 		// Forwards in x.
 		for i := 1; i < dataWidth-1; i++ {

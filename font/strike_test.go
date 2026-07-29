@@ -16,6 +16,8 @@ import (
 
 	"github.com/richardwilkes/canvas/geom"
 	"github.com/richardwilkes/canvas/maskfilter"
+	"github.com/richardwilkes/canvas/path"
+	"github.com/richardwilkes/canvas/raster"
 	"github.com/richardwilkes/canvas/stroke"
 )
 
@@ -166,6 +168,134 @@ func TestStrikeMaskGeneration(t *testing.T) {
 	}
 	if sg.AdvanceX == 0 {
 		t.Error("space should still carry an advance")
+	}
+}
+
+func TestStrikeFontMetricsAreInDeviceSpace(t *testing.T) {
+	tf := loadTypeface(t, "Roboto-Regular.ttf", 0)
+	gid := tf.UnicharToGlyph('A')
+	if gid == 0 {
+		t.Fatal("Roboto should map 'A'")
+	}
+	strikeFor := func(m geom.Matrix) *Strike {
+		t.Helper()
+		spec := MakeMaskSpec(NewFont(tf, 12, 1, 0), nil, &m, nil)
+		return spec.FindOrCreateStrike()
+	}
+	advanceOf := func(s *Strike) float32 {
+		t.Helper()
+		g, _ := s.DigestFor(ActionDirectMaskCPU, PackGlyphID(gid))
+		return g.AdvanceX
+	}
+
+	// A strike reports one space: the device matrix that scales the advances and glyph bounds must scale the font
+	// metrics with them. The scale applied is the single matrix's y scale, so a 2x device matrix doubles both.
+	base := strikeFor(geom.IdentityMatrix())
+	var scaled geom.Matrix
+	scaled.SetScale(2, 2)
+	doubled := strikeFor(scaled)
+	baseMetrics, doubledMetrics := base.FontMetrics(), doubled.FontMetrics()
+	if baseMetrics.Ascent >= 0 {
+		t.Fatalf("base ascent %v, want negative (y-down)", baseMetrics.Ascent)
+	}
+	if got, want := advanceOf(doubled), 2*advanceOf(base); got != want {
+		t.Fatalf("advance under 2x = %v, want %v", got, want)
+	}
+	for _, c := range []struct {
+		name       string
+		base, want float32
+	}{
+		{name: "Ascent", base: baseMetrics.Ascent, want: doubledMetrics.Ascent},
+		{name: "Descent", base: baseMetrics.Descent, want: doubledMetrics.Descent},
+		{name: "XHeight", base: baseMetrics.XHeight, want: doubledMetrics.XHeight},
+		{name: "CapHeight", base: baseMetrics.CapHeight, want: doubledMetrics.CapHeight},
+		{name: "XMax", base: baseMetrics.XMax, want: doubledMetrics.XMax},
+		{name: "UnderlineThickness", base: baseMetrics.UnderlineThickness, want: doubledMetrics.UnderlineThickness},
+	} {
+		if 2*c.base != c.want {
+			t.Errorf("%s: 2x device matrix gave %v, want %v (2 * %v)", c.name, c.want, 2*c.base, c.base)
+		}
+	}
+
+	// Rotation is removed before the scale is taken, so a pure rotation leaves the metrics at their source-space
+	// values.
+	var rotated geom.Matrix
+	rotated.SetRotate(90)
+	if got := strikeFor(rotated).FontMetrics().Ascent; !geom.ScalarNearlyEqual(got, baseMetrics.Ascent) {
+		t.Errorf("rotated ascent %v, want %v", got, baseMetrics.Ascent)
+	}
+
+	// A singular device matrix collapses the glyphs, and the metrics fall back to the measuring strike's size-1 recipe
+	// rather than reporting a full-size ascent for zero-size glyphs.
+	var singular geom.Matrix
+	singular.SetScale(0, 0)
+	if got := advanceOf(strikeFor(singular)); got != 0 {
+		t.Errorf("singular advance %v, want 0", got)
+	}
+	got, want := strikeFor(singular).FontMetrics().Ascent, baseMetrics.Ascent/12
+	if !geom.ScalarNearlyEqual(got, want) {
+		t.Errorf("singular ascent %v, want %v (the size-1 fallback)", got, want)
+	}
+}
+
+func TestStrikeAliasedEdgingMask(t *testing.T) {
+	tf := loadTypeface(t, "Roboto-Regular.ttf", 0)
+	gid := tf.UnicharToGlyph('A')
+	if gid == 0 {
+		t.Fatal("Roboto should map 'A'")
+	}
+	identity := geom.IdentityMatrix()
+	maskFor := func(edging Edging) *Glyph {
+		t.Helper()
+		f := NewFont(tf, 24, 1, 0)
+		f.SetEdging(edging)
+		spec := MakeMaskSpec(f, nil, &identity, nil)
+		g, action := spec.FindOrCreateStrike().DigestFor(ActionDirectMaskCPU, PackGlyphID(gid))
+		if action != GlyphActionAccept || g.Image == nil {
+			t.Fatalf("edging %d: action %d, image nil=%v", edging, action, g.Image == nil)
+		}
+		return g
+	}
+
+	// EdgingAlias must reach the mask lane, not just the path and distance-field lanes: coverage comes out hard, so a
+	// font renders with one edge treatment at every size (Font.HasSomeAntiAliasing, which the path lane consults,
+	// reports false for it).
+	aliased := maskFor(EdgingAlias)
+	for i, v := range aliased.Image {
+		if v != 0 && v != 255 {
+			t.Fatalf("aliased mask has partial coverage %d at index %d", v, i)
+		}
+	}
+	if maskInk(aliased) == 0 {
+		t.Fatal("aliased mask has no ink")
+	}
+
+	// Anti-aliased edging still produces soft edges, and the two must be separate strikes: the rec flag is part of the
+	// strike key, so one edging cannot serve a mask generated for the other.
+	antiAliased := maskFor(EdgingAntiAlias)
+	partial := 0
+	for _, v := range antiAliased.Image {
+		if v != 0 && v != 255 {
+			partial++
+		}
+	}
+	if partial == 0 {
+		t.Error("anti-aliased mask has no partial coverage")
+	}
+	if aliased == antiAliased {
+		t.Error("aliased and anti-aliased edging shared a glyph")
+	}
+	if aliased.IRect() != antiAliased.IRect() {
+		t.Errorf("aliased bounds %v, anti-aliased %v; the edging must not move the bounds",
+			aliased.IRect(), antiAliased.IRect())
+	}
+
+	// The SDF lane always measures anti-aliased coverage: aliased distance-field text is the shader's monochrome step
+	// over the same field, so an aliased run font must not degrade the field it generates.
+	f := NewFont(tf, 24, 1, 0)
+	f.SetEdging(EdgingAlias)
+	if spec := MakeSDFTMaskSpec(f, nil); spec.Rec.Flags&recFlagAliased != 0 {
+		t.Error("the SDF rec must not carry the aliased flag")
 	}
 }
 
@@ -469,6 +599,95 @@ func TestTypefaceBoundsAndFontBounds(t *testing.T) {
 	}
 	if EmptyTypeface().Bounds() != (geom.Rect{}) {
 		t.Error("empty typeface bounds should be empty")
+	}
+}
+
+// unhashablePathEffect is a value-receiver stroke.PathEffect over unhashable state: a slice field makes its dynamic
+// type one Go refuses to hash, which is all a caller outside this module needs to do by accident. FilterPath reports
+// "did not filter", so the glyph still renders from its plain outline.
+type unhashablePathEffect struct{ intervals []float32 }
+
+func (unhashablePathEffect) FilterPath(_, _ *path.Path, _ *stroke.Rec, _ *geom.Rect, _ *geom.Matrix) bool {
+	return false
+}
+
+func (unhashablePathEffect) AsPoints(_ *stroke.PointData, _ *path.Path, _ *stroke.Rec, _ *geom.Matrix,
+	_ *geom.Rect,
+) bool {
+	return false
+}
+
+func (unhashablePathEffect) ComputeFastBounds(_ *geom.Rect) bool { return false }
+
+// poisonedMaskFilter is comparable as a type — reflect.Type.Comparable reports true — yet unhashable as a value,
+// because its interface-typed field holds a slice. Only an actual hash attempt can tell.
+type poisonedMaskFilter struct{ payload any }
+
+func (poisonedMaskFilter) FilterMask(_ *raster.Mask, _ *geom.Matrix) (*raster.Mask, geom.IPoint, bool) {
+	return nil, geom.IPoint{}, false
+}
+
+func (poisonedMaskFilter) ComputeFastBounds(src geom.Rect) geom.Rect { return src }
+
+func TestStrikeCacheUnhashableEffects(t *testing.T) {
+	tf := loadTypeface(t, "Roboto-Regular.ttf", 0)
+	gid := tf.UnicharToGlyph('A')
+	if gid == 0 {
+		t.Fatal("Roboto should map 'A'")
+	}
+	identity := geom.IdentityMatrix()
+	for _, c := range []struct {
+		paint *ScalerPaint
+		name  string
+	}{
+		{
+			name:  "path effect",
+			paint: &ScalerPaint{PathEffect: unhashablePathEffect{intervals: []float32{2, 2}}},
+		},
+		{
+			name:  "mask filter",
+			paint: &ScalerPaint{MaskFilter: poisonedMaskFilter{payload: []int{1}}},
+		},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			f := NewFont(tf, 24, 1, 0)
+			spec := MakeMaskSpec(f, c.paint, &identity, nil)
+			if spec.Keyable() {
+				t.Fatal("the spec must not report itself keyable")
+			}
+
+			// The draw must go through — an effect the map cannot hash used to panic here with "hash of unhashable
+			// type" — and the strike must work, just uncached.
+			cache := NewStrikeCache()
+			strike := cache.FindOrCreateStrike(&spec)
+			g, action := strike.DigestFor(ActionDirectMaskCPU, PackGlyphID(gid))
+			if action != GlyphActionAccept || maskInk(g) == 0 {
+				t.Fatalf("action %v, ink %d", action, maskInk(g))
+			}
+
+			// Uncached: nothing entered the map or the byte accounting, so the strike cannot be looked up, evicted, or
+			// leaked into a budget it will never be purged from.
+			if got := cache.StrikeCount(); got != 0 {
+				t.Errorf("cached strike count %d, want 0", got)
+			}
+			if got := cache.TotalMemoryUsed(); got != 0 {
+				t.Errorf("cached bytes %d, want 0", got)
+			}
+			if again := cache.FindOrCreateStrike(&spec); again == strike {
+				t.Error("an uncached spec must not resolve to the same strike twice")
+			}
+		})
+	}
+
+	// The hashable effects the module ships still key: an uncacheable spec must be the exception, not the rule.
+	f := NewFont(tf, 24, 1, 0)
+	shipped := MakeMaskSpec(f, &ScalerPaint{MaskFilter: maskfilter.NewBlur(maskfilter.BlurNormal, 2, true)},
+		&identity, nil)
+	if !shipped.Keyable() {
+		t.Error("a shipped mask filter must be keyable")
+	}
+	if plain := MakeMaskSpec(f, nil, &identity, nil); !plain.Keyable() {
+		t.Error("a spec with no effects must be keyable")
 	}
 }
 

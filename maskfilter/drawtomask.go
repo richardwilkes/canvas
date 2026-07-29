@@ -69,18 +69,26 @@ func DrawToMask(devPath *path.Path, clipBounds geom.IRect, mf MaskFilter, ctm *g
 		return nil, false
 	}
 	mask.Image = make([]uint8, size)
-	drawIntoMask(mask, devPath, doFill)
+	drawIntoMask(mask, devPath, doFill, true)
 	return mask, true
 }
 
 // RenderPathIntoMask exposes drawIntoMask for the glyph scaler's A8 rendering lane: draw devPath's AA coverage into
 // mask, which must already be allocated and zeroed; doFill=false renders the path as an AA hairline.
 func RenderPathIntoMask(mask *raster.Mask, devPath *path.Path, doFill bool) {
-	drawIntoMask(mask, devPath, doFill)
+	drawIntoMask(mask, devPath, doFill, true)
 }
 
-// drawIntoMask translates the path to mask-local coordinates and renders it antialiased through the A8 srcover blitter.
-func drawIntoMask(mask *raster.Mask, devPath *path.Path, doFill bool) {
+// RenderPathIntoMaskAliased is RenderPathIntoMask without anti-aliasing: coverage comes out hard-edged (0 or 255), the
+// form the glyph scaler's aliased-edging lane (font.EdgingAlias) needs. doFill=false renders the path as a
+// non-antialiased hairline.
+func RenderPathIntoMaskAliased(mask *raster.Mask, devPath *path.Path, doFill bool) {
+	drawIntoMask(mask, devPath, doFill, false)
+}
+
+// drawIntoMask translates the path to mask-local coordinates and renders it through the A8 srcover blitter, either
+// antialiased or with hard (0 or 255) coverage.
+func drawIntoMask(mask *raster.Mask, devPath *path.Path, doFill, antiAlias bool) {
 	dx := float32(-mask.Bounds.Left)
 	dy := float32(-mask.Bounds.Top)
 	var translate geom.Matrix
@@ -94,10 +102,15 @@ func drawIntoMask(mask *raster.Mask, devPath *path.Path, doFill bool) {
 
 	blitter := newA8Blitter(mask)
 	clip := raster.NewRasterClipRect(geom.IRectWH(mask.Bounds.Width(), mask.Bounds.Height()))
-	if doFill {
+	switch {
+	case doFill && antiAlias:
 		raster.AntiFillPathRasterClip(local, clip, blitter)
-	} else {
+	case doFill:
+		raster.FillPathRasterClip(local, clip, blitter)
+	case antiAlias:
 		raster.AntiHairPath(local, clip, blitter)
+	default:
+		raster.HairPath(local, clip, blitter)
 	}
 }
 

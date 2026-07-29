@@ -14,8 +14,8 @@
 // Reachable-set trims: outline glyphs are A8 by default; ARGB32 arrives from the color-glyph scaler lanes (sbix/CBDT
 // PNG bitmaps and COLR layers — color emoji); LCD16 arrives when the Go API selects EdgingSubpixelAntiAlias on a
 // surface with known pixel geometry (the public surface still has no edging setter, so text drawn through it stays A8).
-// A BW format remains unreachable (EdgingAlias renders A8). Drawable glyphs are not produced by any reachable scaler
-// and are omitted.
+// A BW format remains unreachable: EdgingAlias renders into an A8 plane too, just with hard (0 or 255) coverage.
+// Drawable glyphs are not produced by any reachable scaler and are omitted.
 
 package font
 

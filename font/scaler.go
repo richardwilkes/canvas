@@ -16,7 +16,8 @@
 //   - Advances are always linear (only hinting HintingNone/HintingSlight are honored): the design-space advance mapped
 //     through the text matrix, the same values an unhinted linear-metrics lane would produce.
 //   - Fill bounds come from the glyph extents (the outline control box) mapped through the text matrix and rounded out
-//     (saturateBounds).
+//     (saturateBounds) — except for the color and bitmap-strike lanes, whose extent the control box does not describe:
+//     those come from the drawing scaler itself (scalerContext), the same source SkFont::measureText routes through.
 //   - Styled bounds (stroke and/or path effect) come from the styled outline path's bounds: for the no-device strike
 //     the post 2x2 is identity, so the style applies directly in text-matrix space.
 //   - Glyphs whose rounded bounds have a zero dimension are zeroed.
@@ -46,6 +47,7 @@ const canonicalTextSizeForPaths = 64
 type strike struct {
 	pathEffect    stroke.PathEffect
 	t             *Typeface
+	scaler        *ScalerContext // the color/bitmap-lane bounds source, built on first use by scalerContext
 	size          float32
 	scaleX        float32
 	skewX         float32
@@ -129,12 +131,40 @@ func (st *strike) glyphAdvance(gid uint16) float32 {
 	return adv / float32(t.upem) * st.size * st.scaleX
 }
 
+// scalerContext returns (building it on first use) a drawing scaler over this strike's own configuration: the same text
+// matrix, no post 2x2 — the no-device strike has none — and no style, since the lanes it is consulted for take their
+// bounds from their own tables rather than from a path. Its single matrix is therefore exactly the matrix mapDesign
+// applies.
+func (st *strike) scalerContext() *ScalerContext {
+	if st.scaler == nil {
+		st.scaler = NewScalerContext(st.t, ScalerRec{
+			TypefaceID: st.t.UniqueID(),
+			TextSize:   st.size,
+			PreScaleX:  st.scaleX,
+			PreSkewX:   st.skewX,
+			Post2x2:    [4]float32{1, 0, 0, 1},
+			FrameWidth: -1,
+		}, ScalerEffects{})
+	}
+	return st.scaler
+}
+
 // glyphBounds returns the integer-aligned glyph bounds in strike space (the strike's glyph rect): rounded out, zeroed
 // when either dimension is empty.
 func (st *strike) glyphBounds(gid uint16) geom.Rect {
 	t := st.t
 	if t.face == nil || t.upem <= 0 || int(gid) >= t.nGlyphs || st.degenerate() {
 		return geom.Rect{}
+	}
+	// The color and bitmap-strike lanes draw well outside the base outline's control box — a COLRv0 layer union, a
+	// COLRv1 clip box or paint-graph traversal, a bitmap strike's quad — so they measure through the drawing scaler
+	// instead, or a caller sizing a surface from MeasureText would clip the emoji it asked about. The check comes
+	// before the styled lane because makeGlyph orders it that way too: those lanes set neverRequestPath, so the stroke
+	// and path effect never reach the glyph they draw either.
+	if t.hasCOLR || t.hasBitmaps {
+		if mx := st.scalerContext().generateMetrics(PackGlyphID(gid)); mx.extraBits != scalerBitsNone {
+			return saturateBounds(mx.bounds)
+		}
 	}
 	if st.frameWidth >= 0 || st.pathEffect != nil {
 		return st.styledGlyphBounds(gid)

@@ -29,7 +29,10 @@ const (
 	HintingFull
 )
 
-// Edging selects the anti-aliasing treatment applied to a glyph's mask.
+// Edging selects the anti-aliasing treatment applied to a glyph's mask. Every lane honors it: EdgingAlias rasterizes
+// hard-edged coverage (there is no separate BW mask format — the mask stays A8, with only 0 and 255 in it), and the
+// path and GPU distance-field lanes take their anti-aliasing from HasSomeAntiAliasing, so one font renders with the
+// same edge treatment at every size and under every matrix.
 type Edging uint8
 
 // Edging values.

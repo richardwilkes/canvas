@@ -48,6 +48,7 @@ const (
 	recFlagLCDVertical   = 1 << 4 // vertical LCD stripes: else horizontal
 	recFlagLCDBGROrder   = 1 << 5 // BGR LCD subpixel order: else RGB
 	recFlagGenA8FromLCD  = 1 << 6 // filter the path-generated A8 as the LCD lane would
+	recFlagAliased       = 1 << 7 // rasterize hard-edged coverage: EdgingAlias
 )
 
 // PixelGeometry describes the destination's subpixel layout, with the same ordinals as surface.PixelGeometry (the font
@@ -183,9 +184,13 @@ func MakeRecAndEffects(f *Font, paint *ScalerPaint, deviceMatrix *geom.Matrix, p
 	// (and before the gates below read TextSize and Post2x2).
 	rec.canonicalizeKeyFloats()
 
-	// Mask-format selection: alias and antialias edging both render A8 (no BW lane); subpixel-AA requests LCD16,
-	// subject to the gates below, including the device-independent-fonts disable (see DeviceProps).
+	// Mask-format selection: alias and antialias edging both render A8 (there is no BW mask format — aliased edging
+	// rasterizes hard-edged coverage into the A8 plane instead, recFlagAliased); subpixel-AA requests LCD16, subject to
+	// the gates below, including the device-independent-fonts disable (see DeviceProps).
 	rec.Format = MaskA8
+	if f.edging == EdgingAlias {
+		rec.Flags |= recFlagAliased
+	}
 	if f.edging == EdgingSubpixelAntiAlias {
 		rec.Format = MaskLCD16
 		switch {
@@ -957,10 +962,11 @@ func copyMaskIntersection(g *Glyph, src *raster.Mask) {
 	}
 }
 
-// generateMask zeroes the buffer, then draws the device path — filled, or as an AA hairline when the styled path is a
-// hairline — translated to mask-local coordinates through the A8 rasterizer. The LCD lanes (LCD16, and A8 through the
-// LCD filter for styled glyphs when recFlagGenA8FromLCD is set; unstyled A8-from-LCD masks come straight from the
-// rasterizer) draw into a 4x-oversampled intermediate and downsample through pack4xHToMask with the pre-blend.
+// generateMask zeroes the buffer, then draws the device path — filled, or as a hairline when the styled path is a
+// hairline — translated to mask-local coordinates through the A8 rasterizer, anti-aliased unless the rec asked for
+// aliased edging (recFlagAliased, hard 0-or-255 coverage). The LCD lanes (LCD16, and A8 through the LCD filter for
+// styled glyphs when recFlagGenA8FromLCD is set; unstyled A8-from-LCD masks come straight from the rasterizer) draw
+// into a 4x-oversampled intermediate and downsample through pack4xHToMask with the pre-blend.
 func (c *ScalerContext) generateMask(g *Glyph, bounds geom.IRect) {
 	clearBytes(g.Image)
 	clear16(g.Image16)
@@ -999,7 +1005,13 @@ func (c *ScalerContext) generateMask(g *Glyph, bounds geom.IRect) {
 		(g.Format == MaskA8 && a8FromLCD && c.generateImageFromPath)
 	if !fromLCD {
 		mask := raster.Mask{Image: g.Image, Bounds: bounds, RowBytes: bounds.Width()}
-		maskfilter.RenderPathIntoMask(&mask, devPath, !hairline)
+		if c.rec.Flags&recFlagAliased != 0 {
+			// Aliased edging: hard coverage, so the mask lane draws the same hard edges the path lane does for this
+			// font (Font.HasSomeAntiAliasing gates that one) instead of anti-aliasing regardless of the request.
+			maskfilter.RenderPathIntoMaskAliased(&mask, devPath, !hairline)
+		} else {
+			maskfilter.RenderPathIntoMask(&mask, devPath, !hairline)
+		}
 		return
 	}
 
@@ -1127,13 +1139,25 @@ func clearBytes(b []uint8) {
 	}
 }
 
-// getFontMetrics computes the font-wide metrics through the measuring strike's recipe.
+// getFontMetrics computes the font-wide metrics through the measuring strike's recipe, in device space: the scale
+// applied is computeScale's y — the single matrix's vertical scale with rotation removed, which is what upstream scales
+// every font metric by — so the metrics live in the same space as the advances and glyph bounds the same strike reports
+// (both of which go through singleMatrix). Measuring from the local text matrix alone left them in source space, so a
+// device matrix that doubled every glyph left the ascent untouched.
 func (c *ScalerContext) getFontMetrics() Metrics {
+	scale, ok := c.rec.computeScale()
+	size := scale.Y
+	if !ok {
+		// The singular gate. Zero size drives strike.degenerate(), whose documented fallback reports the metrics at
+		// size 1 — the same answer the no-device measuring strike gives for a singular text matrix.
+		size = 0
+	}
 	st := strike{
-		t:          c.typeface,
-		size:       c.rec.TextSize,
-		scaleX:     c.rec.PreScaleX,
-		skewX:      c.rec.PreSkewX,
+		t: c.typeface,
+		// computeScale's y already carries the whole matrix's vertical scale, so the pre-scale and pre-skew must not be
+		// applied a second time; they only reach fontMetrics through the degeneracy check anyway.
+		size:       size,
+		scaleX:     1,
 		frameWidth: -1,
 	}
 	return st.fontMetrics()

@@ -77,13 +77,12 @@ func TestGenerateDistanceFieldSolidSquare(t *testing.T) {
 		}
 	}
 
-	// The field has the dihedral symmetry of the square within the sampled (DistanceFieldInset) region. The outermost
-	// two columns are excluded: the backward pass's scan window covers x in [-1, W-3] of each row, so the last two
-	// columns are under-propagated — outside the quad the SDFT vertex filler ever samples (it insets the glyph rect by
-	// 2).
+	// The field has the dihedral symmetry of the square over its whole extent, padding included: both 8SSEDT passes
+	// sweep the same interior window, so no column is left under-propagated (an off-by-two backward start shifts every
+	// row's window two columns left, which shows up here as an x-mirror mismatch in the outermost columns).
 	at := func(x, y int) uint8 { return df[y*dfW+x] }
-	for y := DistanceFieldInset; y < dfW-DistanceFieldInset; y++ {
-		for x := DistanceFieldInset; x < dfW-DistanceFieldInset; x++ {
+	for y := 0; y < dfW; y++ {
+		for x := 0; x < dfW; x++ {
 			if at(x, y) != at(dfW-1-x, y) {
 				t.Fatalf("x-mirror asymmetry at (%d,%d): %d vs %d", x, y, at(x, y), at(dfW-1-x, y))
 			}
@@ -99,6 +98,57 @@ func TestGenerateDistanceFieldSolidSquare(t *testing.T) {
 	edgeOutside := at(DistanceFieldPad-1, dfW/2)
 	if edgeInside < 128 || edgeOutside > 128 {
 		t.Errorf("threshold not at the boundary: inside=%d outside=%d", edgeInside, edgeOutside)
+	}
+}
+
+func TestGenerateDistanceFieldMirrorInvariance(t *testing.T) {
+	// The transform is built from four passes that between them cover every direction, so it must commute with a mirror
+	// of its input: the field of a flipped shape is the flip of the shape's field, texel for texel, padding included.
+	// An asymmetric shape (an L) makes the property bite in both axes, and a scan window that is not the same interval
+	// in every pass breaks it (the x flip catches a shifted backward-in-y start).
+	const size = 7
+	shape := make([]uint8, size*size)
+	for y := range size {
+		for x := range size {
+			if x < 2 || y >= size-2 {
+				shape[y*size+x] = 255
+			}
+		}
+	}
+	dfW := size + 2*DistanceFieldPad
+	field := func(img []uint8) []uint8 {
+		df := make([]uint8, ComputeDistanceFieldSize(size, size))
+		GenerateDistanceFieldFromA8Image(df, img, size, size, size)
+		return df
+	}
+	flip := func(src []uint8, w int, horizontal bool) []uint8 {
+		h := len(src) / w
+		out := make([]uint8, len(src))
+		for y := range h {
+			for x := range w {
+				if horizontal {
+					out[y*w+x] = src[y*w+(w-1-x)]
+				} else {
+					out[y*w+x] = src[(h-1-y)*w+x]
+				}
+			}
+		}
+		return out
+	}
+	base := field(shape)
+	for _, horizontal := range []bool{true, false} {
+		axis := "y"
+		if horizontal {
+			axis = "x"
+		}
+		got := field(flip(shape, size, horizontal))
+		want := flip(base, dfW, horizontal)
+		for i := range want {
+			if got[i] != want[i] {
+				t.Fatalf("%s-flip: field differs at (%d,%d): %d, want %d",
+					axis, i%dfW, i/dfW, got[i], want[i])
+			}
+		}
 	}
 }
 

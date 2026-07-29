@@ -11,11 +11,13 @@
 // painter and text APIs use. Strikes are keyed on the comparable ScalerRec plus effect identity (the effects are
 // immutable objects, so pointer identity is a sound equality check). The rec's float fields are NaN-free by
 // construction (ScalerRec.canonicalizeKeyFloats) — a NaN anywhere in the key would make every lookup miss and every
-// delete a no-op, stranding the strike in the map forever.
+// delete a no-op, stranding the strike in the map forever. An effect that cannot be hashed at all (a value-receiver
+// implementation over unhashable state) is not keyable and skips the cache entirely (StrikeSpec.Keyable).
 
 package font
 
 import (
+	"hash/maphash"
 	"sync"
 
 	"github.com/richardwilkes/canvas/geom"
@@ -61,8 +63,12 @@ func NewStrikeCache() *StrikeCache {
 	}
 }
 
-// FindOrCreateStrike looks up the strike matching spec, creating and caching one if none exists yet.
+// FindOrCreateStrike looks up the strike matching spec, creating and caching one if none exists yet. A spec the map
+// cannot key (see StrikeSpec.Keyable) gets a fresh uncached strike.
 func (c *StrikeCache) FindOrCreateStrike(spec *StrikeSpec) *Strike {
+	if !spec.Keyable() {
+		return c.newUncachedStrike(spec)
+	}
 	key := strikeKey{rec: spec.Rec, effects: spec.Effects}
 	c.mu.Lock()
 	s := c.strikes[key]
@@ -77,6 +83,15 @@ func (c *StrikeCache) FindOrCreateStrike(spec *StrikeSpec) *Strike {
 	}
 	c.internalPurge(0)
 	c.mu.Unlock()
+	return s
+}
+
+// newUncachedStrike builds a strike that lives outside the cache: in neither the map nor the LRU list, and pre-marked
+// removed so the glyph bytes it generates never enter the cache's accounting (nothing can ever evict it to take them
+// back out). Its key is left zero — it is never looked up or deleted by key.
+func (c *StrikeCache) newUncachedStrike(spec *StrikeSpec) *Strike {
+	s := newStrike(c, &strikeKey{}, NewScalerContext(spec.Typeface, spec.Rec, spec.Effects))
+	s.removed = true
 	return s
 }
 
@@ -195,6 +210,39 @@ func (spec *StrikeSpec) FindOrCreateStrike() *Strike {
 	return GlobalStrikeCache().FindOrCreateStrike(spec)
 }
 
+// Keyable reports whether the spec (or any part of it) can be used as a map key, which every strike cache keyed on one
+// must check first. The typeface pointer and the rec — a struct of scalars — always can, but stroke.PathEffect and
+// maskfilter.MaskFilter are exported interfaces with exported methods, so a caller outside this module can implement
+// them with a value receiver over a struct holding a slice, map, or func; Go panics with "hash of unhashable type" the
+// moment such a value reaches a map key, which would take down the first text draw that used the effect. A spec that
+// answers false gets an uncached strike instead: correct output, no caching, no panic. (Upstream Skia keys on a
+// serialized SkDescriptor byte blob, which cannot be poisoned this way.)
+func (spec *StrikeSpec) Keyable() bool {
+	return effectKeyable(spec.Effects.PathEffect) && effectKeyable(spec.Effects.MaskFilter)
+}
+
+// effectKeySeed is the seed effectKeyable's hash probe runs against. Nothing consumes the hashes, so the seed's value
+// is irrelevant; a fresh one just keeps the probe honest about being a hash.
+var effectKeySeed = maphash.MakeSeed()
+
+// effectKeyable reports whether effect can be hashed as part of a map key. The test is an actual hash attempt with the
+// panic recovered, rather than a reflect.Type.Comparable test: a comparable type can still hold an unhashable value in
+// an interface-typed field, and only hashing it reveals that. maphash.Comparable hashes — and panics — exactly as the
+// map key would.
+func effectKeyable(effect any) (ok bool) {
+	if effect == nil {
+		return true
+	}
+	defer func() {
+		if recover() != nil {
+			ok = false
+		}
+	}()
+	// The hash itself is not wanted, only the attempt: a value the map cannot key panics here instead of there.
+	_ = maphash.Comparable(effectKeySeed, effect)
+	return true
+}
+
 // MakeMaskSpec builds the strike spec for rendering a glyph mask. props carries the destination surface's pixel
 // geometry for the LCD16 lane (nil means unknown geometry).
 func MakeMaskSpec(f *Font, paint *ScalerPaint, deviceMatrix *geom.Matrix, props *DeviceProps) StrikeSpec {
@@ -238,6 +286,11 @@ func MakeSDFTMaskSpec(f *Font, paint *ScalerPaint) StrikeSpec {
 	identity := geom.IdentityMatrix()
 	rec, effects := MakeRecAndEffects(f, paint, &identity, nil)
 	rec.Format = MaskSDF
+	// The field is always generated from anti-aliased coverage, whatever the run font's edging: aliased distance-field
+	// text is the shader's monochrome step over the same field, not a hard-edged field (upstream's
+	// SkStrikeSpec::MakeSDFT forces kAntiAlias for the same reason). The SDF font gpu/text derives normalizes the
+	// edging already; this keeps a direct caller from degrading the field.
+	rec.Flags &^= recFlagAliased
 	return StrikeSpec{Typeface: f.typeface, Rec: rec, Effects: effects}
 }
 

@@ -317,6 +317,77 @@ func TestCOLRv1CompositeModes(t *testing.T) {
 	}
 }
 
+// renderCOLRv1WithLayerBudget renders ch's paint graph the way renderCOLRv1 does, but with the canvas's live-layer
+// budget preset to budget bytes, and reports the traversal result alongside the glyph. It is the only way to reach the
+// budget without a mask over 16M pixels.
+func renderCOLRv1WithLayerBudget(t *testing.T, tf *Typeface, ch rune, budget int64) (*Glyph, bool) {
+	t.Helper()
+	gid := tf.UnicharToGlyph(ch)
+	if gid == 0 {
+		t.Fatalf("U+%X not mapped", ch)
+	}
+	identity := geom.IdentityMatrix()
+	spec := MakeMaskSpec(NewFont(tf, 50, 1, 0), nil, &identity, nil)
+	c := NewScalerContext(spec.Typeface, spec.Rec, spec.Effects)
+	g := c.makeGlyph(PackGlyphID(gid))
+	if g.ImageSize() == 0 {
+		t.Fatalf("U+%X: empty glyph", ch)
+	}
+	allocGlyphImage(g)
+	pm := g.Pixmap()
+	canvas := newColrV1Canvas(&pm, g.Width, g.Height, c.maskLocalTranslate(g))
+	canvas.layerBudget = budget
+	w := &colrV1Walker{
+		c:       c,
+		t:       c.typeface,
+		colr:    c.typeface.colrTable(),
+		canvas:  canvas,
+		visited: make(map[uint16]bool),
+	}
+	return g, w.startGlyph(gid, true)
+}
+
+func TestCOLRv1CompositeDegradesWhenLayerBudgetExhausted(t *testing.T) {
+	tf := loadCOLRv1Typeface(t)
+	// A composite node whose layer the live-layer budget cannot cover must degrade to source-over, not fail the
+	// subtree: the budget is reachable on ordinary artwork (one full-mask ARGB layer passes colrV1MaxLayerBytes at
+	// w*h > 16M pixels), and failing there blanks the whole glyph while its metrics still claim full size.
+	for _, ch := range []rune{0xf0a00 /* CLEAR */, 0xf0a03 /* SRC_OVER */} {
+		g, ok := renderCOLRv1WithLayerBudget(t, tf, ch, 0)
+		if !ok {
+			t.Fatalf("U+%X: traversal failed with no layer budget", ch)
+		}
+		if ink := analyzeGlyphInk(g); ink.count == 0 {
+			t.Errorf("U+%X: no ink with the layer budget exhausted", ch)
+		}
+	}
+
+	// What the degradation costs, measured against the isolated render: for SRC_OVER — the mode it degrades to — only
+	// the rounding of the layer composite it skipped (one per channel), while CLEAR loses its mode outright (the source
+	// no longer erases the backdrop, so both shapes stay: ink 1028 against the isolated 192). Losing a mode on a mask
+	// too large to isolate is the trade; blanking the glyph was the bug.
+	for _, c := range []struct {
+		ch    rune
+		delta int
+	}{{ch: 0xf0a03, delta: 1}, {ch: 0xf0a00, delta: 255}} {
+		iso := mustRenderCOLRv1(t, tf, c.ch, nil)
+		deg, _ := renderCOLRv1WithLayerBudget(t, tf, c.ch, 0)
+		if iso.IRect() != deg.IRect() {
+			t.Fatalf("U+%X: degraded bounds %v, isolated %v", c.ch, deg.IRect(), iso.IRect())
+		}
+		worst := 0
+		for i, w := range iso.Image32 {
+			for shift := 0; shift < 32; shift += 8 {
+				d := int(uint8(w>>shift)) - int(uint8(deg.Image32[i]>>shift))
+				worst = max(worst, d, -d)
+			}
+		}
+		if worst != c.delta {
+			t.Errorf("U+%X: worst channel delta vs the isolated render %d, want %d", c.ch, worst, c.delta)
+		}
+	}
+}
+
 func TestCOLRv1BlendModeMapping(t *testing.T) {
 	// ToSkBlendMode's table, all 28 modes.
 	want := map[tables.CompositeMode]raster.BlendMode{
@@ -453,10 +524,11 @@ func TestCOLRv1CompositeLayerBudget(t *testing.T) {
 	}
 }
 
-func TestCOLRv1CompositeBudgetFailsTheSubtree(t *testing.T) {
-	// End to end through the walker: a composite chain whose layers the budget cannot cover fails the traversal the
-	// same way the depth cap does, and unwinds to a balanced canvas. PaintSolid with palette index 0xFFFF resolves to
-	// the (zero) foreground color without touching the face, so no real typeface is needed.
+func TestCOLRv1CompositeBudgetDegradesTheNode(t *testing.T) {
+	// End to end through the walker: a composite chain that runs out of layer budget keeps traversing — the nodes past
+	// the budget composite source-over instead of failing the subtree the way the depth and node caps do — and still
+	// unwinds to a balanced canvas with every byte returned. PaintSolid with palette index 0xFFFF resolves to the
+	// (zero) foreground color without touching the face, so no real typeface is needed.
 	build := func(nesting int) tables.PaintTable {
 		solid := tables.PaintSolid{PaletteIndex: 0xFFFF, Alpha: 1 << 14}
 		var p tables.PaintTable = solid
@@ -466,24 +538,21 @@ func TestCOLRv1CompositeBudgetFailsTheSubtree(t *testing.T) {
 		return p
 	}
 	const side = 32
-	for _, c := range []struct {
-		nesting int
-		want    bool
-	}{{nesting: 2, want: true}, {nesting: 3, want: false}} {
+	for _, nesting := range []int{2, 3, colrV1MaxDepth / 2} {
 		cv := newColrV1Canvas(raster.NewPixmap(side, side), side, side, geom.IdentityMatrix())
 		cv.layerBudget = 5 * cv.layerBytes() // enough for two nested composites, one layer short of three
 		w := &colrV1Walker{c: &ScalerContext{}, t: &Typeface{}, canvas: cv, visited: map[uint16]bool{}}
-		if got := w.traverse(build(c.nesting)); got != c.want {
-			t.Errorf("%d nested composites: traverse = %v, want %v", c.nesting, got, c.want)
+		if !w.traverse(build(nesting)) {
+			t.Errorf("%d nested composites: traverse failed past the layer budget", nesting)
 		}
 		cv.restoreToCount(0)
 		if len(cv.devs) != 1 || len(cv.modes) != 0 {
 			t.Errorf("%d nested composites: unwound to %d devices / %d modes, want 1/0",
-				c.nesting, len(cv.devs), len(cv.modes))
+				nesting, len(cv.devs), len(cv.modes))
 		}
 		if cv.layerBudget != 5*cv.layerBytes() {
 			t.Errorf("%d nested composites: budget %d after unwinding, want %d",
-				c.nesting, cv.layerBudget, 5*cv.layerBytes())
+				nesting, cv.layerBudget, 5*cv.layerBytes())
 		}
 	}
 }

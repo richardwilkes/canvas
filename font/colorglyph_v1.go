@@ -60,7 +60,9 @@ const colrV1MaxNodes = 1 << 14
 // two full-mask ARGB layers that stay live while the source subtree is walked, so the depth cap alone would allow ~126
 // of them — a ~128x amplification over a mask that is itself allowed to reach maxGlyphWidth x maxGlyphHeight. The
 // budget bounds that product instead: ordinary color glyphs (a few hundred pixels a side) never come near it, while a
-// crafted font's nesting stops allocating once the total would exceed it, exactly as the depth cap stops recursing.
+// crafted font's nesting stops allocating once the total would exceed it. Unlike the depth and node caps, exhausting it
+// does not fail the subtree: the refused node composites source-over instead (see traverseDraw's PaintComposite case),
+// because a large-enough mask exhausts it on ordinary artwork.
 const colrV1MaxLayerBytes = 64 << 20
 
 // colrF214 converts a 2.14 fixed-point table value (F2Dot14) to float.
@@ -406,16 +408,22 @@ func (w *colrV1Walker) traverseDraw(paint tables.PaintTable) bool {
 	case tables.PaintComposite:
 		// COMPOSITE: an isolated group (saveLayer) for the backdrop, then a second layer whose restore blends the
 		// source onto the backdrop with the composite mode. Both layers (and this node's save) pop through the caller's
-		// deferred restoreToCount, in reverse (LIFO) order. A layer the live-layer budget cannot cover fails the
-		// subtree, the same way the depth cap does.
-		if !w.canvas.saveLayer(raster.BlendSrcOver) {
-			return false
-		}
+		// deferred restoreToCount, in reverse (LIFO) order.
+		//
+		// A layer the live-layer budget cannot cover degrades this node to source-over — both operands draw straight
+		// onto the device below — rather than failing the subtree the way the depth and node caps do. Those caps fire
+		// only on crafted graphs, but one full-mask layer exceeds colrV1MaxLayerBytes at w*h > 16M pixels, well inside
+		// the mask sizes the rest of the pipeline allocates (up to 8191x8191, glyph.go), and the metrics lane never
+		// consults the budget: failing here would leave an ordinary color glyph that renders at 4000 px blank at
+		// 5000 px while still reporting full-size bounds. Losing one node's blend mode is the smaller error.
+		isolated := w.canvas.saveLayer(raster.BlendSrcOver)
 		if !w.traverse(p.BackdropPaint) {
 			return false
 		}
-		if !w.canvas.saveLayer(colrBlendMode(p.CompositeMode)) {
-			return false
+		if isolated {
+			// A source layer is only worth its bytes when the backdrop got one. Refused here, the source draws into
+			// the backdrop's own layer source-over, which is the same degradation as above.
+			_ = w.canvas.saveLayer(colrBlendMode(p.CompositeMode))
 		}
 		return w.traverse(p.SourcePaint)
 	case tables.PaintSolid, tables.PaintVarSolid,

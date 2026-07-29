@@ -68,8 +68,8 @@ type Font struct {
 	hinting  Hinting
 }
 
-// NewFont builds a Font from typeface, size, scaleX, and skewX: a nil typeface becomes the empty typeface, negative
-// sizes clamp to zero.
+// NewFont builds a Font from typeface, size, scaleX, and skewX: a nil typeface becomes the empty typeface, negative and
+// NaN sizes clamp to zero.
 func NewFont(typeface *Typeface, size, scaleX, skewX float32) *Font {
 	if typeface == nil {
 		typeface = EmptyTypeface()
@@ -85,7 +85,16 @@ func NewFont(typeface *Typeface, size, scaleX, skewX float32) *Font {
 	}
 }
 
-func validSize(size float32) float32 { return max(0, size) }
+// validSize clamps a requested text size to a usable value: negatives and NaN both become zero. Go's max propagates
+// NaN, so it cannot be used here (upstream's std::max<SkScalar>(0, size) returns 0 for NaN); a NaN size would reach
+// ScalerRec.TextSize, and a strike key holding NaN never equals itself, so its cache entry could never be found again
+// nor deleted. See ScalerRec.canonicalizeKeyFloats.
+func validSize(size float32) float32 {
+	if !(size > 0) { // the negated comparison is false for NaN too
+		return 0
+	}
+	return size
+}
 
 // Typeface returns the font's typeface (never nil).
 func (f *Font) Typeface() *Typeface { return f.typeface }
@@ -99,7 +108,7 @@ func (f *Font) ScaleX() float32 { return f.scaleX }
 // SkewX returns the horizontal skew factor.
 func (f *Font) SkewX() float32 { return f.skewX }
 
-// SetSize sets the text size, clamping negative values to zero.
+// SetSize sets the text size, clamping negative and NaN values to zero.
 func (f *Font) SetSize(size float32) { f.size = validSize(size) }
 
 // SetScaleX sets the horizontal scale factor.

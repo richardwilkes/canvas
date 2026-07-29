@@ -376,6 +376,29 @@ func TestDegenerateAndEmpty(t *testing.T) {
 	}
 }
 
+func TestNaNSizeClampsToZero(t *testing.T) {
+	tf := loadTypeface(t, "Roboto-Regular.ttf", 0)
+	nan := float32(math.NaN())
+	// Go's max propagates NaN, so validSize cannot be written with it.
+	if got := NewFont(tf, nan, 1, 0).Size(); got != 0 {
+		t.Errorf("NewFont(NaN).Size() = %v, want 0", got)
+	}
+	f := NewFont(tf, 24, 1, 0)
+	f.SetSize(nan)
+	if got := f.Size(); got != 0 {
+		t.Errorf("SetSize(NaN) then Size() = %v, want 0", got)
+	}
+	// Finite sizes are untouched, and negatives still clamp.
+	f.SetSize(24)
+	if got := f.Size(); got != 24 {
+		t.Errorf("SetSize(24) then Size() = %v, want 24", got)
+	}
+	f.SetSize(-10)
+	if got := f.Size(); got != 0 {
+		t.Errorf("SetSize(-10) then Size() = %v, want 0", got)
+	}
+}
+
 func TestStylePacking(t *testing.T) {
 	s := NewStyle(WeightBold, WidthCondensed, SlantItalic)
 	if s.Weight() != 700 || s.Width() != 3 || s.Slant() != SlantItalic {

@@ -349,6 +349,60 @@ func TestStrikeCacheLRUAndBudget(t *testing.T) {
 	}
 }
 
+// A NaN anywhere in the strike key would make the key not equal to itself: every lookup would miss, so each draw would
+// build another strike, and removeStrike's delete would never match, stranding all of them (and every glyph mask they
+// generated) in the map beyond the reach of either budget. MakeRecAndEffects canonicalizes NaN away instead.
+func TestStrikeCacheNaNKeysDoNotLeak(t *testing.T) {
+	tf := loadTypeface(t, "Roboto-Regular.ttf", 0)
+	nan := float32(math.NaN())
+	identity := geom.IdentityMatrix()
+	var nanScale geom.Matrix
+	nanScale.SetScale(nan, 2)
+	var nanSkew geom.Matrix
+	nanSkew.SetAll(1, nan, 0, nan, 1, 0, 0, 0, 1)
+	for _, tc := range []struct {
+		font   *Font
+		paint  *ScalerPaint
+		device *geom.Matrix
+		name   string
+	}{
+		{name: "size", font: NewFont(tf, nan, 1, 0), device: &identity},
+		{name: "scaleX", font: NewFont(tf, 24, nan, 0), device: &identity},
+		{name: "skewX", font: NewFont(tf, 24, 1, nan), device: &identity},
+		{name: "deviceScale", font: NewFont(tf, 24, 1, 0), device: &nanScale},
+		{name: "deviceSkew", font: NewFont(tf, 24, 1, 0), device: &nanSkew},
+		{
+			name:   "miterLimit",
+			font:   NewFont(tf, 24, 1, 0),
+			paint:  &ScalerPaint{Style: stroke.PaintStyleStroke, Width: 2, MiterLimit: nan},
+			device: &identity,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rec, effects := MakeRecAndEffects(tc.font, tc.paint, tc.device, nil)
+			if same := rec; rec != same {
+				t.Fatalf("rec does not equal its own copy, so it cannot key the cache: %+v", rec)
+			}
+			cache := NewStrikeCache()
+			spec := StrikeSpec{Typeface: tc.font.Typeface(), Rec: rec, Effects: effects}
+			s1 := cache.FindOrCreateStrike(&spec)
+			s2 := cache.FindOrCreateStrike(&spec)
+			if s1 != s2 {
+				t.Error("identical specs built a second strike")
+			}
+			s1.DigestFor(ActionDirectMaskCPU, PackGlyphID(tf.UnicharToGlyph('H')))
+			if n := len(cache.strikes); n != 1 || cache.count != 1 {
+				t.Fatalf("cache holds %d map entries and counts %d strikes, want 1 and 1", n, cache.count)
+			}
+			cache.PurgeAll()
+			if n := len(cache.strikes); n != 0 || cache.count != 0 || cache.totalMemoryUsed != 0 {
+				t.Errorf("after PurgeAll: %d map entries, count %d, %d bytes; want 0, 0, 0", n, cache.count,
+					cache.totalMemoryUsed)
+			}
+		})
+	}
+}
+
 func TestScalerRecSingular(t *testing.T) {
 	tf := loadTypeface(t, "Roboto-Regular.ttf", 0)
 	f := NewFont(tf, 0, 1, 0)

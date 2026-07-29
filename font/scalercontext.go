@@ -179,6 +179,10 @@ func MakeRecAndEffects(f *Font, paint *ScalerPaint, deviceMatrix *geom.Matrix, p
 		rec.FrameWidth = -1
 	}
 
+	// Every float above came straight from caller-supplied values, so scrub NaN out before the rec becomes a strike key
+	// (and before the gates below read TextSize and Post2x2).
+	rec.canonicalizeKeyFloats()
+
 	// Mask-format selection: alias and antialias edging both render A8 (no BW lane); subpixel-AA requests LCD16,
 	// subject to the gates below, including the device-independent-fonts disable (see DeviceProps).
 	rec.Format = MaskA8
@@ -241,6 +245,37 @@ func MakeRecAndEffects(f *Font, paint *ScalerPaint, deviceMatrix *geom.Matrix, p
 		effects.MaskFilter = paint.MaskFilter
 	}
 	return rec, effects
+}
+
+// canonicalizeKeyFloats replaces any NaN among the rec's float fields with a well-defined finite value. The rec is half
+// of the strike cache's map key and a struct holding a NaN never equals itself, so a poisoned rec would miss on every
+// lookup and never match the delete in removeStrike: the strike and every glyph mask it generated would be retained
+// forever while the cache's accounting reported them freed, beyond the reach of either budget. Infinities need no such
+// treatment — they are self-equal, so they key correctly, and computeScale's non-finite gate already collapses them to
+// a degenerate strike. (Upstream Skia is immune because its key is a memcmp'd byte blob rather than a comparable
+// struct.)
+func (r *ScalerRec) canonicalizeKeyFloats() {
+	// A NaN size, pre-scale, or pre-skew becomes zero, which computeScale then reports as singular, so the glyphs come
+	// out empty rather than nonsensical.
+	r.TextSize = zeroNaN(r.TextSize)
+	r.PreScaleX = zeroNaN(r.PreScaleX)
+	r.PreSkewX = zeroNaN(r.PreSkewX)
+	for i := range r.Post2x2 {
+		r.Post2x2[i] = zeroNaN(r.Post2x2[i])
+	}
+	// FrameWidth's sentinel for "not stroking" is -1; zero would mean a hairline frame.
+	if math.IsNaN(float64(r.FrameWidth)) {
+		r.FrameWidth = -1
+	}
+	r.MiterLimit = zeroNaN(r.MiterLimit)
+}
+
+// zeroNaN returns v, or zero when v is NaN.
+func zeroNaN(v float32) float32 {
+	if math.IsNaN(float64(v)) {
+		return 0
+	}
+	return v
 }
 
 // localMatrix returns the text matrix: size and pre-scale/skew, without the device 2x2.

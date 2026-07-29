@@ -9,7 +9,9 @@
 
 // The global LRU cache of strikes (budget: 2 MiB / 2048 strikes by default) and the spec constructors the glyph-run
 // painter and text APIs use. Strikes are keyed on the comparable ScalerRec plus effect identity (the effects are
-// immutable objects, so pointer identity is a sound equality check).
+// immutable objects, so pointer identity is a sound equality check). The rec's float fields are NaN-free by
+// construction (ScalerRec.canonicalizeKeyFloats) — a NaN anywhere in the key would make every lookup miss and every
+// delete a no-op, stranding the strike in the map forever.
 
 package font
 

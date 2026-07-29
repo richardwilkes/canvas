@@ -44,6 +44,7 @@ type Typeface struct {
 	face            *tsfont.Face // nil only for the empty typeface
 	post            *tables.Post
 	hhea            *tables.Hhea
+	colr0BadGlyphs  map[tables.GlyphID]struct{} // base glyphs whose COLRv0 layer range is out of bounds (nil normally)
 	familyName      string
 	postScriptName  string // name ID 6 (FT_Get_Postscript_Name)
 	data            []byte // the raw font-file bytes (openStream's asset)
@@ -132,9 +133,57 @@ func (t *Typeface) faceColorPaint(gid opentype.GID) (tables.PaintTable, bool) {
 	if !t.hasCOLR || t.face.COLR == nil {
 		return nil, false
 	}
+	// Search's v0 lane slices layerRecords by the base-glyph record's own FirstLayerIndex/NumLayers with no bounds check
+	// and in wrapping uint16 arithmetic, so a crafted record panics inside the dependency — before any slice this
+	// package could range-check comes back. Glyphs the load-time scan flagged answer "no color glyph" instead, the same
+	// answer the t.face.COLR == nil guard above gives for a table that failed to parse at all. That also drops a v1
+	// record for the same glyph, which no well-formed font pairs with an out-of-range v0 record.
+	if _, bad := t.colr0BadGlyphs[tables.GlyphID(gid)]; bad {
+		return nil, false
+	}
 	t.faceMu.Lock()
 	defer t.faceMu.Unlock()
 	return t.face.COLR.Search(tables.GlyphID(gid))
+}
+
+// colr0OutOfRangeGlyphs scans a raw COLR table's version 0 base-glyph records and returns the base glyph IDs whose
+// layer range escapes the layerRecords array, or nil when every record is in range (the normal case, so well-formed
+// fonts pay no lookup cost at all).
+//
+// The scan reads the same 14-byte version 0 header the parser reads — COLR 0 and COLR 1 share it — so the counts it
+// validates against are exactly the parsed slice lengths: a null array offset leaves the parser's slice nil, and any
+// array that did not fit inside the table failed the parse outright (leaving face.COLR nil, which faceColorPaint
+// already guards). raw is the table as ld.RawTable returned it, the same bytes typesetting parsed.
+func colr0OutOfRangeGlyphs(raw []byte) map[tables.GlyphID]struct{} {
+	if len(raw) < 14 {
+		return nil
+	}
+	numBaseGlyphRecords := int(binary.BigEndian.Uint16(raw[2:]))
+	baseGlyphRecordsOffset := uint64(binary.BigEndian.Uint32(raw[4:]))
+	layerRecordsOffset := binary.BigEndian.Uint32(raw[8:])
+	numLayerRecords := uint32(binary.BigEndian.Uint16(raw[12:]))
+	if baseGlyphRecordsOffset == 0 || baseGlyphRecordsOffset > uint64(len(raw)) {
+		return nil
+	}
+	if layerRecordsOffset == 0 { // a null offset leaves the array empty regardless of the declared count
+		numLayerRecords = 0
+	}
+	var bad map[tables.GlyphID]struct{}
+	for i := range numBaseGlyphRecords {
+		rec := int(baseGlyphRecordsOffset) + i*6
+		if rec+6 > len(raw) {
+			break
+		}
+		first := uint32(binary.BigEndian.Uint16(raw[rec+2:]))
+		if first+uint32(binary.BigEndian.Uint16(raw[rec+4:])) <= numLayerRecords {
+			continue
+		}
+		if bad == nil {
+			bad = make(map[tables.GlyphID]struct{})
+		}
+		bad[binary.BigEndian.Uint16(raw[rec:])] = struct{}{}
+	}
+	return bad
 }
 
 // faceColorV0Layers returns the COLRv0 layer records for gid, or ok=false when the glyph has no v0 layers
@@ -298,10 +347,12 @@ func NewTypefaceFromData(data []byte, index int) (*Typeface, error) {
 		}
 	}
 	// Color-glyph tables: COLR presence is a nonempty-table check (typesetting only keeps the parsed table when it is
-	// valid — same outcome for well-formed fonts); the CPAL palette-0 colors convert BGRA color records to Colors;
-	// bitmap strikes come from BitmapSizes (sbix needs hhea, per typesetting's own gate).
+	// valid — same outcome for well-formed fonts) plus a scan of the v0 base-glyph records, whose layer ranges the
+	// parser does not validate and the lookup slices unchecked; the CPAL palette-0 colors convert BGRA color records to
+	// Colors; bitmap strikes come from BitmapSizes (sbix needs hhea, per typesetting's own gate).
 	if raw, err = ld.RawTable(opentype.MustNewTag("COLR")); err == nil && len(raw) > 0 {
 		t.hasCOLR = true
+		t.colr0BadGlyphs = colr0OutOfRangeGlyphs(raw)
 	}
 	if cpal := t.face.CPAL; len(cpal) > 0 {
 		t.palette = make([]colorcore.Color, len(cpal[0]))

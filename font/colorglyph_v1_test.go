@@ -17,6 +17,7 @@
 package font
 
 import (
+	"encoding/binary"
 	"testing"
 
 	"github.com/go-text/typesetting/font/opentype/tables"
@@ -482,6 +483,73 @@ func TestCOLRv1CompositeBudgetFailsTheSubtree(t *testing.T) {
 			t.Errorf("%d nested composites: budget %d after unwinding, want %d",
 				c.nesting, cv.layerBudget, 5*cv.layerBytes())
 		}
+	}
+}
+
+// synthCOLRv1LayerList builds the smallest parseable COLRv1 table with a LayerList: an empty v0 section, a one-entry
+// LayerList, and a PaintSolid painting the (zero) foreground color. Everything the walker needs to resolve a
+// PaintColrLayers node is present, and nothing in it touches a face.
+func synthCOLRv1LayerList(t *testing.T) *tables.COLR1 {
+	t.Helper()
+	const layerListOffset = 34                   // the v0 header (14) plus the v1 offsets (20)
+	raw := binary.BigEndian.AppendUint16(nil, 1) // version
+	raw = binary.BigEndian.AppendUint16(raw, 0)  // numBaseGlyphRecords
+	raw = binary.BigEndian.AppendUint32(raw, 0)  // baseGlyphRecordsOffset (null)
+	raw = binary.BigEndian.AppendUint32(raw, 0)  // layerRecordsOffset (null)
+	raw = binary.BigEndian.AppendUint16(raw, 0)  // numLayerRecords
+	raw = binary.BigEndian.AppendUint32(raw, 0)  // baseGlyphListOffset (null)
+	raw = binary.BigEndian.AppendUint32(raw, layerListOffset)
+	raw = binary.BigEndian.AppendUint32(raw, 0)      // clipListOffset (null)
+	raw = binary.BigEndian.AppendUint32(raw, 0)      // varIndexMapOffset (null)
+	raw = binary.BigEndian.AppendUint32(raw, 0)      // itemVariationStoreOffset (null)
+	raw = binary.BigEndian.AppendUint32(raw, 1)      // LayerList: numLayers
+	raw = binary.BigEndian.AppendUint32(raw, 8)      // LayerList: paint offset, from the LayerList start
+	raw = append(raw, 2)                             // PaintSolid: format
+	raw = binary.BigEndian.AppendUint16(raw, 0xFFFF) // PaintSolid: palette index (foreground)
+	raw = binary.BigEndian.AppendUint16(raw, 1<<14)  // PaintSolid: alpha 1.0
+	colr, err := tables.ParseCOLR(raw)
+	if err != nil {
+		t.Fatalf("the synthetic COLR table does not parse: %v", err)
+	}
+	return &colr
+}
+
+func TestCOLRv1LayerListRangeGuard(t *testing.T) {
+	// tables.LayerList.Resolve computes FirstLayerIndex+NumLayers in wrapping uint32 arithmetic before its own bounds
+	// check, so an index near 2^32 wraps the sum below the check and panics in the slice expression it then evaluates —
+	// out of a font that parses cleanly, at glyph metrics/render time. Every range the layer list cannot satisfy must
+	// instead fail the subtree, the same way the depth cap does.
+	colr := synthCOLRv1LayerList(t)
+	for _, c := range []struct {
+		name  string
+		paint tables.PaintColrLayers
+		want  bool
+	}{
+		{name: "in range", paint: tables.PaintColrLayers{FirstLayerIndex: 0, NumLayers: 1}, want: true},
+		{name: "empty range at the end", paint: tables.PaintColrLayers{FirstLayerIndex: 1, NumLayers: 0}, want: true},
+		{name: "past the end", paint: tables.PaintColrLayers{FirstLayerIndex: 0, NumLayers: 2}},
+		{name: "start past the end", paint: tables.PaintColrLayers{FirstLayerIndex: 4, NumLayers: 1}},
+		{name: "end wraps to a valid index", paint: tables.PaintColrLayers{FirstLayerIndex: 0xFFFFFFFF, NumLayers: 2}},
+		{name: "end wraps to zero", paint: tables.PaintColrLayers{FirstLayerIndex: 0xFFFFFFFF, NumLayers: 1}},
+		{name: "index past the signed range", paint: tables.PaintColrLayers{FirstLayerIndex: 1 << 31, NumLayers: 0}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			// Bounds mode: PaintSolid contributes no bounds, so success is purely "the range resolved".
+			var bounds geom.Rect
+			w := &colrV1Walker{colr: colr, bounds: &bounds, visited: map[uint16]bool{}}
+			w.ctm.SetIdentity()
+			if got := w.traverse(c.paint); got != c.want {
+				t.Errorf("bounds traverse = %v, want %v", got, c.want)
+			}
+			// Draw mode: the same guard on the other dispatcher. PaintSolid with palette index 0xFFFF resolves without
+			// touching the face, so no real typeface is needed.
+			const side = 8
+			cv := newColrV1Canvas(raster.NewPixmap(side, side), side, side, geom.IdentityMatrix())
+			w = &colrV1Walker{c: &ScalerContext{}, t: &Typeface{}, colr: colr, canvas: cv, visited: map[uint16]bool{}}
+			if got := w.traverse(c.paint); got != c.want {
+				t.Errorf("draw traverse = %v, want %v", got, c.want)
+			}
+		})
 	}
 }
 

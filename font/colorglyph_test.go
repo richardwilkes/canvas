@@ -103,6 +103,133 @@ func TestFaceColorPaintMalformedCOLR(t *testing.T) {
 	}
 }
 
+// patchSfntTable returns a copy of an sfnt font with tag's table handed to fn for in-place editing. fn must not change
+// the table's length, so every other table's directory offset stays valid.
+func patchSfntTable(t *testing.T, data []byte, tag string, fn func(table []byte)) []byte {
+	t.Helper()
+	out := bytes.Clone(data)
+	for i := range int(binary.BigEndian.Uint16(out[4:])) {
+		rec := 12 + i*16
+		if string(out[rec:rec+4]) != tag {
+			continue
+		}
+		off := int(binary.BigEndian.Uint32(out[rec+8:]))
+		fn(out[off : off+int(binary.BigEndian.Uint32(out[rec+12:]))])
+		return out
+	}
+	t.Fatalf("%s table not found", tag)
+	return nil
+}
+
+// patchCOLRv0Ranges rewrites every COLRv0 base-glyph record in colr.ttf to claim the given layer range, leaving the
+// table parseable (the parser validates array extents, never the ranges records name inside them).
+func patchCOLRv0Ranges(t *testing.T, data []byte, first, num uint16) []byte {
+	t.Helper()
+	return patchSfntTable(t, data, "COLR", func(tab []byte) {
+		if v := binary.BigEndian.Uint16(tab); v != 0 {
+			t.Fatalf("colr.ttf COLR version %d, want 0", v)
+		}
+		base := int(binary.BigEndian.Uint32(tab[4:]))
+		for i := range int(binary.BigEndian.Uint16(tab[2:])) {
+			binary.BigEndian.PutUint16(tab[base+i*6+2:], first)
+			binary.BigEndian.PutUint16(tab[base+i*6+4:], num)
+		}
+	})
+}
+
+func TestFaceColorPaintOutOfRangeCOLRv0(t *testing.T) {
+	// typesetting's COLRv0 lookup returns layerRecords[FirstLayerIndex : FirstLayerIndex+NumLayers] with no bounds check
+	// and in wrapping uint16 arithmetic, and its parser never validates the range, so a crafted base-glyph record panics
+	// inside COLR.Search during ordinary drawing or measuring. colr.ttf carries 15 layer records; both an oversized
+	// range and one whose end wraps to zero must answer "no color glyph" and leave the glyph on the outline lane.
+	data, err := os.ReadFile("testdata/colr.ttf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		name  string
+		first uint16
+		num   uint16
+	}{
+		{name: "past the end", first: 0, num: 1000},
+		{name: "start past the end", first: 1000, num: 1},
+		{name: "end wraps to zero", first: 65535, num: 1},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			tf, err2 := NewTypefaceFromData(patchCOLRv0Ranges(t, data, c.first, c.num), 0)
+			if err2 != nil {
+				t.Fatal(err2)
+			}
+			if tf.face.COLR == nil {
+				t.Fatal("the patched COLR table no longer parses; the case proves nothing")
+			}
+			gid := tf.UnicharToGlyph(smiley)
+			if gid == 0 {
+				t.Fatal("U+1F600 not mapped")
+			}
+			if paint, ok := tf.faceColorPaint(opentype.GID(gid)); ok || paint != nil {
+				t.Errorf("faceColorPaint = (%v, %v), want (nil, false)", paint, ok)
+			}
+			if layers, ok := tf.faceColorV0Layers(opentype.GID(gid)); ok || layers != nil {
+				t.Errorf("faceColorV0Layers = (%v, %v), want (nil, false)", layers, ok)
+			}
+			// The whole draw path, which is where the panic would land on untrusted data.
+			if g, action := smileyGlyph(t, tf, 50, nil); action == GlyphActionAccept && g.Format == MaskARGB32 {
+				t.Error("an out-of-range COLRv0 record still produced a color mask")
+			}
+		})
+	}
+
+	// The unpatched font is unaffected: no record is flagged, and the color lane still answers.
+	tf := loadColorTypeface(t, "colr.ttf")
+	if tf.colr0BadGlyphs != nil {
+		t.Errorf("colr.ttf flagged %d base glyphs; it is well formed", len(tf.colr0BadGlyphs))
+	}
+	if _, ok := tf.faceColorV0Layers(opentype.GID(tf.UnicharToGlyph(smiley))); !ok {
+		t.Error("the unpatched font lost its COLRv0 layers")
+	}
+}
+
+func TestCOLR0OutOfRangeGlyphs(t *testing.T) {
+	// A version 0 header (14 bytes) with one base-glyph record at offset 14 and numLayerRecords layer records at 20.
+	header := func(numLayerRecords uint16, layerRecordsOffset uint32) []byte {
+		raw := binary.BigEndian.AppendUint16(nil, 0) // version
+		raw = binary.BigEndian.AppendUint16(raw, 1)  // numBaseGlyphRecords
+		raw = binary.BigEndian.AppendUint32(raw, 14) // baseGlyphRecordsOffset
+		raw = binary.BigEndian.AppendUint32(raw, layerRecordsOffset)
+		return binary.BigEndian.AppendUint16(raw, numLayerRecords)
+	}
+	record := func(gid, first, num uint16) []byte {
+		raw := binary.BigEndian.AppendUint16(nil, gid)
+		raw = binary.BigEndian.AppendUint16(raw, first)
+		return binary.BigEndian.AppendUint16(raw, num)
+	}
+	for _, c := range []struct {
+		name string
+		raw  []byte
+		bad  bool
+	}{
+		{name: "in range", raw: append(header(4, 20), record(7, 1, 3)...)},
+		{name: "empty range at the end", raw: append(header(4, 20), record(7, 4, 0)...)},
+		{name: "past the end", raw: append(header(1, 20), record(7, 0, 10)...), bad: true},
+		{name: "end wraps to zero", raw: append(header(1, 20), record(7, 65535, 1)...), bad: true},
+		{name: "null layer array", raw: append(header(4, 0), record(7, 0, 1)...), bad: true},
+		{name: "no base glyph array", raw: append(binary.BigEndian.AppendUint16(nil, 0), make([]byte, 12)...)},
+		{name: "truncated header", raw: make([]byte, 13)},
+		{name: "truncated record", raw: append(header(4, 20), 0, 7)},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			got := colr0OutOfRangeGlyphs(c.raw)
+			if _, flagged := got[7]; flagged != c.bad {
+				t.Errorf("colr0OutOfRangeGlyphs = %v, want glyph 7 flagged = %v", got, c.bad)
+			}
+			if !c.bad && got != nil {
+				t.Errorf("a well-formed table must cost no map: got %v", got)
+			}
+		})
+	}
+}
+
 func TestCOLRv0GlyphMetrics(t *testing.T) {
 	tf := loadColorTypeface(t, "colr.ttf")
 	g, action := smileyGlyph(t, tf, 50, nil)

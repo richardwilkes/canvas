@@ -364,8 +364,8 @@ func (w *colrV1Walker) traverse(paint tables.PaintTable) bool {
 func (w *colrV1Walker) traverseDraw(paint tables.PaintTable) bool {
 	switch p := paint.(type) {
 	case tables.PaintColrLayers:
-		children, err := w.colr.LayerList.Resolve(p)
-		if err != nil {
+		children, ok := colrResolveLayers(w.colr.LayerList, p)
+		if !ok {
 			return false
 		}
 		for _, child := range children {
@@ -431,8 +431,8 @@ func (w *colrV1Walker) traverseDraw(paint tables.PaintTable) bool {
 func (w *colrV1Walker) traverseBounds(paint tables.PaintTable) bool {
 	switch p := paint.(type) {
 	case tables.PaintColrLayers:
-		children, err := w.colr.LayerList.Resolve(p)
-		if err != nil {
+		children, ok := colrResolveLayers(w.colr.LayerList, p)
+		if !ok {
 			return false
 		}
 		for _, child := range children {
@@ -468,6 +468,26 @@ func (w *colrV1Walker) traverseBounds(paint tables.PaintTable) bool {
 		}
 		return false
 	}
+}
+
+// colrResolveLayers resolves a PaintColrLayers node's range in the LayerList, reporting false for any range the layer
+// list cannot satisfy.
+//
+// The range check cannot be left to tables.LayerList.Resolve: it computes first+num in wrapping uint32 arithmetic
+// *before* its int(last) > len bounds check, so a FirstLayerIndex within NumLayers of 2^32 wraps the sum below the
+// check and then panics in the slice expression (0xFFFFFFFF with 2 layers slices [4294967295:1]). Its int(last)
+// conversion is also signed, so on a 32-bit platform any index at or above 2^31 passes the check the same way.
+// Rejecting ranges that neither arithmetic can represent exactly leaves Resolve's own check sound for everything that
+// reaches it; the length post-condition then pins the result to the range that was asked for.
+func colrResolveLayers(ll tables.LayerList, p tables.PaintColrLayers) ([]tables.PaintTable, bool) {
+	if uint64(p.FirstLayerIndex)+uint64(p.NumLayers) > math.MaxInt32 {
+		return nil, false
+	}
+	children, err := ll.Resolve(p)
+	if err != nil || len(children) != int(p.NumLayers) {
+		return nil, false
+	}
+	return children, true
 }
 
 // glyphLayerPath returns gid's outline in layer space (font units, y negated), loading the glyph unscaled and

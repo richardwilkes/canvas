@@ -18,6 +18,7 @@ package font
 
 import (
 	"encoding/binary"
+	"slices"
 	"testing"
 
 	"github.com/go-text/typesetting/font/opentype/tables"
@@ -25,6 +26,7 @@ import (
 	"github.com/richardwilkes/canvas/colorcore"
 	"github.com/richardwilkes/canvas/geom"
 	"github.com/richardwilkes/canvas/raster"
+	"github.com/richardwilkes/canvas/shaders"
 )
 
 func loadCOLRv1Typeface(t *testing.T) *Typeface {
@@ -486,10 +488,23 @@ func TestCOLRv1CompositeBudgetFailsTheSubtree(t *testing.T) {
 	}
 }
 
-// synthCOLRv1LayerList builds the smallest parseable COLRv1 table with a LayerList: an empty v0 section, a one-entry
-// LayerList, and a PaintSolid painting the (zero) foreground color. Everything the walker needs to resolve a
-// PaintColrLayers node is present, and nothing in it touches a face.
-func synthCOLRv1LayerList(t *testing.T) *tables.COLR1 {
+// colrSolidRecord is a PaintSolid (format 2) painting the (zero) foreground color: palette index 0xFFFF resolves
+// without a face, so a synthetic table built from it needs no real typeface.
+func colrSolidRecord() []byte {
+	rec := []byte{2}                                 // format
+	rec = binary.BigEndian.AppendUint16(rec, 0xFFFF) // palette index (foreground)
+	return binary.BigEndian.AppendUint16(rec, 1<<14) // alpha 1.0
+}
+
+// colrLayersRecord is a PaintColrLayers (format 1) naming the LayerList range [first, first+num).
+func colrLayersRecord(first uint32, num uint8) []byte {
+	return binary.BigEndian.AppendUint32([]byte{1, num}, first)
+}
+
+// synthCOLRv1Layers builds the smallest parseable COLRv1 table holding the given paint records as its LayerList: an
+// empty v0 section, no BaseGlyphList/ClipList/variation subtables, and the offset array computed for the records.
+// Everything the walker needs to resolve a PaintColrLayers node is present, and nothing in it touches a face.
+func synthCOLRv1Layers(t *testing.T, records ...[]byte) *tables.COLR1 {
 	t.Helper()
 	const layerListOffset = 34                   // the v0 header (14) plus the v1 offsets (20)
 	raw := binary.BigEndian.AppendUint16(nil, 1) // version
@@ -499,19 +514,29 @@ func synthCOLRv1LayerList(t *testing.T) *tables.COLR1 {
 	raw = binary.BigEndian.AppendUint16(raw, 0)  // numLayerRecords
 	raw = binary.BigEndian.AppendUint32(raw, 0)  // baseGlyphListOffset (null)
 	raw = binary.BigEndian.AppendUint32(raw, layerListOffset)
-	raw = binary.BigEndian.AppendUint32(raw, 0)      // clipListOffset (null)
-	raw = binary.BigEndian.AppendUint32(raw, 0)      // varIndexMapOffset (null)
-	raw = binary.BigEndian.AppendUint32(raw, 0)      // itemVariationStoreOffset (null)
-	raw = binary.BigEndian.AppendUint32(raw, 1)      // LayerList: numLayers
-	raw = binary.BigEndian.AppendUint32(raw, 8)      // LayerList: paint offset, from the LayerList start
-	raw = append(raw, 2)                             // PaintSolid: format
-	raw = binary.BigEndian.AppendUint16(raw, 0xFFFF) // PaintSolid: palette index (foreground)
-	raw = binary.BigEndian.AppendUint16(raw, 1<<14)  // PaintSolid: alpha 1.0
+	raw = binary.BigEndian.AppendUint32(raw, 0) // clipListOffset (null)
+	raw = binary.BigEndian.AppendUint32(raw, 0) // varIndexMapOffset (null)
+	raw = binary.BigEndian.AppendUint32(raw, 0) // itemVariationStoreOffset (null)
+	raw = binary.BigEndian.AppendUint32(raw, uint32(len(records)))
+	offset := uint32(4 + 4*len(records)) // from the LayerList start: its count, then its offset array
+	for _, rec := range records {
+		raw = binary.BigEndian.AppendUint32(raw, offset)
+		offset += uint32(len(rec))
+	}
+	for _, rec := range records {
+		raw = append(raw, rec...)
+	}
 	colr, err := tables.ParseCOLR(raw)
 	if err != nil {
 		t.Fatalf("the synthetic COLR table does not parse: %v", err)
 	}
 	return &colr
+}
+
+// synthCOLRv1LayerList builds a synthetic table whose one-entry LayerList holds a PaintSolid.
+func synthCOLRv1LayerList(t *testing.T) *tables.COLR1 {
+	t.Helper()
+	return synthCOLRv1Layers(t, colrSolidRecord())
 }
 
 func TestCOLRv1LayerListRangeGuard(t *testing.T) {
@@ -575,5 +600,270 @@ func TestCOLRv1DepthGuard(t *testing.T) {
 	}
 	if w.depth != 0 {
 		t.Errorf("depth counter leaked: %d", w.depth)
+	}
+}
+
+func TestCOLRv1LayerListSelfReference(t *testing.T) {
+	// PaintColrGlyph is not the paint graph's only back edge: tables.LayerList.Resolve is an index lookup performed at
+	// walk time, so a PaintColrLayers stored in the LayerList can name a range containing itself. The visited set does
+	// not cover that re-entry, so the traversal must terminate on the depth cap instead of recursing forever.
+	colr := synthCOLRv1Layers(t, colrLayersRecord(0, 1)) // LayerList[0] resolves to itself as its only child
+	var bounds geom.Rect
+	w := &colrV1Walker{colr: colr, bounds: &bounds, visited: map[uint16]bool{}}
+	w.ctm.SetIdentity()
+	if w.traverse(tables.PaintColrLayers{FirstLayerIndex: 0, NumLayers: 1}) {
+		t.Error("a self-referencing LayerList entry must fail the traversal")
+	}
+	if w.depth != 0 {
+		t.Errorf("depth counter leaked: %d", w.depth)
+	}
+}
+
+// colrFanOutLayers builds a LayerList of levels pairs, each entry of level k a PaintColrLayers naming both entries of
+// level k+1, with a pair of PaintSolids as the last level. A PaintColrLayers naming level 0's pair therefore expands to
+// 2^(levels+2)-1 nodes — the shape a shared, unmemoized reference gives an attacker — while nesting only levels+2 deep,
+// well inside colrV1MaxDepth.
+func colrFanOutLayers(t *testing.T, levels int) *tables.COLR1 {
+	t.Helper()
+	records := make([][]byte, 0, 2*levels+2)
+	for k := range levels {
+		next := uint32(2 * (k + 1))
+		records = append(records, colrLayersRecord(next, 2), colrLayersRecord(next, 2))
+	}
+	records = append(records, colrSolidRecord(), colrSolidRecord())
+	return synthCOLRv1Layers(t, records...)
+}
+
+func TestCOLRv1NodeBudget(t *testing.T) {
+	// The depth cap bounds nesting, not work: a LayerList whose entries fan out to a shared next level doubles the node
+	// count per level, so a few hundred bytes of font data describe a tree of 2^63 visits that never exceeds
+	// colrV1MaxDepth. colrV1MaxNodes must bound the traversal instead, and must not be handed back as the walk unwinds.
+	root := tables.PaintColrLayers{FirstLayerIndex: 0, NumLayers: 2}
+
+	// 16 levels is 2^18-1 nodes: far past the budget, yet small enough that a walker without one still finishes here
+	// (the whole point being that the shape scales to a hang with a handful more records).
+	const levels = 16
+	colr := colrFanOutLayers(t, levels)
+	var bounds geom.Rect
+	w := &colrV1Walker{colr: colr, bounds: &bounds, visited: map[uint16]bool{}}
+	w.ctm.SetIdentity()
+	if w.traverse(root) {
+		t.Errorf("a %d-level fan-out must fail the traversal", levels)
+	}
+	if w.nodes != colrV1MaxNodes {
+		t.Errorf("bounds traversal visited %d nodes, want the budget %d", w.nodes, colrV1MaxNodes)
+	}
+	// The budget is per traversal, not per subtree: a spent walker stays spent.
+	if w.traverse(tables.PaintSolid{PaletteIndex: 0xFFFF, Alpha: 1 << 14}) {
+		t.Error("a spent budget must keep failing")
+	}
+
+	// The same guard on the draw dispatcher. PaintSolid with palette index 0xFFFF resolves to the (zero) foreground
+	// color without touching the face, so no real typeface is needed.
+	const side = 8
+	cv := newColrV1Canvas(raster.NewPixmap(side, side), side, side, geom.IdentityMatrix())
+	w = &colrV1Walker{c: &ScalerContext{}, t: &Typeface{}, colr: colr, canvas: cv, visited: map[uint16]bool{}}
+	if w.traverse(root) {
+		t.Error("draw traverse of the fan-out must fail")
+	}
+	if w.nodes != colrV1MaxNodes {
+		t.Errorf("draw traversal visited %d nodes, want the budget %d", w.nodes, colrV1MaxNodes)
+	}
+	cv.restoreToCount(0)
+	if len(cv.devs) != 1 || len(cv.modes) != 0 {
+		t.Errorf("unwound to %d devices / %d modes, want 1/0", len(cv.devs), len(cv.modes))
+	}
+
+	// The control: the same shape inside the budget still traverses. The root plus 7 doubling levels is 255 nodes.
+	small := colrFanOutLayers(t, 6)
+	bounds = geom.Rect{}
+	w = &colrV1Walker{colr: small, bounds: &bounds, visited: map[uint16]bool{}}
+	w.ctm.SetIdentity()
+	if !w.traverse(root) {
+		t.Error("a fan-out inside the budget must traverse")
+	}
+	if w.nodes != 255 {
+		t.Errorf("the 6-level fan-out visited %d nodes, want 255", w.nodes)
+	}
+}
+
+func TestCOLRv1NodeBudgetHeadroom(t *testing.T) {
+	// The budget only ever fires on a crafted graph: every v1 glyph in the COLRv1 conformance font — the broadest paint
+	// graphs anyone publishes, from the spec's own generator — must traverse with orders of magnitude to spare. A
+	// bounds-mode walk needs neither a scaler context nor the root transform, so it can be driven per glyph directly.
+	tf := loadCOLRv1Typeface(t)
+	colr := tf.colrTable()
+	if colr == nil {
+		t.Fatal("the conformance font has no COLR table")
+	}
+	worst, worstGID, walked := 0, 0, 0
+	for gid := range tf.CountGlyphs() {
+		var bounds geom.Rect
+		w := &colrV1Walker{t: tf, colr: colr, bounds: &bounds, visited: map[uint16]bool{}}
+		w.ctm.SetIdentity()
+		if !w.startGlyph(uint16(gid), false) {
+			continue // no v1 paint for this glyph (or a v0 one)
+		}
+		walked++
+		if w.nodes > worst {
+			worst, worstGID = w.nodes, gid
+		}
+	}
+	if walked == 0 {
+		t.Fatal("no glyph in the conformance font traversed a v1 paint graph")
+	}
+	if worst > colrV1MaxNodes/16 {
+		t.Errorf("glyph %d visits %d nodes, within 16x of the %d budget: the budget is too tight for real fonts",
+			worstGID, worst, colrV1MaxNodes)
+	}
+	t.Logf("%d v1 glyphs walked; the busiest (glyph %d) visits %d of the %d node budget",
+		walked, worstGID, worst, colrV1MaxNodes)
+}
+
+func TestCOLRv1RadialNegativeRadius(t *testing.T) {
+	// COLR radii are UFWORD, but radialPaint's stop rescale computes startRadius + (endRadius-startRadius)*stops[0], so
+	// an unsigned pair plus a stop offset outside [0, 1] — every value below is legal F2Dot14 — still yields a negative
+	// radius. shaders.NewTwoPointConicalGradient rejects a negative radius by returning nil, which would fail the paint
+	// node and drop the rest of the glyph's paint graph mid-draw, so the radius has to be resolved instead.
+	w := &colrV1Walker{}
+	for _, c := range []struct {
+		name   string
+		stops  []float32
+		r0, r1 uint16
+		extend tables.Extend
+	}{
+		{name: "clamp start negative", r0: 0, r1: 100, extend: tables.ExtendPad, stops: []float32{-1, 0}},
+		{name: "clamp end negative", r0: 100, r1: 0, extend: tables.ExtendPad, stops: []float32{0, 1.5}},
+		{name: "clamp both negative", r0: 0, r1: 100, extend: tables.ExtendPad, stops: []float32{-2, -1}},
+		{name: "clamp cut between stops", r0: 200, r1: 0, extend: tables.ExtendPad, stops: []float32{0, 0.5, 1.5}},
+		{name: "repeat end negative", r0: 100, r1: 0, extend: tables.ExtendRepeat, stops: []float32{0, 1.5}},
+		{name: "reflect end negative", r0: 100, r1: 0, extend: tables.ExtendReflect, stops: []float32{0, 1.5}},
+		{name: "repeat start negative", r0: 0, r1: 100, extend: tables.ExtendRepeat, stops: []float32{-1, 0}},
+		{name: "reflect both negative", r0: 0, r1: 100, extend: tables.ExtendReflect, stops: []float32{-2, -1}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			colors := make([]colorcore.Color4f, len(c.stops))
+			for i := range colors {
+				colors[i] = colorcore.Color4f{R: float32(i) / float32(len(colors)), B: 1, A: 1}
+			}
+			paint, ok := w.radialPaint(10, 20, c.r0, 30, 40, c.r1, c.extend, append([]float32(nil), c.stops...), colors)
+			if !ok {
+				t.Fatal("the paint node failed instead of resolving the negative radius")
+			}
+			if paint.shader == nil {
+				t.Error("no gradient shader was built")
+			}
+		})
+	}
+}
+
+func TestCOLRv1ResolveNegativeRadius(t *testing.T) {
+	// The resolution's contract, over the whole negative-radius space the rescale can produce: whatever comes back is
+	// something the two-point conical shader accepts — finite centers, non-negative radii, and a color line whose stops
+	// and colors still correspond.
+	colors := []colorcore.Color4f{{R: 1, A: 1}, {G: 1, A: 1}, {B: 1, A: 1}}
+	gradient := func(startRadius, endRadius float32) colrRadialGradient {
+		return colrRadialGradient{
+			stops:       []float32{0, 0.25, 1},
+			colors:      append([]colorcore.Color4f(nil), colors...),
+			start:       geom.Pt(10, -20),
+			end:         geom.Pt(30, -40),
+			startRadius: startRadius,
+			endRadius:   endRadius,
+		}
+	}
+	for _, tileMode := range []shaders.TileMode{shaders.TileClamp, shaders.TileRepeat, shaders.TileMirror} {
+		for r0 := -300; r0 <= 300; r0 += 25 {
+			for r1 := -300; r1 <= 300; r1 += 25 {
+				if r0 == r1 || (r0 >= 0 && r1 >= 0) {
+					continue // equal radii draw nothing; a non-negative pair never reaches the resolution
+				}
+				got, drawn := gradient(float32(r0), float32(r1)).resolveNegativeRadius(tileMode)
+				if !drawn {
+					t.Fatalf("mode %v r0=%d r1=%d: reported nothing to draw for unequal radii", tileMode, r0, r1)
+				}
+				if got.startRadius < 0 || got.endRadius < 0 {
+					t.Errorf("mode %v r0=%d r1=%d: resolved to radii %g/%g, want both non-negative",
+						tileMode, r0, r1, got.startRadius, got.endRadius)
+				}
+				if !got.start.IsFinite() || !got.end.IsFinite() {
+					t.Errorf("mode %v r0=%d r1=%d: resolved to centers %v/%v, want both finite",
+						tileMode, r0, r1, got.start, got.end)
+				}
+				if len(got.stops) != len(got.colors) || len(got.stops) == 0 {
+					t.Errorf("mode %v r0=%d r1=%d: %d stops for %d colors",
+						tileMode, r0, r1, len(got.stops), len(got.colors))
+				}
+				if shaders.NewTwoPointConicalGradient(got.start, got.startRadius, got.end, got.endRadius,
+					colrColors4b(got.colors), got.stops, tileMode, nil) == nil {
+					t.Errorf("mode %v r0=%d r1=%d: the shader rejected the resolved gradient", tileMode, r0, r1)
+				}
+			}
+		}
+	}
+	// Equal negative radii are the empty gradient, and the zero denominator the resolution would otherwise divide by.
+	if _, drawn := gradient(-50, -50).resolveNegativeRadius(shaders.TileClamp); drawn {
+		t.Error("equal negative radii must report nothing to draw")
+	}
+}
+
+func TestCOLRv1TruncateToStopInterpolating(t *testing.T) {
+	// The clamp lane cuts the color line where the radius reaches zero and replaces the discarded side with one stop
+	// carrying the interpolated color, so the colors that side held do not reappear under the clamp. A cut outside the
+	// stop range, or landing on an end stop, has nothing to interpolate between and leaves the line alone.
+	red := colorcore.Color4f{R: 1, A: 1}
+	green := colorcore.Color4f{G: 1, A: 1}
+	blue := colorcore.Color4f{B: 1, A: 1}
+	in := []float32{0, 0.5, 1}
+	for _, c := range []struct {
+		name          string
+		wantStops     []float32
+		wantColors    []colorcore.Color4f
+		cut           float32
+		truncateStart bool
+	}{
+		{
+			name: "start, mid first span", cut: 0.25, truncateStart: true, wantStops: []float32{0, 0.5, 1},
+			wantColors: []colorcore.Color4f{{R: 0.5, G: 0.5, A: 1}, green, blue},
+		},
+		{
+			name: "start, mid second span", cut: 0.75, truncateStart: true, wantStops: []float32{0, 1},
+			wantColors: []colorcore.Color4f{{G: 0.5, B: 0.5, A: 1}, blue},
+		},
+		{
+			name: "end, mid first span", cut: 0.25, truncateStart: false, wantStops: []float32{0, 1},
+			wantColors: []colorcore.Color4f{red, {R: 0.5, G: 0.5, A: 1}},
+		},
+		{
+			name: "end, mid second span", cut: 0.75, truncateStart: false, wantStops: []float32{0, 0.5, 1},
+			wantColors: []colorcore.Color4f{red, green, {G: 0.5, B: 0.5, A: 1}},
+		},
+		{
+			name: "past the end", cut: 1.5, truncateStart: false, wantStops: in,
+			wantColors: []colorcore.Color4f{red, green, blue},
+		},
+		{
+			name: "before the start", cut: -0.5, truncateStart: true, wantStops: in,
+			wantColors: []colorcore.Color4f{red, green, blue},
+		},
+		{
+			name: "on the first stop", cut: 0, truncateStart: true, wantStops: in,
+			wantColors: []colorcore.Color4f{red, green, blue},
+		},
+		{
+			name: "on the last stop", cut: 1, truncateStart: false, wantStops: in,
+			wantColors: []colorcore.Color4f{red, green, blue},
+		},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			stops, colors := colrTruncateToStopInterpolating(c.cut, append([]float32(nil), in...),
+				[]colorcore.Color4f{red, green, blue}, c.truncateStart)
+			if !slices.Equal(stops, c.wantStops) {
+				t.Errorf("stops = %v, want %v", stops, c.wantStops)
+			}
+			if !slices.Equal(colors, c.wantColors) {
+				t.Errorf("colors = %v, want %v", colors, c.wantColors)
+			}
+		})
 	}
 }

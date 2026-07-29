@@ -21,9 +21,6 @@
 //   - Variable (PaintVar*/VarColorLine/ClipBoxFormat2) values use their base values with no variation deltas applied:
 //     no variation-axis surface is exposed, and at the default instance all deltas are zero, so base values are exact
 //     for every reachable face.
-//   - The radial negative-radius resolution lanes (truncateToStopInterpolating and the circle projection) are
-//     unreachable and not implemented: COLR radii are UFWORD (unsigned) and negative radii can only arise from
-//     variation deltas, which are never applied here.
 //   - Gradient stop colors quantize to 8-bit at shader construction (the gradient shaders take byte colors); the
 //     interpolation itself then runs in float either way.
 
@@ -44,10 +41,20 @@ import (
 )
 
 // colrV1MaxDepth bounds paint-graph nesting. The OT spec (5.7.11.1.9) requires implementations to guard against
-// unbounded recursion; HarfBuzz, for comparison, caps nesting at HB_MAX_NESTING_LEVEL (64). typesetting materializes
-// the graph as a tree whose only re-entry is PaintColrGlyph (guarded by the visited set below), so the depth cap
-// defends against pathologically deep — not cyclic — graphs.
+// unbounded recursion; HarfBuzz, for comparison, caps nesting at HB_MAX_NESTING_LEVEL (64). PaintColrGlyph re-entry is
+// guarded by the visited set below, but it is not the graph's only back edge: tables.LayerList.Resolve is an *index*
+// lookup performed at walk time, so a PaintColrLayers stored in the LayerList can name a range containing itself. The
+// depth cap is what stops that recursion.
 const colrV1MaxDepth = 64
+
+// colrV1MaxNodes bounds the total paint nodes one traversal visits, which the depth cap cannot: shared references are
+// resolved, not memoized, so a LayerList whose entry i fans out to two entries that both resolve to entry i+1 doubles
+// the node count per level and reaches 2^63 visits while staying inside colrV1MaxDepth — an unbounded-CPU hang out of a
+// few hundred bytes of untrusted font data. The budget is charged per node visited and never returned, so a traversal
+// costs at most this many visits however the graph is shaped. Real color glyphs are orders of magnitude below it (the
+// COLRv1 conformance font's busiest glyph visits a few dozen nodes), and a graph that does reach it fails the subtree
+// exactly as the depth cap does.
+const colrV1MaxNodes = 1 << 14
 
 // colrV1MaxLayerBytes bounds the pixels held by all live compositing layers at once. Every PaintComposite node pushes
 // two full-mask ARGB layers that stay live while the source subtree is walked, so the depth cap alone would allow ~126
@@ -228,6 +235,7 @@ type colrV1Walker struct {
 	bounds  *geom.Rect      // bounds mode
 	visited map[uint16]bool // base glyph IDs on the active PaintColrGlyph chain (5.7.11.1.9 cycle guard)
 	depth   int
+	nodes   int         // paint nodes visited so far, against colrV1MaxNodes (never decremented)
 	ctm     geom.Matrix // bounds-mode CTM (draw mode uses canvas.ctm)
 }
 
@@ -340,12 +348,15 @@ func (w *colrV1Walker) startGlyph(gid uint16, includeRootTransform bool) bool {
 	return w.traverse(paint)
 }
 
-// traverse applies the depth guard, the per-node save/restore (canvas state or bounds-mode CTM), and dispatches to the
-// draw- or bounds-mode handler for paint.
+// traverse applies the depth and work guards, the per-node save/restore (canvas state or bounds-mode CTM), and
+// dispatches to the draw- or bounds-mode handler for paint. Every edge the walker follows — layer-list children,
+// PaintColrGlyph re-entry, transform and composite operands — passes through here, so charging one node per call bounds
+// the whole traversal.
 func (w *colrV1Walker) traverse(paint tables.PaintTable) bool {
-	if w.depth >= colrV1MaxDepth {
+	if w.depth >= colrV1MaxDepth || w.nodes >= colrV1MaxNodes {
 		return false
 	}
+	w.nodes++
 	w.depth++
 	defer func() { w.depth-- }()
 
@@ -853,8 +864,7 @@ func (w *colrV1Walker) linearPaint(x0, y0, x1, y1, x2, y2 int16, extend tables.E
 }
 
 // radialPaint handles the radial-gradient paint format: rescale stops to [0, 1], interpolating new centers and radii so
-// the two-point conical shader sees normalized stops. Negative-radius handling is unreachable here (radii are unsigned
-// without variation deltas; see the file comment).
+// the two-point conical shader sees normalized stops, then resolve a radius the rescale drove negative.
 func (w *colrV1Walker) radialPaint(x0, y0 int16, r0 uint16, x1, y1 int16, r1 uint16, extend tables.Extend, stops []float32, colors []colorcore.Color4f) (colrV1Paint, bool) {
 	if len(stops) == 1 {
 		return colrV1Paint{color: colors[0].ToColor()}, true
@@ -887,6 +897,18 @@ func (w *colrV1Walker) radialPaint(x0, y0 int16, r0 uint16, x1, y1 int16, r1 uin
 			stops[i] = (stops[i] - stopsStartOffset) * scaleFactor
 		}
 	}
+	if startRadius < 0 || endRadius < 0 {
+		g := colrRadialGradient{
+			stops: stops, colors: colors,
+			start: start, end: end, startRadius: startRadius, endRadius: endRadius,
+		}
+		resolved, drawn := g.resolveNegativeRadius(tileMode)
+		if !drawn {
+			return colrTransparent, true
+		}
+		stops, colors = resolved.stops, resolved.colors
+		start, startRadius, end, endRadius = resolved.start, resolved.startRadius, resolved.end, resolved.endRadius
+	}
 
 	shader := shaders.NewTwoPointConicalGradient(start, startRadius, end, endRadius,
 		colrColors4b(colors), stops, tileMode, nil)
@@ -894,6 +916,158 @@ func (w *colrV1Walker) radialPaint(x0, y0 int16, r0 uint16, x1, y1 int16, r1 uin
 		return colrV1Paint{}, false
 	}
 	return colrV1Paint{shader: shader, color: colorcore.RGB(0, 0, 0)}, true
+}
+
+// colrRadialGradient is what a radial paint node reduces to: the two-point conical shader's circle pair plus the color
+// line, grouped so the negative-radius resolution can rewrite every part of it at once.
+type colrRadialGradient struct {
+	stops       []float32
+	colors      []colorcore.Color4f
+	start       geom.Point
+	end         geom.Point
+	startRadius float32
+	endRadius   float32
+}
+
+// resolveNegativeRadius rewrites a gradient whose start or end radius is negative into an equivalent one the two-point
+// conical shader accepts, reporting false when the resolution is "draw nothing". Negative radii are not a
+// variations-only case as the COLR radii being UFWORD suggests: radialPaint's stop rescale computes
+// startRadius + (endRadius-startRadius)*stops[0], so a stop offset outside [0, 1] — ordinary F2Dot14, e.g. offsets
+// [-1, 0] over radii 0 and 100 — drives an unsigned pair negative. The shader rejects a negative radius by returning
+// nil, which would fail the paint node and drop the rest of the glyph's paint graph mid-draw, so the radius is resolved
+// here instead, following the resolution upstream Skia adopted for
+// https://github.com/googlefonts/colr-gradients-spec/issues/367: clamp truncates the color line at the stop where the
+// radius reaches zero, while repeat/reflect project the circle pair forward by whole gradient periods (which the tile
+// mode makes equivalent) until both radii are non-negative.
+func (g colrRadialGradient) resolveNegativeRadius(tileMode shaders.TileMode) (colrRadialGradient, bool) {
+	if g.startRadius == g.endRadius {
+		// Both radii are the same negative value: an empty gradient, and the zero denominator every branch below
+		// divides by.
+		return g, false
+	}
+	start, end := g.start, g.end
+	startRadius, endRadius := g.startRadius, g.endRadius
+	stops, colors := g.stops, g.colors
+	startToEnd := end.Sub(start)
+	radiusDiff := endRadius - startRadius
+	if tileMode == shaders.TileClamp {
+		// Past the stop rescale the radius is r(x) = startRadius + x*radiusDiff over x in [0, 1], so it reaches zero at
+		// x = -startRadius/radiusDiff. Move the offending endpoint to that x, and truncate the color line there so the
+		// colors the discarded interval carried do not reappear under the clamp.
+		var zeroRadiusStop float32
+		truncateStart := true
+		if startRadius < 0 {
+			zeroRadiusStop = -startRadius / (endRadius - startRadius)
+			startRadius = 0
+			start = start.Add(end.Sub(start).Scaled(zeroRadiusStop))
+		}
+		if endRadius < 0 {
+			truncateStart = false
+			zeroRadiusStop = -startRadius / (endRadius - startRadius)
+			endRadius = 0
+			end = end.Sub(end.Sub(start).Scaled(1 - zeroRadiusStop))
+		}
+		if startRadius != 0 || endRadius != 0 {
+			stops, colors = colrTruncateToStopInterpolating(zeroRadiusStop, stops, colors, truncateStart)
+		} else {
+			// Both radii were negative and both clamped to zero, which the shader reads as covering the whole plane in
+			// one color. Restore the cone by putting the far endpoint back a full period out with the last (or first)
+			// color alone.
+			if radiusDiff > 0 {
+				end = start.Add(startToEnd)
+				endRadius = radiusDiff
+				stops, colors = stops[len(stops)-1:], colors[len(colors)-1:]
+			} else {
+				start = start.Sub(startToEnd)
+				startRadius = -radiusDiff
+				stops, colors = stops[:1], colors[:1]
+			}
+		}
+	} else {
+		// Repeat and reflect tile the gradient, so shifting the circle pair by a whole number of periods leaves the
+		// rendering unchanged: shift by the fewest periods that make both radii non-negative. The zero crossing is
+		// approached from whichever side keeps the shift outside [0, 1], and reflect needs an even count to land back
+		// on the same phase.
+		factorZeroCrossing := startRadius / (startRadius - endRadius)
+		direction := float32(1)
+		if factorZeroCrossing >= 0 && factorZeroCrossing <= 1 && radiusDiff < 0 {
+			direction = -1
+		}
+		periods := colrRoundIntegerMultiple(factorZeroCrossing*direction, tileMode)
+		startRadius += periods * radiusDiff
+		endRadius += periods * radiusDiff
+		shift := startToEnd.Scaled(periods)
+		start, end = start.Add(shift), end.Add(shift)
+	}
+	// Every branch above lands both radii at or above zero exactly; the max only absorbs the rounding of the arithmetic
+	// that got them there, so the shader can never see the negative radius it would reject.
+	return colrRadialGradient{
+		stops: stops, colors: colors,
+		start: start, end: end,
+		startRadius: max(startRadius, 0), endRadius: max(endRadius, 0),
+	}, true
+}
+
+// colrRoundIntegerMultiple rounds a zero-crossing position away from the [0, 1] gradient interval to a whole number of
+// gradient periods, keeping the count even for reflect (an odd count lands on the mirrored phase).
+func colrRoundIntegerMultiple(factorZeroCrossing float32, tileMode shaders.TileMode) float32 {
+	var rounded float32
+	if factorZeroCrossing > 0 {
+		rounded = float32(math.Ceil(float64(factorZeroCrossing)))
+	} else {
+		rounded = float32(math.Floor(float64(factorZeroCrossing))) - 1
+	}
+	if tileMode == shaders.TileMirror && math.Mod(float64(rounded), 2) != 0 {
+		if rounded < 0 {
+			rounded--
+		} else {
+			rounded++
+		}
+	}
+	return rounded
+}
+
+// colrTruncateToStopInterpolating cuts the color line at zeroRadiusStop — dropping the stops on the truncated side and
+// replacing them with a single stop carrying the color interpolated between the two stops that bracket the cut. The cut
+// stop takes position 0 (truncating the start) or 1 (truncating the end), which is where the endpoint whose radius
+// reached zero now sits. A cut outside the stop range, or one landing on an end stop, leaves the line alone: there is
+// nothing to interpolate between.
+func colrTruncateToStopInterpolating(zeroRadiusStop float32, stops []float32, colors []colorcore.Color4f,
+	truncateStart bool,
+) ([]float32, []colorcore.Color4f) {
+	if len(stops) <= 1 || zeroRadiusStop < stops[0] || stops[len(stops)-1] < zeroRadiusStop {
+		return stops, colors
+	}
+	var afterIndex int
+	if truncateStart {
+		// The first stop at or past the cut, so a cut landing exactly on a stop keeps that stop's color.
+		afterIndex = sort.Search(len(stops), func(i int) bool { return stops[i] >= zeroRadiusStop })
+	} else {
+		afterIndex = sort.Search(len(stops), func(i int) bool { return stops[i] > zeroRadiusStop })
+	}
+	if afterIndex == 0 || afterIndex == len(stops) {
+		return stops, colors
+	}
+	t := (zeroRadiusStop - stops[afterIndex-1]) / (stops[afterIndex] - stops[afterIndex-1])
+	cut := colrLerpColor(colors[afterIndex-1], colors[afterIndex], t)
+	if truncateStart {
+		stops = append([]float32{0}, stops[afterIndex:]...)
+		colors = append([]colorcore.Color4f{cut}, colors[afterIndex:]...)
+	} else {
+		stops = append(stops[:afterIndex:afterIndex], 1)
+		colors = append(colors[:afterIndex:afterIndex], cut)
+	}
+	return stops, colors
+}
+
+// colrLerpColor interpolates each unpremultiplied channel of two stop colors.
+func colrLerpColor(a, b colorcore.Color4f, t float32) colorcore.Color4f {
+	return colorcore.Color4f{
+		R: a.R + t*(b.R-a.R),
+		G: a.G + t*(b.G-a.G),
+		B: a.B + t*(b.B-a.B),
+		A: a.A + t*(b.A-a.A),
+	}
 }
 
 // sweepPaint handles the sweep-gradient paint format per OpenType 1.9.1: angles are (value + 1) × 180°

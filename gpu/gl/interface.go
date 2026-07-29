@@ -876,7 +876,7 @@ const (
 // eight register slots) include a sub-8-byte value followed by further arguments: Apple's arm64 ABI packs stack
 // arguments at natural size/alignment while SyscallN spills 8-byte slots, so glBlitFramebuffer's (mask, filter) tail —
 // and anything shaped like it — would be mis-marshaled (the callee reads filter from the high half of mask's slot).
-// Everything else uses the SyscallN fast path.
+// Everything else goes through the fixed-arity glCall lane (fastcall_*.go).
 
 // glFuncIndex indexes the per-entry-point call counters (Functions.callCounts) and the glFuncNames table. See
 // callcounts.go for the reporting API.
@@ -1319,6 +1319,7 @@ type Functions struct {
 	fnUniform1f                                      func(int32, float32)
 	fnTexParameterf                                  func(uint32, uint32, float32)
 	fnSamplerParameterf                              func(uint32, uint32, float32)
+	callState                                        glCallState
 	callCounts                                       [glFuncCount]uint64
 	getRenderbufferParameteriv                       uintptr
 	drawArrays                                       uintptr
@@ -1569,87 +1570,88 @@ func (f *Functions) initRegistered() {
 // ActiveTexture calls glActiveTexture.
 func (f *Functions) ActiveTexture(texture uint32) {
 	f.callCounts[idxActiveTexture]++
-	glCall(f.activeTexture, uintptr(texture), 0, 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.activeTexture, uintptr(texture), 0, 0, 0, 0, 0, 0, 0, 0)
 }
 
 // AttachShader calls glAttachShader.
 func (f *Functions) AttachShader(program, shader uint32) {
 	f.callCounts[idxAttachShader]++
-	glCall(f.attachShader, uintptr(program), uintptr(shader), 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.attachShader, uintptr(program), uintptr(shader), 0, 0, 0, 0, 0, 0, 0)
 }
 
 // BeginQuery calls glBeginQuery.
 func (f *Functions) BeginQuery(target, id uint32) {
 	f.callCounts[idxBeginQuery]++
-	glCall(f.beginQuery, uintptr(target), uintptr(id), 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.beginQuery, uintptr(target), uintptr(id), 0, 0, 0, 0, 0, 0, 0)
 }
 
 // BindAttribLocation calls glBindAttribLocation.
 func (f *Functions) BindAttribLocation(program, index uint32, name *byte) {
 	f.callCounts[idxBindAttribLocation]++
-	glCall(f.bindAttribLocation, uintptr(program), uintptr(index), uintptr(unsafe.Pointer(name)), 0, 0, 0, 0, 0, 0)
+	f.glCall(f.bindAttribLocation, uintptr(program), uintptr(index), uintptr(unsafe.Pointer(name)), 0, 0, 0, 0, 0, 0)
 }
 
 // BindBuffer calls glBindBuffer.
 func (f *Functions) BindBuffer(target, buffer uint32) {
 	f.callCounts[idxBindBuffer]++
-	glCall(f.bindBuffer, uintptr(target), uintptr(buffer), 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.bindBuffer, uintptr(target), uintptr(buffer), 0, 0, 0, 0, 0, 0, 0)
 }
 
 // BindFragDataLocation calls glBindFragDataLocation.
 func (f *Functions) BindFragDataLocation(program, colorNumber uint32, name *byte) {
 	f.callCounts[idxBindFragDataLocation]++
-	glCall(f.bindFragDataLocation, uintptr(program), uintptr(colorNumber), uintptr(unsafe.Pointer(name)),
+	f.glCall(f.bindFragDataLocation, uintptr(program), uintptr(colorNumber), uintptr(unsafe.Pointer(name)),
 		0, 0, 0, 0, 0, 0)
 }
 
 // BindFragDataLocationIndexed calls glBindFragDataLocationIndexed.
 func (f *Functions) BindFragDataLocationIndexed(program, colorNumber, index uint32, name *byte) {
 	f.callCounts[idxBindFragDataLocationIndexed]++
-	glCall(f.bindFragDataLocationIndexed, uintptr(program), uintptr(colorNumber), uintptr(index),
+	f.glCall(f.bindFragDataLocationIndexed, uintptr(program), uintptr(colorNumber), uintptr(index),
 		uintptr(unsafe.Pointer(name)), 0, 0, 0, 0, 0)
 }
 
 // BindFramebuffer calls glBindFramebuffer.
 func (f *Functions) BindFramebuffer(target, framebuffer uint32) {
 	f.callCounts[idxBindFramebuffer]++
-	glCall(f.bindFramebuffer, uintptr(target), uintptr(framebuffer), 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.bindFramebuffer, uintptr(target), uintptr(framebuffer), 0, 0, 0, 0, 0, 0, 0)
 }
 
 // BindRenderbuffer calls glBindRenderbuffer.
 func (f *Functions) BindRenderbuffer(target, renderbuffer uint32) {
 	f.callCounts[idxBindRenderbuffer]++
-	glCall(f.bindRenderbuffer, uintptr(target), uintptr(renderbuffer), 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.bindRenderbuffer, uintptr(target), uintptr(renderbuffer), 0, 0, 0, 0, 0, 0, 0)
 }
 
 // BindSampler calls glBindSampler.
 func (f *Functions) BindSampler(unit, sampler uint32) {
 	f.callCounts[idxBindSampler]++
-	glCall(f.bindSampler, uintptr(unit), uintptr(sampler), 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.bindSampler, uintptr(unit), uintptr(sampler), 0, 0, 0, 0, 0, 0, 0)
 }
 
 // BindTexture calls glBindTexture.
 func (f *Functions) BindTexture(target, texture uint32) {
 	f.callCounts[idxBindTexture]++
-	glCall(f.bindTexture, uintptr(target), uintptr(texture), 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.bindTexture, uintptr(target), uintptr(texture), 0, 0, 0, 0, 0, 0, 0)
 }
 
 // BindUniformLocation calls glBindUniformLocation.
 func (f *Functions) BindUniformLocation(program uint32, location int32, name *byte) {
 	f.callCounts[idxBindUniformLocation]++
-	glCall(f.bindUniformLocation, uintptr(program), uintptr(location), uintptr(unsafe.Pointer(name)), 0, 0, 0, 0, 0, 0)
+	f.glCall(f.bindUniformLocation, uintptr(program), uintptr(location), uintptr(unsafe.Pointer(name)),
+		0, 0, 0, 0, 0, 0)
 }
 
 // BindVertexArray calls glBindVertexArray.
 func (f *Functions) BindVertexArray(array uint32) {
 	f.callCounts[idxBindVertexArray]++
-	glCall(f.bindVertexArray, uintptr(array), 0, 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.bindVertexArray, uintptr(array), 0, 0, 0, 0, 0, 0, 0, 0)
 }
 
 // BlendBarrier calls glBlendBarrier.
 func (f *Functions) BlendBarrier() {
 	f.callCounts[idxBlendBarrier]++
-	glCall(f.blendBarrier, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.blendBarrier, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 }
 
 // BlendColor calls glBlendColor.
@@ -1661,13 +1663,13 @@ func (f *Functions) BlendColor(red, green, blue, alpha float32) {
 // BlendEquation calls glBlendEquation.
 func (f *Functions) BlendEquation(mode uint32) {
 	f.callCounts[idxBlendEquation]++
-	glCall(f.blendEquation, uintptr(mode), 0, 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.blendEquation, uintptr(mode), 0, 0, 0, 0, 0, 0, 0, 0)
 }
 
 // BlendFunc calls glBlendFunc.
 func (f *Functions) BlendFunc(sfactor, dfactor uint32) {
 	f.callCounts[idxBlendFunc]++
-	glCall(f.blendFunc, uintptr(sfactor), uintptr(dfactor), 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.blendFunc, uintptr(sfactor), uintptr(dfactor), 0, 0, 0, 0, 0, 0, 0)
 }
 
 // BlitFramebuffer calls glBlitFramebuffer.
@@ -1681,7 +1683,7 @@ func (f *Functions) BlitFramebuffer(srcX0, srcY0, srcX1, srcY1, dstX0, dstY0, ds
 //go:uintptrescapes
 func (f *Functions) BufferData(target uint32, size int, data uintptr, usage uint32) {
 	f.callCounts[idxBufferData]++
-	glCall(f.bufferData, uintptr(target), uintptr(size), data, uintptr(usage), 0, 0, 0, 0, 0)
+	f.glCall(f.bufferData, uintptr(target), uintptr(size), data, uintptr(usage), 0, 0, 0, 0, 0)
 }
 
 // BufferSubData calls glBufferSubData.
@@ -1689,19 +1691,19 @@ func (f *Functions) BufferData(target uint32, size int, data uintptr, usage uint
 //go:uintptrescapes
 func (f *Functions) BufferSubData(target uint32, offset, size int, data uintptr) {
 	f.callCounts[idxBufferSubData]++
-	glCall(f.bufferSubData, uintptr(target), uintptr(offset), uintptr(size), data, 0, 0, 0, 0, 0)
+	f.glCall(f.bufferSubData, uintptr(target), uintptr(offset), uintptr(size), data, 0, 0, 0, 0, 0)
 }
 
 // CheckFramebufferStatus calls glCheckFramebufferStatus.
 func (f *Functions) CheckFramebufferStatus(target uint32) uint32 {
 	f.callCounts[idxCheckFramebufferStatus]++
-	return uint32(glCall(f.checkFramebufferStatus, uintptr(target), 0, 0, 0, 0, 0, 0, 0, 0))
+	return uint32(f.glCall(f.checkFramebufferStatus, uintptr(target), 0, 0, 0, 0, 0, 0, 0, 0))
 }
 
 // Clear calls glClear.
 func (f *Functions) Clear(mask uint32) {
 	f.callCounts[idxClear]++
-	glCall(f.clear, uintptr(mask), 0, 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.clear, uintptr(mask), 0, 0, 0, 0, 0, 0, 0, 0)
 }
 
 // ClearColor calls glClearColor.
@@ -1713,7 +1715,7 @@ func (f *Functions) ClearColor(red, green, blue, alpha float32) {
 // ClearStencil calls glClearStencil.
 func (f *Functions) ClearStencil(s int32) {
 	f.callCounts[idxClearStencil]++
-	glCall(f.clearStencil, uintptr(s), 0, 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.clearStencil, uintptr(s), 0, 0, 0, 0, 0, 0, 0, 0)
 }
 
 // ClearTexImage calls glClearTexImage.
@@ -1721,7 +1723,7 @@ func (f *Functions) ClearStencil(s int32) {
 //go:uintptrescapes
 func (f *Functions) ClearTexImage(texture uint32, level int32, format, typ uint32, data uintptr) {
 	f.callCounts[idxClearTexImage]++
-	glCall(f.clearTexImage, uintptr(texture), uintptr(level), uintptr(format), uintptr(typ), data,
+	f.glCall(f.clearTexImage, uintptr(texture), uintptr(level), uintptr(format), uintptr(typ), data,
 		0, 0, 0, 0)
 }
 
@@ -1736,19 +1738,19 @@ func (f *Functions) ClearTexSubImage(texture uint32, level, xoffset, yoffset, zo
 // ClientWaitSync calls glClientWaitSync.
 func (f *Functions) ClientWaitSync(sync Sync, flags uint32, timeout uint64) uint32 {
 	f.callCounts[idxClientWaitSync]++
-	return uint32(glCall(f.clientWaitSync, uintptr(sync), uintptr(flags), uintptr(timeout), 0, 0, 0, 0, 0, 0))
+	return uint32(f.glCall(f.clientWaitSync, uintptr(sync), uintptr(flags), uintptr(timeout), 0, 0, 0, 0, 0, 0))
 }
 
 // ColorMask calls glColorMask.
 func (f *Functions) ColorMask(red, green, blue, alpha bool) {
 	f.callCounts[idxColorMask]++
-	glCall(f.colorMask, glBool(red), glBool(green), glBool(blue), glBool(alpha), 0, 0, 0, 0, 0)
+	f.glCall(f.colorMask, glBool(red), glBool(green), glBool(blue), glBool(alpha), 0, 0, 0, 0, 0)
 }
 
 // CompileShader calls glCompileShader.
 func (f *Functions) CompileShader(shader uint32) {
 	f.callCounts[idxCompileShader]++
-	glCall(f.compileShader, uintptr(shader), 0, 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.compileShader, uintptr(shader), 0, 0, 0, 0, 0, 0, 0, 0)
 }
 
 // CompressedTexImage2D calls glCompressedTexImage2D.
@@ -1756,7 +1758,7 @@ func (f *Functions) CompileShader(shader uint32) {
 //go:uintptrescapes
 func (f *Functions) CompressedTexImage2D(target uint32, level int32, internalformat uint32, width, height, border, imageSize int32, data uintptr) {
 	f.callCounts[idxCompressedTexImage2D]++
-	glCall(f.compressedTexImage2D, uintptr(target), uintptr(level), uintptr(internalformat), uintptr(width),
+	f.glCall(f.compressedTexImage2D, uintptr(target), uintptr(level), uintptr(internalformat), uintptr(width),
 		uintptr(height), uintptr(border), uintptr(imageSize), data, 0)
 }
 
@@ -1765,46 +1767,46 @@ func (f *Functions) CompressedTexImage2D(target uint32, level int32, internalfor
 //go:uintptrescapes
 func (f *Functions) CompressedTexSubImage2D(target uint32, level, xoffset, yoffset, width, height int32, format uint32, imageSize int32, data uintptr) {
 	f.callCounts[idxCompressedTexSubImage2D]++
-	glCall(f.compressedTexSubImage2D, uintptr(target), uintptr(level), uintptr(xoffset), uintptr(yoffset),
+	f.glCall(f.compressedTexSubImage2D, uintptr(target), uintptr(level), uintptr(xoffset), uintptr(yoffset),
 		uintptr(width), uintptr(height), uintptr(format), uintptr(imageSize), data)
 }
 
 // CopyBufferSubData calls glCopyBufferSubData.
 func (f *Functions) CopyBufferSubData(readTargt, writeTarget uint32, readOffset, writeOffset, size int) {
 	f.callCounts[idxCopyBufferSubData]++
-	glCall(f.copyBufferSubData, uintptr(readTargt), uintptr(writeTarget), uintptr(readOffset), uintptr(writeOffset),
+	f.glCall(f.copyBufferSubData, uintptr(readTargt), uintptr(writeTarget), uintptr(readOffset), uintptr(writeOffset),
 		uintptr(size), 0, 0, 0, 0)
 }
 
 // CopyTexSubImage2D calls glCopyTexSubImage2D.
 func (f *Functions) CopyTexSubImage2D(target uint32, level, xoffset, yoffset, x, y, width, height int32) {
 	f.callCounts[idxCopyTexSubImage2D]++
-	glCall(f.copyTexSubImage2D, uintptr(target), uintptr(level), uintptr(xoffset), uintptr(yoffset), uintptr(x),
+	f.glCall(f.copyTexSubImage2D, uintptr(target), uintptr(level), uintptr(xoffset), uintptr(yoffset), uintptr(x),
 		uintptr(y), uintptr(width), uintptr(height), 0)
 }
 
 // CoverageModulation calls glCoverageModulation.
 func (f *Functions) CoverageModulation(components uint32) {
 	f.callCounts[idxCoverageModulation]++
-	glCall(f.coverageModulation, uintptr(components), 0, 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.coverageModulation, uintptr(components), 0, 0, 0, 0, 0, 0, 0, 0)
 }
 
 // CreateProgram calls glCreateProgram.
 func (f *Functions) CreateProgram() uint32 {
 	f.callCounts[idxCreateProgram]++
-	return uint32(glCall(f.createProgram, 0, 0, 0, 0, 0, 0, 0, 0, 0))
+	return uint32(f.glCall(f.createProgram, 0, 0, 0, 0, 0, 0, 0, 0, 0))
 }
 
 // CreateShader calls glCreateShader.
 func (f *Functions) CreateShader(typ uint32) uint32 {
 	f.callCounts[idxCreateShader]++
-	return uint32(glCall(f.createShader, uintptr(typ), 0, 0, 0, 0, 0, 0, 0, 0))
+	return uint32(f.glCall(f.createShader, uintptr(typ), 0, 0, 0, 0, 0, 0, 0, 0))
 }
 
 // CullFace calls glCullFace.
 func (f *Functions) CullFace(mode uint32) {
 	f.callCounts[idxCullFace]++
-	glCall(f.cullFace, uintptr(mode), 0, 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.cullFace, uintptr(mode), 0, 0, 0, 0, 0, 0, 0, 0)
 }
 
 // DebugMessageCallback calls glDebugMessageCallback.
@@ -1812,118 +1814,118 @@ func (f *Functions) CullFace(mode uint32) {
 //go:uintptrescapes
 func (f *Functions) DebugMessageCallback(callback, userParam uintptr) {
 	f.callCounts[idxDebugMessageCallback]++
-	glCall(f.debugMessageCallback, callback, userParam, 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.debugMessageCallback, callback, userParam, 0, 0, 0, 0, 0, 0, 0)
 }
 
 // DebugMessageControl calls glDebugMessageControl.
 func (f *Functions) DebugMessageControl(source, typ, severity uint32, count int32, ids *uint32, enabled bool) {
 	f.callCounts[idxDebugMessageControl]++
-	glCall(f.debugMessageControl, uintptr(source), uintptr(typ), uintptr(severity), uintptr(count),
+	f.glCall(f.debugMessageControl, uintptr(source), uintptr(typ), uintptr(severity), uintptr(count),
 		uintptr(unsafe.Pointer(ids)), glBool(enabled), 0, 0, 0)
 }
 
 // DebugMessageInsert calls glDebugMessageInsert.
 func (f *Functions) DebugMessageInsert(source, typ, id, severity uint32, length int32, buf *byte) {
 	f.callCounts[idxDebugMessageInsert]++
-	glCall(f.debugMessageInsert, uintptr(source), uintptr(typ), uintptr(id), uintptr(severity), uintptr(length),
+	f.glCall(f.debugMessageInsert, uintptr(source), uintptr(typ), uintptr(id), uintptr(severity), uintptr(length),
 		uintptr(unsafe.Pointer(buf)), 0, 0, 0)
 }
 
 // DeleteBuffers calls glDeleteBuffers.
 func (f *Functions) DeleteBuffers(n int32, buffers *uint32) {
 	f.callCounts[idxDeleteBuffers]++
-	glCall(f.deleteBuffers, uintptr(n), uintptr(unsafe.Pointer(buffers)), 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.deleteBuffers, uintptr(n), uintptr(unsafe.Pointer(buffers)), 0, 0, 0, 0, 0, 0, 0)
 }
 
 // DeleteFences calls glDeleteFences.
 func (f *Functions) DeleteFences(n int32, fences *uint32) {
 	f.callCounts[idxDeleteFences]++
-	glCall(f.deleteFences, uintptr(n), uintptr(unsafe.Pointer(fences)), 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.deleteFences, uintptr(n), uintptr(unsafe.Pointer(fences)), 0, 0, 0, 0, 0, 0, 0)
 }
 
 // DeleteFramebuffers calls glDeleteFramebuffers.
 func (f *Functions) DeleteFramebuffers(n int32, framebuffers *uint32) {
 	f.callCounts[idxDeleteFramebuffers]++
-	glCall(f.deleteFramebuffers, uintptr(n), uintptr(unsafe.Pointer(framebuffers)), 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.deleteFramebuffers, uintptr(n), uintptr(unsafe.Pointer(framebuffers)), 0, 0, 0, 0, 0, 0, 0)
 }
 
 // DeleteProgram calls glDeleteProgram.
 func (f *Functions) DeleteProgram(program uint32) {
 	f.callCounts[idxDeleteProgram]++
-	glCall(f.deleteProgram, uintptr(program), 0, 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.deleteProgram, uintptr(program), 0, 0, 0, 0, 0, 0, 0, 0)
 }
 
 // DeleteQueries calls glDeleteQueries.
 func (f *Functions) DeleteQueries(n int32, ids *uint32) {
 	f.callCounts[idxDeleteQueries]++
-	glCall(f.deleteQueries, uintptr(n), uintptr(unsafe.Pointer(ids)), 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.deleteQueries, uintptr(n), uintptr(unsafe.Pointer(ids)), 0, 0, 0, 0, 0, 0, 0)
 }
 
 // DeleteRenderbuffers calls glDeleteRenderbuffers.
 func (f *Functions) DeleteRenderbuffers(n int32, renderbuffers *uint32) {
 	f.callCounts[idxDeleteRenderbuffers]++
-	glCall(f.deleteRenderbuffers, uintptr(n), uintptr(unsafe.Pointer(renderbuffers)), 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.deleteRenderbuffers, uintptr(n), uintptr(unsafe.Pointer(renderbuffers)), 0, 0, 0, 0, 0, 0, 0)
 }
 
 // DeleteSamplers calls glDeleteSamplers.
 func (f *Functions) DeleteSamplers(count int32, samplers *uint32) {
 	f.callCounts[idxDeleteSamplers]++
-	glCall(f.deleteSamplers, uintptr(count), uintptr(unsafe.Pointer(samplers)), 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.deleteSamplers, uintptr(count), uintptr(unsafe.Pointer(samplers)), 0, 0, 0, 0, 0, 0, 0)
 }
 
 // DeleteShader calls glDeleteShader.
 func (f *Functions) DeleteShader(shader uint32) {
 	f.callCounts[idxDeleteShader]++
-	glCall(f.deleteShader, uintptr(shader), 0, 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.deleteShader, uintptr(shader), 0, 0, 0, 0, 0, 0, 0, 0)
 }
 
 // DeleteSync calls glDeleteSync.
 func (f *Functions) DeleteSync(sync Sync) {
 	f.callCounts[idxDeleteSync]++
-	glCall(f.deleteSync, uintptr(sync), 0, 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.deleteSync, uintptr(sync), 0, 0, 0, 0, 0, 0, 0, 0)
 }
 
 // DeleteTextures calls glDeleteTextures.
 func (f *Functions) DeleteTextures(n int32, textures *uint32) {
 	f.callCounts[idxDeleteTextures]++
-	glCall(f.deleteTextures, uintptr(n), uintptr(unsafe.Pointer(textures)), 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.deleteTextures, uintptr(n), uintptr(unsafe.Pointer(textures)), 0, 0, 0, 0, 0, 0, 0)
 }
 
 // DeleteVertexArrays calls glDeleteVertexArrays.
 func (f *Functions) DeleteVertexArrays(n int32, arrays *uint32) {
 	f.callCounts[idxDeleteVertexArrays]++
-	glCall(f.deleteVertexArrays, uintptr(n), uintptr(unsafe.Pointer(arrays)), 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.deleteVertexArrays, uintptr(n), uintptr(unsafe.Pointer(arrays)), 0, 0, 0, 0, 0, 0, 0)
 }
 
 // DepthMask calls glDepthMask.
 func (f *Functions) DepthMask(flag bool) {
 	f.callCounts[idxDepthMask]++
-	glCall(f.depthMask, glBool(flag), 0, 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.depthMask, glBool(flag), 0, 0, 0, 0, 0, 0, 0, 0)
 }
 
 // Disable calls glDisable.
 func (f *Functions) Disable(capability uint32) {
 	f.callCounts[idxDisable]++
-	glCall(f.disable, uintptr(capability), 0, 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.disable, uintptr(capability), 0, 0, 0, 0, 0, 0, 0, 0)
 }
 
 // DisableVertexAttribArray calls glDisableVertexAttribArray.
 func (f *Functions) DisableVertexAttribArray(index uint32) {
 	f.callCounts[idxDisableVertexAttribArray]++
-	glCall(f.disableVertexAttribArray, uintptr(index), 0, 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.disableVertexAttribArray, uintptr(index), 0, 0, 0, 0, 0, 0, 0, 0)
 }
 
 // DiscardFramebuffer calls glDiscardFramebuffer.
 func (f *Functions) DiscardFramebuffer(target uint32, numAttachments int32, attachments *uint32) {
 	f.callCounts[idxDiscardFramebuffer]++
-	glCall(f.discardFramebuffer, uintptr(target), uintptr(numAttachments), uintptr(unsafe.Pointer(attachments)),
+	f.glCall(f.discardFramebuffer, uintptr(target), uintptr(numAttachments), uintptr(unsafe.Pointer(attachments)),
 		0, 0, 0, 0, 0, 0)
 }
 
 // DrawArrays calls glDrawArrays.
 func (f *Functions) DrawArrays(mode uint32, first, count int32) {
 	f.callCounts[idxDrawArrays]++
-	glCall(f.drawArrays, uintptr(mode), uintptr(first), uintptr(count), 0, 0, 0, 0, 0, 0)
+	f.glCall(f.drawArrays, uintptr(mode), uintptr(first), uintptr(count), 0, 0, 0, 0, 0, 0)
 }
 
 // DrawArraysIndirect calls glDrawArraysIndirect.
@@ -1931,32 +1933,32 @@ func (f *Functions) DrawArrays(mode uint32, first, count int32) {
 //go:uintptrescapes
 func (f *Functions) DrawArraysIndirect(mode uint32, indirect uintptr) {
 	f.callCounts[idxDrawArraysIndirect]++
-	glCall(f.drawArraysIndirect, uintptr(mode), indirect, 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.drawArraysIndirect, uintptr(mode), indirect, 0, 0, 0, 0, 0, 0, 0)
 }
 
 // DrawArraysInstanced calls glDrawArraysInstanced.
 func (f *Functions) DrawArraysInstanced(mode uint32, first, count, primcount int32) {
 	f.callCounts[idxDrawArraysInstanced]++
-	glCall(f.drawArraysInstanced, uintptr(mode), uintptr(first), uintptr(count), uintptr(primcount), 0, 0, 0, 0, 0)
+	f.glCall(f.drawArraysInstanced, uintptr(mode), uintptr(first), uintptr(count), uintptr(primcount), 0, 0, 0, 0, 0)
 }
 
 // DrawArraysInstancedBaseInstance calls glDrawArraysInstancedBaseInstance.
 func (f *Functions) DrawArraysInstancedBaseInstance(mode uint32, first, count, instancecount int32, baseinstance uint32) {
 	f.callCounts[idxDrawArraysInstancedBaseInstance]++
-	glCall(f.drawArraysInstancedBaseInstance, uintptr(mode), uintptr(first), uintptr(count), uintptr(instancecount),
+	f.glCall(f.drawArraysInstancedBaseInstance, uintptr(mode), uintptr(first), uintptr(count), uintptr(instancecount),
 		uintptr(baseinstance), 0, 0, 0, 0)
 }
 
 // DrawBuffer calls glDrawBuffer.
 func (f *Functions) DrawBuffer(mode uint32) {
 	f.callCounts[idxDrawBuffer]++
-	glCall(f.drawBuffer, uintptr(mode), 0, 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.drawBuffer, uintptr(mode), 0, 0, 0, 0, 0, 0, 0, 0)
 }
 
 // DrawBuffers calls glDrawBuffers.
 func (f *Functions) DrawBuffers(n int32, bufs *uint32) {
 	f.callCounts[idxDrawBuffers]++
-	glCall(f.drawBuffers, uintptr(n), uintptr(unsafe.Pointer(bufs)), 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.drawBuffers, uintptr(n), uintptr(unsafe.Pointer(bufs)), 0, 0, 0, 0, 0, 0, 0)
 }
 
 // DrawElements calls glDrawElements.
@@ -1964,7 +1966,7 @@ func (f *Functions) DrawBuffers(n int32, bufs *uint32) {
 //go:uintptrescapes
 func (f *Functions) DrawElements(mode uint32, count int32, typ uint32, indices uintptr) {
 	f.callCounts[idxDrawElements]++
-	glCall(f.drawElements, uintptr(mode), uintptr(count), uintptr(typ), indices, 0, 0, 0, 0, 0)
+	f.glCall(f.drawElements, uintptr(mode), uintptr(count), uintptr(typ), indices, 0, 0, 0, 0, 0)
 }
 
 // DrawElementsIndirect calls glDrawElementsIndirect.
@@ -1972,7 +1974,7 @@ func (f *Functions) DrawElements(mode uint32, count int32, typ uint32, indices u
 //go:uintptrescapes
 func (f *Functions) DrawElementsIndirect(mode, typ uint32, indirect uintptr) {
 	f.callCounts[idxDrawElementsIndirect]++
-	glCall(f.drawElementsIndirect, uintptr(mode), uintptr(typ), indirect, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.drawElementsIndirect, uintptr(mode), uintptr(typ), indirect, 0, 0, 0, 0, 0, 0)
 }
 
 // DrawElementsInstanced calls glDrawElementsInstanced.
@@ -1980,7 +1982,7 @@ func (f *Functions) DrawElementsIndirect(mode, typ uint32, indirect uintptr) {
 //go:uintptrescapes
 func (f *Functions) DrawElementsInstanced(mode uint32, count int32, typ uint32, indices uintptr, primcount int32) {
 	f.callCounts[idxDrawElementsInstanced]++
-	glCall(f.drawElementsInstanced, uintptr(mode), uintptr(count), uintptr(typ), indices, uintptr(primcount), 0, 0, 0, 0)
+	f.glCall(f.drawElementsInstanced, uintptr(mode), uintptr(count), uintptr(typ), indices, uintptr(primcount), 0, 0, 0, 0)
 }
 
 // DrawElementsInstancedBaseVertexBaseInstance calls glDrawElementsInstancedBaseVertexBaseInstance.
@@ -1988,7 +1990,7 @@ func (f *Functions) DrawElementsInstanced(mode uint32, count int32, typ uint32, 
 //go:uintptrescapes
 func (f *Functions) DrawElementsInstancedBaseVertexBaseInstance(mode uint32, count int32, typ uint32, indices uintptr, instancecount, basevertex int32, baseinstance uint32) {
 	f.callCounts[idxDrawElementsInstancedBaseVertexBaseInstance]++
-	glCall(f.drawElementsInstancedBaseVertexBaseInstance, uintptr(mode), uintptr(count), uintptr(typ),
+	f.glCall(f.drawElementsInstancedBaseVertexBaseInstance, uintptr(mode), uintptr(count), uintptr(typ),
 		indices, uintptr(instancecount), uintptr(basevertex), uintptr(baseinstance), 0, 0)
 }
 
@@ -1997,155 +1999,155 @@ func (f *Functions) DrawElementsInstancedBaseVertexBaseInstance(mode uint32, cou
 //go:uintptrescapes
 func (f *Functions) DrawRangeElements(mode, start, end uint32, count int32, typ uint32, indices uintptr) {
 	f.callCounts[idxDrawRangeElements]++
-	glCall(f.drawRangeElements, uintptr(mode), uintptr(start), uintptr(end), uintptr(count), uintptr(typ),
+	f.glCall(f.drawRangeElements, uintptr(mode), uintptr(start), uintptr(end), uintptr(count), uintptr(typ),
 		indices, 0, 0, 0)
 }
 
 // Enable calls glEnable.
 func (f *Functions) Enable(capability uint32) {
 	f.callCounts[idxEnable]++
-	glCall(f.enable, uintptr(capability), 0, 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.enable, uintptr(capability), 0, 0, 0, 0, 0, 0, 0, 0)
 }
 
 // EnableVertexAttribArray calls glEnableVertexAttribArray.
 func (f *Functions) EnableVertexAttribArray(index uint32) {
 	f.callCounts[idxEnableVertexAttribArray]++
-	glCall(f.enableVertexAttribArray, uintptr(index), 0, 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.enableVertexAttribArray, uintptr(index), 0, 0, 0, 0, 0, 0, 0, 0)
 }
 
 // EndQuery calls glEndQuery.
 func (f *Functions) EndQuery(target uint32) {
 	f.callCounts[idxEndQuery]++
-	glCall(f.endQuery, uintptr(target), 0, 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.endQuery, uintptr(target), 0, 0, 0, 0, 0, 0, 0, 0)
 }
 
 // EndTiling calls glEndTiling.
 func (f *Functions) EndTiling(preserveMask uint32) {
 	f.callCounts[idxEndTiling]++
-	glCall(f.endTiling, uintptr(preserveMask), 0, 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.endTiling, uintptr(preserveMask), 0, 0, 0, 0, 0, 0, 0, 0)
 }
 
 // FenceSync calls glFenceSync.
 func (f *Functions) FenceSync(condition, flags uint32) Sync {
 	f.callCounts[idxFenceSync]++
-	return Sync(glCall(f.fenceSync, uintptr(condition), uintptr(flags), 0, 0, 0, 0, 0, 0, 0))
+	return Sync(f.glCall(f.fenceSync, uintptr(condition), uintptr(flags), 0, 0, 0, 0, 0, 0, 0))
 }
 
 // Finish calls glFinish.
 func (f *Functions) Finish() {
 	f.callCounts[idxFinish]++
-	glCall(f.finish, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.finish, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 }
 
 // FinishFence calls glFinishFence.
 func (f *Functions) FinishFence(fence uint32) {
 	f.callCounts[idxFinishFence]++
-	glCall(f.finishFence, uintptr(fence), 0, 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.finishFence, uintptr(fence), 0, 0, 0, 0, 0, 0, 0, 0)
 }
 
 // Flush calls glFlush.
 func (f *Functions) Flush() {
 	f.callCounts[idxFlush]++
-	glCall(f.flush, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.flush, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 }
 
 // FlushMappedBufferRange calls glFlushMappedBufferRange.
 func (f *Functions) FlushMappedBufferRange(target uint32, offset, length int) {
 	f.callCounts[idxFlushMappedBufferRange]++
-	glCall(f.flushMappedBufferRange, uintptr(target), uintptr(offset), uintptr(length), 0, 0, 0, 0, 0, 0)
+	f.glCall(f.flushMappedBufferRange, uintptr(target), uintptr(offset), uintptr(length), 0, 0, 0, 0, 0, 0)
 }
 
 // FramebufferRenderbuffer calls glFramebufferRenderbuffer.
 func (f *Functions) FramebufferRenderbuffer(target, attachment, renderbuffertarget, renderbuffer uint32) {
 	f.callCounts[idxFramebufferRenderbuffer]++
-	glCall(f.framebufferRenderbuffer, uintptr(target), uintptr(attachment), uintptr(renderbuffertarget),
+	f.glCall(f.framebufferRenderbuffer, uintptr(target), uintptr(attachment), uintptr(renderbuffertarget),
 		uintptr(renderbuffer), 0, 0, 0, 0, 0)
 }
 
 // FramebufferTexture2D calls glFramebufferTexture2D.
 func (f *Functions) FramebufferTexture2D(target, attachment, textarget, texture uint32, level int32) {
 	f.callCounts[idxFramebufferTexture2D]++
-	glCall(f.framebufferTexture2D, uintptr(target), uintptr(attachment), uintptr(textarget), uintptr(texture),
+	f.glCall(f.framebufferTexture2D, uintptr(target), uintptr(attachment), uintptr(textarget), uintptr(texture),
 		uintptr(level), 0, 0, 0, 0)
 }
 
 // FramebufferTexture2DMultisample calls glFramebufferTexture2DMultisample.
 func (f *Functions) FramebufferTexture2DMultisample(target, attachment, textarget, texture uint32, level, samples int32) {
 	f.callCounts[idxFramebufferTexture2DMultisample]++
-	glCall(f.framebufferTexture2DMultisample, uintptr(target), uintptr(attachment), uintptr(textarget),
+	f.glCall(f.framebufferTexture2DMultisample, uintptr(target), uintptr(attachment), uintptr(textarget),
 		uintptr(texture), uintptr(level), uintptr(samples), 0, 0, 0)
 }
 
 // FrontFace calls glFrontFace.
 func (f *Functions) FrontFace(mode uint32) {
 	f.callCounts[idxFrontFace]++
-	glCall(f.frontFace, uintptr(mode), 0, 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.frontFace, uintptr(mode), 0, 0, 0, 0, 0, 0, 0, 0)
 }
 
 // GenBuffers calls glGenBuffers.
 func (f *Functions) GenBuffers(n int32, buffers *uint32) {
 	f.callCounts[idxGenBuffers]++
-	glCall(f.genBuffers, uintptr(n), uintptr(unsafe.Pointer(buffers)), 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.genBuffers, uintptr(n), uintptr(unsafe.Pointer(buffers)), 0, 0, 0, 0, 0, 0, 0)
 }
 
 // GenFences calls glGenFences.
 func (f *Functions) GenFences(n int32, fences *uint32) {
 	f.callCounts[idxGenFences]++
-	glCall(f.genFences, uintptr(n), uintptr(unsafe.Pointer(fences)), 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.genFences, uintptr(n), uintptr(unsafe.Pointer(fences)), 0, 0, 0, 0, 0, 0, 0)
 }
 
 // GenFramebuffers calls glGenFramebuffers.
 func (f *Functions) GenFramebuffers(n int32, framebuffers *uint32) {
 	f.callCounts[idxGenFramebuffers]++
-	glCall(f.genFramebuffers, uintptr(n), uintptr(unsafe.Pointer(framebuffers)), 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.genFramebuffers, uintptr(n), uintptr(unsafe.Pointer(framebuffers)), 0, 0, 0, 0, 0, 0, 0)
 }
 
 // GenQueries calls glGenQueries.
 func (f *Functions) GenQueries(n int32, ids *uint32) {
 	f.callCounts[idxGenQueries]++
-	glCall(f.genQueries, uintptr(n), uintptr(unsafe.Pointer(ids)), 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.genQueries, uintptr(n), uintptr(unsafe.Pointer(ids)), 0, 0, 0, 0, 0, 0, 0)
 }
 
 // GenRenderbuffers calls glGenRenderbuffers.
 func (f *Functions) GenRenderbuffers(n int32, renderbuffers *uint32) {
 	f.callCounts[idxGenRenderbuffers]++
-	glCall(f.genRenderbuffers, uintptr(n), uintptr(unsafe.Pointer(renderbuffers)), 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.genRenderbuffers, uintptr(n), uintptr(unsafe.Pointer(renderbuffers)), 0, 0, 0, 0, 0, 0, 0)
 }
 
 // GenSamplers calls glGenSamplers.
 func (f *Functions) GenSamplers(count int32, samplers *uint32) {
 	f.callCounts[idxGenSamplers]++
-	glCall(f.genSamplers, uintptr(count), uintptr(unsafe.Pointer(samplers)), 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.genSamplers, uintptr(count), uintptr(unsafe.Pointer(samplers)), 0, 0, 0, 0, 0, 0, 0)
 }
 
 // GenTextures calls glGenTextures.
 func (f *Functions) GenTextures(n int32, textures *uint32) {
 	f.callCounts[idxGenTextures]++
-	glCall(f.genTextures, uintptr(n), uintptr(unsafe.Pointer(textures)), 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.genTextures, uintptr(n), uintptr(unsafe.Pointer(textures)), 0, 0, 0, 0, 0, 0, 0)
 }
 
 // GenVertexArrays calls glGenVertexArrays.
 func (f *Functions) GenVertexArrays(n int32, arrays *uint32) {
 	f.callCounts[idxGenVertexArrays]++
-	glCall(f.genVertexArrays, uintptr(n), uintptr(unsafe.Pointer(arrays)), 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.genVertexArrays, uintptr(n), uintptr(unsafe.Pointer(arrays)), 0, 0, 0, 0, 0, 0, 0)
 }
 
 // GenerateMipmap calls glGenerateMipmap.
 func (f *Functions) GenerateMipmap(target uint32) {
 	f.callCounts[idxGenerateMipmap]++
-	glCall(f.generateMipmap, uintptr(target), 0, 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.generateMipmap, uintptr(target), 0, 0, 0, 0, 0, 0, 0, 0)
 }
 
 // GetBufferParameteriv calls glGetBufferParameteriv.
 func (f *Functions) GetBufferParameteriv(target, pname uint32, params *int32) {
 	f.callCounts[idxGetBufferParameteriv]++
-	glCall(f.getBufferParameteriv, uintptr(target), uintptr(pname), uintptr(unsafe.Pointer(params)), 0, 0, 0, 0, 0, 0)
+	f.glCall(f.getBufferParameteriv, uintptr(target), uintptr(pname), uintptr(unsafe.Pointer(params)), 0, 0, 0, 0, 0, 0)
 }
 
 // GetDebugMessageLog calls glGetDebugMessageLog.
 func (f *Functions) GetDebugMessageLog(count uint32, bufSize int32, sources, types, ids, severities *uint32, lengths *int32, messageLog *byte) uint32 {
 	f.callCounts[idxGetDebugMessageLog]++
-	return uint32(glCall(f.getDebugMessageLog, uintptr(count), uintptr(bufSize), uintptr(unsafe.Pointer(sources)),
+	return uint32(f.glCall(f.getDebugMessageLog, uintptr(count), uintptr(bufSize), uintptr(unsafe.Pointer(sources)),
 		uintptr(unsafe.Pointer(types)), uintptr(unsafe.Pointer(ids)), uintptr(unsafe.Pointer(severities)),
 		uintptr(unsafe.Pointer(lengths)), uintptr(unsafe.Pointer(messageLog)), 0))
 }
@@ -2153,39 +2155,39 @@ func (f *Functions) GetDebugMessageLog(count uint32, bufSize int32, sources, typ
 // GetError calls glGetError.
 func (f *Functions) GetError() uint32 {
 	f.callCounts[idxGetError]++
-	return uint32(glCall(f.getError, 0, 0, 0, 0, 0, 0, 0, 0, 0))
+	return uint32(f.glCall(f.getError, 0, 0, 0, 0, 0, 0, 0, 0, 0))
 }
 
 // GetFloatv calls glGetFloatv.
 func (f *Functions) GetFloatv(pname uint32, params *float32) {
 	f.callCounts[idxGetFloatv]++
-	glCall(f.getFloatv, uintptr(pname), uintptr(unsafe.Pointer(params)), 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.getFloatv, uintptr(pname), uintptr(unsafe.Pointer(params)), 0, 0, 0, 0, 0, 0, 0)
 }
 
 // GetFramebufferAttachmentParameteriv calls glGetFramebufferAttachmentParameteriv.
 func (f *Functions) GetFramebufferAttachmentParameteriv(target, attachment, pname uint32, params *int32) {
 	f.callCounts[idxGetFramebufferAttachmentParameteriv]++
-	glCall(f.getFramebufferAttachmentParameteriv, uintptr(target), uintptr(attachment), uintptr(pname),
+	f.glCall(f.getFramebufferAttachmentParameteriv, uintptr(target), uintptr(attachment), uintptr(pname),
 		uintptr(unsafe.Pointer(params)), 0, 0, 0, 0, 0)
 }
 
 // GetIntegerv calls glGetIntegerv.
 func (f *Functions) GetIntegerv(pname uint32, params *int32) {
 	f.callCounts[idxGetIntegerv]++
-	glCall(f.getIntegerv, uintptr(pname), uintptr(unsafe.Pointer(params)), 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.getIntegerv, uintptr(pname), uintptr(unsafe.Pointer(params)), 0, 0, 0, 0, 0, 0, 0)
 }
 
 // GetInternalformativ calls glGetInternalformativ.
 func (f *Functions) GetInternalformativ(target, internalformat, pname uint32, bufSize int32, params *int32) {
 	f.callCounts[idxGetInternalformativ]++
-	glCall(f.getInternalformativ, uintptr(target), uintptr(internalformat), uintptr(pname), uintptr(bufSize),
+	f.glCall(f.getInternalformativ, uintptr(target), uintptr(internalformat), uintptr(pname), uintptr(bufSize),
 		uintptr(unsafe.Pointer(params)), 0, 0, 0, 0)
 }
 
 // GetMultisamplefv calls glGetMultisamplefv.
 func (f *Functions) GetMultisamplefv(pname, index uint32, val *float32) {
 	f.callCounts[idxGetMultisamplefv]++
-	glCall(f.getMultisamplefv, uintptr(pname), uintptr(index), uintptr(unsafe.Pointer(val)), 0, 0, 0, 0, 0, 0)
+	f.glCall(f.getMultisamplefv, uintptr(pname), uintptr(index), uintptr(unsafe.Pointer(val)), 0, 0, 0, 0, 0, 0)
 }
 
 // GetProgramBinary calls glGetProgramBinary.
@@ -2193,154 +2195,154 @@ func (f *Functions) GetMultisamplefv(pname, index uint32, val *float32) {
 //go:uintptrescapes
 func (f *Functions) GetProgramBinary(program uint32, bufsize int32, length *int32, binaryFormat *uint32, binary uintptr) {
 	f.callCounts[idxGetProgramBinary]++
-	glCall(f.getProgramBinary, uintptr(program), uintptr(bufsize), uintptr(unsafe.Pointer(length)),
+	f.glCall(f.getProgramBinary, uintptr(program), uintptr(bufsize), uintptr(unsafe.Pointer(length)),
 		uintptr(unsafe.Pointer(binaryFormat)), binary, 0, 0, 0, 0)
 }
 
 // GetProgramInfoLog calls glGetProgramInfoLog.
 func (f *Functions) GetProgramInfoLog(program uint32, bufsize int32, length *int32, infolog *byte) {
 	f.callCounts[idxGetProgramInfoLog]++
-	glCall(f.getProgramInfoLog, uintptr(program), uintptr(bufsize), uintptr(unsafe.Pointer(length)),
+	f.glCall(f.getProgramInfoLog, uintptr(program), uintptr(bufsize), uintptr(unsafe.Pointer(length)),
 		uintptr(unsafe.Pointer(infolog)), 0, 0, 0, 0, 0)
 }
 
 // GetProgramiv calls glGetProgramiv.
 func (f *Functions) GetProgramiv(program, pname uint32, params *int32) {
 	f.callCounts[idxGetProgramiv]++
-	glCall(f.getProgramiv, uintptr(program), uintptr(pname), uintptr(unsafe.Pointer(params)), 0, 0, 0, 0, 0, 0)
+	f.glCall(f.getProgramiv, uintptr(program), uintptr(pname), uintptr(unsafe.Pointer(params)), 0, 0, 0, 0, 0, 0)
 }
 
 // GetQueryObjecti64v calls glGetQueryObjecti64v.
 func (f *Functions) GetQueryObjecti64v(id, pname uint32, params *int64) {
 	f.callCounts[idxGetQueryObjecti64v]++
-	glCall(f.getQueryObjecti64v, uintptr(id), uintptr(pname), uintptr(unsafe.Pointer(params)), 0, 0, 0, 0, 0, 0)
+	f.glCall(f.getQueryObjecti64v, uintptr(id), uintptr(pname), uintptr(unsafe.Pointer(params)), 0, 0, 0, 0, 0, 0)
 }
 
 // GetQueryObjectui64v calls glGetQueryObjectui64v.
 func (f *Functions) GetQueryObjectui64v(id, pname uint32, params *uint64) {
 	f.callCounts[idxGetQueryObjectui64v]++
-	glCall(f.getQueryObjectui64v, uintptr(id), uintptr(pname), uintptr(unsafe.Pointer(params)), 0, 0, 0, 0, 0, 0)
+	f.glCall(f.getQueryObjectui64v, uintptr(id), uintptr(pname), uintptr(unsafe.Pointer(params)), 0, 0, 0, 0, 0, 0)
 }
 
 // GetQueryObjectuiv calls glGetQueryObjectuiv.
 func (f *Functions) GetQueryObjectuiv(id, pname uint32, params *uint32) {
 	f.callCounts[idxGetQueryObjectuiv]++
-	glCall(f.getQueryObjectuiv, uintptr(id), uintptr(pname), uintptr(unsafe.Pointer(params)), 0, 0, 0, 0, 0, 0)
+	f.glCall(f.getQueryObjectuiv, uintptr(id), uintptr(pname), uintptr(unsafe.Pointer(params)), 0, 0, 0, 0, 0, 0)
 }
 
 // GetQueryiv calls glGetQueryiv.
 func (f *Functions) GetQueryiv(target, pname uint32, params *int32) {
 	f.callCounts[idxGetQueryiv]++
-	glCall(f.getQueryiv, uintptr(target), uintptr(pname), uintptr(unsafe.Pointer(params)), 0, 0, 0, 0, 0, 0)
+	f.glCall(f.getQueryiv, uintptr(target), uintptr(pname), uintptr(unsafe.Pointer(params)), 0, 0, 0, 0, 0, 0)
 }
 
 // GetRenderbufferParameteriv calls glGetRenderbufferParameteriv.
 func (f *Functions) GetRenderbufferParameteriv(target, pname uint32, params *int32) {
 	f.callCounts[idxGetRenderbufferParameteriv]++
-	glCall(f.getRenderbufferParameteriv, uintptr(target), uintptr(pname), uintptr(unsafe.Pointer(params)),
+	f.glCall(f.getRenderbufferParameteriv, uintptr(target), uintptr(pname), uintptr(unsafe.Pointer(params)),
 		0, 0, 0, 0, 0, 0)
 }
 
 // GetShaderInfoLog calls glGetShaderInfoLog.
 func (f *Functions) GetShaderInfoLog(shader uint32, bufsize int32, length *int32, infolog *byte) {
 	f.callCounts[idxGetShaderInfoLog]++
-	glCall(f.getShaderInfoLog, uintptr(shader), uintptr(bufsize), uintptr(unsafe.Pointer(length)),
+	f.glCall(f.getShaderInfoLog, uintptr(shader), uintptr(bufsize), uintptr(unsafe.Pointer(length)),
 		uintptr(unsafe.Pointer(infolog)), 0, 0, 0, 0, 0)
 }
 
 // GetShaderPrecisionFormat calls glGetShaderPrecisionFormat.
 func (f *Functions) GetShaderPrecisionFormat(shadertype, precisiontype uint32, rng, precision *int32) {
 	f.callCounts[idxGetShaderPrecisionFormat]++
-	glCall(f.getShaderPrecisionFormat, uintptr(shadertype), uintptr(precisiontype), uintptr(unsafe.Pointer(rng)),
+	f.glCall(f.getShaderPrecisionFormat, uintptr(shadertype), uintptr(precisiontype), uintptr(unsafe.Pointer(rng)),
 		uintptr(unsafe.Pointer(precision)), 0, 0, 0, 0, 0)
 }
 
 // GetShaderiv calls glGetShaderiv.
 func (f *Functions) GetShaderiv(shader, pname uint32, params *int32) {
 	f.callCounts[idxGetShaderiv]++
-	glCall(f.getShaderiv, uintptr(shader), uintptr(pname), uintptr(unsafe.Pointer(params)), 0, 0, 0, 0, 0, 0)
+	f.glCall(f.getShaderiv, uintptr(shader), uintptr(pname), uintptr(unsafe.Pointer(params)), 0, 0, 0, 0, 0, 0)
 }
 
 // GetString calls glGetString.
 func (f *Functions) GetString(name uint32) uintptr {
 	f.callCounts[idxGetString]++
-	return glCall(f.getString, uintptr(name), 0, 0, 0, 0, 0, 0, 0, 0)
+	return f.glCall(f.getString, uintptr(name), 0, 0, 0, 0, 0, 0, 0, 0)
 }
 
 // GetStringi calls glGetStringi.
 func (f *Functions) GetStringi(name, index uint32) uintptr {
 	f.callCounts[idxGetStringi]++
-	return glCall(f.getStringi, uintptr(name), uintptr(index), 0, 0, 0, 0, 0, 0, 0)
+	return f.glCall(f.getStringi, uintptr(name), uintptr(index), 0, 0, 0, 0, 0, 0, 0)
 }
 
 // GetTexLevelParameteriv calls glGetTexLevelParameteriv.
 func (f *Functions) GetTexLevelParameteriv(target uint32, level int32, pname uint32, params *int32) {
 	f.callCounts[idxGetTexLevelParameteriv]++
-	glCall(f.getTexLevelParameteriv, uintptr(target), uintptr(level), uintptr(pname), uintptr(unsafe.Pointer(params)),
+	f.glCall(f.getTexLevelParameteriv, uintptr(target), uintptr(level), uintptr(pname), uintptr(unsafe.Pointer(params)),
 		0, 0, 0, 0, 0)
 }
 
 // GetUniformLocation calls glGetUniformLocation.
 func (f *Functions) GetUniformLocation(program uint32, name *byte) int32 {
 	f.callCounts[idxGetUniformLocation]++
-	return int32(glCall(f.getUniformLocation, uintptr(program), uintptr(unsafe.Pointer(name)), 0, 0, 0, 0, 0, 0, 0))
+	return int32(f.glCall(f.getUniformLocation, uintptr(program), uintptr(unsafe.Pointer(name)), 0, 0, 0, 0, 0, 0, 0))
 }
 
 // InsertEventMarker calls glInsertEventMarker.
 func (f *Functions) InsertEventMarker(length int32, marker *byte) {
 	f.callCounts[idxInsertEventMarker]++
-	glCall(f.insertEventMarker, uintptr(length), uintptr(unsafe.Pointer(marker)), 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.insertEventMarker, uintptr(length), uintptr(unsafe.Pointer(marker)), 0, 0, 0, 0, 0, 0, 0)
 }
 
 // InvalidateBufferData calls glInvalidateBufferData.
 func (f *Functions) InvalidateBufferData(buffer uint32) {
 	f.callCounts[idxInvalidateBufferData]++
-	glCall(f.invalidateBufferData, uintptr(buffer), 0, 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.invalidateBufferData, uintptr(buffer), 0, 0, 0, 0, 0, 0, 0, 0)
 }
 
 // InvalidateBufferSubData calls glInvalidateBufferSubData.
 func (f *Functions) InvalidateBufferSubData(buffer uint32, offset, length int) {
 	f.callCounts[idxInvalidateBufferSubData]++
-	glCall(f.invalidateBufferSubData, uintptr(buffer), uintptr(offset), uintptr(length), 0, 0, 0, 0, 0, 0)
+	f.glCall(f.invalidateBufferSubData, uintptr(buffer), uintptr(offset), uintptr(length), 0, 0, 0, 0, 0, 0)
 }
 
 // InvalidateFramebuffer calls glInvalidateFramebuffer.
 func (f *Functions) InvalidateFramebuffer(target uint32, numAttachments int32, attachments *uint32) {
 	f.callCounts[idxInvalidateFramebuffer]++
-	glCall(f.invalidateFramebuffer, uintptr(target), uintptr(numAttachments), uintptr(unsafe.Pointer(attachments)),
+	f.glCall(f.invalidateFramebuffer, uintptr(target), uintptr(numAttachments), uintptr(unsafe.Pointer(attachments)),
 		0, 0, 0, 0, 0, 0)
 }
 
 // InvalidateSubFramebuffer calls glInvalidateSubFramebuffer.
 func (f *Functions) InvalidateSubFramebuffer(target uint32, numAttachments int32, attachments *uint32, x, y, width, height int32) {
 	f.callCounts[idxInvalidateSubFramebuffer]++
-	glCall(f.invalidateSubFramebuffer, uintptr(target), uintptr(numAttachments), uintptr(unsafe.Pointer(attachments)),
+	f.glCall(f.invalidateSubFramebuffer, uintptr(target), uintptr(numAttachments), uintptr(unsafe.Pointer(attachments)),
 		uintptr(x), uintptr(y), uintptr(width), uintptr(height), 0, 0)
 }
 
 // InvalidateTexImage calls glInvalidateTexImage.
 func (f *Functions) InvalidateTexImage(texture uint32, level int32) {
 	f.callCounts[idxInvalidateTexImage]++
-	glCall(f.invalidateTexImage, uintptr(texture), uintptr(level), 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.invalidateTexImage, uintptr(texture), uintptr(level), 0, 0, 0, 0, 0, 0, 0)
 }
 
 // InvalidateTexSubImage calls glInvalidateTexSubImage.
 func (f *Functions) InvalidateTexSubImage(texture uint32, level, xoffset, yoffset, zoffset, width, height, depth int32) {
 	f.callCounts[idxInvalidateTexSubImage]++
-	glCall(f.invalidateTexSubImage, uintptr(texture), uintptr(level), uintptr(xoffset), uintptr(yoffset),
+	f.glCall(f.invalidateTexSubImage, uintptr(texture), uintptr(level), uintptr(xoffset), uintptr(yoffset),
 		uintptr(zoffset), uintptr(width), uintptr(height), uintptr(depth), 0)
 }
 
 // IsSync calls glIsSync.
 func (f *Functions) IsSync(sync Sync) bool {
 	f.callCounts[idxIsSync]++
-	return byte(glCall(f.isSync, uintptr(sync), 0, 0, 0, 0, 0, 0, 0, 0)) != 0
+	return byte(f.glCall(f.isSync, uintptr(sync), 0, 0, 0, 0, 0, 0, 0, 0)) != 0
 }
 
 // IsTexture calls glIsTexture.
 func (f *Functions) IsTexture(texture uint32) bool {
 	f.callCounts[idxIsTexture]++
-	return byte(glCall(f.isTexture, uintptr(texture), 0, 0, 0, 0, 0, 0, 0, 0)) != 0
+	return byte(f.glCall(f.isTexture, uintptr(texture), 0, 0, 0, 0, 0, 0, 0, 0)) != 0
 }
 
 // LineWidth calls glLineWidth.
@@ -2352,40 +2354,40 @@ func (f *Functions) LineWidth(width float32) {
 // LinkProgram calls glLinkProgram.
 func (f *Functions) LinkProgram(program uint32) {
 	f.callCounts[idxLinkProgram]++
-	glCall(f.linkProgram, uintptr(program), 0, 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.linkProgram, uintptr(program), 0, 0, 0, 0, 0, 0, 0, 0)
 }
 
 // MapBuffer calls glMapBuffer.
 func (f *Functions) MapBuffer(target, access uint32) unsafe.Pointer {
 	f.callCounts[idxMapBuffer]++
-	return ptrFromUintptr(glCall(f.mapBuffer, uintptr(target), uintptr(access), 0, 0, 0, 0, 0, 0, 0))
+	return ptrFromUintptr(f.glCall(f.mapBuffer, uintptr(target), uintptr(access), 0, 0, 0, 0, 0, 0, 0))
 }
 
 // MapBufferRange calls glMapBufferRange.
 func (f *Functions) MapBufferRange(target uint32, offset, length int, access uint32) unsafe.Pointer {
 	f.callCounts[idxMapBufferRange]++
-	return ptrFromUintptr(glCall(f.mapBufferRange, uintptr(target), uintptr(offset), uintptr(length),
+	return ptrFromUintptr(f.glCall(f.mapBufferRange, uintptr(target), uintptr(offset), uintptr(length),
 		uintptr(access), 0, 0, 0, 0, 0))
 }
 
 // MapBufferSubData calls glMapBufferSubData.
 func (f *Functions) MapBufferSubData(target uint32, offset, size int, access uint32) unsafe.Pointer {
 	f.callCounts[idxMapBufferSubData]++
-	return ptrFromUintptr(glCall(f.mapBufferSubData, uintptr(target), uintptr(offset), uintptr(size),
+	return ptrFromUintptr(f.glCall(f.mapBufferSubData, uintptr(target), uintptr(offset), uintptr(size),
 		uintptr(access), 0, 0, 0, 0, 0))
 }
 
 // MapTexSubImage2D calls glMapTexSubImage2D.
 func (f *Functions) MapTexSubImage2D(target uint32, level, xoffset, yoffset, width, height int32, format, typ, access uint32) unsafe.Pointer {
 	f.callCounts[idxMapTexSubImage2D]++
-	return ptrFromUintptr(glCall(f.mapTexSubImage2D, uintptr(target), uintptr(level), uintptr(xoffset),
+	return ptrFromUintptr(f.glCall(f.mapTexSubImage2D, uintptr(target), uintptr(level), uintptr(xoffset),
 		uintptr(yoffset), uintptr(width), uintptr(height), uintptr(format), uintptr(typ), uintptr(access)))
 }
 
 // MemoryBarrier calls glMemoryBarrier.
 func (f *Functions) MemoryBarrier(barriers uint32) {
 	f.callCounts[idxMemoryBarrier]++
-	glCall(f.memoryBarrier, uintptr(barriers), 0, 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.memoryBarrier, uintptr(barriers), 0, 0, 0, 0, 0, 0, 0, 0)
 }
 
 // MultiDrawArraysIndirect calls glMultiDrawArraysIndirect.
@@ -2393,14 +2395,14 @@ func (f *Functions) MemoryBarrier(barriers uint32) {
 //go:uintptrescapes
 func (f *Functions) MultiDrawArraysIndirect(mode uint32, indirect uintptr, drawcount, stride int32) {
 	f.callCounts[idxMultiDrawArraysIndirect]++
-	glCall(f.multiDrawArraysIndirect, uintptr(mode), indirect, uintptr(drawcount), uintptr(stride),
+	f.glCall(f.multiDrawArraysIndirect, uintptr(mode), indirect, uintptr(drawcount), uintptr(stride),
 		0, 0, 0, 0, 0)
 }
 
 // MultiDrawArraysInstancedBaseInstance calls glMultiDrawArraysInstancedBaseInstance.
 func (f *Functions) MultiDrawArraysInstancedBaseInstance(mode uint32, firsts, counts, instanceCounts *int32, baseInstances *uint32, drawcount int32) {
 	f.callCounts[idxMultiDrawArraysInstancedBaseInstance]++
-	glCall(f.multiDrawArraysInstancedBaseInstance, uintptr(mode), uintptr(unsafe.Pointer(firsts)),
+	f.glCall(f.multiDrawArraysInstancedBaseInstance, uintptr(mode), uintptr(unsafe.Pointer(firsts)),
 		uintptr(unsafe.Pointer(counts)), uintptr(unsafe.Pointer(instanceCounts)),
 		uintptr(unsafe.Pointer(baseInstances)), uintptr(drawcount), 0, 0, 0)
 }
@@ -2410,7 +2412,7 @@ func (f *Functions) MultiDrawArraysInstancedBaseInstance(mode uint32, firsts, co
 //go:uintptrescapes
 func (f *Functions) MultiDrawElementsIndirect(mode, typ uint32, indirect uintptr, drawcount, stride int32) {
 	f.callCounts[idxMultiDrawElementsIndirect]++
-	glCall(f.multiDrawElementsIndirect, uintptr(mode), uintptr(typ), indirect, uintptr(drawcount),
+	f.glCall(f.multiDrawElementsIndirect, uintptr(mode), uintptr(typ), indirect, uintptr(drawcount),
 		uintptr(stride), 0, 0, 0, 0)
 }
 
@@ -2419,7 +2421,7 @@ func (f *Functions) MultiDrawElementsIndirect(mode, typ uint32, indirect uintptr
 //go:uintptrescapes
 func (f *Functions) MultiDrawElementsInstancedBaseVertexBaseInstance(mode uint32, counts *int32, typ uint32, indices uintptr, instanceCounts, baseVertices *int32, baseInstances *uint32, drawcount int32) {
 	f.callCounts[idxMultiDrawElementsInstancedBaseVertexBaseInstance]++
-	glCall(f.multiDrawElementsInstancedBaseVertexBaseInstance, uintptr(mode), uintptr(unsafe.Pointer(counts)),
+	f.glCall(f.multiDrawElementsInstancedBaseVertexBaseInstance, uintptr(mode), uintptr(unsafe.Pointer(counts)),
 		uintptr(typ), indices, uintptr(unsafe.Pointer(instanceCounts)),
 		uintptr(unsafe.Pointer(baseVertices)), uintptr(unsafe.Pointer(baseInstances)), uintptr(drawcount), 0)
 }
@@ -2427,38 +2429,38 @@ func (f *Functions) MultiDrawElementsInstancedBaseVertexBaseInstance(mode uint32
 // ObjectLabel calls glObjectLabel.
 func (f *Functions) ObjectLabel(identifier, name uint32, length int32, label *byte) {
 	f.callCounts[idxObjectLabel]++
-	glCall(f.objectLabel, uintptr(identifier), uintptr(name), uintptr(length), uintptr(unsafe.Pointer(label)),
+	f.glCall(f.objectLabel, uintptr(identifier), uintptr(name), uintptr(length), uintptr(unsafe.Pointer(label)),
 		0, 0, 0, 0, 0)
 }
 
 // PatchParameteri calls glPatchParameteri.
 func (f *Functions) PatchParameteri(pname uint32, value int32) {
 	f.callCounts[idxPatchParameteri]++
-	glCall(f.patchParameteri, uintptr(pname), uintptr(value), 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.patchParameteri, uintptr(pname), uintptr(value), 0, 0, 0, 0, 0, 0, 0)
 }
 
 // PixelStorei calls glPixelStorei.
 func (f *Functions) PixelStorei(pname uint32, param int32) {
 	f.callCounts[idxPixelStorei]++
-	glCall(f.pixelStorei, uintptr(pname), uintptr(param), 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.pixelStorei, uintptr(pname), uintptr(param), 0, 0, 0, 0, 0, 0, 0)
 }
 
 // PolygonMode calls glPolygonMode.
 func (f *Functions) PolygonMode(face, mode uint32) {
 	f.callCounts[idxPolygonMode]++
-	glCall(f.polygonMode, uintptr(face), uintptr(mode), 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.polygonMode, uintptr(face), uintptr(mode), 0, 0, 0, 0, 0, 0, 0)
 }
 
 // PopDebugGroup calls glPopDebugGroup.
 func (f *Functions) PopDebugGroup() {
 	f.callCounts[idxPopDebugGroup]++
-	glCall(f.popDebugGroup, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.popDebugGroup, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 }
 
 // PopGroupMarker calls glPopGroupMarker.
 func (f *Functions) PopGroupMarker() {
 	f.callCounts[idxPopGroupMarker]++
-	glCall(f.popGroupMarker, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.popGroupMarker, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 }
 
 // ProgramBinary calls glProgramBinary.
@@ -2466,38 +2468,38 @@ func (f *Functions) PopGroupMarker() {
 //go:uintptrescapes
 func (f *Functions) ProgramBinary(program, binaryFormat uint32, binary uintptr, length int32) {
 	f.callCounts[idxProgramBinary]++
-	glCall(f.programBinary, uintptr(program), uintptr(binaryFormat), binary, uintptr(length), 0, 0, 0, 0, 0)
+	f.glCall(f.programBinary, uintptr(program), uintptr(binaryFormat), binary, uintptr(length), 0, 0, 0, 0, 0)
 }
 
 // ProgramParameteri calls glProgramParameteri.
 func (f *Functions) ProgramParameteri(program, pname uint32, value int32) {
 	f.callCounts[idxProgramParameteri]++
-	glCall(f.programParameteri, uintptr(program), uintptr(pname), uintptr(value), 0, 0, 0, 0, 0, 0)
+	f.glCall(f.programParameteri, uintptr(program), uintptr(pname), uintptr(value), 0, 0, 0, 0, 0, 0)
 }
 
 // PushDebugGroup calls glPushDebugGroup.
 func (f *Functions) PushDebugGroup(source, id uint32, length int32, message *byte) {
 	f.callCounts[idxPushDebugGroup]++
-	glCall(f.pushDebugGroup, uintptr(source), uintptr(id), uintptr(length), uintptr(unsafe.Pointer(message)),
+	f.glCall(f.pushDebugGroup, uintptr(source), uintptr(id), uintptr(length), uintptr(unsafe.Pointer(message)),
 		0, 0, 0, 0, 0)
 }
 
 // PushGroupMarker calls glPushGroupMarker.
 func (f *Functions) PushGroupMarker(length int32, marker *byte) {
 	f.callCounts[idxPushGroupMarker]++
-	glCall(f.pushGroupMarker, uintptr(length), uintptr(unsafe.Pointer(marker)), 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.pushGroupMarker, uintptr(length), uintptr(unsafe.Pointer(marker)), 0, 0, 0, 0, 0, 0, 0)
 }
 
 // QueryCounter calls glQueryCounter.
 func (f *Functions) QueryCounter(id, target uint32) {
 	f.callCounts[idxQueryCounter]++
-	glCall(f.queryCounter, uintptr(id), uintptr(target), 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.queryCounter, uintptr(id), uintptr(target), 0, 0, 0, 0, 0, 0, 0)
 }
 
 // ReadBuffer calls glReadBuffer.
 func (f *Functions) ReadBuffer(src uint32) {
 	f.callCounts[idxReadBuffer]++
-	glCall(f.readBuffer, uintptr(src), 0, 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.readBuffer, uintptr(src), 0, 0, 0, 0, 0, 0, 0, 0)
 }
 
 // ReadPixels calls glReadPixels.
@@ -2505,28 +2507,28 @@ func (f *Functions) ReadBuffer(src uint32) {
 //go:uintptrescapes
 func (f *Functions) ReadPixels(x, y, width, height int32, format, typ uint32, pixels uintptr) {
 	f.callCounts[idxReadPixels]++
-	glCall(f.readPixels, uintptr(x), uintptr(y), uintptr(width), uintptr(height), uintptr(format), uintptr(typ),
+	f.glCall(f.readPixels, uintptr(x), uintptr(y), uintptr(width), uintptr(height), uintptr(format), uintptr(typ),
 		pixels, 0, 0)
 }
 
 // RenderbufferStorage calls glRenderbufferStorage.
 func (f *Functions) RenderbufferStorage(target, internalformat uint32, width, height int32) {
 	f.callCounts[idxRenderbufferStorage]++
-	glCall(f.renderbufferStorage, uintptr(target), uintptr(internalformat), uintptr(width), uintptr(height),
+	f.glCall(f.renderbufferStorage, uintptr(target), uintptr(internalformat), uintptr(width), uintptr(height),
 		0, 0, 0, 0, 0)
 }
 
 // RenderbufferStorageMultisample calls glRenderbufferStorageMultisample.
 func (f *Functions) RenderbufferStorageMultisample(target uint32, samples int32, internalformat uint32, width, height int32) {
 	f.callCounts[idxRenderbufferStorageMultisample]++
-	glCall(f.renderbufferStorageMultisample, uintptr(target), uintptr(samples), uintptr(internalformat),
+	f.glCall(f.renderbufferStorageMultisample, uintptr(target), uintptr(samples), uintptr(internalformat),
 		uintptr(width), uintptr(height), 0, 0, 0, 0)
 }
 
 // ResolveMultisampleFramebuffer calls glResolveMultisampleFramebuffer.
 func (f *Functions) ResolveMultisampleFramebuffer() {
 	f.callCounts[idxResolveMultisampleFramebuffer]++
-	glCall(f.resolveMultisampleFramebuffer, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.resolveMultisampleFramebuffer, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 }
 
 // SamplerParameterf calls glSamplerParameterf.
@@ -2538,25 +2540,25 @@ func (f *Functions) SamplerParameterf(sampler, pname uint32, param float32) {
 // SamplerParameteri calls glSamplerParameteri.
 func (f *Functions) SamplerParameteri(sampler, pname uint32, param int32) {
 	f.callCounts[idxSamplerParameteri]++
-	glCall(f.samplerParameteri, uintptr(sampler), uintptr(pname), uintptr(param), 0, 0, 0, 0, 0, 0)
+	f.glCall(f.samplerParameteri, uintptr(sampler), uintptr(pname), uintptr(param), 0, 0, 0, 0, 0, 0)
 }
 
 // SamplerParameteriv calls glSamplerParameteriv.
 func (f *Functions) SamplerParameteriv(sampler, pname uint32, params *int32) {
 	f.callCounts[idxSamplerParameteriv]++
-	glCall(f.samplerParameteriv, uintptr(sampler), uintptr(pname), uintptr(unsafe.Pointer(params)), 0, 0, 0, 0, 0, 0)
+	f.glCall(f.samplerParameteriv, uintptr(sampler), uintptr(pname), uintptr(unsafe.Pointer(params)), 0, 0, 0, 0, 0, 0)
 }
 
 // Scissor calls glScissor.
 func (f *Functions) Scissor(x, y, width, height int32) {
 	f.callCounts[idxScissor]++
-	glCall(f.scissor, uintptr(x), uintptr(y), uintptr(width), uintptr(height), 0, 0, 0, 0, 0)
+	f.glCall(f.scissor, uintptr(x), uintptr(y), uintptr(width), uintptr(height), 0, 0, 0, 0, 0)
 }
 
 // SetFence calls glSetFence.
 func (f *Functions) SetFence(fence, condition uint32) {
 	f.callCounts[idxSetFence]++
-	glCall(f.setFence, uintptr(fence), uintptr(condition), 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.setFence, uintptr(fence), uintptr(condition), 0, 0, 0, 0, 0, 0, 0)
 }
 
 // ShaderSource calls glShaderSource.
@@ -2564,69 +2566,69 @@ func (f *Functions) SetFence(fence, condition uint32) {
 //go:uintptrescapes
 func (f *Functions) ShaderSource(shader uint32, count int32, str uintptr, length *int32) {
 	f.callCounts[idxShaderSource]++
-	glCall(f.shaderSource, uintptr(shader), uintptr(count), str, uintptr(unsafe.Pointer(length)),
+	f.glCall(f.shaderSource, uintptr(shader), uintptr(count), str, uintptr(unsafe.Pointer(length)),
 		0, 0, 0, 0, 0)
 }
 
 // StartTiling calls glStartTiling.
 func (f *Functions) StartTiling(x, y, width, height, preserveMask uint32) {
 	f.callCounts[idxStartTiling]++
-	glCall(f.startTiling, uintptr(x), uintptr(y), uintptr(width), uintptr(height), uintptr(preserveMask), 0, 0, 0, 0)
+	f.glCall(f.startTiling, uintptr(x), uintptr(y), uintptr(width), uintptr(height), uintptr(preserveMask), 0, 0, 0, 0)
 }
 
 // StencilFunc calls glStencilFunc.
 func (f *Functions) StencilFunc(fn uint32, ref int32, mask uint32) {
 	f.callCounts[idxStencilFunc]++
-	glCall(f.stencilFunc, uintptr(fn), uintptr(ref), uintptr(mask), 0, 0, 0, 0, 0, 0)
+	f.glCall(f.stencilFunc, uintptr(fn), uintptr(ref), uintptr(mask), 0, 0, 0, 0, 0, 0)
 }
 
 // StencilFuncSeparate calls glStencilFuncSeparate.
 func (f *Functions) StencilFuncSeparate(face, fn uint32, ref int32, mask uint32) {
 	f.callCounts[idxStencilFuncSeparate]++
-	glCall(f.stencilFuncSeparate, uintptr(face), uintptr(fn), uintptr(ref), uintptr(mask), 0, 0, 0, 0, 0)
+	f.glCall(f.stencilFuncSeparate, uintptr(face), uintptr(fn), uintptr(ref), uintptr(mask), 0, 0, 0, 0, 0)
 }
 
 // StencilMask calls glStencilMask.
 func (f *Functions) StencilMask(mask uint32) {
 	f.callCounts[idxStencilMask]++
-	glCall(f.stencilMask, uintptr(mask), 0, 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.stencilMask, uintptr(mask), 0, 0, 0, 0, 0, 0, 0, 0)
 }
 
 // StencilMaskSeparate calls glStencilMaskSeparate.
 func (f *Functions) StencilMaskSeparate(face, mask uint32) {
 	f.callCounts[idxStencilMaskSeparate]++
-	glCall(f.stencilMaskSeparate, uintptr(face), uintptr(mask), 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.stencilMaskSeparate, uintptr(face), uintptr(mask), 0, 0, 0, 0, 0, 0, 0)
 }
 
 // StencilOp calls glStencilOp.
 func (f *Functions) StencilOp(fail, zfail, zpass uint32) {
 	f.callCounts[idxStencilOp]++
-	glCall(f.stencilOp, uintptr(fail), uintptr(zfail), uintptr(zpass), 0, 0, 0, 0, 0, 0)
+	f.glCall(f.stencilOp, uintptr(fail), uintptr(zfail), uintptr(zpass), 0, 0, 0, 0, 0, 0)
 }
 
 // StencilOpSeparate calls glStencilOpSeparate.
 func (f *Functions) StencilOpSeparate(face, fail, zfail, zpass uint32) {
 	f.callCounts[idxStencilOpSeparate]++
-	glCall(f.stencilOpSeparate, uintptr(face), uintptr(fail), uintptr(zfail), uintptr(zpass), 0, 0, 0, 0, 0)
+	f.glCall(f.stencilOpSeparate, uintptr(face), uintptr(fail), uintptr(zfail), uintptr(zpass), 0, 0, 0, 0, 0)
 }
 
 // TestFence calls glTestFence.
 func (f *Functions) TestFence(fence uint32) bool {
 	f.callCounts[idxTestFence]++
-	return byte(glCall(f.testFence, uintptr(fence), 0, 0, 0, 0, 0, 0, 0, 0)) != 0
+	return byte(f.glCall(f.testFence, uintptr(fence), 0, 0, 0, 0, 0, 0, 0, 0)) != 0
 }
 
 // TexBuffer calls glTexBuffer.
 func (f *Functions) TexBuffer(target, internalformat, buffer uint32) {
 	f.callCounts[idxTexBuffer]++
-	glCall(f.texBuffer, uintptr(target), uintptr(internalformat), uintptr(buffer), 0, 0, 0, 0, 0, 0)
+	f.glCall(f.texBuffer, uintptr(target), uintptr(internalformat), uintptr(buffer), 0, 0, 0, 0, 0, 0)
 }
 
 // TexBufferRange calls glTexBufferRange.
 func (f *Functions) TexBufferRange(target, internalformat, buffer uint32, offset, size int) {
 	f.callCounts[idxTexBufferRange]++
-	glCall(f.texBufferRange, uintptr(target), uintptr(internalformat), uintptr(buffer), uintptr(offset), uintptr(size),
-		0, 0, 0, 0)
+	f.glCall(f.texBufferRange, uintptr(target), uintptr(internalformat), uintptr(buffer), uintptr(offset),
+		uintptr(size), 0, 0, 0, 0)
 }
 
 // TexImage2D calls glTexImage2D.
@@ -2634,7 +2636,7 @@ func (f *Functions) TexBufferRange(target, internalformat, buffer uint32, offset
 //go:uintptrescapes
 func (f *Functions) TexImage2D(target uint32, level, internalformat, width, height, border int32, format, typ uint32, pixels uintptr) {
 	f.callCounts[idxTexImage2D]++
-	glCall(f.texImage2D, uintptr(target), uintptr(level), uintptr(internalformat), uintptr(width), uintptr(height),
+	f.glCall(f.texImage2D, uintptr(target), uintptr(level), uintptr(internalformat), uintptr(width), uintptr(height),
 		uintptr(border), uintptr(format), uintptr(typ), pixels)
 }
 
@@ -2647,25 +2649,25 @@ func (f *Functions) TexParameterf(target, pname uint32, param float32) {
 // TexParameterfv calls glTexParameterfv.
 func (f *Functions) TexParameterfv(target, pname uint32, params *float32) {
 	f.callCounts[idxTexParameterfv]++
-	glCall(f.texParameterfv, uintptr(target), uintptr(pname), uintptr(unsafe.Pointer(params)), 0, 0, 0, 0, 0, 0)
+	f.glCall(f.texParameterfv, uintptr(target), uintptr(pname), uintptr(unsafe.Pointer(params)), 0, 0, 0, 0, 0, 0)
 }
 
 // TexParameteri calls glTexParameteri.
 func (f *Functions) TexParameteri(target, pname uint32, param int32) {
 	f.callCounts[idxTexParameteri]++
-	glCall(f.texParameteri, uintptr(target), uintptr(pname), uintptr(param), 0, 0, 0, 0, 0, 0)
+	f.glCall(f.texParameteri, uintptr(target), uintptr(pname), uintptr(param), 0, 0, 0, 0, 0, 0)
 }
 
 // TexParameteriv calls glTexParameteriv.
 func (f *Functions) TexParameteriv(target, pname uint32, params *int32) {
 	f.callCounts[idxTexParameteriv]++
-	glCall(f.texParameteriv, uintptr(target), uintptr(pname), uintptr(unsafe.Pointer(params)), 0, 0, 0, 0, 0, 0)
+	f.glCall(f.texParameteriv, uintptr(target), uintptr(pname), uintptr(unsafe.Pointer(params)), 0, 0, 0, 0, 0, 0)
 }
 
 // TexStorage2D calls glTexStorage2D.
 func (f *Functions) TexStorage2D(target uint32, levels int32, internalformat uint32, width, height int32) {
 	f.callCounts[idxTexStorage2D]++
-	glCall(f.texStorage2D, uintptr(target), uintptr(levels), uintptr(internalformat), uintptr(width), uintptr(height),
+	f.glCall(f.texStorage2D, uintptr(target), uintptr(levels), uintptr(internalformat), uintptr(width), uintptr(height),
 		0, 0, 0, 0)
 }
 
@@ -2674,14 +2676,14 @@ func (f *Functions) TexStorage2D(target uint32, levels int32, internalformat uin
 //go:uintptrescapes
 func (f *Functions) TexSubImage2D(target uint32, level, xoffset, yoffset, width, height int32, format, typ uint32, pixels uintptr) {
 	f.callCounts[idxTexSubImage2D]++
-	glCall(f.texSubImage2D, uintptr(target), uintptr(level), uintptr(xoffset), uintptr(yoffset), uintptr(width),
+	f.glCall(f.texSubImage2D, uintptr(target), uintptr(level), uintptr(xoffset), uintptr(yoffset), uintptr(width),
 		uintptr(height), uintptr(format), uintptr(typ), pixels)
 }
 
 // TextureBarrier calls glTextureBarrier.
 func (f *Functions) TextureBarrier() {
 	f.callCounts[idxTextureBarrier]++
-	glCall(f.textureBarrier, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.textureBarrier, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 }
 
 // Uniform1f calls glUniform1f.
@@ -2693,19 +2695,19 @@ func (f *Functions) Uniform1f(location int32, v0 float32) {
 // Uniform1fv calls glUniform1fv.
 func (f *Functions) Uniform1fv(location, count int32, v *float32) {
 	f.callCounts[idxUniform1fv]++
-	glCall(f.uniform1fv, uintptr(location), uintptr(count), uintptr(unsafe.Pointer(v)), 0, 0, 0, 0, 0, 0)
+	f.glCall(f.uniform1fv, uintptr(location), uintptr(count), uintptr(unsafe.Pointer(v)), 0, 0, 0, 0, 0, 0)
 }
 
 // Uniform1i calls glUniform1i.
 func (f *Functions) Uniform1i(location, v0 int32) {
 	f.callCounts[idxUniform1i]++
-	glCall(f.uniform1i, uintptr(location), uintptr(v0), 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.uniform1i, uintptr(location), uintptr(v0), 0, 0, 0, 0, 0, 0, 0)
 }
 
 // Uniform1iv calls glUniform1iv.
 func (f *Functions) Uniform1iv(location, count int32, v *int32) {
 	f.callCounts[idxUniform1iv]++
-	glCall(f.uniform1iv, uintptr(location), uintptr(count), uintptr(unsafe.Pointer(v)), 0, 0, 0, 0, 0, 0)
+	f.glCall(f.uniform1iv, uintptr(location), uintptr(count), uintptr(unsafe.Pointer(v)), 0, 0, 0, 0, 0, 0)
 }
 
 // Uniform2f calls glUniform2f.
@@ -2717,19 +2719,19 @@ func (f *Functions) Uniform2f(location int32, v0, v1 float32) {
 // Uniform2fv calls glUniform2fv.
 func (f *Functions) Uniform2fv(location, count int32, v *float32) {
 	f.callCounts[idxUniform2fv]++
-	glCall(f.uniform2fv, uintptr(location), uintptr(count), uintptr(unsafe.Pointer(v)), 0, 0, 0, 0, 0, 0)
+	f.glCall(f.uniform2fv, uintptr(location), uintptr(count), uintptr(unsafe.Pointer(v)), 0, 0, 0, 0, 0, 0)
 }
 
 // Uniform2i calls glUniform2i.
 func (f *Functions) Uniform2i(location, v0, v1 int32) {
 	f.callCounts[idxUniform2i]++
-	glCall(f.uniform2i, uintptr(location), uintptr(v0), uintptr(v1), 0, 0, 0, 0, 0, 0)
+	f.glCall(f.uniform2i, uintptr(location), uintptr(v0), uintptr(v1), 0, 0, 0, 0, 0, 0)
 }
 
 // Uniform2iv calls glUniform2iv.
 func (f *Functions) Uniform2iv(location, count int32, v *int32) {
 	f.callCounts[idxUniform2iv]++
-	glCall(f.uniform2iv, uintptr(location), uintptr(count), uintptr(unsafe.Pointer(v)), 0, 0, 0, 0, 0, 0)
+	f.glCall(f.uniform2iv, uintptr(location), uintptr(count), uintptr(unsafe.Pointer(v)), 0, 0, 0, 0, 0, 0)
 }
 
 // Uniform3f calls glUniform3f.
@@ -2741,19 +2743,19 @@ func (f *Functions) Uniform3f(location int32, v0, v1, v2 float32) {
 // Uniform3fv calls glUniform3fv.
 func (f *Functions) Uniform3fv(location, count int32, v *float32) {
 	f.callCounts[idxUniform3fv]++
-	glCall(f.uniform3fv, uintptr(location), uintptr(count), uintptr(unsafe.Pointer(v)), 0, 0, 0, 0, 0, 0)
+	f.glCall(f.uniform3fv, uintptr(location), uintptr(count), uintptr(unsafe.Pointer(v)), 0, 0, 0, 0, 0, 0)
 }
 
 // Uniform3i calls glUniform3i.
 func (f *Functions) Uniform3i(location, v0, v1, v2 int32) {
 	f.callCounts[idxUniform3i]++
-	glCall(f.uniform3i, uintptr(location), uintptr(v0), uintptr(v1), uintptr(v2), 0, 0, 0, 0, 0)
+	f.glCall(f.uniform3i, uintptr(location), uintptr(v0), uintptr(v1), uintptr(v2), 0, 0, 0, 0, 0)
 }
 
 // Uniform3iv calls glUniform3iv.
 func (f *Functions) Uniform3iv(location, count int32, v *int32) {
 	f.callCounts[idxUniform3iv]++
-	glCall(f.uniform3iv, uintptr(location), uintptr(count), uintptr(unsafe.Pointer(v)), 0, 0, 0, 0, 0, 0)
+	f.glCall(f.uniform3iv, uintptr(location), uintptr(count), uintptr(unsafe.Pointer(v)), 0, 0, 0, 0, 0, 0)
 }
 
 // Uniform4f calls glUniform4f.
@@ -2765,46 +2767,46 @@ func (f *Functions) Uniform4f(location int32, v0, v1, v2, v3 float32) {
 // Uniform4fv calls glUniform4fv.
 func (f *Functions) Uniform4fv(location, count int32, v *float32) {
 	f.callCounts[idxUniform4fv]++
-	glCall(f.uniform4fv, uintptr(location), uintptr(count), uintptr(unsafe.Pointer(v)), 0, 0, 0, 0, 0, 0)
+	f.glCall(f.uniform4fv, uintptr(location), uintptr(count), uintptr(unsafe.Pointer(v)), 0, 0, 0, 0, 0, 0)
 }
 
 // Uniform4i calls glUniform4i.
 func (f *Functions) Uniform4i(location, v0, v1, v2, v3 int32) {
 	f.callCounts[idxUniform4i]++
-	glCall(f.uniform4i, uintptr(location), uintptr(v0), uintptr(v1), uintptr(v2), uintptr(v3), 0, 0, 0, 0)
+	f.glCall(f.uniform4i, uintptr(location), uintptr(v0), uintptr(v1), uintptr(v2), uintptr(v3), 0, 0, 0, 0)
 }
 
 // Uniform4iv calls glUniform4iv.
 func (f *Functions) Uniform4iv(location, count int32, v *int32) {
 	f.callCounts[idxUniform4iv]++
-	glCall(f.uniform4iv, uintptr(location), uintptr(count), uintptr(unsafe.Pointer(v)), 0, 0, 0, 0, 0, 0)
+	f.glCall(f.uniform4iv, uintptr(location), uintptr(count), uintptr(unsafe.Pointer(v)), 0, 0, 0, 0, 0, 0)
 }
 
 // UniformMatrix2fv calls glUniformMatrix2fv.
 func (f *Functions) UniformMatrix2fv(location, count int32, transpose bool, value *float32) {
 	f.callCounts[idxUniformMatrix2fv]++
-	glCall(f.uniformMatrix2fv, uintptr(location), uintptr(count), glBool(transpose), uintptr(unsafe.Pointer(value)),
+	f.glCall(f.uniformMatrix2fv, uintptr(location), uintptr(count), glBool(transpose), uintptr(unsafe.Pointer(value)),
 		0, 0, 0, 0, 0)
 }
 
 // UniformMatrix3fv calls glUniformMatrix3fv.
 func (f *Functions) UniformMatrix3fv(location, count int32, transpose bool, value *float32) {
 	f.callCounts[idxUniformMatrix3fv]++
-	glCall(f.uniformMatrix3fv, uintptr(location), uintptr(count), glBool(transpose), uintptr(unsafe.Pointer(value)),
+	f.glCall(f.uniformMatrix3fv, uintptr(location), uintptr(count), glBool(transpose), uintptr(unsafe.Pointer(value)),
 		0, 0, 0, 0, 0)
 }
 
 // UniformMatrix4fv calls glUniformMatrix4fv.
 func (f *Functions) UniformMatrix4fv(location, count int32, transpose bool, value *float32) {
 	f.callCounts[idxUniformMatrix4fv]++
-	glCall(f.uniformMatrix4fv, uintptr(location), uintptr(count), glBool(transpose), uintptr(unsafe.Pointer(value)),
+	f.glCall(f.uniformMatrix4fv, uintptr(location), uintptr(count), glBool(transpose), uintptr(unsafe.Pointer(value)),
 		0, 0, 0, 0, 0)
 }
 
 // UnmapBuffer calls glUnmapBuffer.
 func (f *Functions) UnmapBuffer(target uint32) bool {
 	f.callCounts[idxUnmapBuffer]++
-	return byte(glCall(f.unmapBuffer, uintptr(target), 0, 0, 0, 0, 0, 0, 0, 0)) != 0
+	return byte(f.glCall(f.unmapBuffer, uintptr(target), 0, 0, 0, 0, 0, 0, 0, 0)) != 0
 }
 
 // UnmapBufferSubData calls glUnmapBufferSubData.
@@ -2812,7 +2814,7 @@ func (f *Functions) UnmapBuffer(target uint32) bool {
 //go:uintptrescapes
 func (f *Functions) UnmapBufferSubData(mem uintptr) {
 	f.callCounts[idxUnmapBufferSubData]++
-	glCall(f.unmapBufferSubData, mem, 0, 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.unmapBufferSubData, mem, 0, 0, 0, 0, 0, 0, 0, 0)
 }
 
 // UnmapTexSubImage2D calls glUnmapTexSubImage2D.
@@ -2820,13 +2822,13 @@ func (f *Functions) UnmapBufferSubData(mem uintptr) {
 //go:uintptrescapes
 func (f *Functions) UnmapTexSubImage2D(mem uintptr) {
 	f.callCounts[idxUnmapTexSubImage2D]++
-	glCall(f.unmapTexSubImage2D, mem, 0, 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.unmapTexSubImage2D, mem, 0, 0, 0, 0, 0, 0, 0, 0)
 }
 
 // UseProgram calls glUseProgram.
 func (f *Functions) UseProgram(program uint32) {
 	f.callCounts[idxUseProgram]++
-	glCall(f.useProgram, uintptr(program), 0, 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.useProgram, uintptr(program), 0, 0, 0, 0, 0, 0, 0, 0)
 }
 
 // VertexAttrib1f calls glVertexAttrib1f.
@@ -2838,25 +2840,25 @@ func (f *Functions) VertexAttrib1f(indx uint32, value float32) {
 // VertexAttrib2fv calls glVertexAttrib2fv.
 func (f *Functions) VertexAttrib2fv(indx uint32, values *float32) {
 	f.callCounts[idxVertexAttrib2fv]++
-	glCall(f.vertexAttrib2fv, uintptr(indx), uintptr(unsafe.Pointer(values)), 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.vertexAttrib2fv, uintptr(indx), uintptr(unsafe.Pointer(values)), 0, 0, 0, 0, 0, 0, 0)
 }
 
 // VertexAttrib3fv calls glVertexAttrib3fv.
 func (f *Functions) VertexAttrib3fv(indx uint32, values *float32) {
 	f.callCounts[idxVertexAttrib3fv]++
-	glCall(f.vertexAttrib3fv, uintptr(indx), uintptr(unsafe.Pointer(values)), 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.vertexAttrib3fv, uintptr(indx), uintptr(unsafe.Pointer(values)), 0, 0, 0, 0, 0, 0, 0)
 }
 
 // VertexAttrib4fv calls glVertexAttrib4fv.
 func (f *Functions) VertexAttrib4fv(indx uint32, values *float32) {
 	f.callCounts[idxVertexAttrib4fv]++
-	glCall(f.vertexAttrib4fv, uintptr(indx), uintptr(unsafe.Pointer(values)), 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.vertexAttrib4fv, uintptr(indx), uintptr(unsafe.Pointer(values)), 0, 0, 0, 0, 0, 0, 0)
 }
 
 // VertexAttribDivisor calls glVertexAttribDivisor.
 func (f *Functions) VertexAttribDivisor(index, divisor uint32) {
 	f.callCounts[idxVertexAttribDivisor]++
-	glCall(f.vertexAttribDivisor, uintptr(index), uintptr(divisor), 0, 0, 0, 0, 0, 0, 0)
+	f.glCall(f.vertexAttribDivisor, uintptr(index), uintptr(divisor), 0, 0, 0, 0, 0, 0, 0)
 }
 
 // VertexAttribIPointer calls glVertexAttribIPointer.
@@ -2864,7 +2866,7 @@ func (f *Functions) VertexAttribDivisor(index, divisor uint32) {
 //go:uintptrescapes
 func (f *Functions) VertexAttribIPointer(indx uint32, size int32, typ uint32, stride int32, ptr uintptr) {
 	f.callCounts[idxVertexAttribIPointer]++
-	glCall(f.vertexAttribIPointer, uintptr(indx), uintptr(size), uintptr(typ), uintptr(stride), ptr,
+	f.glCall(f.vertexAttribIPointer, uintptr(indx), uintptr(size), uintptr(typ), uintptr(stride), ptr,
 		0, 0, 0, 0)
 }
 
@@ -2873,24 +2875,24 @@ func (f *Functions) VertexAttribIPointer(indx uint32, size int32, typ uint32, st
 //go:uintptrescapes
 func (f *Functions) VertexAttribPointer(indx uint32, size int32, typ uint32, normalized bool, stride int32, ptr uintptr) {
 	f.callCounts[idxVertexAttribPointer]++
-	glCall(f.vertexAttribPointer, uintptr(indx), uintptr(size), uintptr(typ), glBool(normalized),
+	f.glCall(f.vertexAttribPointer, uintptr(indx), uintptr(size), uintptr(typ), glBool(normalized),
 		uintptr(stride), ptr, 0, 0, 0)
 }
 
 // Viewport calls glViewport.
 func (f *Functions) Viewport(x, y, width, height int32) {
 	f.callCounts[idxViewport]++
-	glCall(f.viewport, uintptr(x), uintptr(y), uintptr(width), uintptr(height), 0, 0, 0, 0, 0)
+	f.glCall(f.viewport, uintptr(x), uintptr(y), uintptr(width), uintptr(height), 0, 0, 0, 0, 0)
 }
 
 // WaitSync calls glWaitSync.
 func (f *Functions) WaitSync(sync Sync, flags uint32, timeout uint64) {
 	f.callCounts[idxWaitSync]++
-	glCall(f.waitSync, uintptr(sync), uintptr(flags), uintptr(timeout), 0, 0, 0, 0, 0, 0)
+	f.glCall(f.waitSync, uintptr(sync), uintptr(flags), uintptr(timeout), 0, 0, 0, 0, 0, 0)
 }
 
 // WindowRectangles calls glWindowRectangles. box points at count four-int32 rectangles (nil when count is 0).
 func (f *Functions) WindowRectangles(mode uint32, count int32, box *int32) {
 	f.callCounts[idxWindowRectangles]++
-	glCall(f.windowRectangles, uintptr(mode), uintptr(count), uintptr(unsafe.Pointer(box)), 0, 0, 0, 0, 0, 0)
+	f.glCall(f.windowRectangles, uintptr(mode), uintptr(count), uintptr(unsafe.Pointer(box)), 0, 0, 0, 0, 0, 0)
 }

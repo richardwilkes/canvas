@@ -12,8 +12,10 @@
 // Interface is a proc table (Functions) plus the context's standard and extension set, assembled from a GetProc
 // resolver and validated against the version/extension matrix. Per the desktop trim, only desktop core-profile OpenGL
 // is supported: ES and WebGL contexts are recognized but rejected at assembly.
-
-//go:generate go run ../../internal/glgen
+//
+// The proc table and its wrappers (interface.go) are maintained by hand. Adding or changing an entry point means
+// observing the call-lane routing rules documented on Functions there and in fastcall_sysv.go's ABI notes; the tests in
+// fastcall_test.go are what enforce them.
 
 package gl
 

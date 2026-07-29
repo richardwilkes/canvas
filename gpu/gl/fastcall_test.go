@@ -9,13 +9,15 @@
 
 // Tests for the fixed-arity glCall lane (fastcall_*.go): a live-GL functional check of the trampoline against
 // purego.SyscallN on identical proc addresses (including the 9-argument stack-slot path and the zero-allocation
-// guarantee), and a source-level audit that pins the lane's arity contract so a future GL function-table regeneration
-// cannot silently violate it.
+// guarantee), a source-level audit that pins the lane's arity contract so a later addition to the hand-maintained proc
+// table cannot silently violate it, and a stack-move check that pins the lane's heap-resident argument block.
 
 package gl
 
 import (
 	"os"
+	"runtime"
+	"runtime/debug"
 	"strings"
 	"testing"
 	"unsafe"
@@ -43,7 +45,7 @@ func TestGLCallLaneLive(t *testing.T) {
 
 	// Result agreement: glGetString(GL_VERSION) via both lanes must return the same C pointer.
 	r1, _, _ := purego.SyscallN(f.getString, uintptr(VERSION))
-	r2 := glCall(f.getString, uintptr(VERSION), 0, 0, 0, 0, 0, 0, 0, 0)
+	r2 := f.glCall(f.getString, uintptr(VERSION), 0, 0, 0, 0, 0, 0, 0, 0)
 	if r1 != r2 {
 		t.Fatalf("getString mismatch: SyscallN %#x vs glCall %#x", r1, r2)
 	}
@@ -51,7 +53,7 @@ func TestGLCallLaneLive(t *testing.T) {
 	// Pointer out-parameter: glGetIntegerv must write through the second argument.
 	var v1, v2 int32
 	purego.SyscallN(f.getIntegerv, uintptr(MAX_TEXTURE_SIZE), uintptr(unsafe.Pointer(&v1)))
-	glCall(f.getIntegerv, uintptr(MAX_TEXTURE_SIZE), uintptr(unsafe.Pointer(&v2)), 0, 0, 0, 0, 0,
+	f.glCall(f.getIntegerv, uintptr(MAX_TEXTURE_SIZE), uintptr(unsafe.Pointer(&v2)), 0, 0, 0, 0, 0,
 		0, 0)
 	if v1 == 0 || v1 != v2 {
 		t.Fatalf("getIntegerv mismatch: SyscallN %d vs glCall %d", v1, v2)
@@ -87,9 +89,14 @@ func TestGLCallLaneLive(t *testing.T) {
 // the proc address — the trampoline's fixed arity, zero-padded. Nine is also the safety boundary of the lane's single
 // 8-byte stack slot on darwin/arm64: the 9th argument is necessarily the last, so even a sub-8-byte parameter there is
 // read correctly from the low bytes of the zero-extended slot (the "single trailing stack argument" case;
-// glMapTexSubImage2D's GLenum access exercises it). A tenth argument would break that reasoning, which is why the
-// generator refuses to emit one (glCallMaxArgs) and this audit pins the output.
+// glMapTexSubImage2D's GLenum access exercises it). A tenth argument would break that reasoning, and since interface.go
+// is written by hand this audit is the only thing standing between the lane and one being added.
 func TestGLCallArityCoverage(t *testing.T) {
+	// The dispatch's source form: a method on the receiver whose first argument is the proc address. Slicing off all
+	// but the trailing "f." leaves the scan starting at that proc address, so the commas counted below are exactly the
+	// nine arguments that follow it.
+	const glCallMarker = "f.glCall(f."
+
 	src, err := os.ReadFile("interface.go")
 	if err != nil {
 		t.Fatal(err)
@@ -97,7 +104,7 @@ func TestGLCallArityCoverage(t *testing.T) {
 	calls := 0
 	lines := strings.Split(string(src), "\n")
 	for i := 0; i < len(lines); i++ {
-		idx := strings.Index(lines[i], "glCall(f.")
+		idx := strings.Index(lines[i], glCallMarker)
 		if idx < 0 {
 			continue
 		}
@@ -111,7 +118,7 @@ func TestGLCallArityCoverage(t *testing.T) {
 		}
 		// Count the dispatch's top-level commas (arguments after the proc address).
 		depth, commas := 0, 0
-		for _, ch := range line[idx+len("glCall("):] {
+		for _, ch := range line[idx+len(glCallMarker)-len("f."):] {
 			switch {
 			case ch == '(':
 				depth++
@@ -134,4 +141,52 @@ func TestGLCallArityCoverage(t *testing.T) {
 		t.Fatalf("audited only %d glCall dispatches — the source parse is broken", calls)
 	}
 	t.Logf("audited %d glCall dispatches, all at the fixed arity of 9", calls)
+}
+
+// TestGLCallResultSurvivesStackMove pins the reason glCall's argument block is heap-resident rather than a local.
+//
+// The glcall9 trampoline stashes the block pointer across its call to the GL proc and writes the proc's result back
+// through it. A purego.NewCallback proc — every fake driver in this package — re-enters Go through cgocallbackg,
+// which calls exitsyscall and runs on this goroutine's stack; if that re-entry has to grow the stack, copystack moves
+// the frame and a stack-resident block would be left behind, so the result would land in the abandoned copy and the
+// caller would read a stale zero.
+//
+// The fake glClientWaitSync installed by newRecordingGpu unconditionally answers ALREADY_SIGNALED, so every poll below
+// must report the fence signaled. A background goroutine hammers GC to keep shrinking this goroutine's stack, forcing
+// the callback re-entry to grow it again — the same stack-move pressure TestOffsetDrawGCStackSafety applies to the
+// live-driver draw path. Against a stack-resident block this reported ~85-100 spurious unsignaled polls per 50,000.
+func TestGLCallResultSurvivesStackMove(t *testing.T) {
+	g := newRecordingGpu(t)
+	sync := g.InsertSync()
+	if !sync.IsValid() {
+		t.Fatal("InsertSync failed")
+	}
+	defer debug.SetGCPercent(debug.SetGCPercent(1))
+	stop := make(chan struct{})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+				runtime.GC()
+			}
+		}
+	}()
+	stranded := 0
+	const polls = 50000
+	for i := 0; i < polls; i++ {
+		if !g.TestSync(sync) {
+			stranded++
+		}
+		runtime.Gosched() // give the GC hammer a chance to shrink the stack between polls
+	}
+	close(stop)
+	<-done
+	if stranded != 0 {
+		t.Errorf("fence poll reported unsignaled %d/%d times against a fake that always signals — glCall lost its "+
+			"result to a stack move", stranded, polls)
+	}
 }

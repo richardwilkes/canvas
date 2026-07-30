@@ -33,7 +33,12 @@ package fontmgr
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
+	"fmt"
 	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
 	"sync"
 	"testing"
 
@@ -1010,5 +1015,202 @@ func TestDefaultManagerSystem(t *testing.T) {
 	}
 	if tf := m.MatchFamilyStyleCharacter("", font.NormalStyle(), nil, 'A'); tf == nil {
 		t.Error("no system font covers 'A'")
+	}
+}
+
+// TestDefaultManagerMemoized pins DefaultWithError against Default on the real scan: one attempt, one memoized answer,
+// and the same manager from both entry points. Opt-in like the other system-font tests.
+func TestDefaultManagerMemoized(t *testing.T) {
+	requireSystemFonts(t)
+	m, err := DefaultWithError()
+	if err != nil {
+		t.Fatalf("system font scan: %v", err)
+	}
+	if m == nil {
+		t.Fatal("a successful scan returned a nil manager")
+	}
+	if m.CountFamilies() == 0 {
+		t.Fatal("the scan reported success but produced no families")
+	}
+	m2, err2 := DefaultWithError()
+	if m2 != m || err2 != nil {
+		t.Errorf("second call = %p/%v, want the memoized %p/nil", m2, err2, m)
+	}
+	if got := Default(); got != m {
+		t.Errorf("Default = %p, want the manager DefaultWithError returned (%p)", got, m)
+	}
+}
+
+// TestSystemFontScanFailureSurfaced pins the error surface behind Default. A scan that fails must yield an empty — but
+// never nil — manager whose cause is reachable, rather than an empty manager indistinguishable from a machine with no
+// fonts; the diagnostics fontscan reports only through its logger (it hands back one bare "scanning system fonts"
+// wrapper) have to come with it.
+func TestSystemFontScanFailureSurfaced(t *testing.T) {
+	boom := errors.New("searching font directories")
+	gotDir := "not called"
+	m, err := scanSystemFonts(func(logger fontscan.Logger, dir string) ([]fontscan.Footprint, error) {
+		gotDir = dir
+		logger.Printf("using system font dirs %q", []string{"/no/such/font/dir"})
+		return nil, boom
+	}, "/cache/dir")
+	if m == nil {
+		t.Fatal("a failed scan returned a nil manager")
+	}
+	if got := m.CountFamilies(); got != 0 {
+		t.Errorf("failed scan families = %d, want 0", got)
+	}
+	if !errors.Is(err, boom) {
+		t.Fatalf("err = %v, want it to wrap the scan's own error", err)
+	}
+	if !strings.Contains(err.Error(), "/no/such/font/dir") {
+		t.Errorf("err = %v, want fontscan's log lines folded in", err)
+	}
+	if gotDir != "/cache/dir" {
+		t.Errorf("scan cache dir = %q, want the resolved one passed through", gotDir)
+	}
+}
+
+// TestSystemFontScanEmptyResultIsAnError covers the successes that are not usable: fontscan returns an empty index and
+// a nil error once its one-shot initialization has failed for anyone else in the process, and a footprint carrying no
+// family name can never be matched. Neither may be reported as a working manager.
+func TestSystemFontScanEmptyResultIsAnError(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		fps  []fontscan.Footprint
+	}{
+		{name: "no footprints"},
+		{
+			name: "no family names",
+			fps: []fontscan.Footprint{
+				{Location: fontscan.Location{File: "../font/testdata/Roboto-Regular.ttf"}},
+			},
+		},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			m, err := scanSystemFonts(func(fontscan.Logger, string) ([]fontscan.Footprint, error) {
+				return c.fps, nil
+			}, "")
+			if err == nil {
+				t.Fatal("a scan with no usable face reported success")
+			}
+			if m == nil {
+				t.Fatal("nil manager")
+			}
+			if got := m.CountFamilies(); got != 0 {
+				t.Errorf("families = %d, want 0", got)
+			}
+		})
+	}
+}
+
+// TestSystemFontScanBuildsFaces pins the footprint-to-face threading the scan performs: the file, the collection index
+// and the aspect all have to reach the face they describe, and a footprint with no family name is dropped rather than
+// grouped under an empty key.
+func TestSystemFontScanBuildsFaces(t *testing.T) {
+	const robotoPath = "../font/testdata/Roboto-Regular.ttf"
+	fps := []fontscan.Footprint{
+		{Location: fontscan.Location{File: robotoPath}}, // no family name: skipped
+		{
+			Family:   "roboto",
+			Location: fontscan.Location{File: robotoPath},
+			Aspect:   tsfont.Aspect{Weight: 700, Style: tsfont.StyleItalic},
+		},
+		{Family: "test", Location: fontscan.Location{File: "../font/testdata/test.ttc", Index: 1}},
+	}
+	m, err := scanSystemFonts(func(fontscan.Logger, string) ([]fontscan.Footprint, error) { return fps, nil }, "")
+	if err != nil {
+		t.Fatalf("scan: %v", err)
+	}
+	if got := m.CountFamilies(); got != 2 {
+		t.Fatalf("families = %d, want 2 (the family-less footprint is dropped)", got)
+	}
+	rec := m.byKey["roboto"].faces[0]
+	if rec.path != robotoPath || rec.index != 0 || rec.data != nil {
+		t.Errorf("face = %q index %d (%d bytes of data), want the footprint's file", rec.path, rec.index, len(rec.data))
+	}
+	// The aspect is the face's no-I/O approximate style, and has to come through styleFromAspect.
+	if want := font.NewStyle(700, font.WidthNormal, font.SlantItalic); rec.approx != want {
+		t.Errorf("approx style = %v, want %v", rec.approx, want)
+	}
+	// The collection index has to reach the face too: test.ttc's face 1 is the bold one, face 0 the regular.
+	if _, name := m.MatchFamily("Test").Style(0); name != "Bold" {
+		t.Errorf("test.ttc face style name = %q, want the index-1 face's Bold", name)
+	}
+	if tf := m.MatchFamilyStyle("Roboto", font.NormalStyle()); tf == nil {
+		t.Error("the scanned Roboto face did not load")
+	}
+}
+
+// TestFontCacheDirFallback covers the reason the index cache directory is resolved here instead of being left to
+// fontscan: fontscan throws away a fully successful scan when it cannot write the index, so an unwritable user cache
+// dir (HOME unset or read-only — a systemd unit, a container, a sandboxed app) would otherwise cost the process every
+// system font it has.
+func TestFontCacheDirFallback(t *testing.T) {
+	tempRoot := t.TempDir()
+	temp := func() string { return tempRoot }
+	noHome := func() (string, error) { return "", errors.New("neither $XDG_CACHE_HOME nor $HOME are defined") }
+
+	// A usable user cache dir is passed through unchanged, so the ordinary case keeps reading and writing exactly the
+	// file fontscan would have chosen on its own.
+	usable := t.TempDir()
+	if got := chooseFontCacheDir(func() (string, error) { return usable, nil }, temp); got != usable {
+		t.Errorf("cache dir = %q, want the user cache dir %q unchanged", got, usable)
+	}
+
+	// No user cache dir at all falls back to a writable subdirectory of the temporary directory.
+	got := chooseFontCacheDir(noHome, temp)
+	if filepath.Dir(got) != tempRoot {
+		t.Fatalf("cache dir = %q, want a subdirectory of %q", got, tempRoot)
+	}
+	if !cacheDirWritable(got) {
+		t.Errorf("fallback cache dir %q is not writable", got)
+	}
+
+	// A user cache dir that exists but cannot be written to falls back the same way. Skipped where the permission
+	// cannot be denied: Windows ignores the mode bits, and root ignores the permission.
+	if os.Getuid() > 0 && runtime.GOOS != "windows" {
+		readOnly := filepath.Join(t.TempDir(), "read-only")
+		if err := os.Mkdir(readOnly, 0o500); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			if err := os.Remove(readOnly); err != nil { // it must still be empty: nothing could be written into it
+				t.Errorf("removing %s: %v", readOnly, err)
+			}
+		})
+		got = chooseFontCacheDir(func() (string, error) { return readOnly, nil }, temp)
+		if filepath.Dir(got) != tempRoot {
+			t.Errorf("cache dir = %q, want the read-only %q rejected for a temp subdirectory", got, readOnly)
+		}
+	}
+
+	// Nothing writable anywhere leaves fontscan its own choice (and its own error). A path under a regular file is
+	// unwritable on every platform.
+	blocked := filepath.Join(usable, "regular-file")
+	if err := os.WriteFile(blocked, []byte("not a directory"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got = chooseFontCacheDir(func() (string, error) { return filepath.Join(blocked, "cache"), nil },
+		func() string { return blocked }); got != "" {
+		t.Errorf("cache dir = %q, want \"\" when no candidate is writable", got)
+	}
+}
+
+// TestScanLoggerKeepsTheLastLines pins the bound on the captured scan log: fontscan logs a line per unreadable font
+// file, and the lines naming the failure are the last ones.
+func TestScanLoggerKeepsTheLastLines(t *testing.T) {
+	var logger scanLogger
+	if got := logger.tail(); got != "" {
+		t.Errorf("empty logger tail = %q, want \"\"", got)
+	}
+	want := make([]string, 0, scanLogLines)
+	for i := range 2 * scanLogLines {
+		logger.Printf("  line %d\n", i) // fontscan's lines arrive with the log package's trailing newline
+		if i >= scanLogLines {
+			want = append(want, fmt.Sprintf("line %d", i))
+		}
+	}
+	if got := logger.tail(); got != strings.Join(want, "; ") {
+		t.Errorf("tail = %q, want %q", got, strings.Join(want, "; "))
 	}
 }

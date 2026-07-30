@@ -31,8 +31,13 @@ package fontmgr
 
 import (
 	"bytes"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -188,43 +193,157 @@ func (f *Family) Name() string {
 	return f.name
 }
 
-// discardLogger silences fontscan's informational logging.
-type discardLogger struct{}
+// scanLogLines is how many of fontscan's log lines a scanLogger keeps. fontscan logs one line per unreadable font file
+// as well as its summary lines, so the whole stream is unbounded on a broken machine while the last few lines are what
+// name the failure.
+const scanLogLines = 8
 
-func (discardLogger) Printf(string, ...any) {}
+// scanLogger captures fontscan's informational logging rather than discarding it. fontscan reports its diagnostics
+// through a logger instead of through its error, and a library has no business writing to a process-wide log stream, so
+// the lines are held here and folded into the error the scan surfaces — the one place they are of use. Safe for
+// concurrent use because fontscan scans font directories in parallel.
+type scanLogger struct {
+	lines []string
+	mu    sync.Mutex
+}
+
+func (l *scanLogger) Printf(format string, args ...any) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.lines = append(l.lines, strings.TrimSpace(fmt.Sprintf(format, args...)))
+	if len(l.lines) > scanLogLines {
+		l.lines = l.lines[len(l.lines)-scanLogLines:]
+	}
+}
+
+// tail returns the retained lines, oldest first, as one semicolon-separated string; "" when nothing was logged.
+func (l *scanLogger) tail() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return strings.Join(l.lines, "; ")
+}
 
 var (
 	defaultOnce sync.Once
 	defaultMgr  *Manager
+	defaultErr  error
 )
 
 // Default returns the process-wide system font manager. The first call scans the system fonts through fontscan (an
-// on-disk index cache makes later runs cheap); if the scan fails the manager is empty.
+// on-disk index cache makes later runs cheap) and the manager it builds — empty, never nil, when the scan fails — is
+// memoized for the life of the process. Use DefaultWithError when a failed scan has to be reported: that is the only
+// place the reason is visible.
 func Default() *Manager {
-	defaultOnce.Do(func() {
-		fps, err := fontscan.SystemFonts(discardLogger{}, "")
-		if err != nil {
-			defaultMgr = newManager(nil)
-			return
-		}
-		recs := make([]*faceRec, 0, len(fps))
-		for i := range fps {
-			fp := &fps[i]
-			if fp.Family == "" {
-				continue
-			}
-			recs = append(recs, &faceRec{
-				key:    fp.Family,
-				path:   fp.Location.File,
-				index:  int(fp.Location.Index),
-				runes:  fp.Runes,
-				langs:  fp.Langs,
-				approx: styleFromAspect(fp.Aspect),
-			})
-		}
-		defaultMgr = newManager(recs)
-	})
+	initDefault()
 	return defaultMgr
+}
+
+// DefaultWithError returns what Default returns, plus the error from the one system scan the process performs (nil when
+// it succeeded; a scan that finds no usable face is an error even where fontscan reported none). Both are memoized, so
+// the reason a process has no system fonts stays available to every caller rather than only to whoever called first. A
+// non-nil error always comes with an empty, non-nil manager.
+//
+// The scan is never retried. fontscan guards its system index with a package-level sync.Once, so the first attempt in
+// the process is the only one that can run: a second fontscan.SystemFonts call after a failed first returns an empty
+// index and a *nil* error, which would replace a diagnosable failure with a silent one. Making the single attempt
+// succeed is therefore what systemFontCacheDir is for.
+func DefaultWithError() (*Manager, error) {
+	initDefault()
+	return defaultMgr, defaultErr
+}
+
+// initDefault performs the process's one system scan, on the first call to either entry point.
+func initDefault() {
+	defaultOnce.Do(func() { defaultMgr, defaultErr = scanSystemFonts(fontscan.SystemFonts, systemFontCacheDir()) })
+}
+
+// scanSystemFonts runs one system scan and groups its footprints into a manager. The scan function and the cache
+// directory are parameters so the failure and empty-result paths are testable without touching the machine's fonts or
+// its cache directory; Default passes fontscan.SystemFonts and systemFontCacheDir().
+func scanSystemFonts(scan func(fontscan.Logger, string) ([]fontscan.Footprint, error), cacheDir string) (*Manager, error) {
+	logger := &scanLogger{}
+	fps, err := scan(logger, cacheDir)
+	if err != nil {
+		return newManager(nil), scanError(fmt.Errorf("fontmgr: system font scan failed: %w", err), logger)
+	}
+	recs := make([]*faceRec, 0, len(fps))
+	for i := range fps {
+		fp := &fps[i]
+		if fp.Family == "" {
+			continue
+		}
+		recs = append(recs, &faceRec{
+			key:    fp.Family,
+			path:   fp.Location.File,
+			index:  int(fp.Location.Index),
+			runes:  fp.Runes,
+			langs:  fp.Langs,
+			approx: styleFromAspect(fp.Aspect),
+		})
+	}
+	if len(recs) == 0 {
+		// A successful scan carries at least one valid face (fontscan asserts that before caching its index), so an
+		// empty result means either that every footprint lacked a family name or that another caller in this process
+		// already consumed fontscan's one-shot initialization with a failure — the case that hands back an empty index
+		// and no error at all.
+		return newManager(nil), scanError(errors.New("fontmgr: system font scan found no usable faces"), logger)
+	}
+	return newManager(recs), nil
+}
+
+// scanError appends whatever fontscan logged to err, since the failure's actual cause (an unreadable directory, a font
+// that would not parse) is usually only in the log.
+func scanError(err error, logger *scanLogger) error {
+	if tail := logger.tail(); tail != "" {
+		return fmt.Errorf("%w [fontscan: %s]", err, tail)
+	}
+	return err
+}
+
+// systemFontCacheDir picks the directory fontscan serializes its font index cache into. Left to choose for itself
+// fontscan uses os.UserCacheDir, and it discards a *fully successful* scan when it cannot write the index there
+// (refreshSystemFontsIndex turns serializeToFile's error into the SystemFonts error), so a process with HOME unset or
+// read-only — a systemd unit, a container, a sandboxed app — ends up with no system fonts at all rather than with
+// uncached ones. Resolving the directory here lets such a scan fall back to the temporary directory, which is writable
+// in practically every environment the user cache dir is not. The user cache dir stays the first choice and is passed
+// through unchanged, so the ordinary case reads and writes exactly the file fontscan would have picked on its own.
+//
+// The fallback is a per-user subdirectory of the temporary directory: a shared /tmp is sticky, so one user's index
+// cache must not be a file another user's process then fails to rewrite. "" is returned when neither candidate is
+// writable, which leaves fontscan its own choice and its own error.
+func systemFontCacheDir() string { return chooseFontCacheDir(os.UserCacheDir, os.TempDir) }
+
+func chooseFontCacheDir(userCacheDir func() (string, error), tempDir func() string) string {
+	if dir, err := userCacheDir(); err == nil && cacheDirWritable(dir) {
+		return dir
+	}
+	name := "canvas-fontscan"
+	if uid := os.Getuid(); uid >= 0 { // -1 on Windows, whose temporary directory is per-user already
+		name += "-" + strconv.Itoa(uid)
+	}
+	if dir := filepath.Join(tempDir(), name); cacheDirWritable(dir) {
+		return dir
+	}
+	return ""
+}
+
+// cacheDirWritable reports whether an index cache can be written into dir, creating it as fontscan's own
+// serializeToFile would. There is no portable permission query, so the check is a probe file: creating and removing one
+// is what the write itself will do.
+func cacheDirWritable(dir string) bool {
+	if dir == "" {
+		return false
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return false
+	}
+	f, err := os.CreateTemp(dir, "canvas-fontcache-probe-*")
+	if err != nil {
+		return false
+	}
+	name := f.Name()
+	closeErr := f.Close()
+	return os.Remove(name) == nil && closeErr == nil
 }
 
 // NewFromData builds a manager over in-memory font data instead of a system scan: each blob is one font file (anything

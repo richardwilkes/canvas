@@ -201,7 +201,9 @@ type Glyph struct {
 	imageDone      bool
 	pathIsHairline bool
 	pathDone       bool
-	// Format is the mask format for the reachable formats (A8 coverage, ARGB32 color).
+	// Format is the mask format the glyph's image plane uses: A8 coverage, ARGB32 color, LCD16 sub-pixel coverage, or
+	// SDF. makeGlyph seeds it from the rec's format (MaskLCD16 for subpixel-AA edging, MaskSDF for an SDFT spec), and
+	// the color lanes override it to MaskARGB32 per glyph.
 	Format MaskFormat
 }
 

@@ -890,15 +890,21 @@ func (c *ScalerContext) getImage(g *Glyph) {
 	copyMaskIntersection(g, dst)
 }
 
-// allocGlyphImage allocates the glyph's image plane for its format (zeroed, as Go allocations are).
+// allocGlyphImage allocates the glyph's image plane for its format (zeroed, as Go allocations are). Empty and too-large
+// glyphs allocate nothing and keep every plane nil, matching what ImageSize reports for them — without that guard an
+// ARGB32 glyph just under the dimension cap would allocate a quarter of a gigabyte.
 func allocGlyphImage(g *Glyph) {
+	size := g.ImageSize()
+	if size == 0 {
+		return
+	}
 	switch g.Format {
 	case MaskARGB32:
 		g.Image32 = make([]uint32, int(g.Width)*int(g.Height))
 	case MaskLCD16:
 		g.Image16 = make([]uint16, int(g.Width)*int(g.Height))
 	default:
-		g.Image = make([]uint8, g.ImageSize())
+		g.Image = make([]uint8, size)
 	}
 }
 

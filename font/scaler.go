@@ -271,16 +271,14 @@ func outlineToPath(outline tsfont.GlyphOutline, mapPt func(x, y float32) geom.Po
 	return p
 }
 
-// saturateBounds rounds r out to integer bounds, zeroing it if either dimension is empty.
+// saturateBounds rounds r out to integer bounds, zeroing it if either dimension is empty. Rounding out cannot undo the
+// emptiness check: IsEmpty is written with negated comparisons, so it also catches NaN edges, and floor/ceil only widen
+// a rect that survives it (Floor(Left) <= Left < Right <= Ceil(Right)). No post-rounding re-check is needed.
 func saturateBounds(r geom.Rect) geom.Rect {
 	if r.IsEmpty() {
 		return geom.Rect{}
 	}
-	out := r.RoundOutRect()
-	if out.Left >= out.Right || out.Top >= out.Bottom {
-		return geom.Rect{}
-	}
-	return out
+	return r.RoundOutRect()
 }
 
 // fontMetrics computes the strike's font metrics for scalable outline fonts: hhea (or OS/2 typo metrics when

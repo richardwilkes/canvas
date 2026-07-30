@@ -228,6 +228,38 @@ func synthPCLTTable(capHeight uint16, serifStyle uint8) []byte {
 	return out
 }
 
+// synthSbixTable builds a one-strike 'sbix' table at the given ppem, holding graphic (a four-byte graphic type such as
+// "png " or "jpg ") for glyph and nothing for any other glyph of the numGlyphs the face declares. It is how the tests
+// reach the strike formats the bitmap lane has no decoder for while still leaving the strike readable, which the real
+// fonts in testdata cannot do: their sbix strikes are all PNG, and the graphic type cannot simply be relabeled, since
+// the extents lookup and the lane both derive the format by decoding the same bytes.
+func synthSbixTable(numGlyphs, glyph int, ppem uint16, graphic string, data []byte) []byte {
+	const headerSize, strikeOffset = 12, 12
+	// The strike is its own header plus the glyphDataOffsets loca (numGlyphs+1 offsets from the strike's own start),
+	// then the one glyph-data record: originOffsetX/Y, the graphic type tag, and the graphic itself.
+	strikeHeader := 4 + 4*(numGlyphs+1)
+	recordSize := 8 + len(data)
+
+	out := make([]byte, headerSize+strikeHeader+recordSize)
+	binary.BigEndian.PutUint16(out, 1)     // version
+	binary.BigEndian.PutUint16(out[2:], 1) // flags: bit 0 is always set
+	binary.BigEndian.PutUint32(out[4:], 1) // numStrikes
+	binary.BigEndian.PutUint32(out[8:], strikeOffset)
+	strike := out[strikeOffset:]
+	binary.BigEndian.PutUint16(strike, ppem)
+	binary.BigEndian.PutUint16(strike[2:], 72) // ppi
+	for i := range numGlyphs + 1 {
+		offset := strikeHeader // equal neighbors mean "no data for this glyph"
+		if i > glyph {
+			offset += recordSize
+		}
+		binary.BigEndian.PutUint32(strike[4+4*i:], uint32(offset))
+	}
+	copy(strike[strikeHeader+4:], graphic) // the origin offsets stay zero
+	copy(strike[strikeHeader+8:], data)
+	return out
+}
+
 // woffWrap repackages the single-face sfnt in data as a WOFF file with every table stored uncompressed. WOFF is a
 // container the sfnt reader accepts and a PDF cannot embed, which is what FontFlagAltDataFormat reports.
 func woffWrap(t *testing.T, data []byte) []byte {

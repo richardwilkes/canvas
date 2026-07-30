@@ -135,10 +135,11 @@ func (t *Typeface) GetAdvancedMetrics() *AdvancedMetrics {
 		m.Style |= StyleItalic
 	}
 
-	if t.hhea != nil {
-		m.Ascent = t.hhea.Ascender
-		m.Descent = t.hhea.Descender
-	}
+	// The same ascent/descent the strike's font metrics lay text out with (FreeType's face->ascender/descender recipe,
+	// which is what SkTypeface_FreeType::onGetAdvancedMetrics copies): reading hhea directly here instead would emit a
+	// /Ascent and /Descent contradicting the glyphs drawn on the page for any font that sets USE_TYPO_METRICS or whose
+	// hhea reports nothing.
+	m.Ascent, m.Descent, _ = t.verticalMetrics()
 	// Cap height and the serif class come from PCLT when the font carries one, following FreeType's advanced-metrics
 	// recipe; otherwise cap height is OS/2 sCapHeight (version 2+) and zero when that is absent too (the PDF backend
 	// guesses then). Only PCLT classifies a face as serif or script, so a font without one emits neither flag.
@@ -311,7 +312,9 @@ func extractFontProgram(data []byte, index int) ([]byte, error) {
 }
 
 // GlyphToUnicodeMap returns a slice indexed by glyph ID giving the first (smallest) Unicode code point that maps to
-// that glyph through the font's cmap, or 0 when none does. The length is countGlyphs.
+// that glyph through the font's cmap, or 0 when none does. The length is countGlyphs. At most maxCmapEntries cmap
+// entries are walked, which no well-formed cmap reaches (see maxCmapEntries: a crafted format-12/13 group otherwise
+// turns one PDF font emission into an hours-long spin).
 func (t *Typeface) GlyphToUnicodeMap() []int32 {
 	buffer := make([]int32, t.nGlyphs)
 	if t.face == nil || t.nGlyphs == 0 {
@@ -320,7 +323,10 @@ func (t *Typeface) GlyphToUnicodeMap() []int32 {
 	// The typeface is documented thread-safe; iterate the read-only Font cmap (like UnicharToGlyph), not the Face-level
 	// lookup, which memoizes into an unsynchronized per-Face cache.
 	iter := t.face.Cmap.Iter()
-	for iter.Next() {
+	for range maxCmapEntries {
+		if !iter.Next() {
+			break
+		}
 		r, gid := iter.Char()
 		if int(gid) >= t.nGlyphs {
 			continue

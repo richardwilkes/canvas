@@ -119,6 +119,64 @@ func TestAdvancedMetricsPCLT(t *testing.T) {
 	}
 }
 
+// TestGlyphToUnicodeMapBoundsTheCmapWalk pins the bound on the per-code-point cmap walk behind the PDF backend's
+// glyph-to-Unicode map. It is the same unbounded iterator FaceRunesData walks (see maxCmapEntries), reached from
+// Document.getUnicodeMap once per embedded font: typesetting's format-12/13 iterator takes a group's length from
+// EndCharCode-StartCharCode in unsigned arithmetic, so one group declaring an EndCharCode of 0xFFFFFFFF asks for 4.29e9
+// iterations, and a 12 KB cmap holding a thousand of them is hours of CPU inside a single PDF emission.
+func TestGlyphToUnicodeMapBoundsTheCmapWalk(t *testing.T) {
+	roboto := readTestFont(t, "Roboto-Regular.ttf")
+	for _, c := range []struct {
+		name   string
+		groups [][3]uint32
+		// The first (smallest) code point expected for glyphs 1 and 2; 0 means the glyph must be left unmapped.
+		wantGlyph1, wantGlyph2 int32
+	}{
+		// The control: a well-formed cmap is walked to its end, so the bound costs a real font nothing.
+		{name: "well-formed", groups: [][3]uint32{{'A', 'C', 1}, {'X', 'Z', 2}}, wantGlyph1: 'A', wantGlyph2: 'X'},
+		{
+			// A group sized to land exactly on the bound, followed by one only an unbounded walk could reach: glyph 2
+			// stays unmapped, which is the bound observed without waiting for a malformed group to spin.
+			name:       "stops at the bound",
+			groups:     [][3]uint32{{0, maxCmapEntries - 1, 1}, {0x200000, 0x200002, 2}},
+			wantGlyph1: 1, // code point 0 loses to 1: a zero entry is indistinguishable from "no code point".
+		},
+		// The shape that motivates the bound at all. Unbounded, these do not fail — they hang.
+		{name: "unbounded end", groups: [][3]uint32{{0, 0xFFFFFFFF, 1}}, wantGlyph1: 1},
+		{name: "end below start", groups: [][3]uint32{{'A', 'A' - 1, 1}}, wantGlyph1: 'A'},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			data := sfntWithTables(t, roboto, map[string][]byte{"cmap": synthCmapFormat13(c.groups...)})
+			tf, err := NewTypefaceFromData(data, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			buffer := tf.GlyphToUnicodeMap()
+			if len(buffer) != tf.CountGlyphs() {
+				t.Fatalf("map has %d entries, want one per glyph (%d)", len(buffer), tf.CountGlyphs())
+			}
+			if buffer[1] != c.wantGlyph1 || buffer[2] != c.wantGlyph2 {
+				t.Errorf("glyphs 1 and 2 map to %#x and %#x, want %#x and %#x", buffer[1], buffer[2],
+					c.wantGlyph1, c.wantGlyph2)
+			}
+		})
+	}
+	// The bound is far above any real font's coverage, so the unpatched face is unaffected by it.
+	tf, err := NewTypefaceFromData(roboto, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mapped := 0
+	for _, r := range tf.GlyphToUnicodeMap() {
+		if r != 0 {
+			mapped++
+		}
+	}
+	if mapped == 0 || mapped >= maxCmapEntries {
+		t.Errorf("Roboto maps %d glyphs, want a nonzero count well below the %d bound", mapped, maxCmapEntries)
+	}
+}
+
 // TestFontProgramSingleFace pins that a typeface parsed from a plain sfnt file embeds its own bytes verbatim: nothing
 // is reassembled when there is no collection container to strip.
 func TestFontProgramSingleFace(t *testing.T) {

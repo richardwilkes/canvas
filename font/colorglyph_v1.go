@@ -319,6 +319,8 @@ func (w *colrV1Walker) startGlyph(gid uint16, includeRootTransform bool) bool {
 	w.visited[gid] = true
 	defer delete(w.visited, gid)
 
+	// faceColorPaint answers false for a record naming no artwork, so what arrives here is always a non-nil paint; only
+	// the v0 layer lists, which belong to renderCOLRv0, still have to be turned away.
 	paint, ok := w.t.faceColorPaint(opentype.GID(gid))
 	if !ok {
 		return false

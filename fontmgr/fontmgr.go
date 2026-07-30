@@ -51,10 +51,12 @@ import (
 // Manager is an immutable view of a font collection. All methods are safe for concurrent use. The zero value is an
 // empty manager (no families); use Default for the system manager.
 type Manager struct {
-	byKey    map[string]*Family
-	families []*Family // sorted by normalized family key
-	visible  []*Family // families minus the hidden (dot-prefixed) ones — the enumeration list
-	all      []*faceRec
+	byKey      map[string]*Family
+	families   []*Family // sorted by normalized family key
+	notHidden  []*Family // families minus the hidden (dot-prefixed) ones
+	listed     []*Family // notHidden minus the families that can name no face — the enumeration list
+	all        []*faceRec
+	listedOnce sync.Once
 }
 
 // Family is one font family: the set of faces whose (normalized) family name matches.
@@ -179,8 +181,19 @@ func (f *faceRec) typeface() *font.Typeface {
 }
 
 // Name returns the family's display name: the first face's described family (which normalizes back to the grouping key
-// by construction), falling back to the normalized key if no face parses.
+// by construction), falling back to the normalized key if no face parses. The fallback is a last resort for a family
+// reached by name — enumeration drops such a family instead of showing the key (see Manager.enumerated).
 func (f *Family) Name() string {
+	if name := f.describedName(); name != "" {
+		return name
+	}
+	return f.key
+}
+
+// describedName returns the display family name of the family's first describable face, "" when no face of the family
+// can be described at all. Computed once and cached: a font picker asks for every family's name, and the answer is the
+// same table read the enumeration filter needs.
+func (f *Family) describedName() string {
 	f.nameOnce.Do(func() {
 		for _, face := range f.faces {
 			if info, ok := face.faceInfo(); ok && info.Family != "" {
@@ -188,7 +201,6 @@ func (f *Family) Name() string {
 				return
 			}
 		}
-		f.name = f.key
 	})
 	return f.name
 }
@@ -415,21 +427,42 @@ func newManager(recs []*faceRec) *Manager {
 		// Hidden families (macOS's dot-prefixed UI fonts) stay matchable by name and reachable through character
 		// fallback, but are excluded from enumeration, matching CTFontManagerCopyAvailableFontFamilyNames.
 		if !strings.HasPrefix(fam.key, ".") {
-			m.visible = append(m.visible, fam)
+			m.notHidden = append(m.notHidden, fam)
 		}
 	}
 	return m
 }
 
+// enumerated returns the enumeration list: the visible families that can actually name themselves. A family none of
+// whose faces this port can even describe cannot produce a typeface either, so listing it offers a font picker an entry
+// that selects nothing and — since Name() has only the normalized grouping key left to fall back on — labels it with a
+// lowercased, space-stripped key rather than a display name (stock macOS ships one, NISC18030.ttf, which carries no
+// head table). Both halves of that are the port's own bookkeeping leaking out, so such a family is dropped from the
+// list while staying matchable by name and reachable through character fallback, exactly as a hidden family is.
+//
+// The filter is computed on the first enumeration and cached. It costs one lightweight table read per family, which is
+// the same read the caller's own FamilyName call makes and which faceRec memoizes for the life of the manager.
+func (m *Manager) enumerated() []*Family {
+	m.listedOnce.Do(func() {
+		for _, fam := range m.notHidden {
+			if fam.describedName() != "" {
+				m.listed = append(m.listed, fam)
+			}
+		}
+	})
+	return m.listed
+}
+
 // CountFamilies returns the number of enumerable families.
-func (m *Manager) CountFamilies() int { return len(m.visible) }
+func (m *Manager) CountFamilies() int { return len(m.enumerated()) }
 
 // FamilyName returns the display name of the index-th family, "" out of range.
 func (m *Manager) FamilyName(index int) string {
-	if index < 0 || index >= len(m.visible) {
+	listed := m.enumerated()
+	if index < 0 || index >= len(listed) {
 		return ""
 	}
-	return m.visible[index].Name()
+	return listed[index].Name()
 }
 
 // MatchFamily returns the style set for the named family (normalized, so the lookup is case- and space-insensitive like
@@ -465,8 +498,11 @@ func (m *Manager) lookupOrDefault(familyName string) *Family {
 			return fam
 		}
 	}
-	if len(m.visible) != 0 {
-		return m.visible[0]
+	// The last resorts are the first enumerable family and then, for a manager whose every family is hidden or
+	// undescribable, the first family of all: a default worth handing back is one a caller could also have picked out
+	// of the enumeration, but "something" still beats nothing.
+	if listed := m.enumerated(); len(listed) != 0 {
+		return listed[0]
 	}
 	if len(m.families) != 0 {
 		return m.families[0]

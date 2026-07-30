@@ -257,14 +257,19 @@ func MakeMaskSpec(f *Font, paint *ScalerPaint, deviceMatrix *geom.Matrix, props 
 func MakePathSpec(f *Font, paint *ScalerPaint) (spec StrikeSpec, strikeToSourceScale float32) {
 	pathFont := *f
 
-	var pathPaint ScalerPaint
+	// A nil paint stays nil the whole way down. MakeRecAndEffects reads nil as "the default paint", whose color is
+	// black; the zero ScalerPaint a copy would substitute carries a *transparent* color instead, which for a COLR
+	// typeface (GlyphMaskNeedsCurrentColor) enters the rec as the foreground color and paints every palette-index-0xFFFF
+	// layer fully transparent — a blank glyph, on a strike keyed to a color no paint ever had.
+	var pathPaint *ScalerPaint
 	if paint != nil {
-		pathPaint = *paint
+		copied := *paint
+		pathPaint = &copied
 	}
-	strikeToSourceScale = pathFont.setupForAsPaths(&pathPaint)
+	strikeToSourceScale = pathFont.setupForAsPaths(pathPaint)
 
 	identity := geom.IdentityMatrix()
-	rec, effects := MakeRecAndEffects(&pathFont, &pathPaint, &identity, nil)
+	rec, effects := MakeRecAndEffects(&pathFont, pathPaint, &identity, nil)
 	return StrikeSpec{Typeface: f.typeface, Rec: rec, Effects: effects}, strikeToSourceScale
 }
 

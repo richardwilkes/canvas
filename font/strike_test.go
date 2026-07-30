@@ -14,6 +14,7 @@ import (
 	"math"
 	"testing"
 
+	"github.com/richardwilkes/canvas/colorcore"
 	"github.com/richardwilkes/canvas/geom"
 	"github.com/richardwilkes/canvas/maskfilter"
 	"github.com/richardwilkes/canvas/path"
@@ -622,6 +623,53 @@ func TestMakePathSpecAlwaysSubpixel(t *testing.T) {
 	}
 }
 
+// A nil paint means "the default paint, whose color is black" to MakeRecAndEffects, and every strike-spec constructor
+// relies on that. Substituting a zero-value ScalerPaint hands it a *transparent* color instead, which for a COLR
+// typeface (GlyphMaskNeedsCurrentColor) enters the rec as the foreground color: every palette-index-0xFFFF layer paints
+// fully transparent, on a second strike keyed to a color no paint ever had.
+func TestMakePathSpecNilPaintIsTheDefaultPaint(t *testing.T) {
+	tf := loadColorTypeface(t, "colr.ttf")
+	if !tf.GlyphMaskNeedsCurrentColor() {
+		t.Fatal("colr.ttf must need the current color, or the foreground color never enters the rec")
+	}
+	f := NewFont(tf, 48, 1, 0)
+	spec, _ := MakePathSpec(f, nil)
+	black := colorcore.RGB(0, 0, 0)
+	if spec.Rec.ForegroundColor != black {
+		t.Errorf("path rec foreground = %#08x, want opaque black %#08x", spec.Rec.ForegroundColor, black)
+	}
+	// The sibling constructors' nil-paint recs must agree about it, since they all document the same default.
+	if got := MakeWithNoDeviceSpec(f, nil).Rec.ForegroundColor; got != spec.Rec.ForegroundColor {
+		t.Errorf("no-device rec foreground = %#08x, path rec %#08x", got, spec.Rec.ForegroundColor)
+	}
+	identity := geom.IdentityMatrix()
+	if got := MakeMaskSpec(f, nil, &identity, nil).Rec.ForegroundColor; got != spec.Rec.ForegroundColor {
+		t.Errorf("mask rec foreground = %#08x, path rec %#08x", got, spec.Rec.ForegroundColor)
+	}
+	// An explicit black paint is the same request, so it must land on the same strike rather than a duplicate.
+	explicit, _ := MakePathSpec(f, &ScalerPaint{Color: black})
+	if explicit.Rec != spec.Rec {
+		t.Errorf("explicit black rec %+v differs from the nil-paint rec %+v", explicit.Rec, spec.Rec)
+	}
+	if a, b := spec.FindOrCreateStrike(), explicit.FindOrCreateStrike(); a != b {
+		t.Error("the nil and explicit-black path specs resolved different strikes")
+	}
+	// And the layers that paint with the foreground color really do come out black rather than transparent.
+	g, action := spec.FindOrCreateStrike().DigestFor(ActionDirectMaskCPU, PackGlyphID(tf.UnicharToGlyph(smiley)))
+	if action != GlyphActionAccept || g.Image32 == nil {
+		t.Fatalf("smiley through the path spec: action %v, image32 nil = %v", action, g.Image32 == nil)
+	}
+	opaqueBlack := 0
+	for _, w := range g.Image32 {
+		if w == uint32(0xFF)<<24 {
+			opaqueBlack++
+		}
+	}
+	if opaqueBlack == 0 {
+		t.Error("no opaque black pixels: the foreground layers painted with a transparent color")
+	}
+}
+
 func TestShouldDrawAsPathMatrix(t *testing.T) {
 	tf := loadTypeface(t, "Roboto-Regular.ttf", 0)
 	f := NewFont(tf, 100, 1, 0)
@@ -754,6 +802,85 @@ func TestStrikeMemoryChargesPathFromGlyphCreation(t *testing.T) {
 	}
 	if used, want := cache.TotalMemoryUsed(), 1024+glyphOverhead+pathBytes; used != want {
 		t.Errorf("after the path action the cache charges %d bytes, want %d (double-charged)", used, want)
+	}
+}
+
+// The per-band intercept cache hangs off the glyph and is retained for as long as the strike is, so it has to be
+// charged to the byte budget like any other retained glyph byte — and it has to actually cache, including for the
+// bands textblob's zero-scale divide produces, or the list it is scanned out of grows an entry per call forever.
+func TestStrikeInterceptCacheIsChargedAndKeyed(t *testing.T) {
+	tf := loadTypeface(t, "Roboto-Regular.ttf", 0)
+	spec := MakeWithNoDeviceSpec(NewFont(tf, 64, 1, 0), nil)
+	cache := NewStrikeCache()
+	s := cache.FindOrCreateStrike(&spec)
+	gid := tf.UnicharToGlyph('H')
+	if gid == 0 {
+		t.Fatal("Roboto should map 'H'")
+	}
+	g := s.PreparePaths([]uint16{gid}, nil)[0]
+	if g.Path() == nil {
+		t.Fatal("'H' should retain a device path")
+	}
+	if interceptOverhead <= 0 {
+		t.Fatal("a cached intercept must cost the budget something, or the growth below is invisible to it")
+	}
+	base := cache.TotalMemoryUsed()
+
+	// A band across the middle of the 'H' carves out the gap between its two stems (device space is y-down, so the
+	// glyph spans negative y above the baseline).
+	count := 0
+	intervals := make([]float32, 0, 2)
+	intervals = s.FindIntercepts([2]float32{-40, -30}, 1, 0, g, intervals, &count)
+	if count != 2 || len(intervals) != 2 || intervals[0] >= intervals[1] {
+		t.Fatalf("intercepts = %v (count %d), want one interval across the stems", intervals, count)
+	}
+	if used, want := cache.TotalMemoryUsed(), base+interceptOverhead; used != want {
+		t.Errorf("one cached band charged %d bytes, want %d", used-base, interceptOverhead)
+	}
+	// Asking again is a hit: the same answer, no second entry, no further charge.
+	repeat := s.FindIntercepts([2]float32{-40, -30}, 1, 0, g, nil, &count)
+	if repeat != nil || count != 4 {
+		t.Errorf("count-only repeat returned %v and counted %d, want nil and 4", repeat, count)
+	}
+	if len(g.intercepts) != 1 {
+		t.Errorf("a repeated band cached %d entries, want 1", len(g.intercepts))
+	}
+	if used := cache.TotalMemoryUsed(); used != base+interceptOverhead {
+		t.Errorf("a cache hit charged another %d bytes", used-base-interceptOverhead)
+	}
+
+	// Distinct bands each cost one entry, and each is charged.
+	const bands = 16
+	for i := range bands {
+		s.FindIntercepts([2]float32{float32(-i) - 0.25, float32(-i)}, 1, 0, g, nil, &count)
+	}
+	if len(g.intercepts) != 1+bands {
+		t.Errorf("cached %d entries for %d distinct bands", len(g.intercepts), 1+bands)
+	}
+	if used, want := cache.TotalMemoryUsed(), base+(1+bands)*interceptOverhead; used != want {
+		t.Errorf("%d cached bands charged %d bytes, want %d", 1+bands, used-base, want-base)
+	}
+
+	// textblob's GetIntercepts divides the band by a scale its own comment says can be zero, so a zero-size run with a
+	// glyph at pos.Y == 0 asks about {NaN, NaN}. A NaN is not equal to itself, so a by-value cache lookup misses every
+	// time: without a bit-pattern comparison each call appends another entry and rescans the whole list.
+	nan := float32(math.NaN())
+	before := len(g.intercepts)
+	for range 200 {
+		s.FindIntercepts([2]float32{nan, nan}, 1, 0, g, nil, &count)
+	}
+	if got := len(g.intercepts) - before; got != 1 {
+		t.Errorf("200 NaN-band lookups cached %d entries, want 1", got)
+	}
+	if used, want := cache.TotalMemoryUsed(), base+(2+bands)*interceptOverhead; used != want {
+		t.Errorf("the NaN band charged %d bytes, want %d", used-base, want-base)
+	}
+	// +0 and -0 are the same band, so they must not fragment the cache either.
+	before = len(g.intercepts)
+	s.FindIntercepts([2]float32{0, 0}, 1, 0, g, nil, &count)
+	s.FindIntercepts([2]float32{float32(math.Copysign(0, -1)), 0}, 1, 0, g, nil, &count)
+	if got := len(g.intercepts) - before; got != 1 {
+		t.Errorf("+0 and -0 cached %d entries, want 1", got)
 	}
 }
 

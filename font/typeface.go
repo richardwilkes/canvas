@@ -63,6 +63,8 @@ type Typeface struct {
 	sCapHgt         int16  // OS/2 v2+ sCapHeight, 0 if absent
 	sxHght          int16  // OS/2 v2+ sxHeight, 0 if absent
 	fsType          uint16 // OS/2 fsType (embedding permissions)
+	usWinAscent     uint16 // OS/2 usWinAscent, 0 if absent
+	usWinDescent    uint16 // OS/2 usWinDescent, 0 if absent
 	italicAngle     int16  // floor of the post table's 16.16 italicAngle
 	pcltCapHeight   int16  // PCLT capHeight, only meaningful when hasPCLT
 	pcltSerifStyle  uint8  // PCLT serifStyle, only meaningful when hasPCLT
@@ -73,6 +75,45 @@ type Typeface struct {
 	hasCFF          bool // a 'CFF ' table is present (PostScript/CFF outlines)
 	hasFvar         bool // an 'fvar' table with at least one axis is present (a variable font)
 	hasPCLT         bool // a 'PCLT' table long enough to hold capHeight and serifStyle is present
+}
+
+// Byte offsets within the OS/2 table of the fields typesetting leaves unexported, plus the length of a complete
+// version 0 table (which ends with usWinDescent).
+const (
+	os2FsTypeOffset      = 8
+	os2WinAscentOffset   = 74
+	os2WinDescentOffset  = 76
+	os2Version0Length    = 78
+	os2NoTableVersion    = 0xFFFF // FreeType's "this face has no usable OS/2 table" sentinel version
+	os2UseTypoMetricsBit = 1 << 7 // fsSelection USE_TYPO_METRICS
+)
+
+// verticalMetrics returns the face's ascent, descent (negative, below the baseline) and line gap in font units,
+// following FreeType's sfnt_load_face recipe (sfobjs.c) — the source of face->ascender/descender, which is what
+// SkTypeface_FreeType reports and therefore what the strike's font metrics and the PDF FontDescriptor's /Ascent and
+// /Descent must both be derived from, or the emitted descriptor contradicts the glyphs actually drawn:
+//
+//   - a real OS/2 table (version is not the 0xFFFF sentinel) with fsSelection bit 7 (USE_TYPO_METRICS) set names the
+//     typographic values as the ones to lay out with, so they win outright;
+//   - otherwise hhea's;
+//   - except that hhea reporting zero for both ascender and descender — a legal, real-world table state, and also what
+//     a face with no hhea at all reports here — falls back to the OS/2 typographic values, then to
+//     usWinAscent/-usWinDescent. Without it a font in that state lays every line out on the same baseline.
+func (t *Typeface) verticalMetrics() (ascent, descent, lineGap int16) {
+	os2Usable := t.os2 != nil && t.os2.Version != os2NoTableVersion
+	if os2Usable && t.os2.FsSelection&os2UseTypoMetricsBit != 0 {
+		return t.os2.STypoAscender, t.os2.STypoDescender, t.os2.STypoLineGap
+	}
+	if t.hhea != nil {
+		ascent, descent, lineGap = t.hhea.Ascender, t.hhea.Descender, t.hhea.LineGap
+	}
+	if ascent != 0 || descent != 0 || !os2Usable {
+		return ascent, descent, lineGap
+	}
+	if t.os2.STypoAscender != 0 || t.os2.STypoDescender != 0 {
+		return t.os2.STypoAscender, t.os2.STypoDescender, t.os2.STypoLineGap
+	}
+	return int16(t.usWinAscent), -int16(t.usWinDescent), 0
 }
 
 // emptyTypeface is the singleton empty typeface: no glyphs, empty family name, normal style, fixed pitch.
@@ -132,6 +173,14 @@ func (t *Typeface) GlyphMaskNeedsCurrentColor() bool { return t.hasCOLR }
 // faceColorPaint returns the COLR paint for gid: a COLRv0 layer list (tables.PaintColrLayersResolved) or the root of a
 // COLRv1 paint graph. typesetting's Search prefers a v1 BaseGlyphList record over a v0 baseGlyph record when both
 // exist, as the spec directs ("give preference to the version 1 color glyph").
+//
+// A record that names no artwork at all answers false, so the glyph stays on the outline lane it would otherwise be
+// taken off with nothing to replace it: the caller commits a claimed glyph to an ARGB32 mask with neverRequestPath set,
+// and an empty one then measures as an empty rect and draws as nothing even though the font carries a perfectly good
+// outline. Two records look like that, and typesetting reports both as present color glyphs — a v0 record declaring
+// NumLayers == 0 (an empty layer slice with ok=true, where FT_Get_Color_Glyph_Layer returns 0 on the first call and
+// Skia falls through to the base outline) and a v1 BaseGlyphList record whose paint Offset32 is null (which
+// parseBaseGlyphPaintRecord leaves nil while still accepting the record, and which FreeType rejects outright).
 func (t *Typeface) faceColorPaint(gid opentype.GID) (tables.PaintTable, bool) {
 	// hasCOLR is set whenever the COLR table bytes are present, but typesetting leaves face.COLR nil when ParseCOLR
 	// fails on a malformed-but-present table; guard the deref so a crafted font returns "no color glyph" instead of
@@ -149,7 +198,14 @@ func (t *Typeface) faceColorPaint(gid opentype.GID) (tables.PaintTable, bool) {
 	}
 	t.faceMu.Lock()
 	defer t.faceMu.Unlock()
-	return t.face.COLR.Search(tables.GlyphID(gid))
+	paint, ok := t.face.COLR.Search(tables.GlyphID(gid))
+	if !ok || paint == nil {
+		return nil, false
+	}
+	if layers, isV0 := paint.(tables.PaintColrLayersResolved); isV0 && len(layers) == 0 {
+		return nil, false
+	}
+	return paint, true
 }
 
 // colr0OutOfRangeGlyphs scans a raw COLR table's version 0 base-glyph records and returns the base glyph IDs whose
@@ -355,8 +411,15 @@ func NewTypefaceFromData(data []byte, index int) (*Typeface, error) {
 	if raw, err = ld.RawTable(opentype.MustNewTag("OS/2")); err == nil {
 		// os2.fSType is unexported; fsType lives at byte offset 8 (after version, xAvgCharWidth, usWeightClass,
 		// usWidthClass), read directly for the PDF canEmbed check.
-		if len(raw) >= 10 {
-			t.fsType = binary.BigEndian.Uint16(raw[8:])
+		if len(raw) >= os2FsTypeOffset+2 {
+			t.fsType = binary.BigEndian.Uint16(raw[os2FsTypeOffset:])
+		}
+		// os2.usWinAscent/usWinDescent are unexported too, and they are the last of verticalMetrics' fallbacks for a
+		// font whose hhea reports nothing. They close the version 0 table, so any table long enough to be a complete
+		// one carries them.
+		if len(raw) >= os2Version0Length {
+			t.usWinAscent = binary.BigEndian.Uint16(raw[os2WinAscentOffset:])
+			t.usWinDescent = binary.BigEndian.Uint16(raw[os2WinDescentOffset:])
 		}
 		if os2, _, err2 := tables.ParseOs2(raw); err2 == nil {
 			t.os2 = &os2

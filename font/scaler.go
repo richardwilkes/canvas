@@ -281,9 +281,9 @@ func saturateBounds(r geom.Rect) geom.Rect {
 	return r.RoundOutRect()
 }
 
-// fontMetrics computes the strike's font metrics for scalable outline fonts: hhea (or OS/2 typo metrics when
-// fsSelection UseTypoMetrics is set) for ascent/descent/leading, the head bbox for top/bottom/xMin/xMax, post for
-// underline, OS/2 for x-height/cap-height/average width/strikeout, synthesizing reasonable values for anything missing.
+// fontMetrics computes the strike's font metrics for scalable outline fonts: FreeType's table recipe
+// (Typeface.verticalMetrics) for ascent/descent/leading, the head bbox for top/bottom/xMin/xMax, post for underline,
+// OS/2 for x-height/cap-height/average width/strikeout, synthesizing reasonable values for anything missing.
 func (st *strike) fontMetrics() Metrics {
 	var m Metrics
 	t := st.t
@@ -317,17 +317,12 @@ func (st *strike) fontMetrics() Metrics {
 		capHeight = float32(t.sCapHgt) / upem * scaleY
 	}
 
-	var ascent, descent, leading float32
-	const useTypoMetricsMask = 1 << 7
-	if t.os2 != nil && t.os2.Version != 0xFFFF && t.os2.FsSelection&useTypoMetricsMask != 0 {
-		ascent = -float32(t.os2.STypoAscender) / upem
-		descent = -float32(t.os2.STypoDescender) / upem
-		leading = float32(t.os2.STypoLineGap) / upem
-	} else {
-		ascent = -float32(t.hhea.Ascender) / upem
-		descent = -float32(t.hhea.Descender) / upem
-		leading = float32(t.hhea.LineGap) / upem
-	}
+	// Ascent/descent/leading follow FreeType's whole table recipe (verticalMetrics), including the fallbacks for an
+	// hhea that reports nothing: y-down here, so the y-up font-unit values are negated.
+	rawAscent, rawDescent, rawLineGap := t.verticalMetrics()
+	ascent := -float32(rawAscent) / upem
+	descent := -float32(rawDescent) / upem
+	leading := float32(rawLineGap) / upem
 	xmin := float32(t.head.XMin) / upem
 	xmax := float32(t.head.XMax) / upem
 	ymin := -float32(t.head.YMin) / upem

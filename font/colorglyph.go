@@ -13,9 +13,11 @@
 //     palette index 0xFFFF) into the ARGB32 mask through the raster package's solid src-over blitter.
 //   - Bitmap strikes (the sbix/CBDT PNG lane): the strike PNG is decoded, premultiplied, and drawn scaled into the mask
 //     with a linear-filtered image shader over the strike-to-device transform. sbix 'jpg '/'tif ' graphic types, B&W
-//     strikes, and SVG-table glyphs have no lane here and fall through to the outline lane, which fills the
-//     spec-required fallback outline every such glyph must also carry (glyphOutlinePath loads it raw for exactly that
-//     reason).
+//     (EBDT/CBDT imageFormat 2/5) strikes, and SVG-table glyphs have no lane here and fall through to the outline lane,
+//     which fills whatever outline the glyph carries (glyphOutlinePath loads it raw for exactly that reason, since
+//     go-text's GlyphData would answer with the strike instead). The sbix and SVG specifications require such a glyph to
+//     carry a fallback outline; EBDT/CBDT does not, so a bitmap-only face of that kind has nothing to draw here and
+//     generateMetrics measures it as empty rather than as the strike it cannot decode.
 //
 // The mask buffer is premultiplied RGBA in the device word layout (raster.Pixmap), this library's N32.
 
@@ -145,17 +147,30 @@ type decodedImage struct {
 	Info  imagecore.ImageInfo
 }
 
+// maxStrikePixels bounds the pixel count a strike PNG may decode to. The per-side ceiling alone is not enough on the
+// sbix path: there the "strike metrics" the header is checked against are themselves png.DecodeConfig's answer on these
+// very bytes (go-text derives GlyphBitmap.Width/Height that way, having no independent metrics to read), so the equality
+// check compares the header with itself and only this cap stands between a crafted IHDR and its allocation. 4 Mpixel is
+// roughly 16 MB per intermediate buffer and many times the largest strike any shipping color font carries (Apple Color
+// Emoji tops out at 160 px square, Noto Color Emoji at 136), while the 8191x8191 an IHDR one step below the per-side
+// ceiling can declare costs about 768 MB across the NRGBA image, the premultiplied buffer, and the imagecore copy.
+const maxStrikePixels = 1 << 22
+
 // decodePremulPNG decodes PNG bytes into an N32-premul imagecore image, premultiplying with round-to-nearest rounding.
 //
 // strikeW/strikeH are the strike's own declared dimensions, and they gate the decode: png.Decode allocates the full
 // image from the IHDR width/height before it reads a single IDAT byte, so a few-hundred-byte strike claiming
 // 65535x65535 would otherwise force a multi-gigabyte allocation out of untrusted font data. The header is therefore
-// read with DecodeConfig (which allocates nothing) and must agree with the strike metrics, and both must stay under the
-// glyph-mask ceiling — a strike bigger than the largest mask that can be allocated has nothing to contribute anyway.
-// FreeType's Load_SBit_Png makes the same equality check against known metrics (CBDT/EBDT) and bounds the dimensions it
-// takes from the header (sbix).
+// read with DecodeConfig (which allocates nothing) and must agree with the strike metrics, both must stay under the
+// glyph-mask ceiling — a strike bigger than the largest mask that can be allocated has nothing to contribute anyway —
+// and the area must stay under maxStrikePixels, which is the only one of the three the sbix lane's self-comparison
+// leaves with any work to do. FreeType's Load_SBit_Png makes the same equality check against known metrics (CBDT/EBDT)
+// and bounds the dimensions it takes from the header (sbix).
 func decodePremulPNG(data []byte, strikeW, strikeH int) *decodedImage {
 	if strikeW <= 0 || strikeH <= 0 || strikeW >= maxGlyphWidth || strikeH >= maxGlyphHeight {
+		return nil
+	}
+	if strikeW*strikeH > maxStrikePixels {
 		return nil
 	}
 	cfg, err := png.DecodeConfig(bytes.NewReader(data))

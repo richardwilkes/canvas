@@ -15,8 +15,13 @@
 //
 // Reachable-set trims: outline glyphs are A8 by default; color glyphs are ARGB32; LCD16 arrives when the font's edging
 // is subpixel-AA and the destination's pixel geometry is known, rendered through the LCD lane (the 4x horizontal
-// oversample + pack4xHToMask FIR, since the only rasterizer is the path rasterizer) with the mask-gamma pre-blend. A8
-// masks stay linear coverage (the pre-blend applies only to LCD recs); that rule is hoisted into rec construction, so
+// oversample + pack4xHToMask FIR, since the only rasterizer is the path rasterizer) with the mask-gamma pre-blend.
+// MaskSDF is the fourth rec format: no font or paint state selects it — MakeSDFTMaskSpec assigns rec.Format directly
+// for the distance-field text lane — and it runs through this same outline host, rasterizing A8 coverage into the
+// bounds inset by DistanceFieldPad and converting that to a signed distance field. That is why generateMetricsFromPath
+// deliberately omits upstream's "only BW/A8/LCD16 can be produced from paths, so force A8" normalization: the SDF
+// format has to survive the styled-path lane, which is the only lane that recomputes bounds from the path. A8 masks
+// stay linear coverage (the pre-blend applies only to LCD recs); that rule is hoisted into rec construction, so
 // only LCD16 recs carry a luminance color (LumBits) — A8 strikes stay color-independent, where keying every rec on the
 // canonical color would fragment strikes with no pixel difference. The device gamma and contrast rec fields have no
 // reachable variation (the surface-props text contrast/gamma constructor is not exposed) and stay the defaults inside
@@ -92,8 +97,10 @@ type ScalerRec struct {
 	StrokeCap  stroke.Cap
 	Flags      uint16
 	Hinting    Hinting
-	// Format is the mask format for the outline lane: MaskA8 or MaskLCD16 (the color lanes override it per glyph). The
-	// zero value is MaskA8, keeping every pre-E.4 rec construction site an A8 rec.
+	// Format is the mask format for the outline lane: MaskA8, MaskLCD16, or MaskSDF (the color lanes override it per
+	// glyph, to MaskARGB32). MakeRecAndEffects itself only ever produces A8 or LCD16; MaskSDF reaches the rec through
+	// MakeSDFTMaskSpec, which assigns the field after rec construction. The zero value is MaskA8, so a construction site
+	// that never touches the field builds an A8 rec.
 	Format MaskFormat
 	// LumBits is the canonical luminance color keying the mask pre-blend. Nonzero only for LCD16 recs (non-LCD recs
 	// ignore the pre-blend, hoisted here so A8 strikes stay color-independent; see the file comment).
@@ -334,8 +341,9 @@ func (r *ScalerRec) computeScale() (geom.Point, bool) {
 		}
 		return geom.Pt(float32(math.Abs(gaScaleX)), float32(math.Abs(gaScaleY))), true
 	}
-	if !isFinite(sx) || !isFinite(sy) || !isFinite(kx) ||
-		math.Abs(sx) <= nearlyZero || math.Abs(sy) <= nearlyZero {
+	// Both skews are exactly zero here (a non-finite one is non-zero, so it took the Givens branch above), and neither
+	// scale is negative, so only the positive infinities and the NaNs are left for the finite gate to catch.
+	if !isFinite(sx) || !isFinite(sy) || math.Abs(sx) <= nearlyZero || math.Abs(sy) <= nearlyZero {
 		return geom.Point{}, false
 	}
 	return geom.Pt(float32(math.Abs(sx)), float32(math.Abs(sy))), true

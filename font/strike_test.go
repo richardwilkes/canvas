@@ -640,6 +640,95 @@ func TestScalerRecSingular(t *testing.T) {
 	}
 }
 
+// TestComputeScaleNonFiniteBranches pins which of computeScale's two branches handles each non-finite single matrix. A
+// non-finite skew is never zero, so it always takes the Givens branch: the non-skewed branch below it only ever sees
+// skews that are exactly zero, which is why its finite gate tests the scales alone. The NaN cases are unreachable
+// through MakeRecAndEffects (canonicalizeKeyFloats scrubs them) but reachable inside the matrix concat, where an
+// infinity times a zero yields one.
+func TestComputeScaleNonFiniteBranches(t *testing.T) {
+	inf := float32(math.Inf(1))
+	nan := float32(math.NaN())
+	for _, tc := range []struct {
+		name string
+		rec  ScalerRec
+		// wantGivens is true when the rec's single matrix takes the skew/mirror (Givens rotation) branch.
+		wantGivens bool
+		wantOK     bool
+		wantScale  geom.Point
+	}{
+		{
+			name:      "plain scale",
+			rec:       ScalerRec{TextSize: 24, PreScaleX: 1, Post2x2: [4]float32{1, 0, 0, 1}},
+			wantOK:    true,
+			wantScale: geom.Pt(24, 24),
+		},
+		{
+			name:       "mirrored x",
+			rec:        ScalerRec{TextSize: 24, PreScaleX: -1, Post2x2: [4]float32{1, 0, 0, 1}},
+			wantGivens: true,
+			wantOK:     true,
+			wantScale:  geom.Pt(24, 24),
+		},
+		{
+			name:       "infinite skew",
+			rec:        ScalerRec{TextSize: 1, PreScaleX: 1, PreSkewX: inf, Post2x2: [4]float32{1, 0, 0, 1}},
+			wantGivens: true,
+		},
+		{
+			name:       "negative infinite skew",
+			rec:        ScalerRec{TextSize: 1, PreScaleX: 1, PreSkewX: -inf, Post2x2: [4]float32{1, 0, 0, 1}},
+			wantGivens: true,
+		},
+		{
+			name:       "NaN skew",
+			rec:        ScalerRec{TextSize: 1, PreScaleX: 1, PreSkewX: nan, Post2x2: [4]float32{1, 0, 0, 1}},
+			wantGivens: true,
+		},
+		{
+			name: "infinite x scale",
+			rec:  ScalerRec{TextSize: 1, PreScaleX: inf, Post2x2: [4]float32{1, 0, 0, 1}},
+		},
+		{
+			name: "NaN x scale",
+			rec:  ScalerRec{TextSize: 1, PreScaleX: nan, Post2x2: [4]float32{1, 0, 0, 1}},
+		},
+		{
+			name: "infinite y scale",
+			rec:  ScalerRec{TextSize: 1, PreScaleX: 1, Post2x2: [4]float32{1, 0, 0, inf}},
+		},
+		{
+			name: "scales below the tolerance",
+			rec:  ScalerRec{TextSize: 1.0 / 8192, PreScaleX: 1, Post2x2: [4]float32{1, 0, 0, 1}},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a := tc.rec.singleMatrix()
+			sx := float64(a.Get(geom.MScaleX))
+			sy := float64(a.Get(geom.MScaleY))
+			kx := float64(a.Get(geom.MSkewX))
+			ky := float64(a.Get(geom.MSkewY))
+			givens := kx != 0 || ky != 0 || sx < 0 || sy < 0
+			if givens != tc.wantGivens {
+				t.Fatalf("single matrix [%v %v %v %v] takes the Givens branch = %v, want %v", sx, kx, ky, sy, givens,
+					tc.wantGivens)
+			}
+			if !givens && (!isFinite(kx) || !isFinite(ky)) {
+				t.Fatalf("the non-skewed branch saw non-finite skews (%v, %v); its finite gate must cover them", kx, ky)
+			}
+			scale, ok := tc.rec.computeScale()
+			if ok != tc.wantOK {
+				t.Fatalf("computeScale ok = %v, want %v (scale %v)", ok, tc.wantOK, scale)
+			}
+			if ok && scale != tc.wantScale {
+				t.Errorf("scale = %v, want %v", scale, tc.wantScale)
+			}
+			if tc.rec.singular() == tc.wantOK {
+				t.Errorf("singular() = %v, want %v", tc.rec.singular(), !tc.wantOK)
+			}
+		})
+	}
+}
+
 func TestGlyphRotatedMaskCoversInk(t *testing.T) {
 	tf := loadTypeface(t, "Roboto-Regular.ttf", 0)
 	f := NewFont(tf, 24, 1, 0)

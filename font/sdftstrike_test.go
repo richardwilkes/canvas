@@ -17,6 +17,8 @@ package font
 import (
 	"os"
 	"testing"
+
+	"github.com/richardwilkes/canvas/stroke"
 )
 
 func loadSDFTestFont(t *testing.T, size float32) *Font {
@@ -123,6 +125,80 @@ func TestSDFTMaskSpecGlyph(t *testing.T) {
 		if action != GlyphActionDrop {
 			t.Errorf("space kSDFT action = %v, want drop", action)
 		}
+	}
+}
+
+// TestSDFTStyledGlyphKeepsSDFFormat pins the reachable-set claim in scalercontext.go's header: MaskSDF is a stored,
+// handled rec format, and the path-generated-metrics lane keeps it. A stroked paint sets FrameWidth, which routes
+// makeGlyph through internalGetPath + generateMetricsFromPath — the lane where upstream normalizes anything that isn't
+// BW/A8/LCD16 back to A8. This port deliberately omits that normalization, so the glyph must still come out MaskSDF,
+// still carry the DistanceFieldPad outset over the same styled A8 glyph, and still render through the distance-field
+// lane rather than as a plain coverage mask.
+func TestSDFTStyledGlyphKeepsSDFFormat(t *testing.T) {
+	f := loadSDFTestFont(t, 162)
+	f.SetEdging(EdgingAntiAlias)
+	f.SetSubpixel(false)
+	gid := sdfGlyphID(t, f)
+
+	stroked := ScalerPaint{Style: stroke.PaintStyleStroke, Width: 3, MiterLimit: 4}
+	sdfSpec := MakeSDFTMaskSpec(f, &stroked)
+	if sdfSpec.Rec.Format != MaskSDF {
+		t.Fatalf("styled SDF spec format = %v, want MaskSDF", sdfSpec.Rec.Format)
+	}
+	if sdfSpec.Rec.FrameWidth != 3 {
+		t.Fatalf("styled SDF rec FrameWidth = %v, want 3 (the path-generated-metrics lane)", sdfSpec.Rec.FrameWidth)
+	}
+	a8Spec := MakeWithNoDeviceSpec(f, &stroked)
+	if a8Spec.Rec.Format != MaskA8 || a8Spec.Rec.FrameWidth != 3 {
+		t.Fatalf("styled A8 spec = %v/%v, want MaskA8/3", a8Spec.Rec.Format, a8Spec.Rec.FrameWidth)
+	}
+
+	sdfGlyph, action := sdfSpec.FindOrCreateStrike().DigestFor(ActionSDFT, PackGlyphID(gid))
+	if action != GlyphActionAccept {
+		t.Fatalf("styled SDF kSDFT action = %v, want accept", action)
+	}
+	if sdfGlyph.Format != MaskSDF {
+		t.Fatalf("styled glyph format = %v, want MaskSDF (the path lane must not normalize it to A8)", sdfGlyph.Format)
+	}
+	a8Strike := a8Spec.FindOrCreateStrike()
+	a8Glyph, action := a8Strike.DigestFor(ActionDirectMask, PackGlyphID(gid))
+	if action != GlyphActionAccept {
+		t.Fatalf("styled A8 direct action = %v, want accept", action)
+	}
+	if sdfGlyph.Left != a8Glyph.Left-DistanceFieldPad ||
+		sdfGlyph.Top != a8Glyph.Top-DistanceFieldPad ||
+		sdfGlyph.Width != a8Glyph.Width+2*DistanceFieldPad ||
+		sdfGlyph.Height != a8Glyph.Height+2*DistanceFieldPad {
+		t.Errorf("styled SDF bounds L%d T%d W%d H%d vs A8 L%d T%d W%d H%d: want pad %d",
+			sdfGlyph.Left, sdfGlyph.Top, sdfGlyph.Width, sdfGlyph.Height,
+			a8Glyph.Left, a8Glyph.Top, a8Glyph.Width, a8Glyph.Height, DistanceFieldPad)
+	}
+
+	// The image really is a distance field: the pad corner reads fully outside, and the strongest texel of the styled A8
+	// mask reads inside at the corresponding padded position.
+	sdfGlyph = sdfSpec.FindOrCreateStrike().PrepareImage(PackGlyphID(gid))
+	if !sdfGlyph.HasImage() {
+		t.Fatal("styled SDF glyph has no image")
+	}
+	if got := sdfGlyph.Image[0]; got != 0 {
+		t.Errorf("styled pad corner = %d, want 0", got)
+	}
+	a8Glyph = a8Strike.PrepareImage(PackGlyphID(gid))
+	bestX, bestY, bestV := 0, 0, uint8(0)
+	for y := 0; y < int(a8Glyph.Height); y++ {
+		for x := 0; x < int(a8Glyph.Width); x++ {
+			if v := a8Glyph.Image[y*int(a8Glyph.Width)+x]; v > bestV {
+				bestV = v
+				bestX, bestY = x, y
+			}
+		}
+	}
+	if bestV < 200 {
+		t.Fatalf("styled A8 mask has no strong texel (max %d)", bestV)
+	}
+	inside := sdfGlyph.Image[(bestY+DistanceFieldPad)*int(sdfGlyph.Width)+bestX+DistanceFieldPad]
+	if inside <= 128 {
+		t.Errorf("styled SDF at strongest A8 texel = %d, want > 128 (inside)", inside)
 	}
 }
 

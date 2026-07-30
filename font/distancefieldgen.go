@@ -178,14 +178,20 @@ const sqrt2 = float32(math.Sqrt2)
 
 // initDistances creates initial distance data, particularly at edges.
 func initDistances(data []dfData, edges []uint8, width, height int) {
-	// Skip one pixel border.
+	// Every texel is seeded, but the gradient at an edge texel reads all eight of its neighbors, so only the interior is
+	// eligible for the edge lane: in the one-texel band around the buffer those reads run off the ends (top and bottom
+	// rows) or wrap onto the neighboring row (leftmost and rightmost columns). initGlyphData insets the source image by
+	// DistanceFieldPad (4) texels on every side, so no edge is ever marked in that band and its texels only ever need the
+	// "far away" seed — upstream states the same invariant as an assertion, which in Go would be a hard
+	// index-out-of-range panic instead.
 	curr := 0
 	prev := -width
 	next := width
 	e := 0
-	for j := 0; j < height; j++ {
-		for i := 0; i < width; i++ {
-			if edges[e] != 0 {
+	for j := range height {
+		interiorRow := j > 0 && j < height-1
+		for i := range width {
+			if edges[e] != 0 && interiorRow && i > 0 && i < width-1 {
 				// The gradient points from low to high: outside it points toward the edge, inside away from the edge
 				// (+y is down here).
 				var currGrad geom.Point

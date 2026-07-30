@@ -19,7 +19,6 @@ import (
 	"os"
 	"slices"
 	"strconv"
-	"strings"
 	"testing"
 
 	tsfont "github.com/go-text/typesetting/font"
@@ -27,47 +26,6 @@ import (
 
 	"github.com/richardwilkes/canvas/geom"
 )
-
-// sfntTable is one entry of a parsed sfnt table directory.
-type sfntTable struct {
-	tag  string
-	data []byte
-}
-
-// addSFNTTable rebuilds data's sfnt with one more table, keeping the records tag-sorted and the table data 4-byte
-// aligned. The checksum fields are left zero and the directory's binary-search hints stale: nothing in the load path
-// reads either.
-func addSFNTTable(t *testing.T, data []byte, tag string, table []byte) []byte {
-	t.Helper()
-	if len(tag) != 4 {
-		t.Fatalf("tag %q is not 4 bytes", tag)
-	}
-	numTables := int(binary.BigEndian.Uint16(data[4:]))
-	tables := make([]sfntTable, 0, numTables+1)
-	for i := range numTables {
-		rec := 12 + i*16
-		start := int(binary.BigEndian.Uint32(data[rec+8:]))
-		length := int(binary.BigEndian.Uint32(data[rec+12:]))
-		tables = append(tables, sfntTable{tag: string(data[rec : rec+4]), data: data[start : start+length]})
-	}
-	tables = append(tables, sfntTable{tag: tag, data: table})
-	slices.SortFunc(tables, func(a, b sfntTable) int { return strings.Compare(a.tag, b.tag) })
-
-	out := make([]byte, 12+len(tables)*16)
-	copy(out, data[:12])
-	binary.BigEndian.PutUint16(out[4:], uint16(len(tables)))
-	for i, tbl := range tables {
-		for len(out)%4 != 0 {
-			out = append(out, 0)
-		}
-		rec := 12 + i*16
-		copy(out[rec:rec+4], tbl.tag)
-		binary.BigEndian.PutUint32(out[rec+8:], uint32(len(out)))
-		binary.BigEndian.PutUint32(out[rec+12:], uint32(len(tbl.data)))
-		out = append(out, tbl.data...)
-	}
-	return out
-}
 
 // svgTableFor builds an 'SVG ' table (version 0) whose single document-list record covers [first, last].
 func svgTableFor(first, last uint16, doc string) []byte {
@@ -114,7 +72,9 @@ func TestSVGGlyphRendersFromItsFallbackOutline(t *testing.T) {
 	doc := `<?xml version="1.0" encoding="UTF-8"?>` +
 		`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000">` +
 		`<g id="glyph` + strconv.Itoa(int(gid)) + `"><rect width="500" height="500" fill="red"/></g></svg>`
-	withSVG, err := NewTypefaceFromData(addSFNTTable(t, data, "SVG ", svgTableFor(gid, gid, doc)), 0)
+	withSVG, err := NewTypefaceFromData(
+		sfntWithTables(t, data, map[string][]byte{"SVG ": svgTableFor(gid, gid, doc)}), 0,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

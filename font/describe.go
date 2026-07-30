@@ -82,20 +82,28 @@ func describeFace(src opentype.Resource, index int) (FaceInfo, error) {
 	info.Style = computeStyle(os2, head)
 	if raw, err = ld.RawTable(opentype.MustNewTag("name")); err == nil {
 		if name, _, err2 := tables.ParseName(raw); err2 == nil {
-			// The WWS-aware precedence rules from typesetting's font.Describe: when OS/2 fsSelection bit 8 (WWS) is
-			// set, the typographic names already delimit the family; otherwise prefer the explicit WWS names. This
-			// keeps display names consistent with fontscan's index grouping.
-			wws := os2 != nil && os2.FsSelection&0x100 != 0
-			if wws {
-				info.Family = firstName(name, 16, 1)
-				info.StyleName = firstName(name, 17, 2)
-			} else {
-				info.Family = firstName(name, 21, 16, 1)
-				info.StyleName = firstName(name, 22, 17, 2)
-			}
+			info.Family, info.StyleName = familyAndStyleNames(name, os2)
 		}
 	}
 	return info, nil
+}
+
+// fsSelectionWWS is OS/2 fsSelection bit 8: the typographic family and subfamily names already delimit a WWS (weight,
+// width, slope) family, so the explicit WWS names add nothing.
+const fsSelectionWWS = 0x100
+
+// familyAndStyleNames resolves a face's display family and style (subfamily) names from its name table, applying the
+// WWS-aware precedence rules of typesetting's font.Describe (the same rule FreeType uses for face->family_name, which
+// is what SkTypeface::getFamilyName reports): when OS/2 fsSelection bit 8 is set the typographic names already delimit
+// the family, so the order is 16 → 1 and 17 → 2; otherwise the explicit WWS names win, giving 21 → 16 → 1 and
+// 22 → 17 → 2. Typeface and FaceInfo share this one rule so a typeface's FamilyName always equals the family the font
+// manager lists it under and keys MatchFamily by. tables.Name.Name applies the standard record-selection rules (favor
+// Windows English, then Mac English/Roman, then Unicode).
+func familyAndStyleNames(name tables.Name, os2 *tables.Os2) (family, styleName string) {
+	if os2 != nil && os2.FsSelection&fsSelectionWWS != 0 {
+		return firstName(name, 16, 1), firstName(name, 17, 2)
+	}
+	return firstName(name, 21, 16, 1), firstName(name, 22, 17, 2)
 }
 
 // FaceCoversRuneFile reports whether face index of the font file at path maps r through its own cmap to a real

@@ -16,6 +16,109 @@ import (
 	"testing"
 )
 
+// TestAdvancedMetricsFlags covers the font flags the PDF backend branches on to decide between embedding the font
+// program and drawing glyphs as filled paths. Both of the flags here mean "these bytes are not a font program": a
+// variable font's program would embed the default instance's outlines under this face's metrics, and a WOFF's tables
+// live inside a wrapper (individually compressible), so the container is not an sfnt at all.
+func TestAdvancedMetricsFlags(t *testing.T) {
+	base := readTestFont(t, "Roboto-Regular.ttf")
+	plain, err := NewTypefaceFromData(base, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := plain.GetAdvancedMetrics().Flags; got != 0 {
+		t.Errorf("the unmodified font's flags = %#x, want 0", got)
+	}
+
+	variable, err := NewTypefaceFromData(sfntWithTables(t, base, map[string][]byte{"fvar": synthFvarTable(1)}), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := variable.GetAdvancedMetrics()
+	if m.Flags&FontFlagVariable == 0 {
+		t.Errorf("a font with an fvar axis has flags %#x, missing FontFlagVariable", m.Flags)
+	}
+	if m.Type != FontTypeTrueType {
+		t.Errorf("type = %d, want %d (the fvar table must not change the outline format)", m.Type, FontTypeTrueType)
+	}
+	if got := pdfWouldEmbed(m); got {
+		t.Error("a variable font would still be embedded as a font program")
+	}
+
+	woff, err := NewTypefaceFromData(woffWrap(t, base), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m = woff.GetAdvancedMetrics(); m.Flags&FontFlagAltDataFormat == 0 {
+		t.Errorf("a WOFF-wrapped font has flags %#x, missing FontFlagAltDataFormat", m.Flags)
+	}
+	if got := pdfWouldEmbed(m); got {
+		t.Error("a WOFF-wrapped font would still be embedded as a font program")
+	}
+	// The same face's own bytes, unwrapped, stay embeddable — the flag tracks the container, not the tables.
+	if got := plain.GetAdvancedMetrics().Flags & FontFlagAltDataFormat; got != 0 {
+		t.Error("the plain sfnt was reported as an alternate data format")
+	}
+}
+
+// pdfWouldEmbed mirrors the pdf backend's pdfFontType decision for the flags these tests set: a TrueType program is
+// embedded as CIDFontType2 unless one of the "not a font program" flags is present. Duplicated rather than imported
+// because pdf depends on font, not the other way around.
+func pdfWouldEmbed(m *AdvancedMetrics) bool {
+	return m.Type == FontTypeTrueType &&
+		m.Flags&(FontFlagVariable|FontFlagAltDataFormat|FontFlagNotEmbeddable) == 0
+}
+
+// TestAdvancedMetricsPCLT covers the PCLT lane: it is the only source of the serif and script style flags, and the cap
+// height it carries takes precedence over OS/2 sCapHeight, as FreeType's advanced-metrics recipe has it.
+func TestAdvancedMetricsPCLT(t *testing.T) {
+	base := readTestFont(t, "Roboto-Regular.ttf")
+	plain, err := NewTypefaceFromData(base, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	os2CapHeight := plain.GetAdvancedMetrics().CapHeight
+	if os2CapHeight == 0 {
+		t.Fatal("Roboto should report a nonzero OS/2 cap height; the precedence case below would be vacuous")
+	}
+	if got := plain.GetAdvancedMetrics().Style & (StyleSerif | StyleScript); got != 0 {
+		t.Errorf("a font with no PCLT table has style bits %#x, want neither serif nor script", got)
+	}
+	const pcltCapHeight = 1234
+	for _, c := range []struct {
+		desc       string
+		serifStyle uint8
+		want       uint32
+	}{
+		{desc: "unknown", serifStyle: 0},
+		{desc: "sans serif", serifStyle: 1},
+		{desc: "first serif class", serifStyle: 2, want: StyleSerif},
+		{desc: "last serif class", serifStyle: 6, want: StyleSerif},
+		{desc: "between the two ranges", serifStyle: 7},
+		{desc: "first script class", serifStyle: 9, want: StyleScript},
+		{desc: "last script class", serifStyle: 12, want: StyleScript},
+		{desc: "past the script classes", serifStyle: 13},
+		// The class is the low 6 bits; the top two hold the vertical/horizontal stroke-position flags.
+		{desc: "serif class with the high bits set", serifStyle: 0xC0 | 3, want: StyleSerif},
+	} {
+		data := sfntWithTables(t, base, map[string][]byte{
+			"PCLT": synthPCLTTable(pcltCapHeight, c.serifStyle),
+		})
+		tf, err2 := NewTypefaceFromData(data, 0)
+		if err2 != nil {
+			t.Fatalf("%s: %v", c.desc, err2)
+		}
+		m := tf.GetAdvancedMetrics()
+		if got := m.Style & (StyleSerif | StyleScript); got != c.want {
+			t.Errorf("serifStyle %#x (%s): style bits = %#x, want %#x", c.serifStyle, c.desc, got, c.want)
+		}
+		if m.CapHeight != pcltCapHeight {
+			t.Errorf("serifStyle %#x (%s): cap height = %d, want the PCLT value %d (OS/2 says %d)",
+				c.serifStyle, c.desc, m.CapHeight, pcltCapHeight, os2CapHeight)
+		}
+	}
+}
+
 // TestFontProgramSingleFace pins that a typeface parsed from a plain sfnt file embeds its own bytes verbatim: nothing
 // is reassembled when there is no collection container to strip.
 func TestFontProgramSingleFace(t *testing.T) {
@@ -138,6 +241,55 @@ func checkSfntStructure(t *testing.T, program []byte) {
 	if sum != checkSumAdjustmentMagic {
 		t.Errorf("whole-font checksum = %#x, want %#x (head.checkSumAdjustment is wrong)",
 			sum, uint32(checkSumAdjustmentMagic))
+	}
+}
+
+// synthCollectionWithTables builds a one-face 'ttcf' container whose table directory holds numTables in-bounds records,
+// each naming an empty table. Nothing but the directory geometry is valid, which is all extractFontProgram reads.
+func synthCollectionWithTables(numTables int) []byte {
+	const headerSize = 16 // 'ttcf', version, numFonts, the single face offset
+	data := make([]byte, headerSize+12+16*numTables)
+	copy(data, "ttcf")
+	binary.BigEndian.PutUint32(data[4:], 0x00010000) // version 1.0
+	binary.BigEndian.PutUint32(data[8:], 1)          // numFonts
+	binary.BigEndian.PutUint32(data[12:], headerSize)
+	binary.BigEndian.PutUint32(data[headerSize:], 0x00010000) // sfntVersion
+	binary.BigEndian.PutUint16(data[headerSize+4:], uint16(numTables))
+	for i := range numTables {
+		record := data[headerSize+12+16*i:]
+		// Tags are sequential small integers so none of them is 'head' (which would take the checksum lane).
+		binary.BigEndian.PutUint32(record, uint32(i)+1)
+		binary.BigEndian.PutUint32(record[8:], uint32(len(data))) // offset: the end of the file, with length 0
+	}
+	return data
+}
+
+// TestExtractFontProgramTableCountLimit pins the sfnt header's uint16 ceiling on the table count. The largest directory
+// searchRange can describe (4095 tables, 16<<11) is assembled with a correct binary-search triple; one table more is
+// rejected, since 16<<12 is 65536 and would be written — along with rangeShift — as a zero a strict sfnt consumer may
+// refuse. numTables comes straight from the file, so a crafted container can ask for any of these.
+func TestExtractFontProgramTableCountLimit(t *testing.T) {
+	program, err := extractFontProgram(synthCollectionWithTables(maxDescribableTables), 0)
+	if err != nil {
+		t.Fatalf("%d tables: %v", maxDescribableTables, err)
+	}
+	for _, c := range []struct {
+		field  string
+		offset int
+		want   uint16
+	}{
+		{field: "numTables", offset: 4, want: 4095},
+		{field: "searchRange", offset: 6, want: 32768}, // 16 << 11
+		{field: "entrySelector", offset: 8, want: 11},  // floor(log2(4095))
+		{field: "rangeShift", offset: 10, want: 32752}, // 4095*16 - 32768
+	} {
+		if got := binary.BigEndian.Uint16(program[c.offset:]); got != c.want {
+			t.Errorf("%d tables: %s = %d, want %d", maxDescribableTables, c.field, got, c.want)
+		}
+	}
+	if program, err = extractFontProgram(synthCollectionWithTables(maxDescribableTables+1), 0); err == nil {
+		t.Errorf("%d tables: no error; the header carries searchRange %d and rangeShift %d",
+			maxDescribableTables+1, binary.BigEndian.Uint16(program[6:]), binary.BigEndian.Uint16(program[10:]))
 	}
 }
 

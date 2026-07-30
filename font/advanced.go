@@ -76,6 +76,24 @@ const (
 	fsTypeBitmapOnly        uint16 = 0x0200
 )
 
+// Byte offsets of the two PCLT fields the advanced metrics use, within the 54-byte table (version, fontNumber, pitch,
+// xHeight, style, typeFamily, capHeight, symbolSet, typeface[16], characterComplement[8], fileName[6], strokeWeight,
+// widthType, serifStyle, reserved).
+const (
+	pcltCapHeightOffset  = 16
+	pcltSerifStyleOffset = 52
+)
+
+// PCLT serifStyle classes (the low 6 bits of the field), the ranges FreeType's advanced-metrics recipe maps to the
+// serif and script style flags.
+const (
+	pcltSerifStyleMask = 0x3F
+	pcltSerifFirst     = 2
+	pcltSerifLast      = 6
+	pcltScriptFirst    = 9
+	pcltScriptLast     = 12
+)
+
 // GetAdvancedMetrics returns the raw sfnt values the PDF backend embeds. It returns nil for the empty typeface or an
 // out-of-range glyph count. StemV and CapHeight may be zero here; the PDF backend fills reasonable guesses.
 func (t *Typeface) GetAdvancedMetrics() *AdvancedMetrics {
@@ -93,11 +111,21 @@ func (t *Typeface) GetAdvancedMetrics() *AdvancedMetrics {
 		m.Type = FontTypeOther
 	}
 
+	if t.hasFvar {
+		m.Flags |= FontFlagVariable
+	}
 	if !t.CanEmbed() {
 		m.Flags |= FontFlagNotEmbeddable
 	}
 	if !t.CanSubset() {
 		m.Flags |= FontFlagNotSubsettable
+	}
+	// Only an outline program is a candidate for embedding at all, so — as upstream does — the alt-data flag is reported
+	// just for those: a container the sfnt reader accepts but that is not a plain sfnt file (WOFF, dfont) holds tables
+	// that are individually compressed or offset within a wrapper, so its bytes are not a font program even though every
+	// table parsed.
+	if (m.Type == FontTypeTrueType || m.Type == FontTypeCFF) && !isStandardSfntData(t.data) {
+		m.Flags |= FontFlagAltDataFormat
 	}
 
 	if t.fixedPitch {
@@ -111,8 +139,20 @@ func (t *Typeface) GetAdvancedMetrics() *AdvancedMetrics {
 		m.Ascent = t.hhea.Ascender
 		m.Descent = t.hhea.Descender
 	}
-	// CapHeight comes from OS/2 sCapHeight (version 2+), zero otherwise (the PDF backend guesses then).
-	m.CapHeight = t.sCapHgt
+	// Cap height and the serif class come from PCLT when the font carries one, following FreeType's advanced-metrics
+	// recipe; otherwise cap height is OS/2 sCapHeight (version 2+) and zero when that is absent too (the PDF backend
+	// guesses then). Only PCLT classifies a face as serif or script, so a font without one emits neither flag.
+	if t.hasPCLT {
+		m.CapHeight = t.pcltCapHeight
+		switch serifStyle := t.pcltSerifStyle & pcltSerifStyleMask; {
+		case serifStyle >= pcltSerifFirst && serifStyle <= pcltSerifLast:
+			m.Style |= StyleSerif
+		case serifStyle >= pcltScriptFirst && serifStyle <= pcltScriptLast:
+			m.Style |= StyleScript
+		}
+	} else {
+		m.CapHeight = t.sCapHgt
+	}
 	// head bbox → LTRB(xMin, yMax, xMax, yMin) in font units.
 	m.BBox = geom.IRectLTRB(int32(t.head.XMin), int32(t.head.YMax), int32(t.head.XMax), int32(t.head.YMin))
 	return m
@@ -143,6 +183,15 @@ func (t *Typeface) FontProgram() ([]byte, error) {
 // ttcTag is the four-byte 'ttcf' signature that starts a TrueType/OpenType collection file.
 const ttcTag = 0x74746366
 
+// The other four-byte signatures a plain sfnt file may start with: 0x00010000 (TrueType), 'true' (Apple TrueType),
+// 'typ1' (PostScript Type 1) and 'OTTO' (OpenType CFF).
+const (
+	trueTypeTag      = 0x00010000
+	appleTrueTypeTag = 0x74727565
+	postScript1Tag   = 0x74797031
+	openTypeCFFTag   = 0x4F54544F
+)
+
 // headTag is the four-byte 'head' table tag.
 const headTag = 0x68656164
 
@@ -152,6 +201,25 @@ const headCheckSumAdjustmentOffset = 8
 // checkSumAdjustmentMagic is the constant the sum of an sfnt font's 32-bit words must add up to, per the OpenType head
 // table specification.
 const checkSumAdjustmentMagic = 0xB1B0AFBA
+
+// maxDescribableTables is the largest table count an sfnt header's uint16 searchRange (16<<entrySelector) can express.
+const maxDescribableTables = 1<<12 - 1
+
+// isStandardSfntData reports whether data starts with one of the signatures of a plain sfnt file or collection, i.e.
+// whether its bytes are a font program (or a container one can be extracted from). The sfnt reader also accepts WOFF and
+// dfont, whose tables live inside a wrapper and may be individually compressed; those parse fine but their bytes are not
+// embeddable, which is what FontFlagAltDataFormat reports.
+func isStandardSfntData(data []byte) bool {
+	if len(data) < 4 {
+		return false
+	}
+	switch binary.BigEndian.Uint32(data) {
+	case trueTypeTag, appleTrueTypeTag, postScript1Tag, openTypeCFFTag, ttcTag:
+		return true
+	default:
+		return false
+	}
+}
 
 // extractFontProgram returns the standalone sfnt font program for face index of data. Data that is not a collection is
 // returned unchanged. A collection face is reassembled into its own font: the sfnt header, the face's table directory
@@ -177,6 +245,13 @@ func extractFontProgram(data []byte, index int) ([]byte, error) {
 	numTables := int(binary.BigEndian.Uint16(data[dirOffset+4:]))
 	if numTables == 0 {
 		return nil, fmt.Errorf("font: collection face %d has no tables", index)
+	}
+	// The header's searchRange is a uint16 holding 16<<entrySelector, so it cannot describe a directory of 4096 or more
+	// tables: 16*2^12 is 65536, which truncates to 0 and takes rangeShift with it. Such a directory is rejected rather
+	// than emitted with a zeroed binary-search header a strict sfnt consumer would refuse.
+	if numTables > maxDescribableTables {
+		return nil, fmt.Errorf("font: collection face %d has %d tables, more than an sfnt header can describe",
+			index, numTables)
 	}
 	if dirOffset+12+16*int64(numTables) > int64(len(data)) {
 		return nil, fmt.Errorf("font: collection face %d has a truncated table directory", index)

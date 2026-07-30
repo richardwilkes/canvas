@@ -13,7 +13,11 @@
 
 package font
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/richardwilkes/canvas/geom"
+)
 
 func TestPackDistanceFieldVal(t *testing.T) {
 	// byte = round((clamp(-dist, -4, 4*127/128) + 4) / 8 * 256).
@@ -182,5 +186,36 @@ func TestGenerateDistanceFieldAntiAliasedEdgeShifts(t *testing.T) {
 	if low[y*dfW+x] >= high[y*dfW+x] {
 		t.Errorf("soft-edge ordering wrong: cov64=%d !< cov192=%d",
 			low[y*dfW+x], high[y*dfW+x])
+	}
+}
+
+// TestInitDistancesOutsideBand covers the one-texel band around the working buffer. Seeding an edge texel reads all
+// eight of its neighbors, so a marked edge in that band would read off the ends of the buffer (top and bottom rows) or
+// wrap onto the neighboring row (leftmost and rightmost columns). The generator's own lane can never mark one there —
+// initGlyphData insets the image by DistanceFieldPad — but initDistances must not rely on that to stay in bounds: it
+// seeds the band as "far away" and leaves the edge lane to the interior.
+func TestInitDistancesOutsideBand(t *testing.T) {
+	const width, height = 6, 5
+	data := make([]dfData, width*height)
+	edges := make([]uint8, width*height)
+	for i := range data {
+		data[i].alpha = 0.5 // right at the coverage threshold, so an edge seed lands at distance 0
+		edges[i] = 255      // every texel an edge, the whole outside band included
+	}
+	initDistances(data, edges, width, height)
+	for j := range height {
+		for i := range width {
+			at := j*width + i
+			if i > 0 && i < width-1 && j > 0 && j < height-1 {
+				if data[at].distSq != 0 {
+					t.Errorf("interior texel (%d,%d) distSq = %v, want the edge seed 0", i, j, data[at].distSq)
+				}
+				continue
+			}
+			if data[at].distSq != 2000000 || data[at].distVector != geom.Pt(1000, 1000) {
+				t.Errorf("outside-band texel (%d,%d) = (distSq %v, vector %v), want the far-away seed (2000000, 1000,1000)",
+					i, j, data[at].distSq, data[at].distVector)
+			}
+		}
 	}
 }

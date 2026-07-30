@@ -62,11 +62,15 @@ type Typeface struct {
 	sxHght          int16  // OS/2 v2+ sxHeight, 0 if absent
 	fsType          uint16 // OS/2 fsType (embedding permissions)
 	italicAngle     int16  // floor of the post table's 16.16 italicAngle
+	pcltCapHeight   int16  // PCLT capHeight, only meaningful when hasPCLT
+	pcltSerifStyle  uint8  // PCLT serifStyle, only meaningful when hasPCLT
 	hasCOLR         bool
 	hasBitmaps      bool
 	fixedPitch      bool
 	hasGlyf         bool // a 'glyf' table is present (TrueType outlines)
 	hasCFF          bool // a 'CFF ' table is present (PostScript/CFF outlines)
+	hasFvar         bool // an 'fvar' table with at least one axis is present (a variable font)
+	hasPCLT         bool // a 'PCLT' table long enough to hold capHeight and serifStyle is present
 }
 
 // emptyTypeface is the singleton empty typeface: no glyphs, empty family name, normal style, fixed pitch.
@@ -299,6 +303,22 @@ func NewTypefaceFromData(data []byte, index int) (*Typeface, error) {
 	if raw, err2 := ld.RawTable(opentype.MustNewTag("CFF ")); err2 == nil && len(raw) > 0 {
 		t.hasCFF = true
 	}
+	// A variable font is one with an 'fvar' table defining at least one axis — FreeType's FT_HAS_MULTIPLE_MASTERS for an
+	// sfnt. The PDF backend draws these as filled paths, since embedding the font program would embed the default
+	// instance's outlines under this face's (possibly instanced) metrics.
+	if raw, err2 := ld.RawTable(opentype.MustNewTag("fvar")); err2 == nil {
+		if fvar, _, err3 := tables.ParseFvar(raw); err3 == nil && len(fvar.Axis) > 0 {
+			t.hasFvar = true
+		}
+	}
+	// PCLT is the legacy HP table FreeType's advanced-metrics recipe prefers for cap height and reads the serif class
+	// from. Only capHeight (offset 16) and serifStyle (offset 52) are wanted, so any table long enough to hold them is
+	// usable; typesetting does not parse this table at all.
+	if raw, err2 := ld.RawTable(opentype.MustNewTag("PCLT")); err2 == nil && len(raw) >= pcltSerifStyleOffset+1 {
+		t.hasPCLT = true
+		t.pcltCapHeight = int16(binary.BigEndian.Uint16(raw[pcltCapHeightOffset:]))
+		t.pcltSerifStyle = raw[pcltSerifStyleOffset]
+	}
 
 	raw, err := ld.RawTable(opentype.MustNewTag("head"))
 	if err != nil {
@@ -364,12 +384,9 @@ func NewTypefaceFromData(data []byte, index int) (*Typeface, error) {
 
 	if raw, err = ld.RawTable(opentype.MustNewTag("name")); err == nil {
 		if name, _, err2 := tables.ParseName(raw); err2 == nil {
-			// Prefer the typographic family (name ID 16) and fall back to the font family (name ID 1); tables.Name.Name
-			// applies the standard record-selection rules (favor Windows English, then Mac English/Roman, then
-			// Unicode).
-			if t.familyName = name.Name(16); t.familyName == "" {
-				t.familyName = name.Name(1)
-			}
+			// The family name follows the same WWS-aware precedence FaceInfo uses, so FamilyName() and the font
+			// manager's family listing cannot disagree about a face; see familyAndStyleNames.
+			t.familyName, _ = familyAndStyleNames(name, t.os2)
 			t.postScriptName = name.Name(6) // the font's PostScript name
 		}
 	}

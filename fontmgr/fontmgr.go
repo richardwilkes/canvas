@@ -113,6 +113,25 @@ func (f *faceRec) styleName() string {
 	return info.StyleName
 }
 
+// symbolPUAPage is the private-use page a symbol-encoded cmap (Microsoft platform 3, encoding 0) keys its characters
+// under: such a font carries nothing below U+F000, and every resolver duplicates the U+F000–U+F0FF range at
+// U+0000–U+00FF — Windows, HarfBuzz, and go-text's remaperSymbol, which is what Typeface.UnicharToGlyph and the cmap
+// probe behind covers both go through.
+const symbolPUAPage = 0xF000
+
+// claims reports whether the face's recorded rune coverage can account for r. Both coverage sets a face can carry — a
+// scan footprint's and the cmap-derived one NewFromData builds — are built by iterating the *raw* cmap subtable, while
+// every resolution of r goes through go-text's remapping wrappers, whose added mappings the iteration deliberately does
+// not include (see the "the Iter() and RuneRanges() method does not include the additional mapping" note above
+// typesetting's remaperSymbol). So a set answering only for the code points it literally holds cannot see a symbol
+// font's ASCII/Latin-1 coverage at all: Wingdings maps 'a' to a real glyph through the U+F061 entry its set does hold,
+// and a filter asking only about 'a' vetoes the face before covers is ever asked. Asking about the U+F000-page
+// character alongside r keeps the filter a superset of what the resolvers answer, which is all it has to be — a face
+// claiming U+F0xx without a symbol cmap merely reaches covers, which rejects it.
+func (f *faceRec) claims(r rune) bool {
+	return f.runes.Contains(r) || (r >= 0 && r <= 0xFF && f.runes.Contains(symbolPUAPage+r))
+}
+
 // covers reports whether the face's own cmap maps r to a real glyph, reading only the cmap (and OS/2, which selects its
 // encoding) instead of loading the typeface: the character-fallback scans reject most of their candidates, and a
 // typeface, once loaded, is cached — with the whole font file inside it — for the life of the manager, so verifying
@@ -373,7 +392,7 @@ func (m *Manager) MatchFamilyStyleCharacter(familyName string, style font.Style,
 		}
 		var candidates []*faceRec
 		for _, f := range m.all {
-			if f.runes.Contains(r) && f.langs.Contains(id) {
+			if f.claims(r) && f.langs.Contains(id) {
 				candidates = append(candidates, f)
 			}
 		}
@@ -395,7 +414,7 @@ func (m *Manager) MatchFamilyStyleCharacter(familyName string, style font.Style,
 func (m *Manager) matchCoveringTiered(faces []*faceRec, style font.Style, r rune) *font.Typeface {
 	var visible, hidden []*faceRec
 	for _, f := range faces {
-		if !f.runes.Contains(r) {
+		if !f.claims(r) {
 			continue
 		}
 		if strings.HasPrefix(f.key, ".") {
@@ -458,10 +477,14 @@ func (m *Manager) defaultFamilyTiers(candidates []*faceRec) [][]*faceRec {
 // cmap-only probe (covers), so the walk loads a typeface only for the candidate that is about to be returned; a
 // character that many footprints claim and few really map used to load, and permanently cache, one full font per
 // rejection.
+//
+// They also undercount, for the remapped cmaps a set built by raw iteration cannot describe, so the candidate filter is
+// faceRec.claims rather than the set membership itself: the set may only put a face in front of covers, never keep it
+// out of a rescue the resolvers would perform.
 func matchCovering(faces []*faceRec, pattern font.Style, r rune, approx bool) *font.Typeface {
 	var covering []*faceRec
 	for _, f := range faces {
-		if f.runes.Contains(r) {
+		if f.claims(r) {
 			covering = append(covering, f)
 		}
 	}

@@ -175,6 +175,69 @@ func renameSfntFamily(t *testing.T, data []byte, from, to string) []byte {
 	return out
 }
 
+// corpusSymbolFamily is the family the corpus's symbol-encoded face carries. Like corpusSansFamily it is a rename of
+// DejaVu Sans, so it is the same length as "DejaVu Sans" (renameSfntFamily rewrites the name strings in place) and
+// still normalizes below "roboto", and it is a default family on no platform.
+const corpusSymbolFamily = "Corpus Syms"
+
+// newSymbolFaceRec builds the corpus's symbol-encoded face: DejaVuSans.subset.ttf renamed to corpusSymbolFamily with
+// its cmap moved into the U+F000 page (see symbolizeSfntCmap), so 'H', 'a' and 'x' resolve only through the remap every
+// resolver applies to a symbol cmap — and the face's recorded rune coverage, built by iterating the raw subtable, holds
+// none of them.
+func newSymbolFaceRec(t *testing.T, langs ...string) *faceRec {
+	t.Helper()
+	data := renameSfntFamily(t, readTestFontData(t, "DejaVuSans.subset.ttf"), "DejaVu Sans", corpusSymbolFamily)
+	f := newTestDataFaceRec(t, symbolizeSfntCmap(t, data), 0, langs...)
+	if want := tsfont.NormalizeFamily(corpusSymbolFamily); f.key != want {
+		t.Fatalf("the symbol face keys as %q, want %q", f.key, want)
+	}
+	return f
+}
+
+// symbolizeSfntCmap returns a copy of a single-font sfnt whose cmap is a Microsoft *symbol* cmap: the (3,1) Unicode BMP
+// encoding record becomes (3,0), and every character its format-4 subtable maps moves up into the U+F000 page, each
+// segment's idDelta compensating so the glyph IDs are unchanged. That is the shape a symbol font really ships
+// (Wingdings, Webdings, Symbol): nothing below U+F000 is in the cmap, and U+0000–U+00FF resolves through the U+F0xx
+// remap instead. Every edit is in place, so no table offset moves and no checksum has to be recomputed.
+func symbolizeSfntCmap(t *testing.T, data []byte) []byte {
+	t.Helper()
+	out := bytes.Clone(data)
+	tab := sfntTable(t, out, "cmap")
+	patched := 0
+	for i := range int(binary.BigEndian.Uint16(tab[2:])) {
+		rec := 4 + i*8
+		if binary.BigEndian.Uint16(tab[rec:]) != 3 || binary.BigEndian.Uint16(tab[rec+2:]) != 1 {
+			continue
+		}
+		binary.BigEndian.PutUint16(tab[rec+2:], 0) // Unicode BMP (3,1) becomes symbol (3,0)
+		sub := tab[binary.BigEndian.Uint32(tab[rec+4:]):]
+		if format := binary.BigEndian.Uint16(sub); format != 4 {
+			t.Fatalf("cmap record %d is format %d, want 4", i, format)
+		}
+		// Format 4 lays out endCode[segCount], a reserved pad, then startCode, idDelta and idRangeOffset. idRangeOffset
+		// is relative to its own slot and indexes by (c - startCode), so shifting a segment leaves it alone.
+		segX2 := int(binary.BigEndian.Uint16(sub[6:]))
+		endCode, startCode, idDelta := 14, 16+segX2, 16+2*segX2
+		for s := 0; s < segX2; s += 2 {
+			end := binary.BigEndian.Uint16(sub[endCode+s:])
+			if end == 0xFFFF { // the required terminating segment stays where it is
+				continue
+			}
+			if end >= symbolPUAPage {
+				t.Fatalf("a cmap segment ending at U+%04X does not fit below the U+F000 page", end)
+			}
+			binary.BigEndian.PutUint16(sub[endCode+s:], end+symbolPUAPage)
+			binary.BigEndian.PutUint16(sub[startCode+s:], binary.BigEndian.Uint16(sub[startCode+s:])+symbolPUAPage)
+			binary.BigEndian.PutUint16(sub[idDelta+s:], binary.BigEndian.Uint16(sub[idDelta+s:])-symbolPUAPage)
+		}
+		patched++
+	}
+	if patched == 0 {
+		t.Fatal("no (3,1) cmap record to symbolize")
+	}
+	return out
+}
+
 // encodeSfntName encodes an ASCII name-table string, either as UTF-16BE or as one byte per character.
 func encodeSfntName(s string, wide bool) []byte {
 	if !wide {
@@ -647,6 +710,61 @@ func TestManagerMatchCharacterBCP47Fallthrough(t *testing.T) {
 	if tf := m.MatchFamilyStyleCharacter("", font.NormalStyle(), []string{"en", "fr"}, 'x'); tf == nil ||
 		tf.FamilyName() != corpusSansFamily {
 		t.Errorf("bcp47 [en fr] = %s, want Corpus Sans (fr most significant and covering)", familyOf(tf))
+	}
+}
+
+func TestManagerCharacterFallbackSymbolCmapRemap(t *testing.T) {
+	// A symbol-encoded face keys its characters in the U+F000 private-use page, and every resolver also answers
+	// U+0000–U+00FF from that page: Windows, HarfBuzz, and go-text's remaperSymbol, which both Typeface.UnicharToGlyph
+	// and the cmap probe behind faceRec.covers go through. Neither rune set the manager can carry sees the remap (both
+	// are built by iterating the raw subtable), so the candidate filters have to widen for it — otherwise the set vetoes
+	// every ASCII/Latin-1 character of every symbol font before covers is ever asked, and the set, which is only allowed
+	// to overcount, silently decides the answer.
+	syms := newSymbolFaceRec(t)
+	// The premise, so none of the cases below can go vacuous: the recorded coverage holds the U+F0xx page and nothing
+	// below it, while the face really does map 'a'.
+	if syms.runes.Contains('a') {
+		t.Fatal("the symbol face's recorded coverage holds 'a'; the remap lane is not under test")
+	}
+	if !syms.runes.Contains(symbolPUAPage + 'a') {
+		t.Fatal("the symbol face's recorded coverage does not hold U+F061; the cmap was not moved into the U+F000 page")
+	}
+	if !syms.covers('a') {
+		t.Fatal("the symbol face's cmap does not map 'a' through the U+F000 remap")
+	}
+	// The named-family pass: the family really covers 'a', so it answers rather than falling through to the scan.
+	m := newManager([]*faceRec{newSymbolFaceRec(t), newTestFaceRec(t, "Roboto-Regular.ttf", 0)})
+	if tf := m.MatchFamilyStyleCharacter(corpusSymbolFamily, font.NormalStyle(), nil, 'a'); tf == nil ||
+		tf.FamilyName() != corpusSymbolFamily {
+		t.Errorf("(%s, normal, 'a') = %s, want the symbol face, which maps 'a' through U+F061",
+			corpusSymbolFamily, familyOf(tf))
+	}
+	// The unrestricted cross-family scan: the symbol face is the only one covering 'a' at all.
+	m = newManager([]*faceRec{newSymbolFaceRec(t), newTestFaceRec(t, "test.ttc", 1)})
+	if tf := m.MatchFamilyStyleCharacter("", font.NormalStyle(), nil, 'a'); tf == nil ||
+		tf.FamilyName() != corpusSymbolFamily {
+		t.Errorf("(\"\", normal, 'a') = %s, want the symbol face", familyOf(tf))
+	}
+	// The character it genuinely maps nothing for stays uncovered: widening the filter to the U+F000 page must not
+	// invent coverage of the whole Latin-1 range.
+	if tf := m.MatchFamilyStyleCharacter("", font.NormalStyle(), nil, 'b'); tf != nil {
+		t.Errorf("(\"\", normal, 'b') = %s, want nil (U+F062 is in no cmap here)", familyOf(tf))
+	}
+	// The BCP-47 pass restricts the candidate set with the same filter, so a tagged symbol face must survive it.
+	m = newManager([]*faceRec{newSymbolFaceRec(t, "fr"), newTestFaceRec(t, "Roboto-Regular.ttf", 0, "en")})
+	if tf := m.MatchFamilyStyleCharacter("", font.NormalStyle(), []string{"fr"}, 'a'); tf == nil ||
+		tf.FamilyName() != corpusSymbolFamily {
+		t.Errorf("bcp47 [fr] for 'a' = %s, want the symbol face (the fr candidate set must not be empty)",
+			familyOf(tf))
+	}
+	// The widened filter is still only a filter: a face claiming the U+F000-page code point without a symbol cmap
+	// behind it is rejected by covers in rank order, exactly as a lying footprint is. The claimer is the bold face and
+	// the request is bold, so it is scored first and its rejection is what lets Roboto answer.
+	liar := newTestFaceRec(t, "test.ttc", 1)
+	liar.runes.Add(symbolPUAPage + 'a')
+	m = newManager([]*faceRec{liar, newTestFaceRec(t, "Roboto-Regular.ttf", 0)})
+	if tf := m.MatchFamilyStyleCharacter("", font.BoldStyle(), nil, 'a'); tf == nil || tf.FamilyName() != "Roboto" {
+		t.Errorf("bold 'a' with a U+F061-claiming non-symbol face = %s, want Roboto", familyOf(tf))
 	}
 }
 

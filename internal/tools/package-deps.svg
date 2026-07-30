@@ -1,0 +1,770 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="1032" height="1823" viewBox="0 0 1032 1823">
+<style>
+  svg { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+  .bg { fill: #FFFFFF; }
+  .title { fill: #15181D; font-size: 27px; font-weight: 700; }
+  .subtitle { fill: #5C626B; font-size: 13.5px; }
+  .panel { fill: #15181D; font-size: 15px; font-weight: 700; }
+  .panelsub { fill: #7A818B; font-size: 12.5px; }
+  .rule { stroke: #DCE0E6; stroke-width: 1; }
+  .lgl { fill: #3B4048; font-size: 12.5px; }
+  .lghead { fill: #15181D; font-size: 11.5px; font-weight: 700; letter-spacing: .07em; }
+  .mlab { font-size: 11px; font-weight: 600; }
+  .mhead { fill: #7A818B; font-size: 10.5px; font-weight: 700; letter-spacing: .05em; }
+  .mtot { fill: #6B7280; font-size: 10.5px; font-weight: 600; }
+  .grid { stroke: #D7DBE1; stroke-width: .7; }
+  .diag { stroke: #C2C7CE; stroke-width: 1.4; }
+  @media (prefers-color-scheme: dark) {
+    .bg { fill: #12141A; }
+    .title, .panel, .lghead { fill: #F1F3F7; }
+    .subtitle, .panelsub { fill: #98A0AB; }
+    .rule { stroke: #2A2F38; }
+    .lgl { fill: #C4CAD3; }
+    .mhead, .mtot { fill: #8C949F; }
+    .grid { stroke: #2E333C; }
+    .diag { stroke: #3C424C; }
+    .band { opacity: .22 !important; }
+  }
+</style>
+<rect class="bg" x="0" y="0" width="1032" height="1823"/>
+<text class="title" x="26" y="40">canvas &#8212; package dependency graph</text>
+<text class="subtitle" x="26" y="64">27 packages &#183; 118 direct intra-module imports &#183; production code only, excluding test files and test-support packages</text>
+<line class="rule" x1="26" y1="80.0" x2="1006" y2="80.0"/>
+<text class="panel" x="26" y="92">Layered structure</text>
+<text class="panelsub" x="178" y="92">34 edges shown &#183; arrows point from importer to imported; an import already implied by a longer path appears only in the matrix below</text>
+<g transform="translate(168.0,104.0)">
+<g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(1.44 768.24)">
+<title>deps</title>
+<!-- canvas -->
+<g id="node1" class="node">
+<title>canvas</title>
+<path fill="#fbe6e4" stroke="#b93a2b" stroke-width="1.7" d="M397.35,-619.2C397.35,-619.2 346.32,-619.2 346.32,-619.2 341.52,-619.2 336.72,-614.4 336.72,-609.6 336.72,-609.6 336.72,-600 336.72,-600 336.72,-595.2 341.52,-590.4 346.32,-590.4 346.32,-590.4 397.35,-590.4 397.35,-590.4 402.15,-590.4 406.95,-595.2 406.95,-600 406.95,-600 406.95,-609.6 406.95,-609.6 406.95,-614.4 402.15,-619.2 397.35,-619.2"/>
+<text xml:space="preserve" text-anchor="middle" x="371.84" y="-599.2" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="13.00" fill="#6a1f16">canvas</text>
+</g>
+<!-- filtercore -->
+<g id="node7" class="node">
+<title>filtercore</title>
+<path fill="#f2e9f7" stroke="#7a4a9c" stroke-width="1.7" d="M237.35,-545.4C237.35,-545.4 174.32,-545.4 174.32,-545.4 169.52,-545.4 164.72,-540.6 164.72,-535.8 164.72,-535.8 164.72,-526.2 164.72,-526.2 164.72,-521.4 169.52,-516.6 174.32,-516.6 174.32,-516.6 237.35,-516.6 237.35,-516.6 242.15,-516.6 246.95,-521.4 246.95,-526.2 246.95,-526.2 246.95,-535.8 246.95,-535.8 246.95,-540.6 242.15,-545.4 237.35,-545.4"/>
+<text xml:space="preserve" text-anchor="middle" x="205.84" y="-525.4" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="13.00" fill="#442659">filtercore</text>
+</g>
+<!-- canvas&#45;&gt;filtercore -->
+<g id="edge1" class="edge">
+<title>canvas&#45;&gt;filtercore</title>
+<path fill="none" stroke="#b93a2b" stroke-width="1.6" stroke-opacity="0.815686" d="M339.04,-589.61C312.56,-578.16 275.14,-561.98 246.71,-549.68"/>
+<polygon fill="#b93a2b" fill-opacity="0.815686" stroke="#b93a2b" stroke-width="1.6" stroke-opacity="0.815686" points="247.66,-547.61 240.79,-547.12 245.85,-551.79 247.66,-547.61"/>
+</g>
+<!-- textblob -->
+<g id="node27" class="node">
+<title>textblob</title>
+<path fill="#fbeddf" stroke="#af6414" stroke-width="1.7" d="M508.73,-545.4C508.73,-545.4 450.95,-545.4 450.95,-545.4 446.15,-545.4 441.35,-540.6 441.35,-535.8 441.35,-535.8 441.35,-526.2 441.35,-526.2 441.35,-521.4 446.15,-516.6 450.95,-516.6 450.95,-516.6 508.73,-516.6 508.73,-516.6 513.53,-516.6 518.33,-521.4 518.33,-526.2 518.33,-526.2 518.33,-535.8 518.33,-535.8 518.33,-540.6 513.53,-545.4 508.73,-545.4"/>
+<text xml:space="preserve" text-anchor="middle" x="479.84" y="-525.4" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="13.00" fill="#63380a">textblob</text>
+</g>
+<!-- canvas&#45;&gt;textblob -->
+<g id="edge2" class="edge">
+<title>canvas&#45;&gt;textblob</title>
+<path fill="none" stroke="#b93a2b" stroke-width="1.6" stroke-opacity="0.815686" d="M393.18,-589.61C409.89,-578.5 433.3,-562.94 451.57,-550.8"/>
+<polygon fill="#b93a2b" fill-opacity="0.815686" stroke="#b93a2b" stroke-width="1.6" stroke-opacity="0.815686" points="452.38,-552.99 456.53,-547.5 449.86,-549.2 452.38,-552.99"/>
+</g>
+<!-- codecs -->
+<g id="node2" class="node">
+<title>codecs</title>
+<path fill="#e4f0f1" stroke="#2f7278" stroke-width="1.7" d="M138.73,-324C138.73,-324 86.95,-324 86.95,-324 82.15,-324 77.35,-319.2 77.35,-314.4 77.35,-314.4 77.35,-304.8 77.35,-304.8 77.35,-300 82.15,-295.2 86.95,-295.2 86.95,-295.2 138.73,-295.2 138.73,-295.2 143.53,-295.2 148.33,-300 148.33,-304.8 148.33,-304.8 148.33,-314.4 148.33,-314.4 148.33,-319.2 143.53,-324 138.73,-324"/>
+<text xml:space="preserve" text-anchor="middle" x="112.84" y="-304" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="13.00" fill="#173f43">codecs</text>
+</g>
+<!-- codecs/internal/vp8enc -->
+<g id="node3" class="node">
+<title>codecs/internal/vp8enc</title>
+<path fill="#e4f0f1" stroke="#2f7278" stroke-width="1.7" d="M190.1,-250.2C190.1,-250.2 35.57,-250.2 35.57,-250.2 30.77,-250.2 25.97,-245.4 25.97,-240.6 25.97,-240.6 25.97,-231 25.97,-231 25.97,-226.2 30.77,-221.4 35.57,-221.4 35.57,-221.4 190.1,-221.4 190.1,-221.4 194.9,-221.4 199.7,-226.2 199.7,-231 199.7,-231 199.7,-240.6 199.7,-240.6 199.7,-245.4 194.9,-250.2 190.1,-250.2"/>
+<text xml:space="preserve" text-anchor="middle" x="112.84" y="-230.2" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="13.00" fill="#173f43">codecs/internal/vp8enc</text>
+</g>
+<!-- codecs&#45;&gt;codecs/internal/vp8enc -->
+<g id="edge3" class="edge">
+<title>codecs&#45;&gt;codecs/internal/vp8enc</title>
+<path fill="none" stroke="#2f7278" stroke-width="1.6" stroke-opacity="0.815686" d="M112.84,-294.41C112.84,-284.48 112.84,-271 112.84,-259.57"/>
+<polygon fill="#2f7278" fill-opacity="0.815686" stroke="#2f7278" stroke-width="1.6" stroke-opacity="0.815686" points="115.11,-259.88 112.84,-253.38 110.56,-259.88 115.11,-259.88"/>
+</g>
+<!-- imagecore -->
+<g id="node14" class="node">
+<title>imagecore</title>
+<path fill="#e4ecf9" stroke="#2c5ea8" stroke-width="1.7" d="M304.85,-250.2C304.85,-250.2 232.82,-250.2 232.82,-250.2 228.02,-250.2 223.22,-245.4 223.22,-240.6 223.22,-240.6 223.22,-231 223.22,-231 223.22,-226.2 228.02,-221.4 232.82,-221.4 232.82,-221.4 304.85,-221.4 304.85,-221.4 309.65,-221.4 314.45,-226.2 314.45,-231 314.45,-231 314.45,-240.6 314.45,-240.6 314.45,-245.4 309.65,-250.2 304.85,-250.2"/>
+<text xml:space="preserve" text-anchor="middle" x="268.84" y="-230.2" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="13.00" fill="#173a63">imagecore</text>
+</g>
+<!-- codecs&#45;&gt;imagecore -->
+<g id="edge4" class="edge">
+<title>codecs&#45;&gt;imagecore</title>
+<path fill="none" stroke="#2f7278" stroke-width="1.6" stroke-opacity="0.815686" d="M143.66,-294.41C168.45,-283.01 203.41,-266.91 230.09,-254.63"/>
+<polygon fill="#2f7278" fill-opacity="0.815686" stroke="#2f7278" stroke-width="1.6" stroke-opacity="0.815686" points="230.93,-256.75 235.88,-251.97 229.03,-252.62 230.93,-256.75"/>
+</g>
+<!-- colorcore -->
+<g id="node4" class="node">
+<title>colorcore</title>
+<path fill="#e4ecf9" stroke="#2c5ea8" stroke-width="1.7" d="M313.23,-102.6C313.23,-102.6 246.45,-102.6 246.45,-102.6 241.65,-102.6 236.85,-97.8 236.85,-93 236.85,-93 236.85,-83.4 236.85,-83.4 236.85,-78.6 241.65,-73.8 246.45,-73.8 246.45,-73.8 313.23,-73.8 313.23,-73.8 318.03,-73.8 322.83,-78.6 322.83,-83.4 322.83,-83.4 322.83,-93 322.83,-93 322.83,-97.8 318.03,-102.6 313.23,-102.6"/>
+<text xml:space="preserve" text-anchor="middle" x="279.84" y="-82.6" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="13.00" fill="#173a63">colorcore</text>
+</g>
+<!-- colorfilter -->
+<g id="node5" class="node">
+<title>colorfilter</title>
+<path fill="#f2e9f7" stroke="#7a4a9c" stroke-width="1.7" d="M239.6,-471.6C239.6,-471.6 172.07,-471.6 172.07,-471.6 167.27,-471.6 162.47,-466.8 162.47,-462 162.47,-462 162.47,-452.4 162.47,-452.4 162.47,-447.6 167.27,-442.8 172.07,-442.8 172.07,-442.8 239.6,-442.8 239.6,-442.8 244.4,-442.8 249.2,-447.6 249.2,-452.4 249.2,-452.4 249.2,-462 249.2,-462 249.2,-466.8 244.4,-471.6 239.6,-471.6"/>
+<text xml:space="preserve" text-anchor="middle" x="205.84" y="-451.6" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="13.00" fill="#442659">colorfilter</text>
+</g>
+<!-- shaders -->
+<g id="node23" class="node">
+<title>shaders</title>
+<path fill="#e4ecf9" stroke="#2c5ea8" stroke-width="1.7" d="M239.35,-324C239.35,-324 182.32,-324 182.32,-324 177.52,-324 172.72,-319.2 172.72,-314.4 172.72,-314.4 172.72,-304.8 172.72,-304.8 172.72,-300 177.52,-295.2 182.32,-295.2 182.32,-295.2 239.35,-295.2 239.35,-295.2 244.15,-295.2 248.95,-300 248.95,-304.8 248.95,-304.8 248.95,-314.4 248.95,-314.4 248.95,-319.2 244.15,-324 239.35,-324"/>
+<text xml:space="preserve" text-anchor="middle" x="210.84" y="-304" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="13.00" fill="#173a63">shaders</text>
+</g>
+<!-- colorfilter&#45;&gt;shaders -->
+<g id="edge5" class="edge">
+<title>colorfilter&#45;&gt;shaders</title>
+<path fill="none" stroke="#7a4a9c" stroke-width="1.6" stroke-opacity="0.815686" d="M206.33,-441.97C207.2,-416.68 209.02,-363.71 210.06,-333.32"/>
+<polygon fill="#7a4a9c" fill-opacity="0.815686" stroke="#7a4a9c" stroke-width="1.6" stroke-opacity="0.815686" points="212.32,-333.66 210.27,-327.09 207.78,-333.51 212.32,-333.66"/>
+</g>
+<!-- contour -->
+<g id="node6" class="node">
+<title>contour</title>
+<path fill="#e2f0e8" stroke="#2c7d57" stroke-width="1.7" d="M410.6,-176.4C410.6,-176.4 355.07,-176.4 355.07,-176.4 350.27,-176.4 345.47,-171.6 345.47,-166.8 345.47,-166.8 345.47,-157.2 345.47,-157.2 345.47,-152.4 350.27,-147.6 355.07,-147.6 355.07,-147.6 410.6,-147.6 410.6,-147.6 415.4,-147.6 420.2,-152.4 420.2,-157.2 420.2,-157.2 420.2,-166.8 420.2,-166.8 420.2,-171.6 415.4,-176.4 410.6,-176.4"/>
+<text xml:space="preserve" text-anchor="middle" x="382.84" y="-156.4" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="13.00" fill="#164630">contour</text>
+</g>
+<!-- path -->
+<g id="node18" class="node">
+<title>path</title>
+<path fill="#e4ecf9" stroke="#2c5ea8" stroke-width="1.7" d="M437.24,-102.6C437.24,-102.6 402.44,-102.6 402.44,-102.6 397.64,-102.6 392.84,-97.8 392.84,-93 392.84,-93 392.84,-83.4 392.84,-83.4 392.84,-78.6 397.64,-73.8 402.44,-73.8 402.44,-73.8 437.24,-73.8 437.24,-73.8 442.04,-73.8 446.84,-78.6 446.84,-83.4 446.84,-83.4 446.84,-93 446.84,-93 446.84,-97.8 442.04,-102.6 437.24,-102.6"/>
+<text xml:space="preserve" text-anchor="middle" x="419.84" y="-82.6" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="13.00" fill="#173a63">path</text>
+</g>
+<!-- contour&#45;&gt;path -->
+<g id="edge6" class="edge">
+<title>contour&#45;&gt;path</title>
+<path fill="none" stroke="#2c7d57" stroke-width="1.6" stroke-opacity="0.815686" d="M390.15,-146.81C395.42,-136.59 402.63,-122.59 408.63,-110.96"/>
+<polygon fill="#2c7d57" fill-opacity="0.815686" stroke="#2c7d57" stroke-width="1.6" stroke-opacity="0.815686" points="410.48,-112.33 411.44,-105.51 406.44,-110.24 410.48,-112.33"/>
+</g>
+<!-- filtercore&#45;&gt;colorfilter -->
+<g id="edge7" class="edge">
+<title>filtercore&#45;&gt;colorfilter</title>
+<path fill="none" stroke="#7a4a9c" stroke-width="1.6" stroke-opacity="0.815686" d="M205.84,-515.81C205.84,-505.88 205.84,-492.4 205.84,-480.97"/>
+<polygon fill="#7a4a9c" fill-opacity="0.815686" stroke="#7a4a9c" stroke-width="1.6" stroke-opacity="0.815686" points="208.11,-481.28 205.84,-474.78 203.56,-481.28 208.11,-481.28"/>
+</g>
+<!-- font -->
+<g id="node8" class="node">
+<title>font</title>
+<path fill="#fbeddf" stroke="#af6414" stroke-width="1.7" d="M497.24,-471.6C497.24,-471.6 462.44,-471.6 462.44,-471.6 457.64,-471.6 452.84,-466.8 452.84,-462 452.84,-462 452.84,-452.4 452.84,-452.4 452.84,-447.6 457.64,-442.8 462.44,-442.8 462.44,-442.8 497.24,-442.8 497.24,-442.8 502.04,-442.8 506.84,-447.6 506.84,-452.4 506.84,-452.4 506.84,-462 506.84,-462 506.84,-466.8 502.04,-471.6 497.24,-471.6"/>
+<text xml:space="preserve" text-anchor="middle" x="479.84" y="-451.6" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="13.00" fill="#63380a">font</text>
+</g>
+<!-- internal/memsize -->
+<g id="node16" class="node">
+<title>internal/memsize</title>
+<path fill="#e4f0f1" stroke="#2f7278" stroke-width="1.7" d="M557.48,-397.8C557.48,-397.8 444.2,-397.8 444.2,-397.8 439.4,-397.8 434.6,-393 434.6,-388.2 434.6,-388.2 434.6,-378.6 434.6,-378.6 434.6,-373.8 439.4,-369 444.2,-369 444.2,-369 557.48,-369 557.48,-369 562.28,-369 567.08,-373.8 567.08,-378.6 567.08,-378.6 567.08,-388.2 567.08,-388.2 567.08,-393 562.28,-397.8 557.48,-397.8"/>
+<text xml:space="preserve" text-anchor="middle" x="500.84" y="-377.8" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="13.00" fill="#173f43">internal/memsize</text>
+</g>
+<!-- font&#45;&gt;internal/memsize -->
+<g id="edge8" class="edge">
+<title>font&#45;&gt;internal/memsize</title>
+<path fill="none" stroke="#af6414" stroke-width="1.6" stroke-opacity="0.815686" d="M483.99,-442.01C486.92,-431.98 490.92,-418.33 494.28,-406.83"/>
+<polygon fill="#af6414" fill-opacity="0.815686" stroke="#af6414" stroke-width="1.6" stroke-opacity="0.815686" points="496.38,-407.76 496.02,-400.88 492.01,-406.48 496.38,-407.76"/>
+</g>
+<!-- maskfilter -->
+<g id="node17" class="node">
+<title>maskfilter</title>
+<path fill="#f2e9f7" stroke="#7a4a9c" stroke-width="1.7" d="M400.98,-397.8C400.98,-397.8 332.7,-397.8 332.7,-397.8 327.9,-397.8 323.1,-393 323.1,-388.2 323.1,-388.2 323.1,-378.6 323.1,-378.6 323.1,-373.8 327.9,-369 332.7,-369 332.7,-369 400.98,-369 400.98,-369 405.78,-369 410.58,-373.8 410.58,-378.6 410.58,-378.6 410.58,-388.2 410.58,-388.2 410.58,-393 405.78,-397.8 400.98,-397.8"/>
+<text xml:space="preserve" text-anchor="middle" x="366.84" y="-377.8" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="13.00" fill="#442659">maskfilter</text>
+</g>
+<!-- font&#45;&gt;maskfilter -->
+<g id="edge9" class="edge">
+<title>font&#45;&gt;maskfilter</title>
+<path fill="none" stroke="#af6414" stroke-width="1.6" stroke-opacity="0.815686" d="M457.51,-442.01C440.03,-430.9 415.54,-415.34 396.42,-403.2"/>
+<polygon fill="#af6414" fill-opacity="0.815686" stroke="#af6414" stroke-width="1.6" stroke-opacity="0.815686" points="397.87,-401.42 391.16,-399.85 395.43,-405.26 397.87,-401.42"/>
+</g>
+<!-- stroke -->
+<g id="node25" class="node">
+<title>stroke</title>
+<path fill="#e2f0e8" stroke="#2c7d57" stroke-width="1.7" d="M499.73,-176.4C499.73,-176.4 453.95,-176.4 453.95,-176.4 449.15,-176.4 444.35,-171.6 444.35,-166.8 444.35,-166.8 444.35,-157.2 444.35,-157.2 444.35,-152.4 449.15,-147.6 453.95,-147.6 453.95,-147.6 499.73,-147.6 499.73,-147.6 504.53,-147.6 509.33,-152.4 509.33,-157.2 509.33,-157.2 509.33,-166.8 509.33,-166.8 509.33,-171.6 504.53,-176.4 499.73,-176.4"/>
+<text xml:space="preserve" text-anchor="middle" x="476.84" y="-156.4" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="13.00" fill="#164630">stroke</text>
+</g>
+<!-- font&#45;&gt;stroke -->
+<g id="edge10" class="edge">
+<title>font&#45;&gt;stroke</title>
+<path fill="none" stroke="#af6414" stroke-width="1.6" stroke-opacity="0.815686" d="M507.67,-448.32C531.29,-439.99 563.7,-424.31 578.84,-397.8 585.19,-386.69 581.76,-381.46 578.84,-369 561.86,-296.44 515.39,-220.14 491.48,-184.15"/>
+<polygon fill="#af6414" fill-opacity="0.815686" stroke="#af6414" stroke-width="1.6" stroke-opacity="0.815686" points="493.6,-183.24 488.09,-179.11 489.83,-185.78 493.6,-183.24"/>
+</g>
+<!-- fontmgr -->
+<g id="node9" class="node">
+<title>fontmgr</title>
+<path fill="#fbeddf" stroke="#af6414" stroke-width="1.7" d="M407.6,-545.4C407.6,-545.4 352.07,-545.4 352.07,-545.4 347.27,-545.4 342.47,-540.6 342.47,-535.8 342.47,-535.8 342.47,-526.2 342.47,-526.2 342.47,-521.4 347.27,-516.6 352.07,-516.6 352.07,-516.6 407.6,-516.6 407.6,-516.6 412.4,-516.6 417.2,-521.4 417.2,-526.2 417.2,-526.2 417.2,-535.8 417.2,-535.8 417.2,-540.6 412.4,-545.4 407.6,-545.4"/>
+<text xml:space="preserve" text-anchor="middle" x="379.84" y="-525.4" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="13.00" fill="#63380a">fontmgr</text>
+</g>
+<!-- fontmgr&#45;&gt;font -->
+<g id="edge11" class="edge">
+<title>fontmgr&#45;&gt;font</title>
+<path fill="none" stroke="#af6414" stroke-width="1.6" stroke-opacity="0.815686" d="M399.6,-515.81C414.94,-504.8 436.36,-489.42 453.21,-477.32"/>
+<polygon fill="#af6414" fill-opacity="0.815686" stroke="#af6414" stroke-width="1.6" stroke-opacity="0.815686" points="454.2,-479.41 458.16,-473.77 451.55,-475.71 454.2,-479.41"/>
+</g>
+<!-- geom -->
+<g id="node10" class="node">
+<title>geom</title>
+<path fill="#e4ecf9" stroke="#2c5ea8" stroke-width="1.7" d="M440.1,-28.8C440.1,-28.8 399.57,-28.8 399.57,-28.8 394.77,-28.8 389.97,-24 389.97,-19.2 389.97,-19.2 389.97,-9.6 389.97,-9.6 389.97,-4.8 394.77,0 399.57,0 399.57,0 440.1,0 440.1,0 444.9,0 449.7,-4.8 449.7,-9.6 449.7,-9.6 449.7,-19.2 449.7,-19.2 449.7,-24 444.9,-28.8 440.1,-28.8"/>
+<text xml:space="preserve" text-anchor="middle" x="419.84" y="-8.8" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="13.00" fill="#173a63">geom</text>
+</g>
+<!-- gpu -->
+<g id="node11" class="node">
+<title>gpu</title>
+<path fill="#e6e8f5" stroke="#454a96" stroke-width="1.7" d="M71.24,-397.8C71.24,-397.8 36.44,-397.8 36.44,-397.8 31.64,-397.8 26.84,-393 26.84,-388.2 26.84,-388.2 26.84,-378.6 26.84,-378.6 26.84,-373.8 31.64,-369 36.44,-369 36.44,-369 71.24,-369 71.24,-369 76.04,-369 80.84,-373.8 80.84,-378.6 80.84,-378.6 80.84,-388.2 80.84,-388.2 80.84,-393 76.04,-397.8 71.24,-397.8"/>
+<text xml:space="preserve" text-anchor="middle" x="53.84" y="-377.8" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="13.00" fill="#252856">gpu</text>
+</g>
+<!-- raster -->
+<g id="node22" class="node">
+<title>raster</title>
+<path fill="#e4ecf9" stroke="#2c5ea8" stroke-width="1.7" d="M301.23,-176.4C301.23,-176.4 258.45,-176.4 258.45,-176.4 253.65,-176.4 248.85,-171.6 248.85,-166.8 248.85,-166.8 248.85,-157.2 248.85,-157.2 248.85,-152.4 253.65,-147.6 258.45,-147.6 258.45,-147.6 301.23,-147.6 301.23,-147.6 306.03,-147.6 310.83,-152.4 310.83,-157.2 310.83,-157.2 310.83,-166.8 310.83,-166.8 310.83,-171.6 306.03,-176.4 301.23,-176.4"/>
+<text xml:space="preserve" text-anchor="middle" x="279.84" y="-156.4" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="13.00" fill="#173a63">raster</text>
+</g>
+<!-- gpu&#45;&gt;raster -->
+<g id="edge12" class="edge">
+<title>gpu&#45;&gt;raster</title>
+<path fill="none" stroke="#454a96" stroke-width="1.6" stroke-opacity="0.815686" d="M43.11,-368.2C21.57,-337.85 -21.9,-265.84 13.84,-221.4 41.7,-186.76 172.17,-171.5 239.46,-165.84"/>
+<polygon fill="#454a96" fill-opacity="0.815686" stroke="#454a96" stroke-width="1.6" stroke-opacity="0.815686" points="239.42,-168.12 245.72,-165.33 239.05,-163.59 239.42,-168.12"/>
+</g>
+<!-- gpu/gl -->
+<g id="node12" class="node">
+<title>gpu/gl</title>
+<path fill="#e6e8f5" stroke="#454a96" stroke-width="1.7" d="M358.73,-766.8C358.73,-766.8 312.95,-766.8 312.95,-766.8 308.15,-766.8 303.35,-762 303.35,-757.2 303.35,-757.2 303.35,-747.6 303.35,-747.6 303.35,-742.8 308.15,-738 312.95,-738 312.95,-738 358.73,-738 358.73,-738 363.53,-738 368.33,-742.8 368.33,-747.6 368.33,-747.6 368.33,-757.2 368.33,-757.2 368.33,-762 363.53,-766.8 358.73,-766.8"/>
+<text xml:space="preserve" text-anchor="middle" x="335.84" y="-746.8" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="13.00" fill="#252856">gpu/gl</text>
+</g>
+<!-- gpu/text -->
+<g id="node13" class="node">
+<title>gpu/text</title>
+<path fill="#e6e8f5" stroke="#454a96" stroke-width="1.7" d="M314.73,-693C314.73,-693 256.95,-693 256.95,-693 252.15,-693 247.35,-688.2 247.35,-683.4 247.35,-683.4 247.35,-673.8 247.35,-673.8 247.35,-669 252.15,-664.2 256.95,-664.2 256.95,-664.2 314.73,-664.2 314.73,-664.2 319.53,-664.2 324.33,-669 324.33,-673.8 324.33,-673.8 324.33,-683.4 324.33,-683.4 324.33,-688.2 319.53,-693 314.73,-693"/>
+<text xml:space="preserve" text-anchor="middle" x="285.84" y="-673" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="13.00" fill="#252856">gpu/text</text>
+</g>
+<!-- gpu/gl&#45;&gt;gpu/text -->
+<g id="edge13" class="edge">
+<title>gpu/gl&#45;&gt;gpu/text</title>
+<path fill="none" stroke="#454a96" stroke-width="1.6" stroke-opacity="0.815686" d="M325.96,-737.21C318.77,-726.89 308.91,-712.72 300.76,-701.02"/>
+<polygon fill="#454a96" fill-opacity="0.815686" stroke="#454a96" stroke-width="1.6" stroke-opacity="0.815686" points="302.66,-699.78 297.08,-695.74 298.93,-702.38 302.66,-699.78"/>
+</g>
+<!-- surface -->
+<g id="node26" class="node">
+<title>surface</title>
+<path fill="#fbe6e4" stroke="#b93a2b" stroke-width="1.7" d="M411.48,-693C411.48,-693 358.2,-693 358.2,-693 353.4,-693 348.6,-688.2 348.6,-683.4 348.6,-683.4 348.6,-673.8 348.6,-673.8 348.6,-669 353.4,-664.2 358.2,-664.2 358.2,-664.2 411.48,-664.2 411.48,-664.2 416.28,-664.2 421.08,-669 421.08,-673.8 421.08,-673.8 421.08,-683.4 421.08,-683.4 421.08,-688.2 416.28,-693 411.48,-693"/>
+<text xml:space="preserve" text-anchor="middle" x="384.84" y="-673" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="13.00" fill="#6a1f16">surface</text>
+</g>
+<!-- gpu/gl&#45;&gt;surface -->
+<g id="edge14" class="edge">
+<title>gpu/gl&#45;&gt;surface</title>
+<path fill="none" stroke="#454a96" stroke-width="1.6" stroke-opacity="0.815686" d="M345.52,-737.21C352.57,-726.89 362.23,-712.72 370.22,-701.02"/>
+<polygon fill="#454a96" fill-opacity="0.815686" stroke="#454a96" stroke-width="1.6" stroke-opacity="0.815686" points="372.03,-702.41 373.81,-695.76 368.27,-699.84 372.03,-702.41"/>
+</g>
+<!-- gpu/text&#45;&gt;canvas -->
+<g id="edge15" class="edge">
+<title>gpu/text&#45;&gt;canvas</title>
+<path fill="none" stroke="#454a96" stroke-width="1.6" stroke-opacity="0.815686" d="M302.83,-663.41C315.79,-652.6 333.79,-637.57 348.16,-625.57"/>
+<polygon fill="#454a96" fill-opacity="0.815686" stroke="#454a96" stroke-width="1.6" stroke-opacity="0.815686" points="349.49,-627.42 353.03,-621.51 346.58,-623.93 349.49,-627.42"/>
+</g>
+<!-- gpu/text&#45;&gt;gpu -->
+<g id="edge16" class="edge">
+<title>gpu/text&#45;&gt;gpu</title>
+<path fill="none" stroke="#454a96" stroke-width="1.6" stroke-opacity="0.815686" d="M246.68,-670.24C215.38,-662.48 172.34,-647.34 144.84,-619.2 85.09,-558.07 63.53,-453.34 56.67,-407.28"/>
+<polygon fill="#454a96" fill-opacity="0.815686" stroke="#454a96" stroke-width="1.6" stroke-opacity="0.815686" points="58.95,-407.15 55.79,-401.03 54.45,-407.78 58.95,-407.15"/>
+</g>
+<!-- patheffect -->
+<g id="node19" class="node">
+<title>patheffect</title>
+<path fill="#e2f0e8" stroke="#2c7d57" stroke-width="1.7" d="M417.73,-250.2C417.73,-250.2 347.95,-250.2 347.95,-250.2 343.15,-250.2 338.35,-245.4 338.35,-240.6 338.35,-240.6 338.35,-231 338.35,-231 338.35,-226.2 343.15,-221.4 347.95,-221.4 347.95,-221.4 417.73,-221.4 417.73,-221.4 422.53,-221.4 427.33,-226.2 427.33,-231 427.33,-231 427.33,-240.6 427.33,-240.6 427.33,-245.4 422.53,-250.2 417.73,-250.2"/>
+<text xml:space="preserve" text-anchor="middle" x="382.84" y="-230.2" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="13.00" fill="#164630">patheffect</text>
+</g>
+<!-- gpu/text&#45;&gt;patheffect -->
+<g id="edge17" class="edge">
+<title>gpu/text&#45;&gt;patheffect</title>
+<path fill="none" stroke="#454a96" stroke-width="1.6" stroke-opacity="0.815686" d="M285.84,-663.54C285.84,-637.57 285.84,-580.28 285.84,-532 285.84,-532 285.84,-532 285.84,-382.4 285.84,-330.1 329.73,-282.28 358.46,-256.58"/>
+<polygon fill="#454a96" fill-opacity="0.815686" stroke="#454a96" stroke-width="1.6" stroke-opacity="0.815686" points="359.82,-258.41 363.22,-252.42 356.83,-254.98 359.82,-258.41"/>
+</g>
+<!-- imagecore&#45;&gt;raster -->
+<g id="edge18" class="edge">
+<title>imagecore&#45;&gt;raster</title>
+<path fill="none" stroke="#2c5ea8" stroke-width="1.6" stroke-opacity="0.815686" d="M271.01,-220.61C272.53,-210.68 274.6,-197.2 276.35,-185.77"/>
+<polygon fill="#2c5ea8" fill-opacity="0.815686" stroke="#2c5ea8" stroke-width="1.6" stroke-opacity="0.815686" points="278.57,-186.32 277.3,-179.55 274.07,-185.63 278.57,-186.32"/>
+</g>
+<!-- imagefilter -->
+<g id="node15" class="node">
+<title>imagefilter</title>
+<path fill="#f2e9f7" stroke="#7a4a9c" stroke-width="1.7" d="M239.23,-619.2C239.23,-619.2 166.45,-619.2 166.45,-619.2 161.65,-619.2 156.85,-614.4 156.85,-609.6 156.85,-609.6 156.85,-600 156.85,-600 156.85,-595.2 161.65,-590.4 166.45,-590.4 166.45,-590.4 239.23,-590.4 239.23,-590.4 244.03,-590.4 248.83,-595.2 248.83,-600 248.83,-600 248.83,-609.6 248.83,-609.6 248.83,-614.4 244.03,-619.2 239.23,-619.2"/>
+<text xml:space="preserve" text-anchor="middle" x="202.84" y="-599.2" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="13.00" fill="#442659">imagefilter</text>
+</g>
+<!-- imagefilter&#45;&gt;filtercore -->
+<g id="edge19" class="edge">
+<title>imagefilter&#45;&gt;filtercore</title>
+<path fill="none" stroke="#7a4a9c" stroke-width="1.6" stroke-opacity="0.815686" d="M203.43,-589.61C203.85,-579.68 204.41,-566.2 204.89,-554.77"/>
+<polygon fill="#7a4a9c" fill-opacity="0.815686" stroke="#7a4a9c" stroke-width="1.6" stroke-opacity="0.815686" points="207.15,-555.16 205.15,-548.58 202.6,-554.97 207.15,-555.16"/>
+</g>
+<!-- maskfilter&#45;&gt;shaders -->
+<g id="edge20" class="edge">
+<title>maskfilter&#45;&gt;shaders</title>
+<path fill="none" stroke="#7a4a9c" stroke-width="1.6" stroke-opacity="0.815686" d="M336.02,-368.21C311.23,-356.81 276.27,-340.71 249.59,-328.43"/>
+<polygon fill="#7a4a9c" fill-opacity="0.815686" stroke="#7a4a9c" stroke-width="1.6" stroke-opacity="0.815686" points="250.65,-326.42 243.8,-325.77 248.75,-330.55 250.65,-326.42"/>
+</g>
+<!-- path&#45;&gt;geom -->
+<g id="edge21" class="edge">
+<title>path&#45;&gt;geom</title>
+<path fill="none" stroke="#2c5ea8" stroke-width="1.6" stroke-opacity="0.815686" d="M419.84,-73.01C419.84,-63.08 419.84,-49.6 419.84,-38.17"/>
+<polygon fill="#2c5ea8" fill-opacity="0.815686" stroke="#2c5ea8" stroke-width="1.6" stroke-opacity="0.815686" points="422.11,-38.48 419.84,-31.98 417.56,-38.48 422.11,-38.48"/>
+</g>
+<!-- patheffect&#45;&gt;contour -->
+<g id="edge22" class="edge">
+<title>patheffect&#45;&gt;contour</title>
+<path fill="none" stroke="#2c7d57" stroke-width="1.6" stroke-opacity="0.815686" d="M382.84,-220.61C382.84,-210.68 382.84,-197.2 382.84,-185.77"/>
+<polygon fill="#2c7d57" fill-opacity="0.815686" stroke="#2c7d57" stroke-width="1.6" stroke-opacity="0.815686" points="385.11,-186.08 382.84,-179.58 380.56,-186.08 385.11,-186.08"/>
+</g>
+<!-- patheffect&#45;&gt;raster -->
+<g id="edge23" class="edge">
+<title>patheffect&#45;&gt;raster</title>
+<path fill="none" stroke="#2c7d57" stroke-width="1.6" stroke-opacity="0.815686" d="M362.49,-220.61C346.69,-209.6 324.62,-194.22 307.27,-182.12"/>
+<polygon fill="#2c7d57" fill-opacity="0.815686" stroke="#2c7d57" stroke-width="1.6" stroke-opacity="0.815686" points="308.77,-180.39 302.13,-178.54 306.16,-184.12 308.77,-180.39"/>
+</g>
+<!-- patheffect&#45;&gt;stroke -->
+<g id="edge24" class="edge">
+<title>patheffect&#45;&gt;stroke</title>
+<path fill="none" stroke="#2c7d57" stroke-width="1.6" stroke-opacity="0.815686" d="M401.41,-220.61C415.7,-209.7 435.61,-194.49 451.38,-182.44"/>
+<polygon fill="#2c7d57" fill-opacity="0.815686" stroke="#2c7d57" stroke-width="1.6" stroke-opacity="0.815686" points="452.6,-184.38 456.38,-178.63 449.84,-180.76 452.6,-184.38"/>
+</g>
+<!-- pathops -->
+<g id="node20" class="node">
+<title>pathops</title>
+<path fill="#e2f0e8" stroke="#2c7d57" stroke-width="1.7" d="M649.73,-471.6C649.73,-471.6 591.95,-471.6 591.95,-471.6 587.15,-471.6 582.35,-466.8 582.35,-462 582.35,-462 582.35,-452.4 582.35,-452.4 582.35,-447.6 587.15,-442.8 591.95,-442.8 591.95,-442.8 649.73,-442.8 649.73,-442.8 654.53,-442.8 659.33,-447.6 659.33,-452.4 659.33,-452.4 659.33,-462 659.33,-462 659.33,-466.8 654.53,-471.6 649.73,-471.6"/>
+<text xml:space="preserve" text-anchor="middle" x="620.84" y="-451.6" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="13.00" fill="#164630">pathops</text>
+</g>
+<!-- pathops&#45;&gt;path -->
+<g id="edge25" class="edge">
+<title>pathops&#45;&gt;path</title>
+<path fill="none" stroke="#2c7d57" stroke-width="1.6" stroke-opacity="0.815686" d="M626.29,-441.98C635.66,-416.2 653.84,-359.85 653.84,-310.6 653.84,-310.6 653.84,-310.6 653.84,-234.8 653.84,-142.76 521.72,-106.83 456.03,-94.66"/>
+<polygon fill="#2c7d57" fill-opacity="0.815686" stroke="#2c7d57" stroke-width="1.6" stroke-opacity="0.815686" points="456.78,-92.48 449.99,-93.58 455.99,-96.96 456.78,-92.48"/>
+</g>
+<!-- pdf -->
+<g id="node21" class="node">
+<title>pdf</title>
+<path fill="#e6e8f5" stroke="#454a96" stroke-width="1.7" d="M605.24,-766.8C605.24,-766.8 570.44,-766.8 570.44,-766.8 565.64,-766.8 560.84,-762 560.84,-757.2 560.84,-757.2 560.84,-747.6 560.84,-747.6 560.84,-742.8 565.64,-738 570.44,-738 570.44,-738 605.24,-738 605.24,-738 610.04,-738 614.84,-742.8 614.84,-747.6 614.84,-747.6 614.84,-757.2 614.84,-757.2 614.84,-762 610.04,-766.8 605.24,-766.8"/>
+<text xml:space="preserve" text-anchor="middle" x="587.84" y="-746.8" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="13.00" fill="#252856">pdf</text>
+</g>
+<!-- pdf&#45;&gt;pathops -->
+<g id="edge26" class="edge">
+<title>pdf&#45;&gt;pathops</title>
+<path fill="none" stroke="#454a96" stroke-width="1.6" stroke-opacity="0.815686" d="M589.43,-737.26C594.72,-690.23 611.77,-538.81 618.28,-480.96"/>
+<polygon fill="#454a96" fill-opacity="0.815686" stroke="#454a96" stroke-width="1.6" stroke-opacity="0.815686" points="620.53,-481.32 618.99,-474.61 616.01,-480.81 620.53,-481.32"/>
+</g>
+<!-- stream -->
+<g id="node24" class="node">
+<title>stream</title>
+<path fill="#e4f0f1" stroke="#2f7278" stroke-width="1.7" d="M683.23,-693C683.23,-693 634.45,-693 634.45,-693 629.65,-693 624.85,-688.2 624.85,-683.4 624.85,-683.4 624.85,-673.8 624.85,-673.8 624.85,-669 629.65,-664.2 634.45,-664.2 634.45,-664.2 683.23,-664.2 683.23,-664.2 688.03,-664.2 692.83,-669 692.83,-673.8 692.83,-673.8 692.83,-683.4 692.83,-683.4 692.83,-688.2 688.03,-693 683.23,-693"/>
+<text xml:space="preserve" text-anchor="middle" x="658.84" y="-673" font-family="Helvetica,sans-Serif" font-weight="bold" font-size="13.00" fill="#173f43">stream</text>
+</g>
+<!-- pdf&#45;&gt;stream -->
+<g id="edge27" class="edge">
+<title>pdf&#45;&gt;stream</title>
+<path fill="none" stroke="#454a96" stroke-width="1.6" stroke-opacity="0.815686" d="M601.87,-737.21C612.37,-726.59 626.89,-711.91 638.64,-700.03"/>
+<polygon fill="#454a96" fill-opacity="0.815686" stroke="#454a96" stroke-width="1.6" stroke-opacity="0.815686" points="640.19,-701.7 643.14,-695.48 636.95,-698.5 640.19,-701.7"/>
+</g>
+<!-- pdf&#45;&gt;surface -->
+<g id="edge28" class="edge">
+<title>pdf&#45;&gt;surface</title>
+<path fill="none" stroke="#454a96" stroke-width="1.6" stroke-opacity="0.815686" d="M560.04,-741.57C526.48,-729.7 469.61,-709.58 429.79,-695.5"/>
+<polygon fill="#454a96" fill-opacity="0.815686" stroke="#454a96" stroke-width="1.6" stroke-opacity="0.815686" points="430.74,-693.42 423.85,-693.4 429.22,-697.71 430.74,-693.42"/>
+</g>
+<!-- raster&#45;&gt;colorcore -->
+<g id="edge29" class="edge">
+<title>raster&#45;&gt;colorcore</title>
+<path fill="none" stroke="#2c5ea8" stroke-width="1.6" stroke-opacity="0.815686" d="M279.84,-146.81C279.84,-136.88 279.84,-123.4 279.84,-111.97"/>
+<polygon fill="#2c5ea8" fill-opacity="0.815686" stroke="#2c5ea8" stroke-width="1.6" stroke-opacity="0.815686" points="282.11,-112.28 279.84,-105.78 277.56,-112.28 282.11,-112.28"/>
+</g>
+<!-- raster&#45;&gt;path -->
+<g id="edge30" class="edge">
+<title>raster&#45;&gt;path</title>
+<path fill="none" stroke="#2c5ea8" stroke-width="1.6" stroke-opacity="0.815686" d="M307.5,-146.81C329.55,-135.51 360.58,-119.59 384.44,-107.35"/>
+<polygon fill="#2c5ea8" fill-opacity="0.815686" stroke="#2c5ea8" stroke-width="1.6" stroke-opacity="0.815686" points="385.34,-109.45 390.08,-104.46 383.26,-105.4 385.34,-109.45"/>
+</g>
+<!-- shaders&#45;&gt;imagecore -->
+<g id="edge31" class="edge">
+<title>shaders&#45;&gt;imagecore</title>
+<path fill="none" stroke="#2c5ea8" stroke-width="1.6" stroke-opacity="0.815686" d="M222.3,-294.41C230.72,-283.99 242.3,-269.65 251.8,-257.89"/>
+<polygon fill="#2c5ea8" fill-opacity="0.815686" stroke="#2c5ea8" stroke-width="1.6" stroke-opacity="0.815686" points="253.57,-259.33 255.88,-252.84 250.03,-256.47 253.57,-259.33"/>
+</g>
+<!-- stroke&#45;&gt;path -->
+<g id="edge32" class="edge">
+<title>stroke&#45;&gt;path</title>
+<path fill="none" stroke="#2c7d57" stroke-width="1.6" stroke-opacity="0.815686" d="M465.58,-146.81C457.3,-136.39 445.92,-122.05 436.58,-110.29"/>
+<polygon fill="#2c7d57" fill-opacity="0.815686" stroke="#2c7d57" stroke-width="1.6" stroke-opacity="0.815686" points="438.41,-108.93 432.58,-105.25 434.84,-111.76 438.41,-108.93"/>
+</g>
+<!-- surface&#45;&gt;canvas -->
+<g id="edge33" class="edge">
+<title>surface&#45;&gt;canvas</title>
+<path fill="none" stroke="#b93a2b" stroke-width="1.6" stroke-opacity="0.815686" d="M382.27,-663.41C380.47,-653.48 378.03,-640 375.96,-628.57"/>
+<polygon fill="#b93a2b" fill-opacity="0.815686" stroke="#b93a2b" stroke-width="1.6" stroke-opacity="0.815686" points="378.23,-628.33 374.83,-622.34 373.75,-629.14 378.23,-628.33"/>
+</g>
+<!-- textblob&#45;&gt;font -->
+<g id="edge34" class="edge">
+<title>textblob&#45;&gt;font</title>
+<path fill="none" stroke="#af6414" stroke-width="1.6" stroke-opacity="0.815686" d="M479.84,-515.81C479.84,-505.88 479.84,-492.4 479.84,-480.97"/>
+<polygon fill="#af6414" fill-opacity="0.815686" stroke="#af6414" stroke-width="1.6" stroke-opacity="0.815686" points="482.11,-481.28 479.84,-474.78 477.56,-481.28 482.11,-481.28"/>
+</g>
+</g>
+</g>
+<line class="rule" x1="26" y1="886.0" x2="1006" y2="886.0"/>
+<text class="lghead" x="26" y="906.0">PACKAGE GROUPS</text>
+<rect x="26.0" y="918.0" width="14" height="14" rx="4" fill="#E4ECF9" stroke="#2C5EA8" stroke-width="1.7"/>
+<text class="lgl" x="47.0" y="930.0">Core primitives</text>
+<rect x="271.0" y="918.0" width="14" height="14" rx="4" fill="#E2F0E8" stroke="#2C7D57" stroke-width="1.7"/>
+<text class="lgl" x="292.0" y="930.0">Path &amp; geometry ops</text>
+<rect x="516.0" y="918.0" width="14" height="14" rx="4" fill="#F2E9F7" stroke="#7A4A9C" stroke-width="1.7"/>
+<text class="lgl" x="537.0" y="930.0">Filters &amp; effects</text>
+<rect x="761.0" y="918.0" width="14" height="14" rx="4" fill="#FBEDDF" stroke="#AF6414" stroke-width="1.7"/>
+<text class="lgl" x="782.0" y="930.0">Fonts &amp; text</text>
+<rect x="26.0" y="940.0" width="14" height="14" rx="4" fill="#FBE6E4" stroke="#B93A2B" stroke-width="1.7"/>
+<text class="lgl" x="47.0" y="952.0">Drawing API</text>
+<rect x="271.0" y="940.0" width="14" height="14" rx="4" fill="#E6E8F5" stroke="#454A96" stroke-width="1.7"/>
+<text class="lgl" x="292.0" y="952.0">Backends &amp; renderers</text>
+<rect x="516.0" y="940.0" width="14" height="14" rx="4" fill="#E4F0F1" stroke="#2F7278" stroke-width="1.7"/>
+<text class="lgl" x="537.0" y="952.0">I/O &amp; support</text>
+<text class="lghead" x="26" y="984.0">MATRIX CELLS</text>
+<g transform="translate(26.0,1005.0)"><rect x="0" y="-7" width="14" height="14" rx="3" fill="#454A96"/></g>
+<text class="lgl" x="47.0" y="1009.0">Direct import</text>
+<g transform="translate(310.2,1005.0)"><rect x="0.5" y="-6.5" width="13" height="13" rx="2.5" fill="#454A96" fill-opacity="0.26" stroke="#454A96" stroke-opacity="0.55" stroke-width="1"/></g>
+<text class="lgl" x="331.2" y="1009.0">Direct import that is also reachable transitively</text>
+<line class="rule" x1="26" y1="1012.0" x2="1006" y2="1012.0"/>
+<text class="panel" x="26" y="1038.0">Complete import matrix</text>
+<text class="panelsub" x="222" y="1038.0">row imports column &#183; both axes ordered by dependency depth, so every mark falls below the diagonal &#8212; the graph is acyclic</text>
+<g transform="translate(26.0,1066.0)">
+<rect class="band" x="152.0" y="118.0" width="567.0" height="21.0" fill="#E4ECF9" opacity="0.3"/>
+<rect class="band" x="152.0" y="139.0" width="567.0" height="21.0" fill="#E4ECF9" opacity="0.16"/>
+<rect class="band" x="152.0" y="160.0" width="567.0" height="21.0" fill="#E4F0F1" opacity="0.3"/>
+<rect class="band" x="152.0" y="181.0" width="567.0" height="21.0" fill="#E4F0F1" opacity="0.16"/>
+<rect class="band" x="152.0" y="202.0" width="567.0" height="21.0" fill="#E4F0F1" opacity="0.3"/>
+<rect class="band" x="152.0" y="223.0" width="567.0" height="21.0" fill="#E4ECF9" opacity="0.16"/>
+<rect class="band" x="152.0" y="244.0" width="567.0" height="21.0" fill="#E4ECF9" opacity="0.3"/>
+<rect class="band" x="152.0" y="265.0" width="567.0" height="21.0" fill="#E2F0E8" opacity="0.16"/>
+<rect class="band" x="152.0" y="286.0" width="567.0" height="21.0" fill="#E2F0E8" opacity="0.3"/>
+<rect class="band" x="152.0" y="307.0" width="567.0" height="21.0" fill="#E2F0E8" opacity="0.16"/>
+<rect class="band" x="152.0" y="328.0" width="567.0" height="21.0" fill="#E4ECF9" opacity="0.3"/>
+<rect class="band" x="152.0" y="349.0" width="567.0" height="21.0" fill="#E2F0E8" opacity="0.16"/>
+<rect class="band" x="152.0" y="370.0" width="567.0" height="21.0" fill="#E6E8F5" opacity="0.3"/>
+<rect class="band" x="152.0" y="391.0" width="567.0" height="21.0" fill="#E4ECF9" opacity="0.16"/>
+<rect class="band" x="152.0" y="412.0" width="567.0" height="21.0" fill="#E4F0F1" opacity="0.3"/>
+<rect class="band" x="152.0" y="433.0" width="567.0" height="21.0" fill="#F2E9F7" opacity="0.16"/>
+<rect class="band" x="152.0" y="454.0" width="567.0" height="21.0" fill="#F2E9F7" opacity="0.3"/>
+<rect class="band" x="152.0" y="475.0" width="567.0" height="21.0" fill="#F2E9F7" opacity="0.16"/>
+<rect class="band" x="152.0" y="496.0" width="567.0" height="21.0" fill="#FBEDDF" opacity="0.3"/>
+<rect class="band" x="152.0" y="517.0" width="567.0" height="21.0" fill="#F2E9F7" opacity="0.16"/>
+<rect class="band" x="152.0" y="538.0" width="567.0" height="21.0" fill="#FBEDDF" opacity="0.3"/>
+<rect class="band" x="152.0" y="559.0" width="567.0" height="21.0" fill="#FBEDDF" opacity="0.16"/>
+<rect class="band" x="152.0" y="580.0" width="567.0" height="21.0" fill="#FBE6E4" opacity="0.3"/>
+<rect class="band" x="152.0" y="601.0" width="567.0" height="21.0" fill="#FBE6E4" opacity="0.16"/>
+<rect class="band" x="152.0" y="622.0" width="567.0" height="21.0" fill="#E6E8F5" opacity="0.3"/>
+<rect class="band" x="152.0" y="643.0" width="567.0" height="21.0" fill="#E6E8F5" opacity="0.16"/>
+<rect class="band" x="152.0" y="664.0" width="567.0" height="21.0" fill="#E6E8F5" opacity="0.3"/>
+<line class="grid" x1="152.0" y1="118.0" x2="152.0" y2="685.0"/>
+<line class="grid" x1="152.0" y1="118.0" x2="719.0" y2="118.0"/>
+<line class="grid" x1="173.0" y1="118.0" x2="173.0" y2="685.0"/>
+<line class="grid" x1="152.0" y1="139.0" x2="719.0" y2="139.0"/>
+<line class="grid" x1="194.0" y1="118.0" x2="194.0" y2="685.0"/>
+<line class="grid" x1="152.0" y1="160.0" x2="719.0" y2="160.0"/>
+<line class="grid" x1="215.0" y1="118.0" x2="215.0" y2="685.0"/>
+<line class="grid" x1="152.0" y1="181.0" x2="719.0" y2="181.0"/>
+<line class="grid" x1="236.0" y1="118.0" x2="236.0" y2="685.0"/>
+<line class="grid" x1="152.0" y1="202.0" x2="719.0" y2="202.0"/>
+<line class="grid" x1="257.0" y1="118.0" x2="257.0" y2="685.0"/>
+<line class="grid" x1="152.0" y1="223.0" x2="719.0" y2="223.0"/>
+<line class="grid" x1="278.0" y1="118.0" x2="278.0" y2="685.0"/>
+<line class="grid" x1="152.0" y1="244.0" x2="719.0" y2="244.0"/>
+<line class="grid" x1="299.0" y1="118.0" x2="299.0" y2="685.0"/>
+<line class="grid" x1="152.0" y1="265.0" x2="719.0" y2="265.0"/>
+<line class="grid" x1="320.0" y1="118.0" x2="320.0" y2="685.0"/>
+<line class="grid" x1="152.0" y1="286.0" x2="719.0" y2="286.0"/>
+<line class="grid" x1="341.0" y1="118.0" x2="341.0" y2="685.0"/>
+<line class="grid" x1="152.0" y1="307.0" x2="719.0" y2="307.0"/>
+<line class="grid" x1="362.0" y1="118.0" x2="362.0" y2="685.0"/>
+<line class="grid" x1="152.0" y1="328.0" x2="719.0" y2="328.0"/>
+<line class="grid" x1="383.0" y1="118.0" x2="383.0" y2="685.0"/>
+<line class="grid" x1="152.0" y1="349.0" x2="719.0" y2="349.0"/>
+<line class="grid" x1="404.0" y1="118.0" x2="404.0" y2="685.0"/>
+<line class="grid" x1="152.0" y1="370.0" x2="719.0" y2="370.0"/>
+<line class="grid" x1="425.0" y1="118.0" x2="425.0" y2="685.0"/>
+<line class="grid" x1="152.0" y1="391.0" x2="719.0" y2="391.0"/>
+<line class="grid" x1="446.0" y1="118.0" x2="446.0" y2="685.0"/>
+<line class="grid" x1="152.0" y1="412.0" x2="719.0" y2="412.0"/>
+<line class="grid" x1="467.0" y1="118.0" x2="467.0" y2="685.0"/>
+<line class="grid" x1="152.0" y1="433.0" x2="719.0" y2="433.0"/>
+<line class="grid" x1="488.0" y1="118.0" x2="488.0" y2="685.0"/>
+<line class="grid" x1="152.0" y1="454.0" x2="719.0" y2="454.0"/>
+<line class="grid" x1="509.0" y1="118.0" x2="509.0" y2="685.0"/>
+<line class="grid" x1="152.0" y1="475.0" x2="719.0" y2="475.0"/>
+<line class="grid" x1="530.0" y1="118.0" x2="530.0" y2="685.0"/>
+<line class="grid" x1="152.0" y1="496.0" x2="719.0" y2="496.0"/>
+<line class="grid" x1="551.0" y1="118.0" x2="551.0" y2="685.0"/>
+<line class="grid" x1="152.0" y1="517.0" x2="719.0" y2="517.0"/>
+<line class="grid" x1="572.0" y1="118.0" x2="572.0" y2="685.0"/>
+<line class="grid" x1="152.0" y1="538.0" x2="719.0" y2="538.0"/>
+<line class="grid" x1="593.0" y1="118.0" x2="593.0" y2="685.0"/>
+<line class="grid" x1="152.0" y1="559.0" x2="719.0" y2="559.0"/>
+<line class="grid" x1="614.0" y1="118.0" x2="614.0" y2="685.0"/>
+<line class="grid" x1="152.0" y1="580.0" x2="719.0" y2="580.0"/>
+<line class="grid" x1="635.0" y1="118.0" x2="635.0" y2="685.0"/>
+<line class="grid" x1="152.0" y1="601.0" x2="719.0" y2="601.0"/>
+<line class="grid" x1="656.0" y1="118.0" x2="656.0" y2="685.0"/>
+<line class="grid" x1="152.0" y1="622.0" x2="719.0" y2="622.0"/>
+<line class="grid" x1="677.0" y1="118.0" x2="677.0" y2="685.0"/>
+<line class="grid" x1="152.0" y1="643.0" x2="719.0" y2="643.0"/>
+<line class="grid" x1="698.0" y1="118.0" x2="698.0" y2="685.0"/>
+<line class="grid" x1="152.0" y1="664.0" x2="719.0" y2="664.0"/>
+<line class="grid" x1="719.0" y1="118.0" x2="719.0" y2="685.0"/>
+<line class="grid" x1="152.0" y1="685.0" x2="719.0" y2="685.0"/>
+<text class="mlab" x="144.0" y="132.5" text-anchor="end" fill="#2C5EA8">colorcore</text>
+<text class="mlab" transform="translate(166.5,111.0) rotate(-60)" text-anchor="start" fill="#2C5EA8">colorcore</text>
+<text class="mlab" x="144.0" y="153.5" text-anchor="end" fill="#2C5EA8">geom</text>
+<text class="mlab" transform="translate(187.5,111.0) rotate(-60)" text-anchor="start" fill="#2C5EA8">geom</text>
+<text class="mlab" x="144.0" y="174.5" text-anchor="end" fill="#2F7278">codecs/internal/vp8enc</text>
+<text class="mlab" transform="translate(208.5,111.0) rotate(-60)" text-anchor="start" fill="#2F7278">codecs/internal/vp8enc</text>
+<text class="mlab" x="144.0" y="195.5" text-anchor="end" fill="#2F7278">internal/memsize</text>
+<text class="mlab" transform="translate(229.5,111.0) rotate(-60)" text-anchor="start" fill="#2F7278">internal/memsize</text>
+<text class="mlab" x="144.0" y="216.5" text-anchor="end" fill="#2F7278">stream</text>
+<text class="mlab" transform="translate(250.5,111.0) rotate(-60)" text-anchor="start" fill="#2F7278">stream</text>
+<text class="mlab" x="144.0" y="237.5" text-anchor="end" fill="#2C5EA8">path</text>
+<text class="mlab" transform="translate(271.5,111.0) rotate(-60)" text-anchor="start" fill="#2C5EA8">path</text>
+<text class="mlab" x="144.0" y="258.5" text-anchor="end" fill="#2C5EA8">raster</text>
+<text class="mlab" transform="translate(292.5,111.0) rotate(-60)" text-anchor="start" fill="#2C5EA8">raster</text>
+<text class="mlab" x="144.0" y="279.5" text-anchor="end" fill="#2C7D57">contour</text>
+<text class="mlab" transform="translate(313.5,111.0) rotate(-60)" text-anchor="start" fill="#2C7D57">contour</text>
+<text class="mlab" x="144.0" y="300.5" text-anchor="end" fill="#2C7D57">pathops</text>
+<text class="mlab" transform="translate(334.5,111.0) rotate(-60)" text-anchor="start" fill="#2C7D57">pathops</text>
+<text class="mlab" x="144.0" y="321.5" text-anchor="end" fill="#2C7D57">stroke</text>
+<text class="mlab" transform="translate(355.5,111.0) rotate(-60)" text-anchor="start" fill="#2C7D57">stroke</text>
+<text class="mlab" x="144.0" y="342.5" text-anchor="end" fill="#2C5EA8">imagecore</text>
+<text class="mlab" transform="translate(376.5,111.0) rotate(-60)" text-anchor="start" fill="#2C5EA8">imagecore</text>
+<text class="mlab" x="144.0" y="363.5" text-anchor="end" fill="#2C7D57">patheffect</text>
+<text class="mlab" transform="translate(397.5,111.0) rotate(-60)" text-anchor="start" fill="#2C7D57">patheffect</text>
+<text class="mlab" x="144.0" y="384.5" text-anchor="end" fill="#454A96">gpu</text>
+<text class="mlab" transform="translate(418.5,111.0) rotate(-60)" text-anchor="start" fill="#454A96">gpu</text>
+<text class="mlab" x="144.0" y="405.5" text-anchor="end" fill="#2C5EA8">shaders</text>
+<text class="mlab" transform="translate(439.5,111.0) rotate(-60)" text-anchor="start" fill="#2C5EA8">shaders</text>
+<text class="mlab" x="144.0" y="426.5" text-anchor="end" fill="#2F7278">codecs</text>
+<text class="mlab" transform="translate(460.5,111.0) rotate(-60)" text-anchor="start" fill="#2F7278">codecs</text>
+<text class="mlab" x="144.0" y="447.5" text-anchor="end" fill="#7A4A9C">colorfilter</text>
+<text class="mlab" transform="translate(481.5,111.0) rotate(-60)" text-anchor="start" fill="#7A4A9C">colorfilter</text>
+<text class="mlab" x="144.0" y="468.5" text-anchor="end" fill="#7A4A9C">maskfilter</text>
+<text class="mlab" transform="translate(502.5,111.0) rotate(-60)" text-anchor="start" fill="#7A4A9C">maskfilter</text>
+<text class="mlab" x="144.0" y="489.5" text-anchor="end" fill="#7A4A9C">filtercore</text>
+<text class="mlab" transform="translate(523.5,111.0) rotate(-60)" text-anchor="start" fill="#7A4A9C">filtercore</text>
+<text class="mlab" x="144.0" y="510.5" text-anchor="end" fill="#AF6414">font</text>
+<text class="mlab" transform="translate(544.5,111.0) rotate(-60)" text-anchor="start" fill="#AF6414">font</text>
+<text class="mlab" x="144.0" y="531.5" text-anchor="end" fill="#7A4A9C">imagefilter</text>
+<text class="mlab" transform="translate(565.5,111.0) rotate(-60)" text-anchor="start" fill="#7A4A9C">imagefilter</text>
+<text class="mlab" x="144.0" y="552.5" text-anchor="end" fill="#AF6414">fontmgr</text>
+<text class="mlab" transform="translate(586.5,111.0) rotate(-60)" text-anchor="start" fill="#AF6414">fontmgr</text>
+<text class="mlab" x="144.0" y="573.5" text-anchor="end" fill="#AF6414">textblob</text>
+<text class="mlab" transform="translate(607.5,111.0) rotate(-60)" text-anchor="start" fill="#AF6414">textblob</text>
+<text class="mlab" x="144.0" y="594.5" text-anchor="end" fill="#B93A2B">canvas</text>
+<text class="mlab" transform="translate(628.5,111.0) rotate(-60)" text-anchor="start" fill="#B93A2B">canvas</text>
+<text class="mlab" x="144.0" y="615.5" text-anchor="end" fill="#B93A2B">surface</text>
+<text class="mlab" transform="translate(649.5,111.0) rotate(-60)" text-anchor="start" fill="#B93A2B">surface</text>
+<text class="mlab" x="144.0" y="636.5" text-anchor="end" fill="#454A96">gpu/text</text>
+<text class="mlab" transform="translate(670.5,111.0) rotate(-60)" text-anchor="start" fill="#454A96">gpu/text</text>
+<text class="mlab" x="144.0" y="657.5" text-anchor="end" fill="#454A96">gpu/gl</text>
+<text class="mlab" transform="translate(691.5,111.0) rotate(-60)" text-anchor="start" fill="#454A96">gpu/gl</text>
+<text class="mlab" x="144.0" y="678.5" text-anchor="end" fill="#454A96">pdf</text>
+<text class="mlab" transform="translate(712.5,111.0) rotate(-60)" text-anchor="start" fill="#454A96">pdf</text>
+<line class="diag" x1="158.0" y1="133.0" x2="167.0" y2="124.0"/>
+<line class="diag" x1="179.0" y1="154.0" x2="188.0" y2="145.0"/>
+<line class="diag" x1="200.0" y1="175.0" x2="209.0" y2="166.0"/>
+<line class="diag" x1="221.0" y1="196.0" x2="230.0" y2="187.0"/>
+<line class="diag" x1="242.0" y1="217.0" x2="251.0" y2="208.0"/>
+<rect x="176.5" y="226.5" width="14.0" height="14.0" rx="3" fill="#2C5EA8"/>
+<line class="diag" x1="263.0" y1="238.0" x2="272.0" y2="229.0"/>
+<rect x="155.5" y="247.5" width="14.0" height="14.0" rx="3" fill="#2C5EA8"/>
+<rect x="177.5" y="248.5" width="12.0" height="12.0" rx="2.5" fill="#2C5EA8" fill-opacity="0.26" stroke="#2C5EA8" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="260.5" y="247.5" width="14.0" height="14.0" rx="3" fill="#2C5EA8"/>
+<line class="diag" x1="284.0" y1="259.0" x2="293.0" y2="250.0"/>
+<rect x="177.5" y="269.5" width="12.0" height="12.0" rx="2.5" fill="#2C5EA8" fill-opacity="0.26" stroke="#2C5EA8" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="260.5" y="268.5" width="14.0" height="14.0" rx="3" fill="#2C5EA8"/>
+<line class="diag" x1="305.0" y1="280.0" x2="314.0" y2="271.0"/>
+<rect x="177.5" y="290.5" width="12.0" height="12.0" rx="2.5" fill="#2C5EA8" fill-opacity="0.26" stroke="#2C5EA8" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="260.5" y="289.5" width="14.0" height="14.0" rx="3" fill="#2C5EA8"/>
+<line class="diag" x1="326.0" y1="301.0" x2="335.0" y2="292.0"/>
+<rect x="177.5" y="311.5" width="12.0" height="12.0" rx="2.5" fill="#2C5EA8" fill-opacity="0.26" stroke="#2C5EA8" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="260.5" y="310.5" width="14.0" height="14.0" rx="3" fill="#2C5EA8"/>
+<line class="diag" x1="347.0" y1="322.0" x2="356.0" y2="313.0"/>
+<rect x="281.5" y="331.5" width="14.0" height="14.0" rx="3" fill="#2C5EA8"/>
+<line class="diag" x1="368.0" y1="343.0" x2="377.0" y2="334.0"/>
+<rect x="177.5" y="353.5" width="12.0" height="12.0" rx="2.5" fill="#2C5EA8" fill-opacity="0.26" stroke="#2C5EA8" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="261.5" y="353.5" width="12.0" height="12.0" rx="2.5" fill="#2C5EA8" fill-opacity="0.26" stroke="#2C5EA8" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="281.5" y="352.5" width="14.0" height="14.0" rx="3" fill="#2C5EA8"/>
+<rect x="302.5" y="352.5" width="14.0" height="14.0" rx="3" fill="#2C7D57"/>
+<rect x="344.5" y="352.5" width="14.0" height="14.0" rx="3" fill="#2C7D57"/>
+<line class="diag" x1="389.0" y1="364.0" x2="398.0" y2="355.0"/>
+<rect x="177.5" y="374.5" width="12.0" height="12.0" rx="2.5" fill="#2C5EA8" fill-opacity="0.26" stroke="#2C5EA8" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="281.5" y="373.5" width="14.0" height="14.0" rx="3" fill="#2C5EA8"/>
+<line class="diag" x1="410.0" y1="385.0" x2="419.0" y2="376.0"/>
+<rect x="156.5" y="395.5" width="12.0" height="12.0" rx="2.5" fill="#2C5EA8" fill-opacity="0.26" stroke="#2C5EA8" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="177.5" y="395.5" width="12.0" height="12.0" rx="2.5" fill="#2C5EA8" fill-opacity="0.26" stroke="#2C5EA8" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="282.5" y="395.5" width="12.0" height="12.0" rx="2.5" fill="#2C5EA8" fill-opacity="0.26" stroke="#2C5EA8" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="365.5" y="394.5" width="14.0" height="14.0" rx="3" fill="#2C5EA8"/>
+<line class="diag" x1="431.0" y1="406.0" x2="440.0" y2="397.0"/>
+<rect x="197.5" y="415.5" width="14.0" height="14.0" rx="3" fill="#2F7278"/>
+<rect x="365.5" y="415.5" width="14.0" height="14.0" rx="3" fill="#2C5EA8"/>
+<line class="diag" x1="452.0" y1="427.0" x2="461.0" y2="418.0"/>
+<rect x="156.5" y="437.5" width="12.0" height="12.0" rx="2.5" fill="#2C5EA8" fill-opacity="0.26" stroke="#2C5EA8" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="177.5" y="437.5" width="12.0" height="12.0" rx="2.5" fill="#2C5EA8" fill-opacity="0.26" stroke="#2C5EA8" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="282.5" y="437.5" width="12.0" height="12.0" rx="2.5" fill="#2C5EA8" fill-opacity="0.26" stroke="#2C5EA8" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="428.5" y="436.5" width="14.0" height="14.0" rx="3" fill="#2C5EA8"/>
+<line class="diag" x1="473.0" y1="448.0" x2="482.0" y2="439.0"/>
+<rect x="156.5" y="458.5" width="12.0" height="12.0" rx="2.5" fill="#2C5EA8" fill-opacity="0.26" stroke="#2C5EA8" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="177.5" y="458.5" width="12.0" height="12.0" rx="2.5" fill="#2C5EA8" fill-opacity="0.26" stroke="#2C5EA8" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="261.5" y="458.5" width="12.0" height="12.0" rx="2.5" fill="#2C5EA8" fill-opacity="0.26" stroke="#2C5EA8" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="282.5" y="458.5" width="12.0" height="12.0" rx="2.5" fill="#2C5EA8" fill-opacity="0.26" stroke="#2C5EA8" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="428.5" y="457.5" width="14.0" height="14.0" rx="3" fill="#2C5EA8"/>
+<line class="diag" x1="494.0" y1="469.0" x2="503.0" y2="460.0"/>
+<rect x="156.5" y="479.5" width="12.0" height="12.0" rx="2.5" fill="#2C5EA8" fill-opacity="0.26" stroke="#2C5EA8" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="177.5" y="479.5" width="12.0" height="12.0" rx="2.5" fill="#2C5EA8" fill-opacity="0.26" stroke="#2C5EA8" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="261.5" y="479.5" width="12.0" height="12.0" rx="2.5" fill="#2C5EA8" fill-opacity="0.26" stroke="#2C5EA8" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="282.5" y="479.5" width="12.0" height="12.0" rx="2.5" fill="#2C5EA8" fill-opacity="0.26" stroke="#2C5EA8" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="366.5" y="479.5" width="12.0" height="12.0" rx="2.5" fill="#2C5EA8" fill-opacity="0.26" stroke="#2C5EA8" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="429.5" y="479.5" width="12.0" height="12.0" rx="2.5" fill="#2C5EA8" fill-opacity="0.26" stroke="#2C5EA8" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="470.5" y="478.5" width="14.0" height="14.0" rx="3" fill="#7A4A9C"/>
+<line class="diag" x1="515.0" y1="490.0" x2="524.0" y2="481.0"/>
+<rect x="156.5" y="500.5" width="12.0" height="12.0" rx="2.5" fill="#2C5EA8" fill-opacity="0.26" stroke="#2C5EA8" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="177.5" y="500.5" width="12.0" height="12.0" rx="2.5" fill="#2C5EA8" fill-opacity="0.26" stroke="#2C5EA8" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="218.5" y="499.5" width="14.0" height="14.0" rx="3" fill="#2F7278"/>
+<rect x="261.5" y="500.5" width="12.0" height="12.0" rx="2.5" fill="#2C5EA8" fill-opacity="0.26" stroke="#2C5EA8" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="282.5" y="500.5" width="12.0" height="12.0" rx="2.5" fill="#2C5EA8" fill-opacity="0.26" stroke="#2C5EA8" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="344.5" y="499.5" width="14.0" height="14.0" rx="3" fill="#2C7D57"/>
+<rect x="366.5" y="500.5" width="12.0" height="12.0" rx="2.5" fill="#2C5EA8" fill-opacity="0.26" stroke="#2C5EA8" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="429.5" y="500.5" width="12.0" height="12.0" rx="2.5" fill="#2C5EA8" fill-opacity="0.26" stroke="#2C5EA8" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="491.5" y="499.5" width="14.0" height="14.0" rx="3" fill="#7A4A9C"/>
+<line class="diag" x1="536.0" y1="511.0" x2="545.0" y2="502.0"/>
+<rect x="156.5" y="521.5" width="12.0" height="12.0" rx="2.5" fill="#2C5EA8" fill-opacity="0.26" stroke="#2C5EA8" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="177.5" y="521.5" width="12.0" height="12.0" rx="2.5" fill="#2C5EA8" fill-opacity="0.26" stroke="#2C5EA8" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="282.5" y="521.5" width="12.0" height="12.0" rx="2.5" fill="#2C5EA8" fill-opacity="0.26" stroke="#2C5EA8" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="366.5" y="521.5" width="12.0" height="12.0" rx="2.5" fill="#2C5EA8" fill-opacity="0.26" stroke="#2C5EA8" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="429.5" y="521.5" width="12.0" height="12.0" rx="2.5" fill="#2C5EA8" fill-opacity="0.26" stroke="#2C5EA8" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="471.5" y="521.5" width="12.0" height="12.0" rx="2.5" fill="#7A4A9C" fill-opacity="0.26" stroke="#7A4A9C" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="512.5" y="520.5" width="14.0" height="14.0" rx="3" fill="#7A4A9C"/>
+<line class="diag" x1="557.0" y1="532.0" x2="566.0" y2="523.0"/>
+<rect x="533.5" y="541.5" width="14.0" height="14.0" rx="3" fill="#AF6414"/>
+<line class="diag" x1="578.0" y1="553.0" x2="587.0" y2="544.0"/>
+<rect x="177.5" y="563.5" width="12.0" height="12.0" rx="2.5" fill="#2C5EA8" fill-opacity="0.26" stroke="#2C5EA8" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="345.5" y="563.5" width="12.0" height="12.0" rx="2.5" fill="#2C7D57" fill-opacity="0.26" stroke="#2C7D57" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="533.5" y="562.5" width="14.0" height="14.0" rx="3" fill="#AF6414"/>
+<line class="diag" x1="599.0" y1="574.0" x2="608.0" y2="565.0"/>
+<rect x="156.5" y="584.5" width="12.0" height="12.0" rx="2.5" fill="#2C5EA8" fill-opacity="0.26" stroke="#2C5EA8" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="177.5" y="584.5" width="12.0" height="12.0" rx="2.5" fill="#2C5EA8" fill-opacity="0.26" stroke="#2C5EA8" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="261.5" y="584.5" width="12.0" height="12.0" rx="2.5" fill="#2C5EA8" fill-opacity="0.26" stroke="#2C5EA8" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="282.5" y="584.5" width="12.0" height="12.0" rx="2.5" fill="#2C5EA8" fill-opacity="0.26" stroke="#2C5EA8" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="345.5" y="584.5" width="12.0" height="12.0" rx="2.5" fill="#2C7D57" fill-opacity="0.26" stroke="#2C7D57" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="366.5" y="584.5" width="12.0" height="12.0" rx="2.5" fill="#2C5EA8" fill-opacity="0.26" stroke="#2C5EA8" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="429.5" y="584.5" width="12.0" height="12.0" rx="2.5" fill="#2C5EA8" fill-opacity="0.26" stroke="#2C5EA8" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="471.5" y="584.5" width="12.0" height="12.0" rx="2.5" fill="#7A4A9C" fill-opacity="0.26" stroke="#7A4A9C" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="492.5" y="584.5" width="12.0" height="12.0" rx="2.5" fill="#7A4A9C" fill-opacity="0.26" stroke="#7A4A9C" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="512.5" y="583.5" width="14.0" height="14.0" rx="3" fill="#7A4A9C"/>
+<rect x="534.5" y="584.5" width="12.0" height="12.0" rx="2.5" fill="#AF6414" fill-opacity="0.26" stroke="#AF6414" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="596.5" y="583.5" width="14.0" height="14.0" rx="3" fill="#AF6414"/>
+<line class="diag" x1="620.0" y1="595.0" x2="629.0" y2="586.0"/>
+<rect x="282.5" y="605.5" width="12.0" height="12.0" rx="2.5" fill="#2C5EA8" fill-opacity="0.26" stroke="#2C5EA8" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="366.5" y="605.5" width="12.0" height="12.0" rx="2.5" fill="#2C5EA8" fill-opacity="0.26" stroke="#2C5EA8" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="534.5" y="605.5" width="12.0" height="12.0" rx="2.5" fill="#AF6414" fill-opacity="0.26" stroke="#AF6414" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="617.5" y="604.5" width="14.0" height="14.0" rx="3" fill="#B93A2B"/>
+<line class="diag" x1="641.0" y1="616.0" x2="650.0" y2="607.0"/>
+<rect x="156.5" y="626.5" width="12.0" height="12.0" rx="2.5" fill="#2C5EA8" fill-opacity="0.26" stroke="#2C5EA8" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="177.5" y="626.5" width="12.0" height="12.0" rx="2.5" fill="#2C5EA8" fill-opacity="0.26" stroke="#2C5EA8" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="219.5" y="626.5" width="12.0" height="12.0" rx="2.5" fill="#2F7278" fill-opacity="0.26" stroke="#2F7278" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="261.5" y="626.5" width="12.0" height="12.0" rx="2.5" fill="#2C5EA8" fill-opacity="0.26" stroke="#2C5EA8" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="345.5" y="626.5" width="12.0" height="12.0" rx="2.5" fill="#2C7D57" fill-opacity="0.26" stroke="#2C7D57" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="386.5" y="625.5" width="14.0" height="14.0" rx="3" fill="#2C7D57"/>
+<rect x="407.5" y="625.5" width="14.0" height="14.0" rx="3" fill="#454A96"/>
+<rect x="492.5" y="626.5" width="12.0" height="12.0" rx="2.5" fill="#7A4A9C" fill-opacity="0.26" stroke="#7A4A9C" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="534.5" y="626.5" width="12.0" height="12.0" rx="2.5" fill="#AF6414" fill-opacity="0.26" stroke="#AF6414" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="597.5" y="626.5" width="12.0" height="12.0" rx="2.5" fill="#AF6414" fill-opacity="0.26" stroke="#AF6414" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="617.5" y="625.5" width="14.0" height="14.0" rx="3" fill="#B93A2B"/>
+<line class="diag" x1="662.0" y1="637.0" x2="671.0" y2="628.0"/>
+<rect x="156.5" y="647.5" width="12.0" height="12.0" rx="2.5" fill="#2C5EA8" fill-opacity="0.26" stroke="#2C5EA8" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="177.5" y="647.5" width="12.0" height="12.0" rx="2.5" fill="#2C5EA8" fill-opacity="0.26" stroke="#2C5EA8" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="261.5" y="647.5" width="12.0" height="12.0" rx="2.5" fill="#2C5EA8" fill-opacity="0.26" stroke="#2C5EA8" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="282.5" y="647.5" width="12.0" height="12.0" rx="2.5" fill="#2C5EA8" fill-opacity="0.26" stroke="#2C5EA8" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="345.5" y="647.5" width="12.0" height="12.0" rx="2.5" fill="#2C7D57" fill-opacity="0.26" stroke="#2C7D57" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="366.5" y="647.5" width="12.0" height="12.0" rx="2.5" fill="#2C5EA8" fill-opacity="0.26" stroke="#2C5EA8" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="408.5" y="647.5" width="12.0" height="12.0" rx="2.5" fill="#454A96" fill-opacity="0.26" stroke="#454A96" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="429.5" y="647.5" width="12.0" height="12.0" rx="2.5" fill="#2C5EA8" fill-opacity="0.26" stroke="#2C5EA8" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="471.5" y="647.5" width="12.0" height="12.0" rx="2.5" fill="#7A4A9C" fill-opacity="0.26" stroke="#7A4A9C" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="492.5" y="647.5" width="12.0" height="12.0" rx="2.5" fill="#7A4A9C" fill-opacity="0.26" stroke="#7A4A9C" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="513.5" y="647.5" width="12.0" height="12.0" rx="2.5" fill="#7A4A9C" fill-opacity="0.26" stroke="#7A4A9C" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="534.5" y="647.5" width="12.0" height="12.0" rx="2.5" fill="#AF6414" fill-opacity="0.26" stroke="#AF6414" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="597.5" y="647.5" width="12.0" height="12.0" rx="2.5" fill="#AF6414" fill-opacity="0.26" stroke="#AF6414" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="618.5" y="647.5" width="12.0" height="12.0" rx="2.5" fill="#B93A2B" fill-opacity="0.26" stroke="#B93A2B" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="638.5" y="646.5" width="14.0" height="14.0" rx="3" fill="#B93A2B"/>
+<rect x="659.5" y="646.5" width="14.0" height="14.0" rx="3" fill="#454A96"/>
+<line class="diag" x1="683.0" y1="658.0" x2="692.0" y2="649.0"/>
+<rect x="156.5" y="668.5" width="12.0" height="12.0" rx="2.5" fill="#2C5EA8" fill-opacity="0.26" stroke="#2C5EA8" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="177.5" y="668.5" width="12.0" height="12.0" rx="2.5" fill="#2C5EA8" fill-opacity="0.26" stroke="#2C5EA8" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="239.5" y="667.5" width="14.0" height="14.0" rx="3" fill="#2F7278"/>
+<rect x="261.5" y="668.5" width="12.0" height="12.0" rx="2.5" fill="#2C5EA8" fill-opacity="0.26" stroke="#2C5EA8" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="282.5" y="668.5" width="12.0" height="12.0" rx="2.5" fill="#2C5EA8" fill-opacity="0.26" stroke="#2C5EA8" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="323.5" y="667.5" width="14.0" height="14.0" rx="3" fill="#2C7D57"/>
+<rect x="345.5" y="668.5" width="12.0" height="12.0" rx="2.5" fill="#2C7D57" fill-opacity="0.26" stroke="#2C7D57" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="366.5" y="668.5" width="12.0" height="12.0" rx="2.5" fill="#2C5EA8" fill-opacity="0.26" stroke="#2C5EA8" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="429.5" y="668.5" width="12.0" height="12.0" rx="2.5" fill="#2C5EA8" fill-opacity="0.26" stroke="#2C5EA8" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="492.5" y="668.5" width="12.0" height="12.0" rx="2.5" fill="#7A4A9C" fill-opacity="0.26" stroke="#7A4A9C" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="513.5" y="668.5" width="12.0" height="12.0" rx="2.5" fill="#7A4A9C" fill-opacity="0.26" stroke="#7A4A9C" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="534.5" y="668.5" width="12.0" height="12.0" rx="2.5" fill="#AF6414" fill-opacity="0.26" stroke="#AF6414" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="597.5" y="668.5" width="12.0" height="12.0" rx="2.5" fill="#AF6414" fill-opacity="0.26" stroke="#AF6414" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="618.5" y="668.5" width="12.0" height="12.0" rx="2.5" fill="#B93A2B" fill-opacity="0.26" stroke="#B93A2B" stroke-opacity="0.55" stroke-width="1"/>
+<rect x="638.5" y="667.5" width="14.0" height="14.0" rx="3" fill="#B93A2B"/>
+<line class="diag" x1="704.0" y1="679.0" x2="713.0" y2="670.0"/>
+<text class="mhead" transform="translate(742.0,111.0) rotate(-60)" text-anchor="start">imports</text>
+<text class="mhead" x="144.0" y="711.0" text-anchor="end">imported by</text>
+<text class="mtot" x="742.0" y="132.5" text-anchor="middle">0</text>
+<text class="mtot" x="162.5" y="701.0" text-anchor="middle">11</text>
+<text class="mtot" x="742.0" y="153.5" text-anchor="middle">0</text>
+<text class="mtot" x="183.5" y="701.0" text-anchor="middle">18</text>
+<text class="mtot" x="742.0" y="174.5" text-anchor="middle">0</text>
+<text class="mtot" x="204.5" y="701.0" text-anchor="middle">1</text>
+<text class="mtot" x="742.0" y="195.5" text-anchor="middle">0</text>
+<text class="mtot" x="225.5" y="701.0" text-anchor="middle">2</text>
+<text class="mtot" x="742.0" y="216.5" text-anchor="middle">0</text>
+<text class="mtot" x="246.5" y="701.0" text-anchor="middle">1</text>
+<text class="mtot" x="742.0" y="237.5" text-anchor="middle">1</text>
+<text class="mtot" x="267.5" y="701.0" text-anchor="middle">12</text>
+<text class="mtot" x="742.0" y="258.5" text-anchor="middle">3</text>
+<text class="mtot" x="288.5" y="701.0" text-anchor="middle">13</text>
+<text class="mtot" x="742.0" y="279.5" text-anchor="middle">2</text>
+<text class="mtot" x="309.5" y="701.0" text-anchor="middle">1</text>
+<text class="mtot" x="742.0" y="300.5" text-anchor="middle">2</text>
+<text class="mtot" x="330.5" y="701.0" text-anchor="middle">1</text>
+<text class="mtot" x="742.0" y="321.5" text-anchor="middle">2</text>
+<text class="mtot" x="351.5" y="701.0" text-anchor="middle">7</text>
+<text class="mtot" x="742.0" y="342.5" text-anchor="middle">1</text>
+<text class="mtot" x="372.5" y="701.0" text-anchor="middle">9</text>
+<text class="mtot" x="742.0" y="363.5" text-anchor="middle">5</text>
+<text class="mtot" x="393.5" y="701.0" text-anchor="middle">1</text>
+<text class="mtot" x="742.0" y="384.5" text-anchor="middle">2</text>
+<text class="mtot" x="414.5" y="701.0" text-anchor="middle">2</text>
+<text class="mtot" x="742.0" y="405.5" text-anchor="middle">4</text>
+<text class="mtot" x="435.5" y="701.0" text-anchor="middle">8</text>
+<text class="mtot" x="742.0" y="426.5" text-anchor="middle">2</text>
+<text class="mtot" x="456.5" y="701.0" text-anchor="middle">0</text>
+<text class="mtot" x="742.0" y="447.5" text-anchor="middle">4</text>
+<text class="mtot" x="477.5" y="701.0" text-anchor="middle">4</text>
+<text class="mtot" x="742.0" y="468.5" text-anchor="middle">5</text>
+<text class="mtot" x="498.5" y="701.0" text-anchor="middle">5</text>
+<text class="mtot" x="742.0" y="489.5" text-anchor="middle">7</text>
+<text class="mtot" x="519.5" y="701.0" text-anchor="middle">4</text>
+<text class="mtot" x="742.0" y="510.5" text-anchor="middle">9</text>
+<text class="mtot" x="540.5" y="701.0" text-anchor="middle">7</text>
+<text class="mtot" x="742.0" y="531.5" text-anchor="middle">7</text>
+<text class="mtot" x="561.5" y="701.0" text-anchor="middle">0</text>
+<text class="mtot" x="742.0" y="552.5" text-anchor="middle">1</text>
+<text class="mtot" x="582.5" y="701.0" text-anchor="middle">0</text>
+<text class="mtot" x="742.0" y="573.5" text-anchor="middle">3</text>
+<text class="mtot" x="603.5" y="701.0" text-anchor="middle">4</text>
+<text class="mtot" x="742.0" y="594.5" text-anchor="middle">12</text>
+<text class="mtot" x="624.5" y="701.0" text-anchor="middle">4</text>
+<text class="mtot" x="742.0" y="615.5" text-anchor="middle">4</text>
+<text class="mtot" x="645.5" y="701.0" text-anchor="middle">2</text>
+<text class="mtot" x="742.0" y="636.5" text-anchor="middle">11</text>
+<text class="mtot" x="666.5" y="701.0" text-anchor="middle">1</text>
+<text class="mtot" x="742.0" y="657.5" text-anchor="middle">16</text>
+<text class="mtot" x="687.5" y="701.0" text-anchor="middle">0</text>
+<text class="mtot" x="742.0" y="678.5" text-anchor="middle">15</text>
+<text class="mtot" x="708.5" y="701.0" text-anchor="middle">0</text>
+</g>
+</svg>

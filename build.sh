@@ -95,4 +95,5 @@ if [ "$LINT"x == "1x" ]; then
 	echo -e "\033[33mLinting...\033[0m"
 	"$TOOLS_DIR/golangci-lint" run ./...
 	(cd internal/oracle; "$TOOLS_DIR/golangci-lint" run -c ../../.golangci.yml ./...)
+	(cd internal/tools; "$TOOLS_DIR/golangci-lint" run -c ../../.golangci.yml ./...)
 fi

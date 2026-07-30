@@ -47,9 +47,22 @@ func TestFontFlagAndHintingRoundTrip(t *testing.T) {
 	if !f.Subpixel() {
 		t.Error("SetSubpixel(true) did not stick")
 	}
-	f.SetHinting(HintingNormal)
-	if f.Hinting() != HintingNormal {
-		t.Errorf("Hinting = %v, want %v", f.Hinting(), HintingNormal)
+	// Round-tripping the constructor default (HintingNormal) proves nothing about SetHinting, so pin the default first
+	// and then walk every level away from it and back. A SetHinting that dropped its argument would hold at the default.
+	if got := f.Hinting(); got != HintingNormal {
+		t.Errorf("Hinting defaults to %v, want %v", got, HintingNormal)
+	}
+	identity := geom.IdentityMatrix()
+	for _, h := range []Hinting{HintingNone, HintingSlight, HintingFull, HintingNormal} {
+		f.SetHinting(h)
+		if got := f.Hinting(); got != h {
+			t.Errorf("SetHinting(%v) recorded %v", h, got)
+		}
+		// The recorded level reaches the strike key, which is the only place it is consumed: a level that never left
+		// the Font would collapse every hinting request onto one strike.
+		if rec, _ := MakeRecAndEffects(f, nil, &identity, nil); rec.Hinting != h {
+			t.Errorf("SetHinting(%v) put %v in the scaler rec", h, rec.Hinting)
+		}
 	}
 }
 

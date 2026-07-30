@@ -234,17 +234,17 @@ func TestCOLRv1SweepGradient(t *testing.T) {
 	gradientGroup(t, tf, []rune{0xf0200, 0xf0b04, 0xf0b05}, 0)
 }
 
+// colrV1GradientPaintBuilder is one gradient paint format reduced to a call taking just the color line.
+type colrV1GradientPaintBuilder struct {
+	build func(stops []float32, colors []colorcore.Color4f) (colrV1Paint, bool)
+	name  string
+}
+
 // colrV1GradientPaintBuilders is the set of gradient paint formats, each reduced to a call taking just the color line,
 // with geometry chosen to reach the shader (non-degenerate for linear, a real circle pair for radial, a 180° sector for
 // sweep).
-func colrV1GradientPaintBuilders(w *colrV1Walker) []struct {
-	name  string
-	build func(stops []float32, colors []colorcore.Color4f) (colrV1Paint, bool)
-} {
-	return []struct {
-		name  string
-		build func(stops []float32, colors []colorcore.Color4f) (colrV1Paint, bool)
-	}{
+func colrV1GradientPaintBuilders(w *colrV1Walker) []colrV1GradientPaintBuilder {
+	return []colrV1GradientPaintBuilder{
 		{name: "linear", build: func(stops []float32, colors []colorcore.Color4f) (colrV1Paint, bool) {
 			return w.linearPaint(0, 0, 100, 0, 0, 100, tables.ExtendPad, stops, colors)
 		}},

@@ -193,6 +193,18 @@ func TestFaceColorPaintOutOfRangeCOLRv0(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// What "left on the outline lane" means, spelled out: the same font with no COLR table at all renders the smiley
+	// from its base glyf outline, and that is exactly what each patched font below has to produce. Checking only "not
+	// an ARGB32 mask" is satisfied by dropping the glyph or emitting a blank mask.
+	noCOLR, err := NewTypefaceFromData(sfntWithoutTables(t, data, "COLR"), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	outline, outlineAction := smileyGlyph(t, noCOLR, 50, nil)
+	if outlineAction != GlyphActionAccept || outline.Format != MaskA8 || maskInk(outline) == 0 {
+		t.Fatalf("the COLR-less font renders the smiley as (action %d, format %d, ink %d); the cases below have no "+
+			"outline-lane answer to compare against", outlineAction, outline.Format, maskInk(outline))
+	}
 	for _, c := range []struct {
 		name  string
 		first uint16
@@ -221,8 +233,15 @@ func TestFaceColorPaintOutOfRangeCOLRv0(t *testing.T) {
 				t.Errorf("faceColorV0Layers = (%v, %v), want (nil, false)", layers, ok)
 			}
 			// The whole draw path, which is where the panic would land on untrusted data.
-			if g, action := smileyGlyph(t, tf, 50, nil); action == GlyphActionAccept && g.Format == MaskARGB32 {
-				t.Error("an out-of-range COLRv0 record still produced a color mask")
+			g, action := smileyGlyph(t, tf, 50, nil)
+			if action != outlineAction || g.Format != outline.Format || g.IRect() != outline.IRect() {
+				t.Fatalf("out-of-range COLRv0 rendered (action %d, format %d, %v), want the outline lane's "+
+					"(action %d, format %d, %v)", action, g.Format, g.IRect(), outlineAction, outline.Format,
+					outline.IRect())
+			}
+			if !bytes.Equal(g.Image, outline.Image) {
+				t.Errorf("out-of-range COLRv0 mask carries %d ink, want the outline lane's %d", maskInk(g),
+					maskInk(outline))
 			}
 		})
 	}

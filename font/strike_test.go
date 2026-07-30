@@ -11,6 +11,7 @@ package font
 
 import (
 	"bytes"
+	"fmt"
 	"math"
 	"testing"
 
@@ -1255,25 +1256,111 @@ func TestStrikeSharedPathIsPrimedBeforePublication(t *testing.T) {
 	}
 }
 
+// TestStrikeConcurrentAccess hammers one cache from eight goroutines. Beyond staying race-free it has to keep
+// answering — a DigestFor that dropped a glyph under contention would otherwise look like a pass — and it has to leave
+// the byte accounting consistent: Strike.updateMemoryUsage folds a strike's growth into the cache total while
+// StrikeCache.removeStrike takes an evicted strike's bytes back out, and a race between them would strand or
+// double-subtract bytes, leaving the total drifted (or negative) with nothing but a later panic to report it.
 func TestStrikeConcurrentAccess(t *testing.T) {
 	tf := loadTypeface(t, "Roboto-Regular.ttf", 0)
-	cache := NewStrikeCache()
 	identity := geom.IdentityMatrix()
+	const workers, iterations, sizes, glyphs = 8, 40, 6, 60
+	actions := []ActionType{ActionDirectMaskCPU, ActionPath}
+	sizeOf := func(worker, i int) float32 { return float32(10 + (worker+i)%sizes) }
+	gidOf := func(worker, i int) uint16 { return uint16(1 + (worker*iterations+i)%glyphs) }
+
+	// The serial answer for every triple the workers below will ask about, taken from a cache of its own. Roboto's
+	// low glyph IDs are blank, so the dispositions are a mix of accept and drop; what contention must not change is
+	// which one each triple gets.
+	type ask struct {
+		size   float32
+		gid    uint16
+		action ActionType
+	}
+	want := make(map[ask]GlyphAction, sizes*glyphs*len(actions))
+	accepted := 0
+	serial := NewStrikeCache()
+	for size := float32(10); size < 10+sizes; size++ {
+		spec := MakeMaskSpec(NewFont(tf, size, 1, 0), nil, &identity, nil)
+		s := serial.FindOrCreateStrike(&spec)
+		for gid := uint16(1); gid <= glyphs; gid++ {
+			for _, action := range actions {
+				g, got := s.DigestFor(action, PackGlyphID(gid))
+				if g == nil || got == GlyphActionUnset {
+					t.Fatalf("serial baseline: size %v glyph %d action %d = (%v, %d)", size, gid, action, g, got)
+				}
+				if got == GlyphActionAccept {
+					accepted++
+				}
+				want[ask{size: size, gid: gid, action: action}] = got
+			}
+		}
+	}
+	if accepted == 0 {
+		t.Fatal("no glyph in the baseline renders; the concurrent run below would prove nothing")
+	}
+
+	cache := NewStrikeCache()
+	problems := make(chan string, workers*iterations*len(actions))
 	done := make(chan bool)
-	for w := 0; w < 8; w++ {
+	for w := range workers {
 		go func(worker int) {
 			defer func() { done <- true }()
-			for i := 0; i < 40; i++ {
-				f := NewFont(tf, float32(10+(worker+i)%6), 1, 0)
-				spec := MakeMaskSpec(f, nil, &identity, nil)
+			for i := range iterations {
+				size, gid := sizeOf(worker, i), gidOf(worker, i)
+				spec := MakeMaskSpec(NewFont(tf, size, 1, 0), nil, &identity, nil)
 				s := cache.FindOrCreateStrike(&spec)
-				gid := uint16(1 + (worker*40+i)%60)
-				s.DigestFor(ActionDirectMaskCPU, PackGlyphID(gid))
-				s.DigestFor(ActionPath, PackGlyphID(gid))
+				if s == nil {
+					problems <- fmt.Sprintf("worker %d iteration %d got no strike", worker, i)
+					continue
+				}
+				for _, action := range actions {
+					g, got := s.DigestFor(action, PackGlyphID(gid))
+					if g == nil {
+						problems <- fmt.Sprintf("worker %d iteration %d: size %v glyph %d action %d yielded no glyph",
+							worker, i, size, gid, action)
+						continue
+					}
+					if expect := want[ask{size: size, gid: gid, action: action}]; got != expect {
+						problems <- fmt.Sprintf("worker %d iteration %d: size %v glyph %d action %d = %d, want %d",
+							worker, i, size, gid, action, got, expect)
+					}
+				}
 			}
 		}(w)
 	}
-	for w := 0; w < 8; w++ {
+	for range workers {
 		<-done
+	}
+	close(problems)
+	for p := range problems {
+		t.Error(p)
+	}
+
+	// The workers really did populate the cache, so the accounting below is over something.
+	if used, count := cache.TotalMemoryUsed(), cache.StrikeCount(); used <= 0 || count <= 0 {
+		t.Fatalf("after %d concurrent lookups the cache holds %d strikes charging %d bytes, want both positive",
+			workers*iterations, count, used)
+	}
+	// The cache total is exactly what its live strikes say they hold: no bytes stranded by an eviction that raced a
+	// glyph, none subtracted twice, and the count matches the map the strikes are actually reachable through.
+	cache.mu.Lock()
+	defer cache.mu.Unlock()
+	sum := 0
+	for _, s := range cache.strikes {
+		if s.memoryUsed < 0 {
+			t.Errorf("strike charges %d bytes", s.memoryUsed)
+		}
+		sum += s.memoryUsed
+	}
+	if cache.totalMemoryUsed != sum {
+		t.Errorf("cache totals %d bytes, but its strikes hold %d", cache.totalMemoryUsed, sum)
+	}
+	if cache.count != len(cache.strikes) {
+		t.Errorf("cache counts %d strikes, but its map holds %d", cache.count, len(cache.strikes))
+	}
+	if cache.totalMemoryUsed > cache.sizeLimit || cache.count > cache.countLimit {
+		t.Errorf("cache is over budget: %d/%d bytes, %d/%d strikes", cache.totalMemoryUsed, cache.sizeLimit,
+			cache.count, cache.countLimit)
 	}
 }

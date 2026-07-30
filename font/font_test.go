@@ -254,23 +254,41 @@ func TestCanonicalization(t *testing.T) {
 	var bounds geom.Rect
 	f.MeasureText([]byte("Hxign"), TextEncodingUTF8, &bounds, nil)
 	// Vertical bounds quantize to the canonical strike: multiples of 300/64 = 4.6875 (the horizontal edges carry
-	// fractional advance offsets, so only top/bottom sit exactly on the grid).
-	for _, v := range []float32{bounds.Top, bounds.Bottom} {
-		q := v / 4.6875
-		if !near(q, float32(math.Round(float64(q))), 1e-4) {
-			t.Errorf("bounds edge %v not on the canonical grid", v)
+	// fractional advance offsets, so only top/bottom sit exactly on the grid). Zero sits on every grid, so the step
+	// counts are pinned rather than merely rounded against: an all-zero rect satisfies integrality on its own.
+	if want := geom.RectLTRB(23.4375, -220.3125, 748.9746, 65.625); bounds != want {
+		t.Errorf("size 300 bounds = %v, want %v", bounds, want)
+	}
+	checkGrid := func(what string, b geom.Rect, step, topSteps, bottomSteps float32) {
+		t.Helper()
+		if b.IsEmpty() {
+			t.Fatalf("%s bounds are empty; there is no grid to be on", what)
+		}
+		for _, c := range []struct {
+			edge string
+			got  float32
+			want float32
+		}{
+			{edge: "top", got: b.Top / step, want: topSteps},
+			{edge: "bottom", got: b.Bottom / step, want: bottomSteps},
+		} {
+			if !near(c.got, c.want, 1e-4) {
+				t.Errorf("%s %s edge sits at %v canonical steps, want %v", what, c.edge, c.got, c.want)
+			}
+			if c.want != float32(math.Round(float64(c.want))) {
+				t.Errorf("%s %s expectation %v is not a whole step", what, c.edge, c.want)
+			}
 		}
 	}
+	checkGrid("size 300", bounds, 4.6875, -47, 14)
 	// A hairline stroke paint also forces the canonical path lane, dropping the paint.
 	fSmall := NewFont(tf, 100, 1, 0)
 	p := &stroke.PaintSpec{Style: stroke.PaintStyleStroke, Width: 0, MiterLimit: 4}
 	fSmall.MeasureText([]byte("Hxg!"), TextEncodingUTF8, &bounds, p)
-	for _, v := range []float32{bounds.Top, bounds.Bottom} {
-		q := v / (100.0 / 64)
-		if !near(q, float32(math.Round(float64(q))), 1e-4) {
-			t.Errorf("hairline bounds edge %v not on the canonical grid", v)
-		}
+	if want := geom.RectLTRB(7.8125, -71.875, 195.70312, 21.875); bounds != want {
+		t.Errorf("hairline bounds = %v, want %v", bounds, want)
 	}
+	checkGrid("hairline", bounds, 100.0/64, -46, 14)
 }
 
 func TestFontMetrics(t *testing.T) {
@@ -503,6 +521,19 @@ func TestBaselineSnapFlag(t *testing.T) {
 	if got := snapped.computeAxisAlignmentForHText(); got != AxisAlignmentX {
 		t.Errorf("snapped axis alignment = %d, want AxisAlignmentX", got)
 	}
+	// setupForAsPaths leaves the request alone in both directions (its ignore mask covers only embedded bitmaps and
+	// force-auto-hinting). Pinning it only from off would let flagBaselineSnap join flagsToIgnore and silently disable
+	// baseline snapping for every path-drawn run, so the on case has to be checked while the request is still on.
+	snapPathFont := *f
+	snapPathFont.setupForAsPaths(nil)
+	if !snapPathFont.BaselineSnap() {
+		t.Error("setupForAsPaths cleared baseline snapping")
+	}
+	pathRec, _ := MakeRecAndEffects(&snapPathFont, nil, &identity, nil)
+	if pathRec.Flags&recFlagBaselineSnap == 0 {
+		t.Error("the path-lane rec is missing the baseline-snap flag with the request on")
+	}
+
 	f.SetBaselineSnap(false)
 	if f.BaselineSnap() {
 		t.Error("SetBaselineSnap(false) did not take")
@@ -529,7 +560,6 @@ func TestBaselineSnapFlag(t *testing.T) {
 		t.Errorf("y sub-pixel field mask: snapped = %#x, unsnapped = %#x", snapRound.IgnorePositionFieldMask.Y,
 			offRound.IgnorePositionFieldMask.Y)
 	}
-	// setupForAsPaths leaves it alone (its ignore mask covers only embedded bitmaps and force-auto-hinting).
 	pathFont := *f
 	pathFont.setupForAsPaths(nil)
 	if pathFont.BaselineSnap() {

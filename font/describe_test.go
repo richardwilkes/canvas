@@ -13,29 +13,18 @@
 package font
 
 import (
+	"fmt"
 	"os"
+	"slices"
 	"testing"
 )
 
 func TestFaceCoversRuneMatchesTypeface(t *testing.T) {
-	faces := []struct {
-		file  string
-		index int
-	}{
-		{file: "Roboto-Regular.ttf"},
-		{file: "DejaVuSans.subset.ttf"},
-		{file: "test.ttc"},
-		{file: "test.ttc", index: 1},
-		{file: "colr.ttf"},
-		{file: "cbdt.ttf"},
-		{file: "sbix.ttf"},
-		{file: "test_glyphs-glyf_colr_1.ttf"},
-	}
 	// A mix of mapped and unmapped code points, the U+FFFF .notdef sentinel three of these faces carry, a surrogate,
 	// and both out-of-range ends.
 	runes := []rune{-1, 0, '\r', ' ', '!', '0', 'A', 'H', 'a', 'x', 0x4E2D, 0xD800, 0x1F600, 0xFFFF, 0x10FFFF, 0x110000}
 	var covered, uncovered int
-	for _, f := range faces {
+	for _, f := range faceCorpus {
 		path := "testdata/" + f.file
 		data, err := os.ReadFile(path)
 		if err != nil {
@@ -60,6 +49,109 @@ func TestFaceCoversRuneMatchesTypeface(t *testing.T) {
 	// Guard against a vacuous run: the corpus must exercise both answers.
 	if covered == 0 || uncovered == 0 {
 		t.Errorf("corpus produced %d covered / %d uncovered, want both nonzero", covered, uncovered)
+	}
+}
+
+// faceCorpus is the mixed set of test faces the cmap-probe cases run over: outline, subset, collection (both indices),
+// COLRv0/v1, and the two bitmap formats.
+var faceCorpus = []struct {
+	file  string
+	index int
+}{
+	{file: "Roboto-Regular.ttf"},
+	{file: "DejaVuSans.subset.ttf"},
+	{file: "test.ttc"},
+	{file: "test.ttc", index: 1},
+	{file: "colr.ttf"},
+	{file: "cbdt.ttf"},
+	{file: "sbix.ttf"},
+	{file: "test_glyphs-glyf_colr_1.ttf"},
+}
+
+// TestFaceRunesDataMatchesFaceCoversRune pins FaceRunesData's documented equivalence with FaceCoversRuneData — it is
+// "FaceCoversRuneData asked about every character at once" — in both directions and over the whole code space. Only the
+// per-rune probe is checked elsewhere, yet fontmgr.NewFromData builds each face's whole rune set from this one instead,
+// and that set is what the in-memory manager's character fallback filters candidates by: a returned rune the face does
+// not really map makes the index over-claim coverage (the filter is what keeps the U+FFFF .notdef sentinel three of
+// these faces carry out of it), and a missing one loses the face for that character before its cmap is ever consulted.
+func TestFaceRunesDataMatchesFaceCoversRune(t *testing.T) {
+	for _, f := range faceCorpus {
+		t.Run(fmt.Sprintf("%s[%d]", f.file, f.index), func(t *testing.T) {
+			data := readTestFont(t, f.file)
+			runes := FaceRunesData(data, f.index)
+			if len(runes) == 0 {
+				t.Fatal("a face with a usable cmap reported no coverage at all")
+			}
+			// Nothing returned may be absent from the per-rune probe, and nothing may be listed twice — fontscan's
+			// RuneSet would swallow a duplicate, but it means the walk revisited a code point.
+			set := make(map[rune]bool, len(runes))
+			for i, r := range runes {
+				if set[r] {
+					t.Errorf("rune %#x is listed twice (again at index %d)", r, i)
+				}
+				set[r] = true
+				if !FaceCoversRuneData(data, f.index, r) {
+					t.Errorf("FaceRunesData listed %#x, which FaceCoversRuneData rejects", r)
+				}
+			}
+			// And nothing the face really maps may be missing. The probe answers exactly what the parsed typeface
+			// answers (TestFaceCoversRuneMatchesTypeface), so the parsed face is the cheap ground truth for a sweep of
+			// the whole code space.
+			tf := loadTypeface(t, f.file, f.index)
+			for r := rune(0); r <= 0x10FFFF; r++ {
+				if want := tf.UnicharToGlyph(r) != 0; want != set[r] {
+					t.Fatalf("rune %#x: FaceRunesData lists it = %v, but the face maps it = %v", r, set[r], want)
+				}
+			}
+		})
+	}
+}
+
+// TestFaceRunesDataFiltersUnmappedGlyphs pins the two filters that make the returned set exact where a scanned
+// fontscan footprint over-claims: a cmap entry resolving to glyph 0 is not coverage, and neither is one resolving past
+// the 0xFFFF ceiling an sfnt glyph store can hold. Both are what the per-rune probe already answers, so dropping either
+// would put runes in fontmgr's in-memory index that the face's own cmap check then rejects.
+func TestFaceRunesDataFiltersUnmappedGlyphs(t *testing.T) {
+	roboto := readTestFont(t, "Roboto-Regular.ttf")
+	data := sfntWithTables(t, roboto, map[string][]byte{"cmap": synthCmapFormat13(
+		[3]uint32{'A', 'C', 1},       // real glyphs: kept
+		[3]uint32{'D', 'F', 0},       // .notdef: not coverage
+		[3]uint32{'G', 'I', 0x10000}, // past the sfnt glyph-ID ceiling: not coverage
+	)})
+	want := []rune{'A', 'B', 'C'}
+	if got := FaceRunesData(data, 0); !slices.Equal(got, want) {
+		t.Errorf("FaceRunesData = %#x, want %#x", got, want)
+	}
+	for _, r := range []rune{'D', 'E', 'F', 'G', 'H', 'I'} {
+		if FaceCoversRuneData(data, 0, r) {
+			t.Errorf("FaceCoversRuneData(%#x) = true, so the two lanes disagree about the filter", r)
+		}
+	}
+}
+
+// TestFaceRunesDataUnknowable pins the nil contract: everything that makes the answer unknowable yields nil, matching
+// FaceCoversRuneData's false. fontmgr.NewFromData walks every face of every supplied blob, so these are ordinary inputs
+// for it rather than error cases.
+func TestFaceRunesDataUnknowable(t *testing.T) {
+	roboto := readTestFont(t, "Roboto-Regular.ttf")
+	for _, c := range []struct {
+		name  string
+		data  []byte
+		index int
+	}{
+		{name: "nil data"},
+		{name: "garbage data", data: []byte("not a font at all")},
+		{name: "truncated to the header", data: roboto[:12]},
+		{name: "negative index", data: roboto, index: -1},
+		{name: "index past the end", data: roboto, index: 1},
+		{name: "collection index past the end", data: readTestFont(t, "test.ttc"), index: 2},
+		{name: "no cmap table", data: sfntWithoutTables(t, roboto, "cmap")},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if got := FaceRunesData(c.data, c.index); got != nil {
+				t.Errorf("FaceRunesData returned %d runes, want nil", len(got))
+			}
+		})
 	}
 }
 

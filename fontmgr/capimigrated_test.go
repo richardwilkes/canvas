@@ -33,7 +33,10 @@ func TestDefaultManagerEnumeration(t *testing.T) {
 	}
 	count := mgr.CountFamilies()
 	if count == 0 {
-		t.Skip("no system font families available")
+		// The opt-in exists to exercise the scan, so an empty inventory is the failure it is here to report:
+		// fontscan.SystemFonts erroring, or handing back footprints whose families are all empty, would otherwise
+		// report SKIP and take every assertion below with it.
+		t.Fatal("the system scan found no font families")
 	}
 	for _, i := range []int{0, count / 2, count - 1} {
 		if mgr.FamilyName(i) == "" {
@@ -61,7 +64,7 @@ func TestDefaultManagerMatching(t *testing.T) {
 	}
 
 	if mgr.CountFamilies() == 0 {
-		t.Skip("no system font families available")
+		t.Fatal("the system scan found no font families")
 	}
 	fam := mgr.FamilyName(0)
 	set := mgr.MatchFamily(fam)
@@ -91,10 +94,27 @@ func TestDefaultManagerMatching(t *testing.T) {
 	if tf.UnicharToGlyph('A') == 0 {
 		t.Error("matched face does not actually cover 'A'")
 	}
-	// A bcp47 hint list is threaded through (most-significant last); still resolves a CJK sample if covered.
-	if cjk := mgr.MatchFamilyStyleCharacter("", font.NormalStyle(), []string{"zh-Hans"}, 0x4E2D); cjk != nil {
-		if cjk.UnicharToGlyph(0x4E2D) == 0 {
-			t.Error("matched face does not actually cover U+4E2D")
+	// A bcp47 hint list is threaded through (most-significant last). Each tag restricts the candidate set and then falls
+	// through — to the next less-significant tag and finally to the unrestricted scan — so a hint can redirect the
+	// choice but must never lose one: whatever the unhinted lane resolves, the hinted lane has to resolve too. Which
+	// face a hint redirects to is machine-specific, so the redirection itself is pinned hermetically in
+	// TestManagerMatchCharacterBCP47Fallthrough; what only the system manager can show is that real footprint language
+	// sets do not make the tag pass fail closed.
+	const cjk = 0x4E2D
+	plain := mgr.MatchFamilyStyleCharacter("", font.NormalStyle(), nil, cjk)
+	if plain == nil {
+		// Not every machine ships a CJK font; the unhinted probe is what tells that apart from a broken tag pass.
+		t.Logf("no system family covers U+%04X, so the hinted lane has nothing to lose", cjk)
+	} else {
+		for _, tags := range [][]string{{"zh-Hans"}, {"ja", "zh-Hans"}, {""}, {"@@@"}} {
+			hinted := mgr.MatchFamilyStyleCharacter("", font.NormalStyle(), tags, cjk)
+			if hinted == nil {
+				t.Errorf("bcp47 %v lost the match the unhinted scan found; the tag pass must fall through", tags)
+				continue
+			}
+			if hinted.UnicharToGlyph(cjk) == 0 {
+				t.Errorf("bcp47 %v matched a face that does not cover U+%04X", tags, cjk)
+			}
 		}
 	}
 }

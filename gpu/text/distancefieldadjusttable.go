@@ -55,7 +55,7 @@ func (t *DistanceFieldAdjustTable) build() {
 	data := font.GammaLUTData()
 	for row := range t.table {
 		rowData := &data[row]
-		for col := 0; col < 255; col++ {
+		for col := range 255 {
 			if rowData[col] > 127 || rowData[col+1] < 128 {
 				continue
 			}

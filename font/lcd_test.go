@@ -13,12 +13,14 @@
 package font
 
 import (
+	"fmt"
 	"math"
 	"os"
 	"testing"
 
 	"github.com/richardwilkes/canvas/colorcore"
 	"github.com/richardwilkes/canvas/geom"
+	"github.com/richardwilkes/canvas/maskfilter"
 )
 
 func lcdTestFont(t *testing.T, size float32) *Font {
@@ -139,7 +141,8 @@ func TestMaskGammaCanonicalColor(t *testing.T) {
 }
 
 // referenceLUT is an independent transcription of the correcting-LUT formula (float32, sRGB curve on both sides), used
-// to pin buildCorrectingLUT's output.
+// to pin buildCorrectingLUT's output. Like the code it mirrors, it carries no "src is close to dst" stability branch —
+// see TestMaskGammaStabilityBranchUnneeded for why that case cannot arise at this table geometry.
 func referenceLUT(srcI uint32, contrast float32) [256]uint8 {
 	toLuma := func(l float64) float64 {
 		if l <= 0.04045 {
@@ -159,13 +162,6 @@ func referenceLUT(srcI uint32, contrast float32) [256]uint8 {
 	dst := 1 - src
 	linDst := float32(toLuma(float64(dst)))
 	adjusted := contrast * linDst
-	if math.Abs(float64(src-dst)) < 1.0/256.0 {
-		for i := range 256 {
-			srca := float32(i)/255 + (1-float32(i)/255)*adjusted*(float32(i)/255)
-			table[i] = uint8(math.Floor(float64(255*srca) + 0.5))
-		}
-		return table
-	}
 	for i := range 256 {
 		raw := float32(i) / 255
 		srca := raw + (1-raw)*adjusted*raw
@@ -214,6 +210,112 @@ func TestMaskGammaLUT(t *testing.T) {
 	}
 	if pb.r != &maskGammaTables[7] || pb.g != &maskGammaTables[0] || pb.b != &maskGammaTables[4] {
 		t.Error("preblend selected wrong tables")
+	}
+}
+
+// TestMaskGammaStabilityBranchUnneeded pins the margin that lets buildCorrectingLUT omit upstream's "src is close to
+// dst" stability branch: over the eight luminance values this table geometry builds for, |src - dst| stays far above
+// the 1/256 threshold, so the final divide by (src - dst) is always well conditioned. Widening maskGammaLumBits packs
+// the luminance values closer together and eventually lands one inside the unstable window — this test is the tripwire
+// for that, and the guard would have to come back.
+func TestMaskGammaStabilityBranchUnneeded(t *testing.T) {
+	const threshold = 1.0 / 256.0
+	smallest := float32(math.Inf(1))
+	for i := uint32(0); i < maskGammaNumTables; i++ {
+		src := float32(scale255Lum3(i)) / 255
+		// dst is the perceptual inverse buildCorrectingLUT guesses, so |src - dst| is |2*src - 1|.
+		diff := float32(math.Abs(float64(src - (1 - src))))
+		if diff < threshold {
+			t.Errorf("luminance %d (src %v): |src-dst| = %v, inside the %v window the code no longer guards",
+				scale255Lum3(i), src, diff, threshold)
+		}
+		smallest = min(smallest, diff)
+	}
+	// The 3-bit geometry's worst case is |2*(109/255) - 1| = 37/255.
+	if want := float32(37) / 255; math.Abs(float64(smallest-want)) > 1e-6 {
+		t.Errorf("smallest |src-dst| = %v, want %v", smallest, want)
+	}
+}
+
+// TestGammaLUTDataIsCopy pins that the exported accessor cannot be used to corrupt the process-wide tables that every
+// live LCD strike's pre-blend reads from.
+func TestGammaLUTDataIsCopy(t *testing.T) {
+	maskGammaOnce.Do(maskGammaInit)
+	data := GammaLUTData()
+	if data != maskGammaTables {
+		t.Fatal("GammaLUTData did not return the built tables")
+	}
+	const (
+		row = 3
+		col = 17
+	)
+	before := maskGammaTables[row][col]
+	data[row][col] ^= 0xFF
+	if maskGammaTables[row][col] != before {
+		t.Fatalf("writing to the returned block changed the global table: %d, want %d",
+			maskGammaTables[row][col], before)
+	}
+	// The pre-blend rows the scaler holds see the unmodified table, and a later call still reports it.
+	pb := getMaskPreBlend(colorcore.RGB(scale8(row), scale8(row), scale8(row)))
+	if pb.g[col] != before {
+		t.Errorf("pre-blend row entry = %d, want %d", pb.g[col], before)
+	}
+	if again := GammaLUTData(); again[row][col] != before {
+		t.Errorf("second GammaLUTData entry = %d, want %d", again[row][col], before)
+	}
+}
+
+// scale8 expands a table index back to the 8-bit luminance channel that selects it.
+func scale8(i int) uint8 { return uint8(scale255Lum3(uint32(i))) }
+
+// TestA8LaneNeverPreBlends pins the reachability trim pack4xHToMask depends on: across the whole reachable rec space,
+// an applicable pre-blend never accompanies an A8 glyph, so the A8 downsample lane is right to stay linear coverage.
+func TestA8LaneNeverPreBlends(t *testing.T) {
+	identity := geom.IdentityMatrix()
+	propsCases := []*DeviceProps{
+		nil,
+		{},
+		{PixelGeometry: PixelGeometryRGBH},
+		{PixelGeometry: PixelGeometryBGRH},
+		{PixelGeometry: PixelGeometryRGBV},
+		{PixelGeometry: PixelGeometryBGRV},
+		{PixelGeometry: PixelGeometryRGBH, UseDeviceIndependentFonts: true},
+	}
+	edgings := []Edging{EdgingAlias, EdgingAntiAlias, EdgingSubpixelAntiAlias}
+	filters := []maskfilter.MaskFilter{nil, maskfilter.NewBlur(maskfilter.BlurNormal, 2, true)}
+	sizes := []float32{24, 49} // 49 is past SK_MAX_SIZE_FOR_LCDTEXT, forcing the A8-from-LCD lane
+
+	preBlends := 0
+	for _, edging := range edgings {
+		for _, props := range propsCases {
+			for _, filter := range filters {
+				for _, size := range sizes {
+					f := lcdTestFont(t, size)
+					f.SetEdging(edging)
+					gid := f.Typeface().UnicharToGlyph('H')
+					paint := &ScalerPaint{LumColor: colorcore.RGB(0, 0, 0), MaskFilter: filter}
+					rec, effects := MakeRecAndEffects(f, paint, &identity, props)
+					c := NewScalerContext(f.Typeface(), rec, effects)
+					if !c.preBlend.isApplicable() {
+						continue
+					}
+					preBlends++
+					desc := fmt.Sprintf("edging %d props %+v filter %v size %v", edging, props, filter != nil, size)
+					if rec.Format != MaskLCD16 {
+						t.Errorf("%s: pre-blend on a format-%d rec, want LCD16 only", desc, rec.Format)
+					}
+					if rec.Flags&recFlagGenA8FromLCD != 0 {
+						t.Errorf("%s: pre-blend on a GenA8FromLCD rec", desc)
+					}
+					if g := c.makeGlyph(PackGlyphID(gid)); g.Format == MaskA8 {
+						t.Errorf("%s: pre-blend context produced an A8 glyph", desc)
+					}
+				}
+			}
+		}
+	}
+	if preBlends == 0 {
+		t.Fatal("no case built an applicable pre-blend; the assertions above never ran")
 	}
 }
 
@@ -293,6 +395,36 @@ func TestPack4xHToMaskImpulse(t *testing.T) {
 	for i, w := range wantA8 {
 		if g4.Image[i] != w {
 			t.Errorf("toA8 pixel %d = %d, want %d", i, g4.Image[i], w)
+		}
+	}
+
+	// The A8 lane is linear coverage: it ignores a pre-blend even when handed one (TestA8LaneNeverPreBlends pins that
+	// no reachable rec can hand it one), while the LCD16 lane remaps every channel through the matching table.
+	blend := getMaskPreBlend(colorcore.RGB(0, 0, 0))
+	g6 := &Glyph{Width: 4, Height: 1, Format: MaskA8}
+	g6.Image = make([]uint8, 4)
+	pack4xHToMask(src, 8, 1, g6, &blend, false, false)
+	for i, w := range wantA8 {
+		if g6.Image[i] != w {
+			t.Errorf("toA8 with pre-blend pixel %d = %d, want the unblended %d", i, g6.Image[i], w)
+		}
+	}
+	g7 := &Glyph{Width: 4, Height: 1, Format: MaskLCD16}
+	g7.Image16 = make([]uint16, 4)
+	pack4xHToMask(src, 8, 1, g7, &blend, false, false)
+	expectBlended := func(rc, gc, bc uint32) uint16 {
+		return pack888ToRGB16(uint32(blend.r[min(rc*255/0x100, 255)]),
+			uint32(blend.g[min(gc*255/0x100, 255)]), uint32(blend.b[min(bc*255/0x100, 255)]))
+	}
+	wantBlended := []uint16{
+		expectBlended(0x05, 0x16, 0x33),
+		expectBlended(0x40, 0x2b, 0x10),
+		expectBlended(0x03, 0x00, 0x00),
+		expectBlended(0x00, 0x00, 0x00),
+	}
+	for i, w := range wantBlended {
+		if g7.Image16[i] != w {
+			t.Errorf("LCD16 with pre-blend pixel %d = %#04x, want %#04x", i, g7.Image16[i], w)
 		}
 	}
 

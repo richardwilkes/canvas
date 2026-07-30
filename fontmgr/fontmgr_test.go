@@ -82,6 +82,23 @@ func newTestFaceRec(t *testing.T, file string, index int, langs ...string) *face
 	}
 }
 
+// newNonDefaultFaceRec builds a corpus faceRec re-keyed to a family name no platform's default-family list can hold,
+// for tests that need a family ranking strictly below every default tier. A corpus face cannot serve as that family
+// under its own name: "DejaVu Sans" is the first default on every non-darwin, non-windows GOOS, so on the Linux legs
+// the face lands in the very tier it is supposed to rank below. The face keeps its real family name — only the grouping
+// key changes — so assertions on the answering typeface's FamilyName still read naturally.
+func newNonDefaultFaceRec(t *testing.T, file string, index int) *faceRec {
+	t.Helper()
+	f := newTestFaceRec(t, file, index)
+	f.key = "notadefaultfamily"
+	for _, name := range defaultFamilies() {
+		if tsfont.NormalizeFamily(name) == f.key {
+			t.Fatalf("the non-default key %q is one of this platform's default families %v", f.key, defaultFamilies())
+		}
+	}
+	return f
+}
+
 // readTestFontData returns the raw bytes of a font in the shared corpus, for the in-memory (data-backed) faces.
 func readTestFontData(t *testing.T, file string) []byte {
 	t.Helper()
@@ -210,13 +227,14 @@ func TestManagerMatchFamilyEmptyNameResolvesTheDefault(t *testing.T) {
 func TestManagerCharacterFallbackScoresDefaultsInOrder(t *testing.T) {
 	// defaultFamilies is a search order, not one pool: the first default family present answers whenever it covers the
 	// character, even when a later default family holds the better style match. Keying corpus faces to the platform's
-	// own default names makes the tiers testable on every GOOS.
+	// own default names, and the ranked-below family to a name no platform defaults to, makes the tiers testable on
+	// every GOOS.
 	defaults := defaultFamilies()
 	first := newTestFaceRec(t, "Roboto-Regular.ttf", 0) // regular weight: a near miss for a bold request
 	first.key = tsfont.NormalizeFamily(defaults[0])
 	second := newTestFaceRec(t, "test.ttc", 1) // the exact bold match, covering '!'
 	second.key = tsfont.NormalizeFamily(defaults[1])
-	m := newManager([]*faceRec{newTestFaceRec(t, "DejaVuSans.subset.ttf", 0), second, first})
+	m := newManager([]*faceRec{newNonDefaultFaceRec(t, "DejaVuSans.subset.ttf", 0), second, first})
 	if tf := m.MatchFamilyStyleCharacter("", font.BoldStyle(), nil, '!'); tf == nil || tf.FamilyName() != "Roboto" {
 		t.Errorf("bold '!' = %s, want Roboto, the first default family's regular face (the second default is an exact "+
 			"style match, but it is second)", familyOf(tf))
@@ -232,7 +250,7 @@ func TestManagerCharacterFallbackScoresDefaultsInOrder(t *testing.T) {
 	first.key = tsfont.NormalizeFamily(defaults[0])
 	second = newTestFaceRec(t, "Roboto-Regular.ttf", 0)
 	second.key = tsfont.NormalizeFamily(defaults[1])
-	m = newManager([]*faceRec{newTestFaceRec(t, "DejaVuSans.subset.ttf", 0), second, first})
+	m = newManager([]*faceRec{newNonDefaultFaceRec(t, "DejaVuSans.subset.ttf", 0), second, first})
 	if tf := m.MatchFamilyStyleCharacter("", font.NormalStyle(), nil, 'x'); tf == nil || tf.FamilyName() != "Roboto" {
 		t.Errorf("normal 'x' = %s, want the second default family's Roboto (the first does not cover it)", familyOf(tf))
 	}

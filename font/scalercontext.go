@@ -1082,8 +1082,14 @@ var pack4xCoefficients = [3][12]uint32{
 }
 
 // pack4xHToMask downsamples a 4x-oversampled A8 raster into the glyph's LCD16 plane (or its A8 plane when the rec
-// generates A8 from the LCD lane), applying the mask pre-blend per channel. src is sampleWidth×height with tight rows;
-// doVert transposes the write (x and y swap when writing to dst).
+// generates A8 from the LCD lane), applying the mask pre-blend per channel on the LCD16 side only. src is
+// sampleWidth×height with tight rows; doVert transposes the write (x and y swap when writing to dst).
+//
+// The A8 side takes no pre-blend, and cannot: NewScalerContext builds one only for a mask-filter-free MaskLCD16 rec,
+// while an A8 glyph arrives here either from an A8 rec (recFlagGenA8FromLCD, which never carries LumBits and so never
+// gets a pre-blend) or from makeGlyph's mask-filter demotion of an LCD16 rec (a mask filter suppresses the pre-blend).
+// A8 masks staying linear coverage is the reachable-set trim the file comment and maskgamma.go document, so this lane
+// averages the three filtered channels and stops.
 func pack4xHToMask(src []uint8, sampleWidth, height int, g *Glyph, preBlend *maskPreBlend, doBGR, doVert bool) {
 	toA8 := g.Format == MaskA8
 	dstW := int(g.Width)
@@ -1114,11 +1120,7 @@ func pack4xHToMask(src []uint8, sampleWidth, height int, g *Glyph, preBlend *mas
 			}
 			di := outY*dstW + outX
 			if toA8 {
-				a := (r + gg + b) / 3
-				if preBlend.isApplicable() {
-					a = uint32(preBlend.g[a])
-				}
-				g.Image[di] = uint8(a)
+				g.Image[di] = uint8((r + gg + b) / 3)
 			} else {
 				if preBlend.isApplicable() {
 					r = uint32(preBlend.r[r])

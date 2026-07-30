@@ -964,6 +964,76 @@ func TestStrikeCacheUnhashableEffects(t *testing.T) {
 	}
 }
 
+// A strike hands the very same *path.Path to every consumer of Glyph.Path, so each of that path's lazy caches has to
+// be primed before the glyph escapes the strike's lock: Bounds (which also resolves the finiteness flag), GetConvexity
+// and GenerationID are all written by their first reader, and Strike documents every method as safe for concurrent
+// use. Without the priming in setPath, the concurrent readers below race on Path.bounds/boundsValid/finite and
+// Path.convexity — "WARNING: DATA RACE" under -race. Nothing may touch the path on this goroutine before the workers
+// start: a serial first read would prime the caches with a happens-before edge to every worker and hide the defect.
+func TestStrikeSharedPathIsPrimedBeforePublication(t *testing.T) {
+	tf := loadTypeface(t, "Roboto-Regular.ttf", 0)
+	gid := tf.UnicharToGlyph('B')
+	type reading struct {
+		bounds    geom.Rect
+		genID     uint32
+		convexity path.Convexity
+		finite    bool
+	}
+	const workers = 8
+	// A fresh cache and a fresh font per round: a strike reused across rounds would hand out an already-primed path.
+	for round := range 16 {
+		cache := NewStrikeCache()
+		f := NewFont(tf, float32(48+round), 1, 0)
+		spec, _ := MakePathSpec(f, nil)
+		strike := cache.FindOrCreateStrike(&spec)
+		readings := make([]reading, workers)
+		actions := make([]GlyphAction, workers)
+		start := make(chan struct{})
+		done := make(chan bool)
+		for w := range workers {
+			go func(w int) {
+				defer func() { done <- true }()
+				<-start
+				g, action := strike.DigestFor(ActionPath, PackGlyphID(gid))
+				actions[w] = action
+				p := g.Path()
+				if p == nil {
+					return
+				}
+				readings[w] = reading{
+					bounds:    p.Bounds(),
+					finite:    p.IsFinite(),
+					convexity: p.GetConvexity(),
+					genID:     p.GenerationID(),
+				}
+			}(w)
+		}
+		close(start)
+		for range workers {
+			<-done
+		}
+		// Priming has to install the real values, not merely some value: an empty rect or an unset convexity would
+		// satisfy "every worker agrees" trivially.
+		want := readings[0]
+		if want.bounds.IsEmpty() || !want.finite {
+			t.Fatalf("round %d: glyph path bounds = %v (finite %v), want a non-empty finite rect",
+				round, want.bounds, want.finite)
+		}
+		if want.convexity == path.ConvexityUnknown || want.genID == 0 {
+			t.Fatalf("round %d: convexity = %v, generation ID = %d, want both resolved",
+				round, want.convexity, want.genID)
+		}
+		for w := range workers {
+			if actions[w] != GlyphActionAccept {
+				t.Fatalf("round %d worker %d: path action = %d, want accept", round, w, actions[w])
+			}
+			if readings[w] != want {
+				t.Errorf("round %d worker %d: read %+v from the shared path, want %+v", round, w, readings[w], want)
+			}
+		}
+	}
+}
+
 func TestStrikeConcurrentAccess(t *testing.T) {
 	tf := loadTypeface(t, "Roboto-Regular.ttf", 0)
 	cache := NewStrikeCache()

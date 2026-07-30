@@ -294,9 +294,21 @@ func (g *Glyph) zeroBounds() {
 	g.Height = 0
 }
 
-// setPath installs the glyph's path.
+// setPath installs the glyph's path, priming the path's lazy caches first. The strike hands this one *path.Path to
+// every consumer of Path() — Strike.FindIntercepts, the CPU path lane in canvas, the GPU path subruns — and those read
+// it from any goroutine with no synchronization, as Strike's "safe for concurrent use" contract promises. Each of the
+// Path's caches is written by its first reader, so an unprimed path turns those reads into data races; priming here
+// (the caller holds the strike's lock, which publishes the writes) leaves the path read-only from then on. Upstream's
+// SkGlyph::installPath primes for the same reason.
 func (g *Glyph) setPath(p *path.Path, hairline bool) {
 	if !g.pathDone {
+		if p != nil {
+			// The Path's complete lazy set: Bounds (which also resolves the finiteness flag), the convexity and the
+			// generation ID. Leaving any one of them cold leaves that one to race.
+			p.Bounds()
+			p.GetConvexity()
+			p.GenerationID()
+		}
 		g.pathVal = p
 		g.pathIsHairline = hairline
 		g.pathDone = true

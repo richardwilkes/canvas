@@ -43,6 +43,52 @@ func TestCountUTF8(t *testing.T) {
 	}
 }
 
+func TestUTF8ValidationIsStructuralOnly(t *testing.T) {
+	// The file comment promises structural validation, not canonical-form validation: an overlong encoding, a
+	// UTF-8-encoded surrogate, and a code point above U+10FFFF all pass the count functions and decode to the values
+	// below (the mask-based decode folds an overlong form down to its short value). This matches upstream
+	// SkUTF::CountUTF8/NextUTF8; the point of the test is that the comment and the code agree.
+	cases := []struct {
+		name string
+		in   []byte
+		want int32
+	}{
+		{name: "overlong 3-byte 'o'", in: []byte{0xE0, 0x81, 0xAF}, want: 0x6F},
+		{name: "overlong 4-byte '/'", in: []byte{0xF0, 0x80, 0x80, 0xAF}, want: 0x2F},
+		{name: "encoded high surrogate", in: []byte{0xED, 0xA0, 0x80}, want: 0xD800},
+		{name: "above U+10FFFF", in: []byte{0xF4, 0x90, 0x80, 0x80}, want: 0x110000},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := countUTF8(c.in); got != 1 {
+				t.Errorf("countUTF8(% x) = %d, want 1 (structural validation accepts it)", c.in, got)
+			}
+			if got := CountTextElements(c.in, TextEncodingUTF8); got != 1 {
+				t.Errorf("CountTextElements(% x) = %d, want 1", c.in, got)
+			}
+			u, next := nextUTF8(c.in, 0)
+			if u != c.want || next != len(c.in) {
+				t.Errorf("nextUTF8(% x) = %#x,%d, want %#x,%d", c.in, u, next, c.want, len(c.in))
+			}
+		})
+	}
+
+	// The documented consequence: an overlong '/' maps to the same glyph as a real '/', because TextToGlyphs decodes
+	// with nextUTF8 and hands the folded code point to the cmap.
+	tf := loadColorTypeface(t, "Roboto-Regular.ttf")
+	glyphs := make([]uint16, 1)
+	if n := tf.TextToGlyphs([]byte{0xF0, 0x80, 0x80, 0xAF}, TextEncodingUTF8, glyphs); n != 1 {
+		t.Fatalf("TextToGlyphs(overlong) = %d, want 1", n)
+	}
+	want := tf.UnicharToGlyph('/')
+	if want == 0 {
+		t.Fatal("'/' not mapped")
+	}
+	if glyphs[0] != want {
+		t.Errorf("overlong '/' mapped to glyph %d, want the real '/' glyph %d", glyphs[0], want)
+	}
+}
+
 func TestCountUTF16(t *testing.T) {
 	if got := countUTF16([]byte{0x48, 0x00, 0x49, 0x00}); got != 2 {
 		t.Errorf("BMP pair = %d, want 2", got)

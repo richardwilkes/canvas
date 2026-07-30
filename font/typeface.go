@@ -11,13 +11,15 @@
 // go-text/typesetting's font parser: the sfnt tables are read directly rather than through a platform text-rendering
 // host, following the rules closest to raw table data. The deltas that follow from that are: rendering is always
 // unhinted with linear metrics (hinting is recorded but only HintingNone/HintingSlight are honored, and
-// forceAutoHinting/embeddedBitmaps are recorded but never honored — outline fonts only); font metrics follow the
-// FreeType table recipe (hhea, or OS/2 typo metrics when fsSelection UseTypoMetrics is set, for ascent/descent/leading;
-// the head bbox for top/bottom; post for underline; OS/2 for x-height, cap-height, avgCharWidth, and strikeout; 'x'/'H'
-// control-box synthesis for missing heights), where a platform host such as CoreText sources several of those
-// differently; glyph bounds are the outline control box (or the styled-path bounds when a stroke or path effect
-// applies) mapped through the text matrix and rounded out; text→glyph conversion keeps per-char cmap semantics for
-// every input; and the empty typeface has no glyphs, upem 0, fixed pitch, and normal style.
+// forceAutoHinting is recorded but never honored — there is no hinter here); embedded bitmap strikes are always used
+// when present and no flag gates them (the embeddedBitmaps request is recorded but never consulted, because the scaler
+// decodes an sbix/CBDT/EBDT PNG strike into an ARGB32 mask whenever the typeface carries one for the size being
+// rendered); font metrics follow the FreeType table recipe (hhea, or OS/2 typo metrics when fsSelection UseTypoMetrics
+// is set, for ascent/descent/leading; the head bbox for top/bottom; post for underline; OS/2 for x-height, cap-height,
+// avgCharWidth, and strikeout; 'x'/'H' control-box synthesis for missing heights), where a platform host such as
+// CoreText sources several of those differently; glyph bounds are the outline control box (or the styled-path bounds
+// when a stroke or path effect applies) mapped through the text matrix and rounded out; text→glyph conversion keeps
+// per-char cmap semantics for every input; and the empty typeface has no glyphs, upem 0, fixed pitch, and normal style.
 
 package font
 
@@ -506,7 +508,8 @@ const (
 )
 
 // CountTextElements returns the number of text elements (unichars or glyph IDs) in text under encoding. For
-// UTF-8/UTF-16 it returns -1 on invalid input (strict validation); UTF-32 and glyph IDs are counted by size alone.
+// UTF-8/UTF-16 it returns -1 on structurally invalid input (see the utf.go file comment: overlong forms, encoded
+// surrogates, and code points above U+10FFFF are not rejected); UTF-32 and glyph IDs are counted by size alone.
 func CountTextElements(text []byte, encoding TextEncoding) int {
 	switch encoding {
 	case TextEncodingUTF8:

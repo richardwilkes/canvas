@@ -7,10 +7,16 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// The UTF-8/16/32 counting and iteration primitives Typeface/Font use for text→glyph conversion. Validation is strict
-// (the count functions return -1 for any invalid input) and the next* iterators fail by returning -1 and jumping to the
-// end. UTF-16 and UTF-32 text arrives as raw bytes in native byte order, which on every supported target is
-// little-endian; the decoders here read little-endian pairs/quads accordingly.
+// The UTF-8/16/32 counting and iteration primitives Typeface/Font use for text→glyph conversion. Validation is
+// structural, not canonical, matching upstream SkUTF byte-for-byte: the count functions return -1 (and the next*
+// iterators fail by returning -1 and jumping to the end) for a byte that can never lead a sequence (0xC0, 0xC1,
+// 0xF5-0xFF), for a missing or non-continuation trailing byte, for a sequence running past the end of the buffer, and,
+// for UTF-16, for an odd byte count or an unpaired surrogate. Nothing checks that a sequence is in canonical form, so
+// an overlong encoding (E0 81 AF decodes to U+006F, F0 80 80 AF to U+002F), a UTF-8-encoded surrogate (ED A0 80 to
+// U+D800), and a code point above U+10FFFF (F4 90 80 80 to U+110000) all count as valid and decode to those values —
+// note that an overlong form therefore maps to the same glyph as its canonical spelling. A caller needing
+// canonical-form validation must do it itself. UTF-16 and UTF-32 text arrives as raw bytes in native byte order, which
+// on every supported target is little-endian; the decoders here read little-endian pairs/quads accordingly.
 
 package font
 

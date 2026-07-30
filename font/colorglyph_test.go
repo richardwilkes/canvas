@@ -404,6 +404,51 @@ func TestBitmapGlyphMetrics(t *testing.T) {
 	}
 }
 
+func TestEmbeddedBitmapsFlagDoesNotGateTheBitmapLane(t *testing.T) {
+	// The typeface.go/font.go comments say embedded bitmap strikes are always used when present and that no flag gates
+	// them: the embeddedBitmaps request can neither enable nor suppress the lane, and it stays out of the scaler rec.
+	// Both halves are pinned here, since a comment claiming "recorded but never honored — outline fonts only" would
+	// describe the opposite behavior.
+	for _, name := range []string{"sbix.ttf", "cbdt.ttf"} {
+		t.Run(name, func(t *testing.T) {
+			tf := loadColorTypeface(t, name)
+			gid := tf.UnicharToGlyph(smiley)
+			if gid == 0 {
+				t.Fatal("U+1F600 not mapped")
+			}
+			glyphs := make([]*Glyph, 2)
+			for i, on := range []bool{false, true} {
+				f := NewFont(tf, 64, 1, 0)
+				f.SetEmbeddedBitmaps(on)
+				if f.EmbeddedBitmaps() != on {
+					t.Fatalf("SetEmbeddedBitmaps(%v) did not stick", on)
+				}
+				identity := geom.IdentityMatrix()
+				spec := MakeMaskSpec(f, nil, &identity, nil)
+				g, action := spec.FindOrCreateStrike().DigestFor(ActionDirectMaskCPU, PackGlyphID(gid))
+				if action != GlyphActionAccept {
+					t.Fatalf("embeddedBitmaps=%v: action %v", on, action)
+				}
+				// The strike lane ran regardless of the request: an ARGB32 mask with pixels and no path.
+				if g.Format != MaskARGB32 {
+					t.Errorf("embeddedBitmaps=%v: format %v, want ARGB32", on, g.Format)
+				}
+				if g.Image32 == nil {
+					t.Errorf("embeddedBitmaps=%v: no bitmap image", on)
+				}
+				if g.Path() != nil {
+					t.Errorf("embeddedBitmaps=%v: bitmap glyph must have no path", on)
+				}
+				glyphs[i] = g
+			}
+			// The flag is out of the rec, so both requests land on the same strike and the same glyph.
+			if glyphs[0] != glyphs[1] {
+				t.Error("the embeddedBitmaps request must not fragment strikes")
+			}
+		})
+	}
+}
+
 func TestBitmapGlyphImageNativeSize(t *testing.T) {
 	// At the strike-native size the bitmap transform is the identity, so the mask must be a byte-exact premultiplied
 	// copy of the strike PNG (the FT direct-copy lane; the shader's linear filter degrades to nearest at integer

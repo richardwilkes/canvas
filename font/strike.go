@@ -16,7 +16,8 @@ package font
 import (
 	"math"
 	"sync"
-	"unsafe"
+
+	"github.com/richardwilkes/canvas/internal/memsize"
 )
 
 // GlyphAction records the disposition of a glyph for a given ActionType.
@@ -72,16 +73,19 @@ type Strike struct {
 	removed      bool
 }
 
-// glyphOverhead is the per-glyph memory overhead for the cache budget.
-// This accounts for: Glyph struct, glyphEntry (which holds the glyph and its actions),
-// and the map bucket overhead for storing the entry in glyphs map.
-var glyphOverhead = func() int {
-	return int(unsafe.Sizeof(Glyph{}) + unsafe.Sizeof(glyphEntry{}) + 32) // ~32 for map bucket overhead
-}()
-
-// interceptOverhead approximates what one cached per-band intercept retains: the 16-byte glyphIntercept plus the
-// pointer to it in the glyph's slice, with room for the slice's growth slack.
-const interceptOverhead = 32
+// What this strike charges the cache's byte budget per item, derived from the types it retains rather than estimated.
+var (
+	// glyphOverhead is what one cached glyph costs before any path or image is generated for it: the Glyph, the
+	// glyphEntry that holds it along with its per-action dispositions, and the entry's share of the glyphs map.
+	glyphOverhead = memsize.Of[Glyph]() + memsize.Of[glyphEntry]() + memsize.MapEntry[PackedGlyphID, *glyphEntry]()
+	// interceptOverhead is what one cached per-band intercept retains: the glyphIntercept plus the slot holding the
+	// pointer to it in the glyph's append-grown slice.
+	interceptOverhead = memsize.Of[glyphIntercept]() + memsize.SliceElem[*glyphIntercept]()
+	// strikeBaseline is what a strike costs its cache before a single glyph is resolved: the Strike itself, the
+	// ScalerContext it owns, its empty glyphs map, and its own entry in the cache's map of strikes.
+	strikeBaseline = memsize.Of[Strike]() + memsize.Of[ScalerContext]() + memsize.Map() +
+		memsize.MapEntry[strikeKey, *Strike]()
+)
 
 func newStrike(cache *StrikeCache, key *strikeKey, scaler *ScalerContext) *Strike {
 	return &Strike{
@@ -91,7 +95,7 @@ func newStrike(cache *StrikeCache, key *strikeKey, scaler *ScalerContext) *Strik
 		roundingSpec: NewRoundingSpec(scaler.rec.isSubpixel(), scaler.rec.computeAxisAlignmentForHText()),
 		metrics:      scaler.getFontMetrics(),
 		glyphs:       make(map[PackedGlyphID]*glyphEntry),
-		memoryUsed:   1024, // baseline strike overhead
+		memoryUsed:   strikeBaseline,
 	}
 }
 

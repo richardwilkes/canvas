@@ -19,6 +19,7 @@ import (
 	"sync"
 
 	"github.com/richardwilkes/canvas/font"
+	"github.com/richardwilkes/canvas/internal/memsize"
 )
 
 // Cache limits for the GPU-side strike cache.
@@ -27,12 +28,14 @@ const (
 	defaultGpuFontCacheCountLimit = 2048
 )
 
-// glyphRecordOverhead approximates the in-memory size of one Glyph record for the memory budget.
-const glyphRecordOverhead = 32
-
-// textStrikeOverhead approximates the fixed in-memory size of a Strike (the memory budget's baseline before any
-// glyph records are added).
-const textStrikeOverhead = 512
+// What this cache charges its byte budget per item, derived from the types it retains rather than estimated.
+var (
+	// glyphRecordOverhead is what one Glyph record costs: the record itself plus its share of the strike's map.
+	glyphRecordOverhead = memsize.Of[Glyph]() + memsize.MapEntry[font.PackedGlyphID, *Glyph]()
+	// textStrikeOverhead is what a Strike costs before any glyph records are added: the Strike itself, its empty map,
+	// and its own entry in the cache's map of strikes.
+	textStrikeOverhead = memsize.Of[Strike]() + memsize.Map() + memsize.MapEntry[font.StrikeSpec, *Strike]()
+)
 
 // Strike manages the Glyph records for one strike. The font.Strike that generates masks may be purged while the
 // Strike lives on; the spec is retained as the key to regenerate it.

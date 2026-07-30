@@ -709,11 +709,20 @@ func TestStrikeCacheLRUAndBudget(t *testing.T) {
 		}
 		_ = s.Metrics(glyphs, results)
 	}
-	if used := cache.TotalMemoryUsed(); used > 64*1024 {
-		t.Errorf("cache did not purge: %d bytes used", used)
-	}
 	if n := cache.StrikeCount(); n >= 31 {
 		t.Errorf("cache kept all %d strikes", n)
+	}
+	// Only strike creation runs a purge pass, so the glyphs resolved since the last one are charged but unpurged and
+	// the total is legitimately over the limit here. Creating one more strike runs the pass that has to reclaim them.
+	// Assert against the limit rather than a byte count, so the assertion stays about purging rather than about how
+	// much one strike's worth of glyphs happens to cost.
+	before := cache.TotalMemoryUsed()
+	purgingFont := NewFont(tf, 41, 1, 0)
+	purgingSpec := MakeMaskSpec(purgingFont, nil, &identity, nil)
+	cache.FindOrCreateStrike(&purgingSpec)
+	if used := cache.TotalMemoryUsed(); used > cache.sizeLimit {
+		t.Errorf("cache did not purge: %d bytes used after a purge pass, limit %d (%d before)", used,
+			cache.sizeLimit, before)
 	}
 
 	// A repeated lookup returns the same strike (and the cached glyph pointer). Use a fresh cache with the default
@@ -768,10 +777,10 @@ func TestStrikeMemoryChargesRetainedPathOnce(t *testing.T) {
 			imageFirst, pathFirst)
 	}
 	// baseline strike overhead + glyph struct overhead + mask + path, with nothing double-charged.
-	want := 1024 + glyphOverhead + g.ImageSize() + pathBytes
+	want := strikeBaseline + glyphOverhead + g.ImageSize() + pathBytes
 	if imageFirst != want {
-		t.Errorf("charged %d bytes, want %d (1024 baseline + %d overhead + %d mask + %d path)",
-			imageFirst, want, glyphOverhead, g.ImageSize(), pathBytes)
+		t.Errorf("charged %d bytes, want %d (%d baseline + %d overhead + %d mask + %d path)",
+			imageFirst, want, strikeBaseline, glyphOverhead, g.ImageSize(), pathBytes)
 	}
 }
 
@@ -794,14 +803,14 @@ func TestStrikeMemoryChargesPathFromGlyphCreation(t *testing.T) {
 	if pathBytes == 0 {
 		t.Fatal("the stroked lane should materialize the path while making the glyph")
 	}
-	if used, want := cache.TotalMemoryUsed(), 1024+glyphOverhead+pathBytes; used != want {
+	if used, want := cache.TotalMemoryUsed(), strikeBaseline+glyphOverhead+pathBytes; used != want {
 		t.Errorf("metrics-only lookup charged %d bytes, want %d (%d path bytes retained)", used, want, pathBytes)
 	}
 	// Asking for the path afterwards must not charge it a second time.
 	if _, action := s.DigestFor(ActionPath, PackGlyphID(gid)); action != GlyphActionAccept {
 		t.Fatalf("path action = %d, want accept", action)
 	}
-	if used, want := cache.TotalMemoryUsed(), 1024+glyphOverhead+pathBytes; used != want {
+	if used, want := cache.TotalMemoryUsed(), strikeBaseline+glyphOverhead+pathBytes; used != want {
 		t.Errorf("after the path action the cache charges %d bytes, want %d (double-charged)", used, want)
 	}
 }

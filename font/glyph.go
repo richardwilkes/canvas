@@ -23,6 +23,7 @@ import (
 	"math"
 
 	"github.com/richardwilkes/canvas/geom"
+	"github.com/richardwilkes/canvas/internal/memsize"
 	"github.com/richardwilkes/canvas/path"
 	"github.com/richardwilkes/canvas/raster"
 )
@@ -315,10 +316,18 @@ func (g *Glyph) setPath(p *path.Path, hairline bool) {
 	}
 }
 
+// What a retained path costs the strike budget, derived from the types it is built out of. Its conic weights are not
+// counted: no glyph lane emits a conic, so that slice is always nil.
+var (
+	pathOverhead   = memsize.Of[path.Path]()
+	pathPointBytes = memsize.SliceElem[geom.Point]()
+	pathVerbBytes  = memsize.SliceElem[path.Verb]()
+)
+
 // approximatePathBytes estimates the path's memory for the strike budget.
 func approximatePathBytes(p *path.Path) int {
 	if p == nil {
 		return 0
 	}
-	return 64 + p.CountPoints()*8 + p.CountVerbs()
+	return pathOverhead + p.CountPoints()*pathPointBytes + p.CountVerbs()*pathVerbBytes
 }

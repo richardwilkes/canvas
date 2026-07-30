@@ -23,6 +23,7 @@ import (
 	"github.com/richardwilkes/canvas/colorcore"
 	"github.com/richardwilkes/canvas/font"
 	"github.com/richardwilkes/canvas/geom"
+	"github.com/richardwilkes/canvas/internal/memsize"
 	"github.com/richardwilkes/canvas/maskfilter"
 	"github.com/richardwilkes/canvas/textblob"
 )
@@ -153,6 +154,19 @@ func (k *BlobKey) equal(that *BlobKey) bool {
 	return true
 }
 
+// What a Blob charges the coordinator's byte budget, derived from the types it retains rather than estimated.
+var (
+	// blobFixedBytes is what a Blob costs no matter how many glyphs it holds: the Blob, the SubRunContainer it owns,
+	// and one subrun — the interface slot in the container's slice plus the widest concrete subrun, since which kind a
+	// blob ends up with is not known until MakeSubRuns has run. A blob that produces more than one subrun undercounts
+	// by that fixed amount per extra subrun, which the per-glyph term outweighs well before it matters.
+	blobFixedBytes = memsize.Of[Blob]() + memsize.Of[SubRunContainer]() + memsize.Of[SubRun]() +
+		memsize.Of[SDFTSubRun]()
+	// blobGlyphBytes is what each glyph adds: its position in the vertex filler and its variant in the glyph vector.
+	// Both slices are allocated at their final length, so neither carries append's growth slack.
+	blobGlyphBytes = memsize.Of[geom.Point]() + memsize.Of[GlyphVariant]()
+)
+
 // Blob is a fully processed text blob, suitable for nearly immediate drawing on the GPU.
 type Blob struct {
 	subRuns *SubRunContainer
@@ -169,9 +183,9 @@ func MakeTextBlob(glyphRunList *textblob.GlyphRunList, paint *canvas.Paint, posi
 	container := MakeSubRuns(glyphRunList, positionMatrix, paint, deviceProps, control)
 	// Approximate the blob's footprint with the per-glyph data (positions + variants) plus a per-blob overhead so the
 	// budget sweep has comparable teeth.
-	size := 256
+	size := blobFixedBytes
 	for i := range glyphRunList.Runs {
-		size += len(glyphRunList.Runs[i].Glyphs) * 32
+		size += len(glyphRunList.Runs[i].Glyphs) * blobGlyphBytes
 	}
 	return &Blob{subRuns: container, size: size, initialLuminance: paint.LuminanceColor()}
 }

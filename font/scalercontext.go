@@ -20,7 +20,9 @@
 // only LCD16 recs carry a luminance color (LumBits) — A8 strikes stay color-independent, where keying every rec on the
 // canonical color would fragment strikes with no pixel difference. The device gamma and contrast rec fields have no
 // reachable variation (the surface-props text contrast/gamma constructor is not exposed) and stay the defaults inside
-// maskgamma.go. Embolden (fake bold) has no public entry point and is omitted.
+// maskgamma.go. Embolden (fake bold) and the embedded-bitmap request are recorded on the Font but have no lane here
+// (there is no synthetic-bold generator, and bitmap strikes are decoded whenever the typeface carries them), so neither
+// reaches the rec: keying strikes on a request that changes no pixel would only fragment the cache.
 
 package font
 

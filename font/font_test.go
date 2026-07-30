@@ -359,7 +359,9 @@ func TestDegenerateAndEmpty(t *testing.T) {
 	if fe.Typeface() != EmptyTypeface() {
 		t.Error("nil typeface should become the empty typeface")
 	}
-	if got := fe.Metrics(&m); got != 0 || m != (Metrics{}) {
+	// Its metrics are all zero, and the four bounds fields are flagged as the non-answers they are (see
+	// MetricsFlagBoundsInvalid).
+	if got := fe.Metrics(&m); got != 0 || m != (Metrics{Flags: MetricsFlagBoundsInvalid}) {
 		t.Errorf("empty metrics = %v %+v", got, m)
 	}
 	if n := fe.TextToGlyphs([]byte("Hxg!"), TextEncodingUTF8, nil); n != 4 {
@@ -450,6 +452,159 @@ func TestLinearMetricsFlag(t *testing.T) {
 	f.SetLinearMetrics(false)
 	if f.LinearMetrics() {
 		t.Error("SetLinearMetrics(false) did not take")
+	}
+}
+
+func TestEmboldenAndEmbeddedBitmapFlags(t *testing.T) {
+	f := NewFont(loadTypeface(t, "Roboto-Regular.ttf", 0), 12, 1, 0)
+	if f.Embolden() || f.EmbeddedBitmaps() {
+		t.Errorf("embolden and embedded bitmaps should default to off: flags = %#x", f.flags)
+	}
+	identity := geom.IdentityMatrix()
+	rec, _ := MakeRecAndEffects(f, nil, &identity, nil)
+	f.SetEmbolden(true)
+	f.SetEmbeddedBitmaps(true)
+	if !f.Embolden() || !f.EmbeddedBitmaps() {
+		t.Fatalf("the setters did not take: flags = %#x", f.flags)
+	}
+	// Neither request has a lane in the scaler (no synthetic-bold generator, and bitmap strikes are decoded whenever
+	// the typeface carries them), so neither may key a strike: the rec must come out identical.
+	if both, _ := MakeRecAndEffects(f, nil, &identity, nil); both != rec {
+		t.Error("a request the scaler cannot honor reached the rec and would fragment the strike cache")
+	}
+	// Only the embedded-bitmap request is in setupForAsPaths's ignore mask (upstream's flagsToIgnore covers it and
+	// force-auto-hinting, nothing else).
+	pathFont := *f
+	pathFont.setupForAsPaths(nil)
+	if pathFont.EmbeddedBitmaps() {
+		t.Error("setupForAsPaths kept the embedded-bitmap request")
+	}
+	if !pathFont.Embolden() {
+		t.Error("setupForAsPaths cleared the embolden request")
+	}
+	f.SetEmbolden(false)
+	f.SetEmbeddedBitmaps(false)
+	if f.Embolden() || f.EmbeddedBitmaps() {
+		t.Errorf("clearing the requests did not take: flags = %#x", f.flags)
+	}
+}
+
+func TestBaselineSnapFlag(t *testing.T) {
+	f := NewFont(loadTypeface(t, "Roboto-Regular.ttf", 0), 12, 1, 0)
+	if !f.BaselineSnap() {
+		t.Errorf("baseline snapping should default to on: flags = %#x", f.flags)
+	}
+	f.SetSubpixel(true) // the axis alignment only changes the rounding of a subpixel-positioned strike
+	identity := geom.IdentityMatrix()
+	snapped, _ := MakeRecAndEffects(f, nil, &identity, nil)
+	if snapped.Flags&recFlagBaselineSnap == 0 {
+		t.Error("rec is missing the baseline-snap flag with the request on")
+	}
+	if got := snapped.computeAxisAlignmentForHText(); got != AxisAlignmentX {
+		t.Errorf("snapped axis alignment = %d, want AxisAlignmentX", got)
+	}
+	f.SetBaselineSnap(false)
+	if f.BaselineSnap() {
+		t.Error("SetBaselineSnap(false) did not take")
+	}
+	off, _ := MakeRecAndEffects(f, nil, &identity, nil)
+	if off.Flags&recFlagBaselineSnap != 0 {
+		t.Error("rec carries the baseline-snap flag with the request off")
+	}
+	if off == snapped {
+		t.Error("unsnapped recs must not collapse onto the snapped rec")
+	}
+	// The request is honored: with no snapping axis, the strike's rounding keeps sub-pixel bits on both axes instead of
+	// rounding y to whole pixels.
+	if got := off.computeAxisAlignmentForHText(); got != AxisAlignmentNone {
+		t.Errorf("unsnapped axis alignment = %d, want AxisAlignmentNone", got)
+	}
+	snapRound := NewRoundingSpec(snapped.isSubpixel(), snapped.computeAxisAlignmentForHText())
+	offRound := NewRoundingSpec(off.isSubpixel(), off.computeAxisAlignmentForHText())
+	if snapRound.HalfAxisSampleFreq.Y != 0.5 || offRound.HalfAxisSampleFreq.Y != SubpixelRound {
+		t.Errorf("y rounding: snapped = %v, unsnapped = %v", snapRound.HalfAxisSampleFreq.Y,
+			offRound.HalfAxisSampleFreq.Y)
+	}
+	if snapRound.IgnorePositionFieldMask.Y != 0 || offRound.IgnorePositionFieldMask.Y == 0 {
+		t.Errorf("y sub-pixel field mask: snapped = %#x, unsnapped = %#x", snapRound.IgnorePositionFieldMask.Y,
+			offRound.IgnorePositionFieldMask.Y)
+	}
+	// setupForAsPaths leaves it alone (its ignore mask covers only embedded bitmaps and force-auto-hinting).
+	pathFont := *f
+	pathFont.setupForAsPaths(nil)
+	if pathFont.BaselineSnap() {
+		t.Error("setupForAsPaths re-enabled baseline snapping")
+	}
+	f.SetBaselineSnap(true)
+	if !f.BaselineSnap() {
+		t.Error("SetBaselineSnap(true) did not take")
+	}
+}
+
+func TestMetricsBoundsInvalidFlag(t *testing.T) {
+	var m Metrics
+	NewFont(loadTypeface(t, "Roboto-Regular.ttf", 0), 100, 1, 0).Metrics(&m)
+	if m.Flags&MetricsFlagBoundsInvalid != 0 {
+		t.Errorf("a font with a head bbox reported invalid bounds: flags = %#x", m.Flags)
+	}
+	// The empty typeface (and any font the metrics recipe cannot run on) populates no bounds at all, so the four bounds
+	// fields are zero because nothing was read — not because the font reported an empty box.
+	NewFont(nil, 20, 1, 0).Metrics(&m)
+	if m.Flags&MetricsFlagBoundsInvalid == 0 {
+		t.Errorf("the empty typeface reported valid bounds: flags = %#x", m.Flags)
+	}
+	// The other lane into that early return: a font with no hhea table, where ascent/descent/leading have no source.
+	tf, err := NewTypefaceFromData(sfntWithoutTables(t, readTestFont(t, "Roboto-Regular.ttf"), "hhea"), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tf.hhea != nil {
+		t.Fatal("the hhea table survived the strip")
+	}
+	if spacing := NewFont(tf, 100, 1, 0).Metrics(&m); spacing != 0 || m != (Metrics{Flags: MetricsFlagBoundsInvalid}) {
+		t.Errorf("hhea-less metrics = %v %+v", spacing, m)
+	}
+}
+
+func TestUnderlineMetricsFlagsFollowThePostTable(t *testing.T) {
+	const underlineFlags = MetricsFlagUnderlineThicknessIsValid | MetricsFlagUnderlinePositionIsValid
+	data := readTestFont(t, "Roboto-Regular.ttf")
+	withPost, err := NewTypefaceFromData(data, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m Metrics
+	NewFont(withPost, 100, 1, 0).Metrics(&m)
+	if m.Flags&underlineFlags != underlineFlags {
+		t.Errorf("flags = %#x: a font with a post table must report both underline metrics valid", m.Flags)
+	}
+	if m.UnderlineThickness == 0 || m.UnderlinePosition == 0 {
+		t.Fatalf("underline = %v/%v, want the post table's values", m.UnderlineThickness, m.UnderlinePosition)
+	}
+	// With no post table there is nowhere for the underline geometry to come from, so the flags a consumer honors must
+	// not claim a zero-thickness underline on the baseline is what the font asked for.
+	noPost, err := NewTypefaceFromData(sfntWithoutTables(t, data, "post"), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if noPost.post != nil {
+		t.Fatal("the post table survived the strip")
+	}
+	var stripped Metrics
+	NewFont(noPost, 100, 1, 0).Metrics(&stripped)
+	if stripped.Flags&underlineFlags != 0 {
+		t.Errorf("flags = %#x: a font with no post table reported valid underline metrics", stripped.Flags)
+	}
+	if stripped.UnderlineThickness != 0 || stripped.UnderlinePosition != 0 {
+		t.Errorf("underline = %v/%v, want zeroes", stripped.UnderlineThickness, stripped.UnderlinePosition)
+	}
+	// Only the underline flags move: the strikeout pair still comes from OS/2, and the rest of the metrics stay put.
+	const strikeoutFlags = MetricsFlagStrikeoutThicknessIsValid | MetricsFlagStrikeoutPositionIsValid
+	if stripped.Flags != strikeoutFlags {
+		t.Errorf("flags = %#x, want the strikeout pair alone (%#x)", stripped.Flags, strikeoutFlags)
+	}
+	if stripped.Ascent != m.Ascent || stripped.Top != m.Top || stripped.StrikeoutThickness != m.StrikeoutThickness {
+		t.Errorf("stripping post changed unrelated metrics: %+v", stripped)
 	}
 }
 

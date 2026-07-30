@@ -17,7 +17,10 @@ const (
 	MetricsFlagUnderlinePositionIsValid  uint32 = 1 << 1
 	MetricsFlagStrikeoutThicknessIsValid uint32 = 1 << 2
 	MetricsFlagStrikeoutPositionIsValid  uint32 = 1 << 3
-	MetricsFlagBoundsInvalid             uint32 = 1 << 4
+	// MetricsFlagBoundsInvalid is the inverse of its siblings: it is set when Top/Bottom/XMin/XMax hold no bounding box
+	// the font reported (the empty typeface, or a font with no hhea table), so a consumer must treat those four as
+	// unknown rather than as an empty box.
+	MetricsFlagBoundsInvalid uint32 = 1 << 4
 )
 
 // Metrics holds font-wide layout metrics. All values are in the font's device space (scaled by the font size); y-down,

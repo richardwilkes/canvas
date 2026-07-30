@@ -82,6 +82,16 @@ func newTestFaceRec(t *testing.T, file string, index int, langs ...string) *face
 	}
 }
 
+// readTestFontData returns the raw bytes of a font in the shared corpus, for the in-memory (data-backed) faces.
+func readTestFontData(t *testing.T, file string) []byte {
+	t.Helper()
+	data, err := os.ReadFile("../font/testdata/" + file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
+}
+
 // newTestManager builds the standard four-face corpus manager: Roboto tagged "en", DejaVu Sans tagged "fr".
 func newTestManager(t *testing.T) *Manager {
 	t.Helper()
@@ -91,6 +101,15 @@ func newTestManager(t *testing.T) *Manager {
 		newTestFaceRec(t, "test.ttc", 0),
 		newTestFaceRec(t, "test.ttc", 1),
 	})
+}
+
+// familyOf names a matched typeface's family for a failure message (a %v verb on the typeface itself dumps the whole
+// parsed font, font-file bytes included).
+func familyOf(tf *font.Typeface) string {
+	if tf == nil {
+		return "nil"
+	}
+	return tf.FamilyName()
 }
 
 func styleTriple(s font.Style) (weight, width, slant int) {
@@ -134,18 +153,151 @@ func TestManagerMatchFamily(t *testing.T) {
 			t.Errorf("MatchFamily(%q) count = %d, want 2", name, got)
 		}
 	}
-	// Unknown and empty families produce an empty, non-nil set (MatchFamily never returns nil).
-	for _, name := range []string{"Non Existing Family Name", ""} {
-		set := m.MatchFamily(name)
-		if set == nil {
-			t.Fatalf("MatchFamily(%q) = nil", name)
+	// Unknown families produce an empty, non-nil set (MatchFamily never returns nil).
+	set := m.MatchFamily("Non Existing Family Name")
+	if set == nil {
+		t.Fatal("MatchFamily(unknown) = nil")
+	}
+	if got := set.Count(); got != 0 {
+		t.Errorf("MatchFamily(unknown) count = %d, want 0", got)
+	}
+	if tf := set.MatchStyle(font.NormalStyle()); tf != nil {
+		t.Errorf("empty set MatchStyle != nil")
+	}
+	// An empty name requests the platform default family, as MatchFamilyStyle does with it (see
+	// TestManagerMatchFamilyEmptyNameResolvesTheDefault); only a manager with no families at all answers it empty.
+	if got := m.MatchFamily("").Count(); got == 0 {
+		t.Error(`MatchFamily("") resolved no default family`)
+	}
+	if set = newManager(nil).MatchFamily(""); set == nil || set.Count() != 0 {
+		t.Errorf(`empty manager MatchFamily("") = %v, want an empty, non-nil set`, set)
+	}
+}
+
+func TestManagerMatchFamilyEmptyNameResolvesTheDefault(t *testing.T) {
+	// MatchFamily and MatchFamilyStyle document the same contract for an empty (a host's null) family name — the
+	// default system family — so both must answer out of the same family. Keying a corpus face to the platform's own
+	// first default name puts lookupOrDefault's default-family branch, rather than its first-visible-family fallback,
+	// under the test on every GOOS.
+	defaults := defaultFamilies()
+	dflt := newTestFaceRec(t, "test.ttc", 1) // the bold face, so the answering face is identifiable by style name
+	dflt.key = tsfont.NormalizeFamily(defaults[0])
+	m := newManager([]*faceRec{newTestFaceRec(t, "Roboto-Regular.ttf", 0), dflt})
+	set := m.MatchFamily("")
+	if got := set.Count(); got != 1 {
+		t.Fatalf(`MatchFamily("") count = %d, want 1 (the default family's one face)`, got)
+	}
+	if _, name := set.Style(0); name != "Bold" {
+		t.Errorf(`MatchFamily("") holds the %q face, want the default family's Bold face`, name)
+	}
+	viaSet := set.MatchStyle(font.NormalStyle())
+	viaStyle := m.MatchFamilyStyle("", font.NormalStyle())
+	if viaSet == nil || viaSet != viaStyle {
+		t.Errorf(`MatchFamily("").MatchStyle() = %s, MatchFamilyStyle("") = %s: the two disagree`,
+			familyOf(viaSet), familyOf(viaStyle))
+	}
+	// They keep agreeing in the four-face corpus, where which branch of lookupOrDefault answers depends on the platform
+	// (the Linux defaults include DejaVu Sans; the darwin and windows ones are absent, so the first visible family
+	// wins).
+	m = newTestManager(t)
+	viaSet, viaStyle = m.MatchFamily("").MatchStyle(font.NormalStyle()), m.MatchFamilyStyle("", font.NormalStyle())
+	if viaSet == nil || viaSet != viaStyle {
+		t.Errorf(`corpus MatchFamily("").MatchStyle() = %s, MatchFamilyStyle("") = %s`,
+			familyOf(viaSet), familyOf(viaStyle))
+	}
+}
+
+func TestManagerCharacterFallbackScoresDefaultsInOrder(t *testing.T) {
+	// defaultFamilies is a search order, not one pool: the first default family present answers whenever it covers the
+	// character, even when a later default family holds the better style match. Keying corpus faces to the platform's
+	// own default names makes the tiers testable on every GOOS.
+	defaults := defaultFamilies()
+	first := newTestFaceRec(t, "Roboto-Regular.ttf", 0) // regular weight: a near miss for a bold request
+	first.key = tsfont.NormalizeFamily(defaults[0])
+	second := newTestFaceRec(t, "test.ttc", 1) // the exact bold match, covering '!'
+	second.key = tsfont.NormalizeFamily(defaults[1])
+	m := newManager([]*faceRec{newTestFaceRec(t, "DejaVuSans.subset.ttf", 0), second, first})
+	if tf := m.MatchFamilyStyleCharacter("", font.BoldStyle(), nil, '!'); tf == nil || tf.FamilyName() != "Roboto" {
+		t.Errorf("bold '!' = %s, want Roboto, the first default family's regular face (the second default is an exact "+
+			"style match, but it is second)", familyOf(tf))
+	}
+	// The non-default families still rank below every default: DejaVu Sans covers 'x' and ties Roboto on style, but the
+	// default-family tier answers first.
+	if tf := m.MatchFamilyStyleCharacter("", font.NormalStyle(), nil, 'x'); tf == nil || tf.FamilyName() != "Roboto" {
+		t.Errorf("normal 'x' = %s, want the default family's Roboto over the non-default DejaVu Sans", familyOf(tf))
+	}
+	// A default family that does not cover the character drops out and the next default in the order answers — still
+	// ahead of the non-default families that cover it too.
+	first = newTestFaceRec(t, "test.ttc", 1) // covers '!' and nothing else
+	first.key = tsfont.NormalizeFamily(defaults[0])
+	second = newTestFaceRec(t, "Roboto-Regular.ttf", 0)
+	second.key = tsfont.NormalizeFamily(defaults[1])
+	m = newManager([]*faceRec{newTestFaceRec(t, "DejaVuSans.subset.ttf", 0), second, first})
+	if tf := m.MatchFamilyStyleCharacter("", font.NormalStyle(), nil, 'x'); tf == nil || tf.FamilyName() != "Roboto" {
+		t.Errorf("normal 'x' = %s, want the second default family's Roboto (the first does not cover it)", familyOf(tf))
+	}
+}
+
+func TestNewFromData(t *testing.T) {
+	// The in-memory manager: every lazy read — display metadata, the coverage probe, the typeface load — has to answer
+	// out of the blob the face came with, since none of these faces has a file behind it.
+	m := NewFromData(readTestFontData(t, "Roboto-Regular.ttf"), readTestFontData(t, "test.ttc"),
+		[]byte("not a font"), nil)
+	// Unparsable blobs are skipped, and the collection contributes both of its faces to one family.
+	if got := m.CountFamilies(); got != 2 {
+		t.Fatalf("CountFamilies = %d, want 2 (Roboto and Test)", got)
+	}
+	for i, want := range []string{"Roboto", "Test"} {
+		if got := m.FamilyName(i); got != want {
+			t.Errorf("FamilyName(%d) = %q, want %q", i, got, want)
 		}
-		if got := set.Count(); got != 0 {
-			t.Errorf("MatchFamily(%q) count = %d, want 0", name, got)
+	}
+	for _, f := range m.all {
+		if f.path != "" {
+			t.Fatalf("data-backed face %q carries the path %q", f.key, f.path)
 		}
-		if tf := set.MatchStyle(font.NormalStyle()); tf != nil {
-			t.Errorf("empty set MatchStyle != nil")
+		if len(f.data) == 0 {
+			t.Fatalf("data-backed face %q carries no data", f.key)
 		}
+	}
+	set := m.MatchFamily("Test")
+	if got := set.Count(); got != 2 {
+		t.Fatalf("MatchFamily(Test) count = %d, want 2", got)
+	}
+	for i, want := range []struct {
+		name   string
+		weight int
+	}{{name: "Regular", weight: 400}, {name: "Bold", weight: 700}} {
+		style, name := set.Style(i)
+		if name != want.name || style.Weight() != want.weight {
+			t.Errorf("Style(%d) = %q weight %d, want %q weight %d", i, name, style.Weight(), want.name, want.weight)
+		}
+	}
+	tf := m.MatchFamilyStyle("Test", font.BoldStyle())
+	if tf == nil || tf.FamilyName() != "Test" || tf.Style().Weight() != 700 {
+		t.Errorf("MatchFamilyStyle(Test, bold) = %s, want the bold Test face parsed out of the blob", familyOf(tf))
+	}
+	// Character fallback runs over the coverage NewFromData read from each cmap: only Roboto has 'x' here.
+	if tf = m.MatchFamilyStyleCharacter("Test", font.NormalStyle(), nil, 'x'); tf == nil ||
+		tf.FamilyName() != "Roboto" {
+		t.Errorf("fallback for 'x' = %s, want Roboto", familyOf(tf))
+	}
+	// That coverage is exact where a scan footprint over-claims: the test.ttc faces' cmap4 sentinel segment maps U+FFFF
+	// to glyph 0, so no face here even claims the rune.
+	for _, f := range m.all {
+		if f.runes.Contains(0xFFFF) {
+			t.Errorf("face %q claims the U+FFFF .notdef sentinel", f.key)
+		}
+	}
+	if tf = m.MatchFamilyStyleCharacter("", font.NormalStyle(), nil, 0xFFFF); tf != nil {
+		t.Errorf("fallback for the U+FFFF sentinel = %s, want nil", familyOf(tf))
+	}
+	// Nothing usable supplied: an empty manager, never nil.
+	if got := NewFromData([]byte("not a font")).CountFamilies(); got != 0 {
+		t.Errorf("garbage-only CountFamilies = %d, want 0", got)
+	}
+	if got := NewFromData().CountFamilies(); got != 0 {
+		t.Errorf("no-blob CountFamilies = %d, want 0", got)
 	}
 }
 

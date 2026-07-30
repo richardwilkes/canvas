@@ -8,17 +8,19 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // The font manager surface: family enumeration, family/style/character matching, style sets, and load-from-data, built
-// over go-text/typesetting's fontscan index. Font metadata is host-independent: footprints (file location, normalized
-// family, rune coverage, language coverage, aspect) group into families; per-face display names, style names, and font
-// styles come from a lightweight table read (font.DescribeFaceFile) on demand; style matching uses the CSS3
-// style-matching scoring in css3Score; character fallback probes the footprints' cmap-derived rune coverage with
-// BCP-47 hints ordered least-to-most significant, then verifies the chosen face really maps the character through its
-// own cmap before answering — with another table-only read (font.FaceCoversRuneFile), so a rejected candidate never
-// becomes a fully parsed, permanently cached font.
+// over go-text/typesetting's fontscan index for the system manager (Default) and over caller-supplied font data for an
+// in-memory one (NewFromData). A face is therefore either file-backed or data-backed, and each of its lazy reads — the
+// display metadata, the rune-coverage probe, the typeface load — has a lane for both. Font metadata is
+// host-independent: footprints (file location, normalized family, rune coverage, language coverage, aspect) group into
+// families; per-face display names, style names, and font styles come from a lightweight table read
+// (font.DescribeFaceFile/Data) on demand; style matching uses the CSS3 style-matching scoring in css3Score; character
+// fallback probes the faces' cmap-derived rune coverage with BCP-47 hints ordered least-to-most significant, then
+// verifies the chosen face really maps the character through its own cmap before answering — with another table-only
+// read (font.FaceCoversRuneFile/Data), so a rejected candidate never becomes a fully parsed, permanently cached font.
 //
 // This is one host-independent implementation where a platform library would have three hosts (CoreText, fontconfig,
 // DirectWrite), so its behavior is the documented font-manager contract plus the majority host behavior rather than any
-// single host byte-for-byte. The inventory is fontscan's on-disk scan, so it can include families a host has not
+// single host byte-for-byte. The system inventory is fontscan's on-disk scan, so it can include families a host has not
 // activated and miss host-virtual families; hidden (dot-prefixed) families are excluded from enumeration but stay
 // matchable by name and reachable through character fallback; enumeration is ordered by normalized family name; family
 // lookup is case- and space-insensitive with no fontconfig-style alias substitution; selectStyleCSS3 is the one
@@ -28,12 +30,14 @@
 package fontmgr
 
 import (
+	"bytes"
 	"runtime"
 	"sort"
 	"strings"
 	"sync"
 
 	tsfont "github.com/go-text/typesetting/font"
+	"github.com/go-text/typesetting/font/opentype"
 	"github.com/go-text/typesetting/fontscan"
 	"github.com/go-text/typesetting/language"
 	"github.com/richardwilkes/canvas/font"
@@ -57,12 +61,14 @@ type Family struct {
 }
 
 // faceRec is one face known to the manager. Display metadata (family/style names, the OS/2-derived style) and the
-// typeface itself load lazily and are cached for the life of the manager (cache aggressively).
+// typeface itself load lazily and are cached for the life of the manager (cache aggressively). Exactly one of path and
+// data holds the face's bytes: a scanned face re-reads its file for every lazy read, a face supplied to NewFromData
+// reads the blob it came with.
 type faceRec struct {
 	tf       *font.Typeface
 	key      string
-	path     string
-	data     []byte
+	path     string // the font file, for a scanned face; "" for a data-backed one
+	data     []byte // the font file's bytes, for a data-backed face; nil for a scanned one
 	info     font.FaceInfo
 	runes    fontscan.RuneSet
 	langs    fontscan.LangSet
@@ -202,6 +208,48 @@ func Default() *Manager {
 	return defaultMgr
 }
 
+// NewFromData builds a manager over in-memory font data instead of a system scan: each blob is one font file (anything
+// the sfnt reader accepts — TTF, OTF, TTC, WOFF), every face of every blob becomes a matchable face, and the faces
+// group into families by the same normalized family name the scan groups by. Nothing touches the filesystem and no
+// system font is involved, so an application's own fonts (a go:embed corpus, a downloaded file) get the same family
+// enumeration, style matching, and character fallback the system manager offers. A blob that does not parse, and any
+// face carrying no family name, is skipped; the result is never nil, and is empty when nothing usable was supplied.
+//
+// Two things differ from a scanned face. Rune coverage is read from each face's own cmap here, so it holds exactly the
+// characters the face really maps rather than the scan footprints' over-claim (see matchCovering). Language coverage is
+// left empty — fontscan derives its language sets while indexing, from data this package cannot reach — so a BCP-47
+// hint never restricts a candidate set to these faces, though the unrestricted scan still reaches all of them.
+//
+// The blobs are retained for the life of the manager (each face parses lazily out of its own blob, as a scanned face
+// re-reads its file) and must not be modified afterwards.
+func NewFromData(data ...[]byte) *Manager {
+	var recs []*faceRec
+	for _, blob := range data {
+		lds, err := opentype.NewLoaders(bytes.NewReader(blob))
+		if err != nil {
+			continue
+		}
+		for index := range lds {
+			info, err2 := font.DescribeFaceData(blob, index)
+			if err2 != nil || info.Family == "" {
+				continue
+			}
+			var runes fontscan.RuneSet
+			for _, r := range font.FaceRunesData(blob, index) {
+				runes.Add(r)
+			}
+			recs = append(recs, &faceRec{
+				key:    tsfont.NormalizeFamily(info.Family),
+				data:   blob,
+				index:  index,
+				runes:  runes,
+				approx: info.Style,
+			})
+		}
+	}
+	return newManager(recs)
+}
+
 // newManager groups faces into families (sorted by normalized key; faces keep their scan order within a family).
 func newManager(recs []*faceRec) *Manager {
 	m := &Manager{byKey: make(map[string]*Family)}
@@ -238,12 +286,12 @@ func (m *Manager) FamilyName(index int) string {
 }
 
 // MatchFamily returns the style set for the named family (normalized, so the lookup is case- and space-insensitive like
-// the platform hosts'). Unknown or empty names yield an empty set, never nil.
+// the platform hosts'). An empty name requests the platform default family, resolved exactly as MatchFamilyStyle
+// resolves it (the documented contract is the same for both: a null family name asks for the default system family), so
+// MatchFamily("").MatchStyle(s) and MatchFamilyStyle("", s) always agree. Unknown names — and an empty name in a
+// manager with no families at all — yield an empty set, never nil.
 func (m *Manager) MatchFamily(familyName string) *StyleSet {
-	if familyName == "" {
-		return &StyleSet{}
-	}
-	fam := m.byKey[tsfont.NormalizeFamily(familyName)]
+	fam := m.lookupOrDefault(familyName)
 	if fam == nil {
 		return &StyleSet{}
 	}
@@ -341,45 +389,60 @@ func (m *Manager) MatchFamilyStyleCharacter(familyName string, style font.Style,
 // matchCoveringTiered is the cross-family fallback selection: default-family faces are preferred over other visible
 // families, which are preferred over hidden (dot-prefixed) families — approximating the platform cascade lists, which
 // never surface the hidden UI fonts fontscan's raw index includes — with the CSS3 style score ordering within each
-// tier.
+// tier. defaultFamilies is a search order rather than a pool, so each present default family is its own tier, in that
+// order: an approximate-style face of the first default family outranks an exact-style face of the second, exactly as
+// lookupOrDefault's first-family-found-wins does for family lookup.
 func (m *Manager) matchCoveringTiered(faces []*faceRec, style font.Style, r rune) *font.Typeface {
-	var tier [3][]*faceRec
-	for _, name := range defaultFamilies() {
-		if fam := m.byKey[tsfont.NormalizeFamily(name)]; fam != nil {
-			tier[0] = append(tier[0], fam.faces...)
-		}
-	}
+	var visible, hidden []*faceRec
 	for _, f := range faces {
 		if !f.runes.Contains(r) {
 			continue
 		}
 		if strings.HasPrefix(f.key, ".") {
-			tier[2] = append(tier[2], f)
+			hidden = append(hidden, f)
 		} else {
-			tier[1] = append(tier[1], f)
+			visible = append(visible, f)
 		}
 	}
-	// The default families only participate when they are part of the candidate set (they may have been excluded by a
-	// BCP-47 restriction or may not cover r; matchCovering re-checks coverage).
-	if len(tier[0]) != 0 {
-		allowed := make(map[*faceRec]bool, len(tier[1]))
-		for _, f := range tier[1] {
-			allowed[f] = true
-		}
-		kept := tier[0][:0]
-		for _, f := range tier[0] {
-			if allowed[f] {
-				kept = append(kept, f)
-			}
-		}
-		tier[0] = kept
-	}
-	for _, candidates := range tier {
+	tiers := append(m.defaultFamilyTiers(visible), visible, hidden)
+	for _, candidates := range tiers {
 		if tf := matchCovering(candidates, style, r, true); tf != nil {
 			return tf
 		}
 	}
 	return nil
+}
+
+// defaultFamilyTiers returns one tier per present default family, in defaultFamilies order, holding only that family's
+// faces that are part of the candidate set: a default family may have been excluded by a BCP-47 restriction or may not
+// claim r at all (matchCovering re-checks the claim, and the face's own cmap has the final word).
+func (m *Manager) defaultFamilyTiers(candidates []*faceRec) [][]*faceRec {
+	var families []*Family
+	for _, name := range defaultFamilies() {
+		if fam := m.byKey[tsfont.NormalizeFamily(name)]; fam != nil {
+			families = append(families, fam)
+		}
+	}
+	if len(families) == 0 {
+		return nil
+	}
+	allowed := make(map[*faceRec]bool, len(candidates))
+	for _, f := range candidates {
+		allowed[f] = true
+	}
+	tiers := make([][]*faceRec, 0, len(families)+2) // the caller appends the visible and hidden tiers
+	for _, fam := range families {
+		var kept []*faceRec
+		for _, f := range fam.faces {
+			if allowed[f] {
+				kept = append(kept, f)
+			}
+		}
+		if len(kept) != 0 {
+			tiers = append(tiers, kept)
+		}
+	}
+	return tiers
 }
 
 // matchCovering returns the best css3-scored face among those covering r, nil when none cover (or none load —

@@ -290,6 +290,10 @@ func (st *strike) fontMetrics() Metrics {
 	var m Metrics
 	t := st.t
 	if t == nil || t.face == nil || t.upem <= 0 || t.hhea == nil {
+		// Nothing below runs, so Top/Bottom/XMin/XMax never see the head bbox: they stay zero, which is not a bounding
+		// box the font reported. Say so rather than letting a consumer reserve no room for the empty typeface's (or an
+		// hhea-less font's) glyphs.
+		m.Flags |= MetricsFlagBoundsInvalid
 		return m
 	}
 	upem := float32(t.upem)
@@ -339,8 +343,11 @@ func (st *strike) fontMetrics() Metrics {
 		// underline_position is the stroke *center*, so it is not the value used here; CoreText's
 		// CTFontGetUnderlinePosition reports the post value directly, as this does.)
 		underlinePosition = -float32(t.post.UnderlinePosition) / upem
+		// The flags belong to the values read here: with no post table (absent, or a failed parse) both fields stay
+		// zero, and a consumer honoring Metrics.Flags must not be told a zero-thickness underline sitting on the
+		// baseline is what the font asked for.
+		m.Flags |= MetricsFlagUnderlineThicknessIsValid | MetricsFlagUnderlinePositionIsValid
 	}
-	m.Flags |= MetricsFlagUnderlineThicknessIsValid | MetricsFlagUnderlinePositionIsValid
 
 	// We may be able to synthesize x-height and cap-height from the outline.
 	if xHeight == 0 {

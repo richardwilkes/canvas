@@ -42,9 +42,10 @@ func rawSfntTable(t *testing.T, data []byte, tag string) []byte {
 }
 
 // sfntWithTables returns a copy of the single-face sfnt in data with each of the given tables added, replacing any table
-// already present under the same tag. The whole file is reassembled — a fresh tag-ordered directory plus 4-byte-aligned
-// table data — so the result is a font the sfnt reader accepts. The per-table checksums and head.checkSumAdjustment are
-// carried over unchanged (a replaced table gets zero): nothing in the parse path verifies either.
+// already present under the same tag; a nil replacement drops the tag instead (sfntWithoutTables). The whole file is
+// reassembled — a fresh tag-ordered directory plus 4-byte-aligned table data — so the result is a font the sfnt reader
+// accepts. The per-table checksums and head.checkSumAdjustment are carried over unchanged (a replaced table gets zero):
+// nothing in the parse path verifies either.
 func sfntWithTables(t *testing.T, data []byte, extra map[string][]byte) []byte {
 	t.Helper()
 	type table struct {
@@ -70,6 +71,9 @@ func sfntWithTables(t *testing.T, data []byte, extra map[string][]byte) []byte {
 	for tag, raw := range extra {
 		if len(tag) != 4 {
 			t.Fatalf("table tag %q is not four bytes", tag)
+		}
+		if raw == nil { // dropped rather than replaced: the original was already skipped above
+			continue
 		}
 		list = append(list, table{tag: tag, bytes: raw})
 	}
@@ -100,6 +104,18 @@ func sfntWithTables(t *testing.T, data []byte, extra map[string][]byte) []byte {
 		binary.BigEndian.PutUint32(record[12:], uint32(len(tbl.bytes)))
 	}
 	return out
+}
+
+// sfntWithoutTables returns a copy of the single-face sfnt in data with each of the given tables removed, reassembled
+// by sfntWithTables. It is how the tests reach the code paths a table's absence selects, since every font in testdata
+// carries the tables the parser reads.
+func sfntWithoutTables(t *testing.T, data []byte, tags ...string) []byte {
+	t.Helper()
+	drop := make(map[string][]byte, len(tags))
+	for _, tag := range tags {
+		drop[tag] = nil
+	}
+	return sfntWithTables(t, data, drop)
 }
 
 // synthNameTable builds a version 0 'name' table holding each entry as a Windows / Unicode BMP / US-English (3, 1,

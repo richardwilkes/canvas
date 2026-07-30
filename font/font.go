@@ -148,6 +148,31 @@ func (f *Font) SetSubpixel(on bool) { f.setFlag(flagSubpixel, on) }
 // Subpixel reports whether subpixel positioning is requested.
 func (f *Font) Subpixel() bool { return f.flags&flagSubpixel != 0 }
 
+// SetEmbeddedBitmaps sets whether a font's embedded bitmap strikes are requested (recorded, never honored: the scaler
+// decodes the sbix/CBDT/EBDT strike whenever the typeface carries one for the size being rendered, so the request can
+// neither enable nor suppress it). It therefore stays out of the scaler rec, where it would only fragment strikes that
+// render identically; setupForAsPaths still clears it, as upstream does.
+func (f *Font) SetEmbeddedBitmaps(on bool) { f.setFlag(flagEmbeddedBitmaps, on) }
+
+// EmbeddedBitmaps reports whether embedded bitmap strikes are requested.
+func (f *Font) EmbeddedBitmaps() bool { return f.flags&flagEmbeddedBitmaps != 0 }
+
+// SetEmbolden sets whether glyphs are requested to be artificially emboldened, "fake bold" (recorded, never honored:
+// there is no synthetic-bold lane here — see the scalercontext.go file comment — so the request stays out of the scaler
+// rec, where it would only fragment strikes that render identically).
+func (f *Font) SetEmbolden(on bool) { f.setFlag(flagEmbolden, on) }
+
+// Embolden reports whether artificial emboldening is requested.
+func (f *Font) Embolden() bool { return f.flags&flagEmbolden != 0 }
+
+// SetBaselineSnap sets whether the baseline of horizontal text is snapped to whole pixels (on by default). It is
+// honored: it reaches the scaler rec, and with it off computeAxisAlignmentForHText reports no snapping axis, so a
+// subpixel-positioned strike keeps sub-pixel bits on both axes instead of rounding the snapped one.
+func (f *Font) SetBaselineSnap(on bool) { f.setFlag(flagBaselineSnap, on) }
+
+// BaselineSnap reports whether the baseline of horizontal text is snapped to whole pixels.
+func (f *Font) BaselineSnap() bool { return f.flags&flagBaselineSnap != 0 }
+
 // SetHinting sets the requested hinting level (only HintingNone/HintingSlight are honored; the library is always
 // unhinted with linear metrics).
 func (f *Font) SetHinting(h Hinting) { f.hinting = h }

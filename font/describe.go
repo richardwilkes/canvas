@@ -127,16 +127,49 @@ func FaceCoversRuneData(data []byte, index int, r rune) bool {
 	return faceCoversRune(bytes.NewReader(data), index, r)
 }
 
-// faceCoversRune resolves r the way Typeface.UnicharToGlyph does: typesetting's NewFont selects the cmap encoding using
-// the OS/2 font page and sanitizes the chosen subtable through ProcessCmap, and a glyph ID no sfnt glyph store can hold
-// counts as unmapped.
+// FaceRunesData reports every rune face index of data maps to a real (nonzero) glyph through its own cmap, in the
+// cmap's iteration order. It is FaceCoversRuneData asked about every character at once, reading the same two tables and
+// retaining nothing else: a font manager built over in-memory data uses it for the rune coverage a system scan would
+// take from its index, and gets an exact set where the scanned footprints over-claim (they count cmap entries that map
+// to glyph 0). Anything that makes the answer unknowable — unparsable data, an out-of-range collection index, a missing
+// or unusable cmap — yields nil, matching FaceCoversRuneData's treatment. There is deliberately no file-backed twin:
+// the file lane's coverage comes from the scan index.
+func FaceRunesData(data []byte, index int) []rune {
+	cmap, ok := faceCmap(bytes.NewReader(data), index)
+	if !ok {
+		return nil
+	}
+	var runes []rune
+	iter := cmap.Iter()
+	for iter.Next() {
+		if r, gid := iter.Char(); gid != 0 && gid <= 0xFFFF {
+			runes = append(runes, r)
+		}
+	}
+	return runes
+}
+
+// faceCoversRune resolves r the way Typeface.UnicharToGlyph does, through the same cmap (see faceCmap): a glyph ID no
+// sfnt glyph store can hold counts as unmapped.
 func faceCoversRune(src opentype.Resource, index int, r rune) bool {
 	if r < 0 || r > 0x10FFFF {
 		return false
 	}
+	cmap, ok := faceCmap(src, index)
+	if !ok {
+		return false
+	}
+	gid, found := cmap.Lookup(r)
+	return found && gid != 0 && gid <= 0xFFFF
+}
+
+// faceCmap returns the cmap face index of src resolves characters through, chosen the way typesetting's NewFont chooses
+// it: the OS/2 font page selects the encoding and the chosen subtable is sanitized through ProcessCmap. ok is false
+// when the face has no usable cmap.
+func faceCmap(src opentype.Resource, index int) (cmap tsfont.Cmap, ok bool) {
 	lds, err := opentype.NewLoaders(src)
 	if err != nil || index < 0 || index >= len(lds) {
-		return false
+		return nil, false
 	}
 	ld := lds[index]
 	// NewFont reads OS/2 for the font page with every error ignored; ParseOs2 fills nothing when it fails, so treating a
@@ -149,18 +182,17 @@ func faceCoversRune(src opentype.Resource, index int, r rune) bool {
 	}
 	raw, err := ld.RawTable(opentype.MustNewTag("cmap"))
 	if err != nil {
-		return false
+		return nil, false
 	}
-	cmap, _, err := tables.ParseCmap(raw)
+	parsed, _, err := tables.ParseCmap(raw)
 	if err != nil {
-		return false
+		return nil, false
 	}
-	best, _, err := tsfont.ProcessCmap(cmap, fontPage)
+	best, _, err := tsfont.ProcessCmap(parsed, fontPage)
 	if err != nil {
-		return false
+		return nil, false
 	}
-	gid, ok := best.Lookup(r)
-	return ok && gid != 0 && gid <= 0xFFFF
+	return best, true
 }
 
 func firstName(name tables.Name, ids ...tables.NameID) string {

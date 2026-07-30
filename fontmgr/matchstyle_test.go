@@ -14,6 +14,7 @@ package fontmgr
 
 import (
 	"math"
+	"slices"
 	"sort"
 	"testing"
 
@@ -48,6 +49,13 @@ var (
 	expandedItalic900  = font.NewStyle(font.WeightBlack, font.WidthExpanded, font.SlantItalic)
 	expandedObliqu100  = font.NewStyle(font.WeightThin, font.WidthExpanded, font.SlantOblique)
 	expandedObliqu900  = font.NewStyle(font.WeightBlack, font.WidthExpanded, font.SlantOblique)
+
+	// One weight and slant across the whole width axis, for the cases that rank differing widths against each other.
+	condensedNormal400     = font.NewStyle(font.WeightNormal, font.WidthCondensed, font.SlantUpright)
+	semiExpandedNormal400  = font.NewStyle(font.WeightNormal, font.WidthSemiExpanded, font.SlantUpright)
+	expandedNormal400      = font.NewStyle(font.WeightNormal, font.WidthExpanded, font.SlantUpright)
+	extraExpandedNormal400 = font.NewStyle(font.WeightNormal, font.WidthExtraExpanded, font.SlantUpright)
+	ultraExpandedNormal400 = font.NewStyle(font.WeightNormal, font.WidthUltraExpanded, font.SlantUpright)
 
 	normalNormal100 = font.NewStyle(font.WeightThin, font.WidthNormal, font.SlantUpright)
 	normalNormal300 = font.NewStyle(font.WeightLight, font.WidthNormal, font.SlantUpright)
@@ -148,6 +156,54 @@ func TestCSS3ScoreTierPriority(t *testing.T) {
 	if got := set[order[0]]; got != upright900 {
 		t.Errorf("upright 400 request ranked (%d,%d,%d) first, want the upright 900 face",
 			got.Weight(), got.Width(), got.Slant())
+	}
+}
+
+// TestCSS3ScoreWidthTierOrder pins the width tier — the tier with the greatest priority — against the CSS3
+// font-stretch rule, for every pattern width against every candidate width: the exact width ranks first, then, for a
+// pattern wider than normal, the wider widths ascending followed by the narrower ones descending; for a normal or
+// narrower pattern, the narrower widths descending followed by the wider ones ascending. Upstream Skia's strict
+// `current.width() > pattern.width()` test drops the exact-width candidate into the other branch, where it scores its
+// raw width instead of the full 10, so for a pattern of width 6, 7 or 8 a wider face outranks the exact one.
+func TestCSS3ScoreWidthTierOrder(t *testing.T) {
+	widths := []int{
+		font.WidthUltraCondensed, font.WidthExtraCondensed, font.WidthCondensed, font.WidthSemiCondensed,
+		font.WidthNormal, font.WidthSemiExpanded, font.WidthExpanded, font.WidthExtraExpanded,
+		font.WidthUltraExpanded,
+	}
+	// Every candidate carries the same weight and slant, so only the width tier separates them.
+	set := make([]font.Style, len(widths))
+	for i, w := range widths {
+		set[i] = font.NewStyle(font.WeightNormal, w, font.SlantUpright)
+	}
+	styleAt := func(i int) font.Style { return set[i] }
+	for _, patternWidth := range widths {
+		want := []int{patternWidth}
+		narrower := func() {
+			for w := patternWidth - 1; w >= font.WidthUltraCondensed; w-- {
+				want = append(want, w)
+			}
+		}
+		wider := func() {
+			for w := patternWidth + 1; w <= font.WidthUltraExpanded; w++ {
+				want = append(want, w)
+			}
+		}
+		if patternWidth <= font.WidthNormal {
+			narrower()
+			wider()
+		} else {
+			wider()
+			narrower()
+		}
+		pattern := font.NewStyle(font.WeightNormal, patternWidth, font.SlantUpright)
+		got := make([]int, 0, len(set))
+		for _, i := range rankStylesCSS3(pattern, len(set), styleAt) {
+			got = append(got, set[i].Width())
+		}
+		if !slices.Equal(got, want) {
+			t.Errorf("width %d pattern ranked the widths %v, want %v", patternWidth, got, want)
+		}
 	}
 }
 
@@ -766,6 +822,44 @@ var matchStyleCSS3Tests = []struct {
 			{normalNormal400, invalidFontStyle},
 			{normalNormal500, invalidFontStyle},
 			{normalNormal600, invalidFontStyle},
+		},
+	},
+	// The width tier ranked against itself. Every face here differs only in width, so nothing below the
+	// highest-priority tier can affect the choice: the exact width must win outright, and where it is absent the
+	// pattern's direction decides.
+	{
+		set: []font.Style{expandedNormal400, extraExpandedNormal400},
+		cases: [][2]font.Style{
+			{expandedNormal400, expandedNormal400}, // the exact width, not the wider face beside it
+			{extraExpandedNormal400, extraExpandedNormal400},
+			{semiExpandedNormal400, expandedNormal400},
+			{ultraExpandedNormal400, extraExpandedNormal400},
+			{normalNormal400, expandedNormal400},
+			{condensedNormal400, expandedNormal400},
+		},
+	},
+	{
+		set: []font.Style{
+			condensedNormal400, normalNormal400, semiExpandedNormal400, expandedNormal400, extraExpandedNormal400,
+			ultraExpandedNormal400,
+		},
+		cases: [][2]font.Style{
+			{condensedNormal400, condensedNormal400},
+			{normalNormal400, normalNormal400},
+			{semiExpandedNormal400, semiExpandedNormal400},
+			{expandedNormal400, expandedNormal400},
+			{extraExpandedNormal400, extraExpandedNormal400},
+			{ultraExpandedNormal400, ultraExpandedNormal400},
+		},
+	},
+	{
+		// No exact width on offer: a wider-than-normal pattern takes the nearest wider face, and only then narrower
+		// ones.
+		set: []font.Style{condensedNormal400, normalNormal400, ultraExpandedNormal400},
+		cases: [][2]font.Style{
+			{semiExpandedNormal400, ultraExpandedNormal400},
+			{expandedNormal400, ultraExpandedNormal400},
+			{extraExpandedNormal400, ultraExpandedNormal400},
 		},
 	},
 	{

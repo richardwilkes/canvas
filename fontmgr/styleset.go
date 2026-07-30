@@ -67,6 +67,13 @@ const (
 // css3Score computes the CSS3 match score of one candidate style against the pattern. Width (CSS stretch) has the
 // greatest priority, then slant, then weight; each tier shifts left by the width of the tiers below so it dominates
 // them. Higher scores are better.
+//
+// The wider-than-normal width branch tests current >= pattern where upstream Skia's matchStyleCSS3 tests current >
+// pattern, which is the second deliberate divergence in this function (see css3SlantBits above for the first). CSS3
+// ranks an exact width match ahead of every other candidate, and upstream's strict comparison drops the exact-width
+// face into the else, scoring it its raw width instead of the full 10 — for a pattern of width 6, 7 or 8, that lets a
+// wider face outrank it, e.g. an ExtraExpanded face beating an Expanded one for an Expanded request. The narrower-than-
+// normal branch above already tests current <= pattern, so this makes the two branches mirror images, as they read.
 func css3Score(pattern, current font.Style) int {
 	// font.Style is an exported int32 whose packed layout is the documented round-trip (font.Style(storedInt32)) and it
 	// has no validating constructor from a raw value, so a style that never came from font.NewStyle can carry any
@@ -85,7 +92,7 @@ func css3Score(pattern, current font.Style) int {
 			score += 10 - current.Width()
 		}
 	} else {
-		if current.Width() > pattern.Width() {
+		if current.Width() >= pattern.Width() {
 			score += 10 + pattern.Width() - current.Width()
 		} else {
 			score += current.Width()

@@ -24,9 +24,11 @@
 // character-fallback verification cases below rely on that.
 //
 // The system manager (Default) scans every system font directory and serializes an index cache into the user's cache
-// dir, so nothing here calls it by default: every test that does is gated on CANVAS_FONTMGR_SYSTEM through
-// requireSystemFonts, in this file and in capimigrated_test.go alike. The live oracle probe that once compared the
-// system manager against the C library's platform host was removed along with that library.
+// dir, so no test performs that scan by default: every test that does is gated on CANVAS_FONTMGR_SYSTEM through
+// requireSystemFonts, in this file and in capimigrated_test.go alike. Default and DefaultWithError themselves are
+// exercised hermetically against a stubbed scan (stubSystemDefault), which is what keeps their memoization under test
+// on every leg. The live oracle probe that once compared the system manager against the C library's platform host was
+// removed along with that library.
 
 package fontmgr
 
@@ -985,7 +987,8 @@ func TestStyleFromAspect(t *testing.T) {
 // requireSystemFonts skips unless the system-font tests have been opted into. Default's first call runs
 // fontscan.SystemFonts, which walks every system font directory and serializes a font_index_v*.cache file into the
 // user's cache directory, so a test that reaches it is neither hermetic nor free of side effects and its runtime
-// depends on the machine's font inventory. Every test that calls Default gates on this.
+// depends on the machine's font inventory. Every test that performs the real scan gates on this; the tests that only
+// need Default's behavior stub the scan instead (stubSystemDefault).
 func requireSystemFonts(t *testing.T) {
 	t.Helper()
 	if os.Getenv("CANVAS_FONTMGR_SYSTEM") == "" {
@@ -1193,6 +1196,86 @@ func TestFontCacheDirFallback(t *testing.T) {
 	if got = chooseFontCacheDir(func() (string, error) { return filepath.Join(blocked, "cache"), nil },
 		func() string { return blocked }); got != "" {
 		t.Errorf("cache dir = %q, want \"\" when no candidate is writable", got)
+	}
+}
+
+// stubSystemDefault points Default and DefaultWithError at a scan of the caller's making for the duration of the test,
+// restoring the real one afterwards. It is what lets the two entry points be exercised at all: their own scan walks
+// every system font directory, so the tests that reach it are opt-in (requireSystemFonts) and skipped on every CI leg.
+// No test in this package runs in parallel, so the swap is not observable by another one.
+func stubSystemDefault(t *testing.T, fps []fontscan.Footprint, err error) *int {
+	t.Helper()
+	calls := 0
+	prev := systemDefault
+	systemDefault = &memoizedScan{
+		scan: func(fontscan.Logger, string) ([]fontscan.Footprint, error) {
+			calls++
+			return fps, err
+		},
+		cacheDir: func() string { return "" },
+	}
+	t.Cleanup(func() { systemDefault = prev })
+	return &calls
+}
+
+// TestDefaultMemoizesTheOneScan pins what both entry points promise about the process's single system scan: it is
+// attempted once however many callers ask, every caller gets that same manager, and Default is DefaultWithError minus
+// the error rather than a second, independently built answer. fontscan's own package-level sync.Once makes a retry
+// hand back an empty index and a nil error, so a lost memo would turn a diagnosable failure into a silent one.
+func TestDefaultMemoizesTheOneScan(t *testing.T) {
+	t.Run("successful scan", func(t *testing.T) {
+		calls := stubSystemDefault(t, []fontscan.Footprint{
+			{Family: "roboto", Location: fontscan.Location{File: "../font/testdata/Roboto-Regular.ttf"}},
+		}, nil)
+		m, err := DefaultWithError()
+		if err != nil {
+			t.Fatalf("scan: %v", err)
+		}
+		if m == nil || m.CountFamilies() != 1 {
+			t.Fatalf("manager = %v, want the one scanned family", m)
+		}
+		m2, err2 := DefaultWithError()
+		if m2 != m || err2 != nil {
+			t.Errorf("second call = %p/%v, want the memoized %p/nil", m2, err2, m)
+		}
+		if got := Default(); got != m {
+			t.Errorf("Default = %p, want the manager DefaultWithError returned (%p)", got, m)
+		}
+		if *calls != 1 {
+			t.Errorf("%d scans, want exactly 1", *calls)
+		}
+	})
+
+	t.Run("failed scan", func(t *testing.T) {
+		// A failure is memoized just as firmly, and Default still answers with an empty — never nil — manager.
+		boom := errors.New("searching font directories")
+		calls := stubSystemDefault(t, nil, boom)
+		m := Default()
+		if m == nil {
+			t.Fatal("a failed scan returned a nil manager from Default")
+		}
+		if got := m.CountFamilies(); got != 0 {
+			t.Errorf("failed scan families = %d, want 0", got)
+		}
+		m2, err := DefaultWithError()
+		if m2 != m {
+			t.Errorf("DefaultWithError manager = %p, want Default's %p", m2, m)
+		}
+		if !errors.Is(err, boom) {
+			t.Errorf("err = %v, want it to wrap the scan's own error", err)
+		}
+		if *calls != 1 {
+			t.Errorf("%d scans, want exactly 1 (a failure is never retried)", *calls)
+		}
+	})
+}
+
+// TestSystemFontCacheDirIsUsable pins what Default asks of the cache directory it resolves: fontscan discards a fully
+// successful scan when it cannot serialize its index there, so the resolved directory must be one it can write into —
+// or "", which leaves fontscan its own choice and its own error.
+func TestSystemFontCacheDirIsUsable(t *testing.T) {
+	if dir := systemFontCacheDir(); dir != "" && !cacheDirWritable(dir) {
+		t.Errorf("systemFontCacheDir() = %q, which is not writable", dir)
 	}
 }
 

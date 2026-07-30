@@ -59,6 +59,59 @@ func TestPackedGlyphID(t *testing.T) {
 	}
 }
 
+// TestPackedGlyphIDSubY is TestPackedGlyphID for the sub-pixel *Y* lane, which the X-only mask above never reaches.
+// The lane is live: it is what the unaligned spec (baseline snapping off) and the Y-aligned one (90-degree-rotated
+// text) select, and canvas/text.go and gpu/text/subrun.go pack every glyph through the strike's own field mask. Its
+// field sits directly above the 16-bit glyph ID, so a wrong shift spills sub-y bits into the ID and the strike resolves
+// an entirely different glyph — which is why the packed values are pinned against literals here rather than against the
+// shift constant the packing itself uses.
+func TestPackedGlyphIDSubY(t *testing.T) {
+	yMask := geom.IPoint{Y: 3 << packedSubPixelYShift}
+	cases := []struct {
+		frac float32
+		want float32
+	}{
+		{frac: 0.0, want: 0}, {frac: 0.24, want: 0}, {frac: 0.26, want: 0.25}, {frac: 0.51, want: 0.5}, {frac: 0.76, want: 0.75}, {frac: 0.99, want: 0.75},
+	}
+	for _, c := range cases {
+		p := PackGlyphIDPoint(7, geom.Pt(3, 10+c.frac), yMask)
+		if p.GlyphID() != 7 {
+			t.Fatalf("frac %v: glyph ID %d", c.frac, p.GlyphID())
+		}
+		if got := p.SubYOffset(); got != c.want {
+			t.Errorf("frac %v: sub-y %v, want %v", c.frac, got, c.want)
+		}
+		if got := p.SubXOffset(); got != 0 {
+			t.Errorf("frac %v: sub-x %v, want 0 (masked)", c.frac, got)
+		}
+	}
+
+	// Negative positions floor correctly on this lane too.
+	if got := PackGlyphIDPoint(7, geom.Pt(0, -9.74), yMask).SubYOffset(); got != 0.25 {
+		t.Errorf("negative pos: sub-y %v, want 0.25", got)
+	}
+
+	// The two lanes are independent and neither may reach the glyph-ID field: the largest glyph ID with both sub-pixel
+	// fields saturated occupies exactly bits [19:0] — sub-x in [1:0], the ID in [17:2], sub-y in [19:18].
+	both := geom.IPoint{X: 3, Y: 3 << packedSubPixelYShift}
+	p := PackGlyphIDPoint(0xFFFF, geom.Pt(1.76, 2.76), both)
+	if p.GlyphID() != 0xFFFF || p.SubXOffset() != 0.75 || p.SubYOffset() != 0.75 {
+		t.Errorf("saturated pack = gid %#x sub (%v,%v), want 0xffff (0.75,0.75)",
+			p.GlyphID(), p.SubXOffset(), p.SubYOffset())
+	}
+	if got := uint32(p); got != 0xFFFFF {
+		t.Errorf("saturated pack = %#x, want 0xfffff", got)
+	}
+	// Sub-y alone must land above the glyph ID, leaving bits [17:0] clear.
+	if got := uint32(PackGlyphIDPoint(0, geom.Pt(0, 0.76), both)); got != 0xC0000 {
+		t.Errorf("sub-y-only pack = %#x, want 0xc0000", got)
+	}
+	// Sub-x alone must stay below it.
+	if got := uint32(PackGlyphIDPoint(0, geom.Pt(0.76, 0), both)); got != 0x3 {
+		t.Errorf("sub-x-only pack = %#x, want 0x3", got)
+	}
+}
+
 func TestGlyphImageTooLarge(t *testing.T) {
 	// imageTooLarge must gate both dimensions so an extreme height cannot drive an outsized mask allocation. Height is
 	// otherwise saturated only to the 16-bit satUint16 ceiling (65535).
@@ -103,9 +156,50 @@ func TestRoundingSpec(t *testing.T) {
 	if spec.IgnorePositionFieldMask != (geom.IPoint{X: 3, Y: 0}) {
 		t.Errorf("subpixel X-aligned mask: %v", spec.IgnorePositionFieldMask)
 	}
+	// The Y-aligned spec — what computeAxisAlignmentForHText returns for 90-degree-rotated text — is the mirror of the
+	// X-aligned one: X rounds to whole pixels and the sub-pixel lane moves to Y. Nothing else in the package builds it.
+	spec = NewRoundingSpec(true, AxisAlignmentY)
+	if spec.HalfAxisSampleFreq != geom.Pt(0.5, SubpixelRound) {
+		t.Errorf("subpixel Y-aligned: %v", spec.HalfAxisSampleFreq)
+	}
+	if spec.IgnorePositionFieldMask != (geom.IPoint{Y: 3 << packedSubPixelYShift}) {
+		t.Errorf("subpixel Y-aligned mask: %v", spec.IgnorePositionFieldMask)
+	}
+	// Non-subpixel drops both lanes whatever the alignment is.
+	spec = NewRoundingSpec(false, AxisAlignmentY)
+	if spec.HalfAxisSampleFreq != geom.Pt(0.5, 0.5) || spec.IgnorePositionFieldMask != (geom.IPoint{}) {
+		t.Errorf("non-subpixel Y-aligned: %v %v", spec.HalfAxisSampleFreq, spec.IgnorePositionFieldMask)
+	}
 	spec = NewRoundingSpec(true, AxisAlignmentNone)
+	if spec.HalfAxisSampleFreq != geom.Pt(SubpixelRound, SubpixelRound) {
+		t.Errorf("subpixel unaligned: %v", spec.HalfAxisSampleFreq)
+	}
 	if spec.IgnorePositionFieldMask != (geom.IPoint{X: 3, Y: 3 << packedSubPixelYShift}) {
 		t.Errorf("subpixel unaligned mask: %v", spec.IgnorePositionFieldMask)
+	}
+
+	// The rounding rules and the packing are one lane, so pin them together the way the glyph-run painters use them:
+	// add the spec's rounding constant to a device position, then pack through the spec's own field mask. Under the
+	// Y-aligned spec a fractional Y survives as a quarter-pixel offset while X rounds away, and under the X-aligned one
+	// the roles swap.
+	pos := geom.Pt(10.7, 20.7)
+	for _, c := range []struct {
+		name         string
+		alignment    AxisAlignment
+		wantX, wantY float32
+	}{
+		{name: "X-aligned", alignment: AxisAlignmentX, wantX: 0.75, wantY: 0},
+		{name: "Y-aligned", alignment: AxisAlignmentY, wantX: 0, wantY: 0.75},
+		{name: "unaligned", alignment: AxisAlignmentNone, wantX: 0.75, wantY: 0.75},
+	} {
+		spec = NewRoundingSpec(true, c.alignment)
+		p := PackGlyphIDPoint(9, pos.Add(spec.HalfAxisSampleFreq), spec.IgnorePositionFieldMask)
+		if p.GlyphID() != 9 {
+			t.Errorf("%s: glyph ID %d, want 9", c.name, p.GlyphID())
+		}
+		if p.SubXOffset() != c.wantX || p.SubYOffset() != c.wantY {
+			t.Errorf("%s: sub (%v,%v), want (%v,%v)", c.name, p.SubXOffset(), p.SubYOffset(), c.wantX, c.wantY)
+		}
 	}
 }
 

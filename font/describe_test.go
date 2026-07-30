@@ -63,6 +63,52 @@ func TestFaceCoversRuneMatchesTypeface(t *testing.T) {
 	}
 }
 
+// TestFaceRunesDataBoundsTheCmapWalk pins the bound on the per-code-point cmap walk. typesetting's format-12/13
+// iterator yields one code point at a time and takes a group's length from EndCharCode-StartCharCode in unsigned
+// arithmetic, so a group declaring an EndCharCode of 0xFFFFFFFF — or one below its StartCharCode, which wraps to the
+// same count — asks for 4.29e9 iterations and ~17 GB of appended runes. fontmgr.NewFromData calls this for every face
+// of every supplied blob, so one malformed embedded font would otherwise kill manager construction.
+func TestFaceRunesDataBoundsTheCmapWalk(t *testing.T) {
+	roboto := readTestFont(t, "Roboto-Regular.ttf")
+	for _, c := range []struct {
+		name   string
+		groups [][3]uint32
+		want   int
+	}{
+		// The control: a well-formed group is walked to its end, so the bound costs a real font nothing.
+		{name: "well-formed", groups: [][3]uint32{{'A', 'C', 1}}, want: 3},
+		{name: "unbounded end", groups: [][3]uint32{{0, 0xFFFFFFFF, 1}}, want: maxCmapEntries},
+		{name: "end below start", groups: [][3]uint32{{'A', 'A' - 1, 1}}, want: maxCmapEntries},
+		// The bound is over the whole walk rather than per group, so a cmap packed with malformed groups costs no more
+		// than one of them does.
+		{
+			name:   "many groups",
+			groups: [][3]uint32{{0, 0xFFFFFFFF, 1}, {0, 0xFFFFFFFF, 2}, {0, 0xFFFFFFFF, 3}},
+			want:   maxCmapEntries,
+		},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			data := sfntWithTables(t, roboto, map[string][]byte{"cmap": synthCmapFormat13(c.groups...)})
+			runes := FaceRunesData(data, 0)
+			if len(runes) != c.want {
+				t.Fatalf("FaceRunesData returned %d runes, want %d", len(runes), c.want)
+			}
+			// Every group here maps every code point in it to a real glyph, so the answer has to be the contiguous run
+			// starting at the first group's start: the walk stops at the bound rather than skipping ahead within a
+			// group or reordering what it collects.
+			for i, r := range runes {
+				if want := rune(c.groups[0][0]) + rune(i); r != want {
+					t.Fatalf("rune %d = %#x, want %#x", i, r, want)
+				}
+			}
+		})
+	}
+	// The bound is far above any real font's coverage, so the unpatched face is unaffected by it.
+	if got := len(FaceRunesData(roboto, 0)); got == 0 || got >= maxCmapEntries {
+		t.Errorf("Roboto covers %d runes, want a nonzero count well below the %d bound", got, maxCmapEntries)
+	}
+}
+
 func TestFaceCoversRuneUnknowable(t *testing.T) {
 	// Anything that makes the answer unknowable reports false, the same treatment a face whose typeface fails to load
 	// gets from the font manager.

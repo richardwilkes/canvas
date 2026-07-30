@@ -153,6 +153,30 @@ func synthNameTable(names map[tables.NameID]string) []byte {
 	return out
 }
 
+// synthCmapFormat13 builds a 'cmap' table holding one format-13 subtable under platform 3 / encoding 10 (Windows UCS-4),
+// the first 32-bit encoding ProcessCmap prefers and therefore the subtable a face carrying it resolves through. Each
+// group is {startCharCode, endCharCode, glyphID}; nothing on the parse path checks that the codes are ordered or in
+// range, which is what lets the malformed-group cases exist at all.
+func synthCmapFormat13(groups ...[3]uint32) []byte {
+	const subtableOffset = 12
+	out := make([]byte, subtableOffset, subtableOffset+16+12*len(groups))
+	binary.BigEndian.PutUint16(out[2:], 1)  // numTables
+	binary.BigEndian.PutUint16(out[4:], 3)  // platformID: Windows
+	binary.BigEndian.PutUint16(out[6:], 10) // encodingID: UCS-4
+	binary.BigEndian.PutUint32(out[8:], subtableOffset)
+	out = binary.BigEndian.AppendUint16(out, 13) // format
+	out = binary.BigEndian.AppendUint16(out, 0)  // reserved
+	out = binary.BigEndian.AppendUint32(out, uint32(16+12*len(groups)))
+	out = binary.BigEndian.AppendUint32(out, 0) // language
+	out = binary.BigEndian.AppendUint32(out, uint32(len(groups)))
+	for _, g := range groups {
+		out = binary.BigEndian.AppendUint32(out, g[0])
+		out = binary.BigEndian.AppendUint32(out, g[1])
+		out = binary.BigEndian.AppendUint32(out, g[2])
+	}
+	return out
+}
+
 // os2FsSelectionOffset is the byte offset of fsSelection within the OS/2 table.
 const os2FsSelectionOffset = 62
 

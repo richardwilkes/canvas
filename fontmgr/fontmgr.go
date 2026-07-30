@@ -223,19 +223,33 @@ func (l *scanLogger) tail() string {
 	return strings.Join(l.lines, "; ")
 }
 
-var (
-	defaultOnce sync.Once
-	defaultMgr  *Manager
-	defaultErr  error
-)
+// memoizedScan holds the process's one system scan and its result. The scan function and the cache-directory resolver
+// are fields rather than direct calls so that the memoization contract itself — one attempt, one answer, both entry
+// points agreeing — is testable without touching the machine's fonts or its cache directory, exactly as scanSystemFonts
+// takes them as parameters for the same reason.
+type memoizedScan struct {
+	scan     func(fontscan.Logger, string) ([]fontscan.Footprint, error)
+	cacheDir func() string
+	mgr      *Manager
+	err      error
+	once     sync.Once
+}
+
+// resolve performs the one scan, on the first call; mgr and err hold its result for every caller after that.
+func (s *memoizedScan) resolve() {
+	s.once.Do(func() { s.mgr, s.err = scanSystemFonts(s.scan, s.cacheDir()) })
+}
+
+// systemDefault is the process's system scan, behind Default and DefaultWithError.
+var systemDefault = &memoizedScan{scan: fontscan.SystemFonts, cacheDir: systemFontCacheDir}
 
 // Default returns the process-wide system font manager. The first call scans the system fonts through fontscan (an
 // on-disk index cache makes later runs cheap) and the manager it builds — empty, never nil, when the scan fails — is
 // memoized for the life of the process. Use DefaultWithError when a failed scan has to be reported: that is the only
 // place the reason is visible.
 func Default() *Manager {
-	initDefault()
-	return defaultMgr
+	systemDefault.resolve()
+	return systemDefault.mgr
 }
 
 // DefaultWithError returns what Default returns, plus the error from the one system scan the process performs (nil when
@@ -248,13 +262,8 @@ func Default() *Manager {
 // index and a *nil* error, which would replace a diagnosable failure with a silent one. Making the single attempt
 // succeed is therefore what systemFontCacheDir is for.
 func DefaultWithError() (*Manager, error) {
-	initDefault()
-	return defaultMgr, defaultErr
-}
-
-// initDefault performs the process's one system scan, on the first call to either entry point.
-func initDefault() {
-	defaultOnce.Do(func() { defaultMgr, defaultErr = scanSystemFonts(fontscan.SystemFonts, systemFontCacheDir()) })
+	systemDefault.resolve()
+	return systemDefault.mgr, systemDefault.err
 }
 
 // scanSystemFonts runs one system scan and groups its footprints into a manager. The scan function and the cache

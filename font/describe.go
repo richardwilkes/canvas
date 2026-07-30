@@ -127,13 +127,25 @@ func FaceCoversRuneData(data []byte, index int, r rune) bool {
 	return faceCoversRune(bytes.NewReader(data), index, r)
 }
 
+// maxCmapEntries bounds the walk over a face's cmap. A well-formed subtable maps each code point at most once, so the
+// 0x110000 code points Unicode defines are all one can yield and no real font is truncated here. A malformed one is:
+// typesetting's format-12/13 iterator walks a group one code point at a time and takes the group's length from
+// EndCharCode-StartCharCode in unsigned arithmetic, so a single group declaring End == 0xFFFFFFFF — or any End below its
+// Start, which wraps to the same count — asks for 4.29e9 iterations and ~17 GB of appended runes, killing the process.
+// The parse happens inside typesetting, which does not reject such a group the way FreeType's cmap validation does, so
+// the walk is the only place left to bound it. Stopping early under-claims coverage, which is what a face with no
+// usable cmap already reports (nil), and the font manager verifies every candidate through the face's own cmap before
+// answering with it.
+const maxCmapEntries = 0x110000
+
 // FaceRunesData reports every rune face index of data maps to a real (nonzero) glyph through its own cmap, in the
 // cmap's iteration order. It is FaceCoversRuneData asked about every character at once, reading the same two tables and
 // retaining nothing else: a font manager built over in-memory data uses it for the rune coverage a system scan would
 // take from its index, and gets an exact set where the scanned footprints over-claim (they count cmap entries that map
 // to glyph 0). Anything that makes the answer unknowable — unparsable data, an out-of-range collection index, a missing
-// or unusable cmap — yields nil, matching FaceCoversRuneData's treatment. There is deliberately no file-backed twin:
-// the file lane's coverage comes from the scan index.
+// or unusable cmap — yields nil, matching FaceCoversRuneData's treatment. At most maxCmapEntries cmap entries are
+// walked, which no well-formed cmap reaches. There is deliberately no file-backed twin: the file lane's coverage comes
+// from the scan index.
 func FaceRunesData(data []byte, index int) []rune {
 	cmap, ok := faceCmap(bytes.NewReader(data), index)
 	if !ok {
@@ -141,7 +153,10 @@ func FaceRunesData(data []byte, index int) []rune {
 	}
 	var runes []rune
 	iter := cmap.Iter()
-	for iter.Next() {
+	for range maxCmapEntries {
+		if !iter.Next() {
+			break
+		}
 		if r, gid := iter.Char(); gid != 0 && gid <= 0xFFFF {
 			runes = append(runes, r)
 		}

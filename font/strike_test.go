@@ -501,6 +501,33 @@ func TestStrikePathAction(t *testing.T) {
 	}
 }
 
+// Path strikes are always sub-pixel-positioned: setupForAsPaths force-sets flagSubpixel, so whatever the source font
+// asked for is irrelevant and both settings land on one strike. (The sub-pixel position is applied when the
+// canonical-size path is transformed to the screen.)
+func TestMakePathSpecAlwaysSubpixel(t *testing.T) {
+	tf := loadTypeface(t, "Roboto-Regular.ttf", 0)
+	specs := make(map[bool]StrikeSpec)
+	for _, subpixel := range []bool{false, true} {
+		f := NewFont(tf, 24, 1, 0)
+		f.SetSubpixel(subpixel)
+		spec, scale := MakePathSpec(f, nil)
+		if !spec.Rec.isSubpixel() {
+			t.Errorf("subpixel %v: path rec is not sub-pixel positioned", subpixel)
+		}
+		if scale != 24.0/canonicalTextSizeForPaths {
+			t.Errorf("subpixel %v: strike-to-source scale = %v", subpixel, scale)
+		}
+		// The source font is a copy inside MakePathSpec; the caller's font keeps its own setting.
+		if got := f.flags&flagSubpixel != 0; got != subpixel {
+			t.Errorf("subpixel %v: caller's font mutated to %v", subpixel, got)
+		}
+		specs[subpixel] = spec
+	}
+	if specs[false].Rec != specs[true].Rec {
+		t.Error("path specs should share a rec regardless of the source font's sub-pixel setting")
+	}
+}
+
 func TestShouldDrawAsPathMatrix(t *testing.T) {
 	tf := loadTypeface(t, "Roboto-Regular.ttf", 0)
 	f := NewFont(tf, 100, 1, 0)
@@ -557,6 +584,82 @@ func TestStrikeCacheLRUAndBudget(t *testing.T) {
 	g2, _ := s2.DigestFor(ActionDirectMaskCPU, PackGlyphID(5))
 	if s1 != s2 || g1 != g2 {
 		t.Error("identical specs should share a strike and glyphs")
+	}
+}
+
+// There is no non-path glyph host, so generating a mask materializes and retains the device path too. The strike budget
+// must charge those bytes whichever generation order the caller uses, or an image-first draw under-reports the retention
+// by the whole path (path bytes are comparable to mask bytes for typical glyphs).
+func TestStrikeMemoryChargesRetainedPathOnce(t *testing.T) {
+	tf := loadTypeface(t, "Roboto-Regular.ttf", 0)
+	f := NewFont(tf, 24, 1, 0)
+	identity := geom.IdentityMatrix()
+	spec := MakeMaskSpec(f, nil, &identity, nil)
+	gid := tf.UnicharToGlyph('H')
+	if gid == 0 {
+		t.Fatal("Roboto should map 'H'")
+	}
+
+	// Each order gets its own cache: the glyph is cached per strike, so the second order needs a fresh one.
+	totalFor := func(order []ActionType) (int, *Glyph) {
+		cache := NewStrikeCache()
+		s := cache.FindOrCreateStrike(&spec)
+		var g *Glyph
+		for _, action := range order {
+			var got GlyphAction
+			if g, got = s.DigestFor(action, PackGlyphID(gid)); got != GlyphActionAccept {
+				t.Fatalf("action %d = %d, want accept", action, got)
+			}
+		}
+		return cache.TotalMemoryUsed(), g
+	}
+	imageFirst, g := totalFor([]ActionType{ActionDirectMaskCPU, ActionPath})
+	pathFirst, _ := totalFor([]ActionType{ActionPath, ActionDirectMaskCPU})
+
+	pathBytes := approximatePathBytes(g.Path())
+	if pathBytes == 0 {
+		t.Fatal("'H' should retain a device path")
+	}
+	if imageFirst != pathFirst {
+		t.Errorf("image-then-path charged %d bytes, path-then-image %d; the retained path must cost the same either way",
+			imageFirst, pathFirst)
+	}
+	// baseline strike overhead + glyph struct overhead + mask + path, with nothing double-charged.
+	want := 1024 + glyphOverhead + g.ImageSize() + pathBytes
+	if imageFirst != want {
+		t.Errorf("charged %d bytes, want %d (1024 baseline + %d overhead + %d mask + %d path)",
+			imageFirst, want, glyphOverhead, g.ImageSize(), pathBytes)
+	}
+}
+
+// The styled lanes resolve bounds from the styled path inside makeGlyph, so a metrics-only lookup can already leave a
+// path retained on the glyph — that too must be charged, since prepareForPath will see it as done.
+func TestStrikeMemoryChargesPathFromGlyphCreation(t *testing.T) {
+	tf := loadTypeface(t, "Roboto-Regular.ttf", 0)
+	f := NewFont(tf, 24, 1, 0)
+	identity := geom.IdentityMatrix()
+	paint := &ScalerPaint{Style: stroke.PaintStyleStroke, Width: 2, MiterLimit: 4}
+	spec := MakeMaskSpec(f, paint, &identity, nil)
+	cache := NewStrikeCache()
+	s := cache.FindOrCreateStrike(&spec)
+	gid := tf.UnicharToGlyph('O')
+
+	glyphs := []*Glyph{}
+	glyphs = s.Metrics([]uint16{gid}, glyphs)
+	g := glyphs[0]
+	pathBytes := approximatePathBytes(g.Path())
+	if pathBytes == 0 {
+		t.Fatal("the stroked lane should materialize the path while making the glyph")
+	}
+	if used, want := cache.TotalMemoryUsed(), 1024+glyphOverhead+pathBytes; used != want {
+		t.Errorf("metrics-only lookup charged %d bytes, want %d (%d path bytes retained)", used, want, pathBytes)
+	}
+	// Asking for the path afterwards must not charge it a second time.
+	if _, action := s.DigestFor(ActionPath, PackGlyphID(gid)); action != GlyphActionAccept {
+		t.Fatalf("path action = %d, want accept", action)
+	}
+	if used, want := cache.TotalMemoryUsed(), 1024+glyphOverhead+pathBytes; used != want {
+		t.Errorf("after the path action the cache charges %d bytes, want %d (double-charged)", used, want)
 	}
 }
 

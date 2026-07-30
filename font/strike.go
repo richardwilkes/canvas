@@ -104,7 +104,10 @@ func (s *Strike) entryFor(packedID PackedGlyphID, increase *int) *glyphEntry {
 			}
 		}
 		s.glyphs[packedID] = e
-		*increase += glyphOverhead
+		// makeGlyph resolves bounds from the styled path for the generateImageFromPath lane, which leaves that path
+		// retained on the glyph; charge it here, since prepareForPath will see pathDone and add nothing. The call is a
+		// no-op (0 bytes) for the lanes that never materialize a path.
+		*increase += glyphOverhead + approximatePathBytes(g.Path())
 	}
 	return e
 }
@@ -156,8 +159,16 @@ func (s *Strike) prepareForImage(g *Glyph, increase *int) bool {
 		g.imageDone = true
 		if size := g.ImageSize(); size > 0 {
 			allocGlyphImage(g)
+			hadPath := g.pathDone
 			s.scaler.getImage(g)
 			*increase += size
+			// There is no non-path glyph host, so the mask lanes render (and the glyph then retains) the device path.
+			// Charge those bytes to whichever of image/path generation materialized them first: prepareForPath sees
+			// pathDone and adds nothing afterwards, so without this the retained path is invisible to the budget when
+			// the image is asked for first.
+			if !hadPath {
+				*increase += approximatePathBytes(g.Path())
+			}
 		}
 	}
 	return g.HasImage()

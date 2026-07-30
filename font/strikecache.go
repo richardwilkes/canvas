@@ -251,11 +251,11 @@ func MakeMaskSpec(f *Font, paint *ScalerPaint, deviceMatrix *geom.Matrix, props 
 }
 
 // MakePathSpec builds the canonical-size path strike plus the strike-to-source scale. Path strikes never render LCD
-// (setupForAsPaths rewrites EdgingSubpixelAntiAlias to EdgingAntiAlias), so no props parameter is needed.
+// (setupForAsPaths rewrites EdgingSubpixelAntiAlias to EdgingAntiAlias), so no props parameter is needed. The strike
+// always comes out sub-pixel-positioned, whatever the source font asked for: setupForAsPaths force-sets flagSubpixel,
+// since the sub-pixel position is applied when the canonical-size path is transformed to the screen.
 func MakePathSpec(f *Font, paint *ScalerPaint) (spec StrikeSpec, strikeToSourceScale float32) {
 	pathFont := *f
-	// The sub-pixel position will always happen when transforming to the screen.
-	pathFont.SetSubpixel(false)
 
 	var pathPaint ScalerPaint
 	if paint != nil {

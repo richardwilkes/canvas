@@ -15,6 +15,7 @@ package font
 
 import (
 	"sync"
+	"unsafe"
 )
 
 // GlyphAction records the disposition of a glyph for a given ActionType.
@@ -70,8 +71,12 @@ type Strike struct {
 	removed      bool
 }
 
-// glyphOverhead approximates the per-glyph struct overhead for the memory budget.
-const glyphOverhead = 88
+// glyphOverhead is the per-glyph memory overhead for the cache budget.
+// This accounts for: Glyph struct, glyphEntry (which holds the glyph and its actions),
+// and the map bucket overhead for storing the entry in glyphs map.
+var glyphOverhead = func() int {
+	return int(unsafe.Sizeof(Glyph{}) + unsafe.Sizeof(glyphEntry{}) + 32) // ~32 for map bucket overhead
+}()
 
 func newStrike(cache *StrikeCache, key *strikeKey, scaler *ScalerContext) *Strike {
 	return &Strike{

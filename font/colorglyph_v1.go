@@ -192,7 +192,7 @@ func (cv *colrV1Canvas) clipPath(p *path.Path) {
 // geometry is in layer space), or the solid src-over blitter.
 func (cv *colrV1Canvas) blitterFor(paint *colrV1Paint) raster.Blitter {
 	if paint.shader != nil {
-		pipeline := shaders.Compile(paint.shader, cv.ctm, colorcore.RGB(0, 0, 0))
+		pipeline := shaders.Compile(paint.shader, cv.ctm, paint.color)
 		if pipeline == nil {
 			return nil
 		}

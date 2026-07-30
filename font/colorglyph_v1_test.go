@@ -233,6 +233,101 @@ func TestCOLRv1SweepGradient(t *testing.T) {
 	gradientGroup(t, tf, []rune{0xf0200, 0xf0b04, 0xf0b05}, 0)
 }
 
+// colrV1GradientPaintBuilders is the set of gradient paint formats, each reduced to a call taking just the color line,
+// with geometry chosen to reach the shader (non-degenerate for linear, a real circle pair for radial, a 180° sector for
+// sweep).
+func colrV1GradientPaintBuilders(w *colrV1Walker) []struct {
+	name  string
+	build func(stops []float32, colors []colorcore.Color4f) (colrV1Paint, bool)
+} {
+	return []struct {
+		name  string
+		build func(stops []float32, colors []colorcore.Color4f) (colrV1Paint, bool)
+	}{
+		{name: "linear", build: func(stops []float32, colors []colorcore.Color4f) (colrV1Paint, bool) {
+			return w.linearPaint(0, 0, 100, 0, 0, 100, tables.ExtendPad, stops, colors)
+		}},
+		{name: "radial", build: func(stops []float32, colors []colorcore.Color4f) (colrV1Paint, bool) {
+			return w.radialPaint(0, 0, 0, 0, 0, 100, tables.ExtendPad, stops, colors)
+		}},
+		// Both sweep orientations: a 0°→180° sector reverses the color line on the way to the shader's clockwise
+		// convention, while 180°→0° (startAngle > endAngle, already reversed) leaves it in place, so only the pair
+		// covers the color line's first stop landing at either end.
+		{name: "sweep", build: func(stops []float32, colors []colorcore.Color4f) (colrV1Paint, bool) {
+			return w.sweepPaint(0, 0, -1<<14, 0, tables.ExtendPad, stops, colors)
+		}},
+		{name: "sweep reversed", build: func(stops []float32, colors []colorcore.Color4f) (colrV1Paint, bool) {
+			return w.sweepPaint(0, 0, 0, -1<<14, tables.ExtendPad, stops, colors)
+		}},
+	}
+}
+
+func TestCOLRv1GradientPaintColorIsOpaque(t *testing.T) {
+	// A COLRv1 gradient carries its alpha in the color ramp (colrColors4b keeps each stop's alpha), so the paint color a
+	// gradient paint node hands blitterFor must stay opaque: shaders.Compile appends a scale_1_float stage over the
+	// whole shader output whenever the paint alpha is not 255, which would re-apply one stop's alpha across the entire
+	// gradient. The color line below is the case that makes the difference visible — it fades in from a fully
+	// transparent stop, so a paint color taken from the first stop would scale the gradient to nothing.
+	w := &colrV1Walker{}
+	for _, c := range colrV1GradientPaintBuilders(w) {
+		t.Run(c.name, func(t *testing.T) {
+			paint, ok := c.build([]float32{0, 1}, []colorcore.Color4f{{R: 1, A: 0}, {B: 1, A: 1}})
+			if !ok {
+				t.Fatal("the paint node failed")
+			}
+			if paint.shader == nil {
+				t.Fatal("no gradient shader was built")
+			}
+			if a := paint.color.A(); a != 0xFF {
+				t.Errorf("paint color alpha %d, want 255; it scales the whole gradient", a)
+			}
+		})
+	}
+}
+
+func TestCOLRv1BlitterUsesPaintColor(t *testing.T) {
+	// blitterFor compiles the shader against paint.color rather than a color of its own, which is observable through
+	// the paint alpha: shaders.Compile scales the pipeline by it. The gradient below spans a 16-pixel row from a fully
+	// transparent red to an opaque blue.
+	colors := []colorcore.Color4f{{R: 1, A: 0}, {B: 1, A: 1}}
+	shader := shaders.NewLinearGradient(geom.Pt(0, 0), geom.Pt(16, 0), colrColors4b(colors), []float32{0, 1},
+		shaders.TileClamp, nil)
+	if shader == nil {
+		t.Fatal("no gradient shader was built")
+	}
+	render := func(paintColor colorcore.Color) []uint32 {
+		pm := raster.NewPixmap(16, 1)
+		cv := newColrV1Canvas(pm, 16, 1, geom.IdentityMatrix())
+		cv.drawPaint(&colrV1Paint{shader: shader, color: paintColor})
+		return slices.Clone(pm.Pix)
+	}
+	alphaAt := func(row []uint32, x int) int { return int(row[x] >> 24) }
+
+	// The opaque paint color the gradient paint nodes carry leaves the ramp's own alpha intact: near-transparent at the
+	// gradient's start (pixel 0 samples at its center, one half-pixel along the ramp, not at the stop itself) and
+	// near-opaque at its end.
+	opaque := render(colorcore.RGB(0, 0, 0))
+	if a := alphaAt(opaque, 0); a > 0x10 {
+		t.Errorf("opaque paint color: alpha %d at the transparent stop, want near 0", a)
+	}
+	if a := alphaAt(opaque, 15); a < 0xF0 {
+		t.Errorf("opaque paint color: alpha %d at the opaque stop, want near 255", a)
+	}
+
+	// Halving the paint alpha halves the gradient's, which is what proves the paint color reaches shaders.Compile.
+	half := render(colorcore.ARGB(0x80, 0, 0, 0))
+	if want, got := alphaAt(opaque, 15)/2, alphaAt(half, 15); got < want-2 || got > want+2 {
+		t.Errorf("half-alpha paint color: alpha %d at the opaque stop, want about %d", got, want)
+	}
+
+	// And the failure mode a non-opaque gradient paint color would produce: the gradient vanishes outright.
+	for x, px := range render(colorcore.ARGB(0, 0, 0, 0)) {
+		if px != 0 {
+			t.Fatalf("transparent paint color: pixel %d is %08x, want the gradient fully scaled away", x, px)
+		}
+	}
+}
+
 func TestCOLRv1Transforms(t *testing.T) {
 	tf := loadCOLRv1Typeface(t)
 

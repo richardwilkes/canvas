@@ -864,6 +864,47 @@ func TestFaceRecCovers(t *testing.T) {
 	}
 }
 
+// TestEnumerationSkipsFamiliesThatCanNameNoFace covers the enumeration filter. A family none of whose faces this port
+// can even describe can never produce a typeface, and Family.Name() has nothing but the internal normalized grouping key
+// left to answer with — a lowercased, space-stripped string that is not the font's display name. Stock macOS ships one
+// such file (Supplemental/NISC18030.ttf, which carries no head table): enumerated, it offers a font picker an entry
+// reading "gb18030bitmap" that selects nothing, since both MatchFamilyStyle and CreateTypeface answer nil for it.
+func TestEnumerationSkipsFamiliesThatCanNameNoFace(t *testing.T) {
+	const ghostKey = "gb18030bitmap" // sorts before "roboto", so it would be family 0 of the enumeration
+	ghost := &faceRec{key: ghostKey, path: "../font/testdata/does-not-exist.ttf"}
+	good := newTestFaceRec(t, "Roboto-Regular.ttf", 0)
+	m := newManager([]*faceRec{ghost, good})
+
+	if got := m.CountFamilies(); got != 1 {
+		t.Fatalf("CountFamilies = %d, want 1 (the ghost family names no face)", got)
+	}
+	info, err := font.DescribeFaceFile("../font/testdata/Roboto-Regular.ttf", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := m.FamilyName(0); got != info.Family {
+		t.Errorf("FamilyName(0) = %q, want the loadable family's display name %q", got, info.Family)
+	}
+	// Every enumerated family names a real face, and every one of them can be turned back into a typeface.
+	for i := range m.CountFamilies() {
+		name := m.FamilyName(i)
+		if name == ghostKey {
+			t.Errorf("family %d is the ghost family", i)
+		}
+		if tf := m.MatchFamilyStyle(name, font.NormalStyle()); tf == nil {
+			t.Errorf("family %d (%q) is enumerated but produces no typeface", i, name)
+		}
+	}
+	// The ghost stays matchable by name and reachable through the style set, exactly as a hidden family does; only the
+	// enumeration drops it.
+	if got := m.MatchFamily(ghostKey).Count(); got != 1 {
+		t.Errorf("MatchFamily(%q).Count() = %d, want 1", ghostKey, got)
+	}
+	if tf := m.MatchFamilyStyle(ghostKey, font.NormalStyle()); tf != nil {
+		t.Errorf("the ghost family produced a typeface: %v", tf)
+	}
+}
+
 func TestManagerUnloadableFace(t *testing.T) {
 	// A face whose file has vanished since the scan: metadata falls back to the footprint aspect, typeface creation
 	// fails, and style matching skips it in rank order rather than failing.
@@ -889,10 +930,25 @@ func TestManagerUnloadableFace(t *testing.T) {
 	if tf == nil || tf.Style().Weight() != 400 {
 		t.Errorf("MatchStyle(bold) = %v, want the loadable regular face", tf)
 	}
-	// A family made only of unloadable faces still reports its normalized key as the display name.
+	// A family made only of unloadable faces can never produce a typeface and has no display name of its own, so it
+	// stays out of the enumeration rather than offering a picker an entry labeled with the internal normalized key.
 	ghostOnly := newManager([]*faceRec{{key: "ghost", path: "nope.ttf"}})
-	if got := ghostOnly.FamilyName(0); got != "ghost" {
-		t.Errorf("ghost family name = %q, want key fallback", got)
+	if got := ghostOnly.CountFamilies(); got != 0 {
+		t.Errorf("CountFamilies = %d, want 0 (the family can name no face)", got)
+	}
+	if got := ghostOnly.FamilyName(0); got != "" {
+		t.Errorf("ghost family name = %q, want %q", got, "")
+	}
+	// It stays matchable by name, where the normalized key is all Name() has left to answer with.
+	if got := ghostOnly.MatchFamily("ghost").Count(); got != 1 {
+		t.Errorf("MatchFamily(\"ghost\").Count() = %d, want 1", got)
+	}
+	if got := ghostOnly.families[0].Name(); got != "ghost" {
+		t.Errorf("Family.Name() = %q, want the key fallback", got)
+	}
+	// And it is still the last-resort default family, since there is no enumerable one to prefer.
+	if got := ghostOnly.lookupOrDefault(""); got != ghostOnly.families[0] {
+		t.Errorf("lookupOrDefault(\"\") = %v, want the only family", got)
 	}
 }
 

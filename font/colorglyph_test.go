@@ -21,6 +21,8 @@ import (
 	"hash/crc32"
 	"image"
 	"image/color"
+	"image/draw"
+	"image/jpeg"
 	"image/png"
 	"os"
 	"runtime"
@@ -29,6 +31,7 @@ import (
 
 	tsfont "github.com/go-text/typesetting/font"
 	"github.com/go-text/typesetting/font/opentype"
+	"github.com/go-text/typesetting/font/opentype/tables"
 
 	"github.com/richardwilkes/canvas/colorcore"
 	"github.com/richardwilkes/canvas/geom"
@@ -234,6 +237,69 @@ func TestFaceColorPaintOutOfRangeCOLRv0(t *testing.T) {
 	}
 }
 
+func TestCOLRv0EmptyLayerListStaysOnTheOutlineLane(t *testing.T) {
+	// A base-glyph record declaring NumLayers == 0 is perfectly in range (0+0 is never past numLayerRecords), so the
+	// load-time scan does not flag it and typesetting hands back an empty layer slice with ok=true. Claiming the glyph
+	// for the color lane on the strength of that commits it to an ARGB32 mask with neverRequestPath and an empty
+	// bounding box, so it measures as nothing and draws as nothing. FreeType's FT_Get_Color_Glyph_Layer returns 0 on
+	// the first call and Skia falls through to the base outline, which is what the font's own glyf table is there for.
+	data := readTestFont(t, "colr.ttf")
+	tf, err := NewTypefaceFromData(patchCOLRv0Ranges(t, data, 0, 0), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tf.colr0BadGlyphs != nil {
+		t.Fatal("an empty layer range was flagged as out of range; the case proves nothing")
+	}
+	gid := tf.UnicharToGlyph(smiley)
+	if gid == 0 {
+		t.Fatal("U+1F600 not mapped")
+	}
+	// typesetting still reports the glyph as a color glyph, which is the whole problem.
+	if layers, ok := tf.face.COLR.Search(gid); !ok {
+		t.Fatal("the patched record no longer parses; the case proves nothing")
+	} else if resolved, isV0 := layers.(tables.PaintColrLayersResolved); !isV0 || len(resolved) != 0 {
+		t.Fatalf("COLR.Search returned %T with %d layers, want an empty v0 layer list", layers, len(resolved))
+	}
+	if paint, ok := tf.faceColorPaint(opentype.GID(gid)); ok || paint != nil {
+		t.Errorf("faceColorPaint = (%v, %v), want (nil, false)", paint, ok)
+	}
+	if layers, ok := tf.faceColorV0Layers(opentype.GID(gid)); ok || layers != nil {
+		t.Errorf("faceColorV0Layers = (%v, %v), want (nil, false)", layers, ok)
+	}
+
+	// The glyph is measured and drawn as the outline it still has, byte for byte as the same font with no COLR table
+	// at all draws it.
+	g, action := smileyGlyph(t, tf, 50, nil)
+	if action != GlyphActionAccept {
+		t.Fatalf("action %v, want accept", action)
+	}
+	if g.Format != MaskA8 {
+		t.Errorf("format %v, want A8 (the outline lane)", g.Format)
+	}
+	outlineOnly, err := NewTypefaceFromData(sfntWithoutTables(t, data, "COLR", "CPAL"), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref, action := smileyGlyph(t, outlineOnly, 50, nil)
+	if action != GlyphActionAccept {
+		t.Fatalf("the COLR-less reference was not accepted: action %v", action)
+	}
+	if g.IRect() != ref.IRect() {
+		t.Errorf("bounds %v, want the base outline's %v", g.IRect(), ref.IRect())
+	}
+	ink := 0
+	for i, v := range g.Image {
+		if i >= len(ref.Image) || v != ref.Image[i] {
+			t.Fatalf("mask differs from the base outline's at byte %d", i)
+		}
+		ink += int(v)
+	}
+	if ink == 0 {
+		t.Error("the glyph drew nothing")
+	}
+}
+
 func TestCOLR0OutOfRangeGlyphs(t *testing.T) {
 	// A version 0 header (14 bytes) with one base-glyph record at offset 14 and numLayerRecords layer records at 20.
 	header := func(numLayerRecords uint16, layerRecordsOffset uint32) []byte {
@@ -402,6 +468,163 @@ func TestBitmapGlyphMetrics(t *testing.T) {
 			t.Errorf("%s: path action %v, want reject", name, pathAction)
 		}
 	}
+}
+
+// cblcWithImageFormat returns a copy of a CBLC/EBLC-bearing font with every index subtable's imageFormat rewritten. It
+// is an in-place two-byte edit per subtable, so the whole rest of the table — the strike list, the index offsets, the
+// image data — is left exactly as it was.
+func cblcWithImageFormat(t *testing.T, data []byte, format uint16) []byte {
+	t.Helper()
+	patched := 0
+	out := patchSfntTable(t, data, "CBLC", func(tab []byte) {
+		for size := range int(binary.BigEndian.Uint32(tab[4:])) { // numSizes, after the 4-byte version
+			record := 8 + size*48 // the bitmapSize records follow the header
+			array := int(binary.BigEndian.Uint32(tab[record:]))
+			for i := range int(binary.BigEndian.Uint32(tab[record+8:])) { // numberOfIndexSubTables
+				entry := array + i*8
+				// indexSubHeader: indexFormat, then imageFormat.
+				binary.BigEndian.PutUint16(tab[array+int(binary.BigEndian.Uint32(tab[entry+4:]))+2:], format)
+				patched++
+			}
+		}
+	})
+	if patched == 0 {
+		t.Fatal("the font has no index subtable to patch")
+	}
+	return out
+}
+
+// TestUndrawableStrikeIsMeasuredAsAnOutline covers the glyphs the bitmap lane refuses. go-text answers the extents
+// lookup from a strike before it ever looks at 'glyf'/'CFF ', and the Face rests at ppem 0, where chooseStrike picks
+// the largest strike — so a glyph carrying any strike at all is sized by that strike no matter which lane draws it.
+// Every such glyph therefore has to be measured as the outline it will actually be filled with, or as nothing when it
+// has none.
+func TestUndrawableStrikeIsMeasuredAsAnOutline(t *testing.T) {
+	t.Run("hybrid face", func(t *testing.T) {
+		// An outline font given a strike in a graphic type this lane has no decoder for (an sbix 'jpg '). Its glyph must
+		// come out exactly as the same face with no strike at all draws it, rather than with its outline squeezed into
+		// the strike's ink box. Roboto is the host because the sbix fonts in testdata carry only the degenerate
+		// placeholder contours an sbix fallback outline is usually built from, which draw no ink to compare.
+		const size = 50
+		square := image.NewRGBA(image.Rect(0, 0, 40, 40))
+		draw.Draw(square, square.Bounds(), image.NewUniform(color.RGBA{R: 255, G: 204, A: 255}), image.Point{},
+			draw.Src)
+		var jpg, pngBytes bytes.Buffer
+		if err := jpeg.Encode(&jpg, square, nil); err != nil {
+			t.Fatal(err)
+		}
+		if err := png.Encode(&pngBytes, square); err != nil {
+			t.Fatal(err)
+		}
+		data := readTestFont(t, "Roboto-Regular.ttf")
+		outlineOnly, err := NewTypefaceFromData(data, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		gid := outlineOnly.UnicharToGlyph('H')
+		if gid == 0 {
+			t.Fatal("'H' not mapped")
+		}
+		withStrike := func(graphic string, raw []byte) *Typeface {
+			t.Helper()
+			strike := synthSbixTable(outlineOnly.nGlyphs, int(gid), 64, graphic, raw)
+			tf, err2 := NewTypefaceFromData(sfntWithTables(t, data, map[string][]byte{"sbix": strike}), 0)
+			if err2 != nil {
+				t.Fatal(err2)
+			}
+			if !tf.hasBitmaps {
+				t.Fatalf("the synthetic %q strike was not recognized", graphic)
+			}
+			return tf
+		}
+		glyphOf := func(tf *Typeface) *Glyph {
+			t.Helper()
+			f := NewFont(tf, size, 1, 0)
+			identity := geom.IdentityMatrix()
+			spec := MakeMaskSpec(f, nil, &identity, nil)
+			g, action := spec.FindOrCreateStrike().DigestFor(ActionDirectMaskCPU, PackGlyphID(gid))
+			if action != GlyphActionAccept {
+				t.Fatalf("action %v, want accept", action)
+			}
+			return g
+		}
+
+		tf := withStrike("jpg ", jpg.Bytes())
+		// The strike is readable — it is only undrawable — so the extents lookup really does answer from it.
+		bm, ext, ok := tf.faceBitmapGlyph(opentype.GID(gid), 64)
+		if !ok || bm.Format != tsfont.JPG {
+			t.Fatalf("strike glyph = (format %v, ok %v), want a readable JPG", bm.Format, ok)
+		}
+		if ext.Width == 0 || ext.Height == 0 {
+			t.Fatal("the strike reports no extents; the case proves nothing")
+		}
+
+		g := glyphOf(tf)
+		if g.Format != MaskA8 {
+			t.Errorf("format %v, want A8 (the outline lane)", g.Format)
+		}
+		ref := glyphOf(outlineOnly)
+		if g.IRect() != ref.IRect() {
+			t.Errorf("bounds %v, want the outline's %v", g.IRect(), ref.IRect())
+		}
+		ink := 0
+		for i, v := range g.Image {
+			if i >= len(ref.Image) || v != ref.Image[i] {
+				t.Fatalf("mask differs from the strike-less face's at byte %d", i)
+			}
+			ink += int(v)
+		}
+		if ink == 0 {
+			t.Error("the glyph drew nothing")
+		}
+		// Non-vacuity: the same strike in a format the lane *can* draw takes the bitmap lane and is sized by the
+		// strike, so the two boxes really are distinguishable.
+		if drawable := glyphOf(withStrike("png ", pngBytes.Bytes())); drawable.Format != MaskARGB32 ||
+			drawable.IRect() == ref.IRect() {
+			t.Fatalf("the drawable strike produced a %v glyph at %v; the outline is at %v", drawable.Format,
+				drawable.IRect(), ref.IRect())
+		}
+	})
+
+	t.Run("bitmap-only face", func(t *testing.T) {
+		// cbdt.ttf is nothing but strikes — no glyf, no CFF — and EBDT/CBDT, unlike sbix and SVG, requires no fallback
+		// outline. Relabel its strikes B&W (imageFormat 2, which this lane has no decoder for) and there is nothing left
+		// to draw: the glyph must measure empty and drop, not report the strike's box and fill it with a nil outline,
+		// which is a correctly sized, fully transparent mask.
+		data := readTestFont(t, "cbdt.ttf")
+		tf, err := NewTypefaceFromData(cblcWithImageFormat(t, data, 2), 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		gid := tf.UnicharToGlyph(smiley)
+		if gid == 0 {
+			t.Fatal("U+1F600 not mapped")
+		}
+		bm, ext, ok := tf.faceBitmapGlyph(opentype.GID(gid), 64)
+		if !ok || bm.Format != tsfont.BlackAndWhite {
+			t.Fatalf("strike glyph = (format %v, ok %v), want a readable black-and-white strike", bm.Format, ok)
+		}
+		if ext.Width == 0 || ext.Height == 0 {
+			t.Fatal("the strike reports no extents; the case proves nothing")
+		}
+		g, action := smileyGlyph(t, tf, 64, nil)
+		if !g.IsEmpty() {
+			t.Errorf("bounds %v, want an empty glyph: the face has no outline to fill them with", g.IRect())
+		}
+		if action != GlyphActionDrop {
+			t.Errorf("action %v, want drop", action)
+		}
+		// The advance is metrics, not artwork, so it survives — a run of these still lays out.
+		if g.AdvanceX == 0 {
+			t.Error("the glyph lost its advance")
+		}
+		// The control: as shipped, the same font's strikes decode and the glyph is a 52x52 color mask.
+		if shipped, shippedAction := smileyGlyph(t, loadColorTypeface(t, "cbdt.ttf"), 64, nil); shippedAction !=
+			GlyphActionAccept || shipped.Format != MaskARGB32 || shipped.IsEmpty() {
+			t.Fatalf("the unpatched font no longer draws its strikes: action %v, format %v, bounds %v", shippedAction,
+				shipped.Format, shipped.IRect())
+		}
+	})
 }
 
 func TestEmbeddedBitmapsFlagDoesNotGateTheBitmapLane(t *testing.T) {
@@ -637,6 +860,74 @@ func TestDecodePremulPNGValidatesStrikeDimensions(t *testing.T) {
 	runtime.ReadMemStats(&after)
 	if grew := after.TotalAlloc - before.TotalAlloc; grew > 1<<20 {
 		t.Errorf("refusing the oversized strike allocated %d bytes", grew)
+	}
+}
+
+func TestDecodePremulPNGCapsTheStrikeArea(t *testing.T) {
+	// The per-side ceiling leaves an 8191x8191 header — one step below it, and 67 Mpixel — perfectly acceptable, and on
+	// the sbix path nothing else stands in its way: go-text has no independent metrics to check such a strike against,
+	// so it takes GlyphBitmap.Width/Height from png.DecodeConfig on these very bytes and the equality check below
+	// compares the header with itself. Decoding it would cost about 768 MB across the NRGBA image, the premultiplied
+	// buffer, and the imagecore copy, out of a 33-byte strike.
+	huge := craftedPNG(t, maxGlyphWidth-1, maxGlyphHeight-1)
+	if len(huge) > 1024 {
+		t.Fatalf("the crafted strike is %d bytes; it is meant to be tiny", len(huge))
+	}
+	cfg, err := png.DecodeConfig(bytes.NewReader(huge))
+	if err != nil {
+		t.Fatalf("crafted header did not parse: %v", err)
+	}
+	if cfg.Width >= maxGlyphWidth || cfg.Height >= maxGlyphHeight {
+		t.Fatalf("crafted header is %dx%d, which the per-side ceiling already refuses", cfg.Width, cfg.Height)
+	}
+	// The sbix lane's call, verbatim: the strike dimensions are the header's own.
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	if img := decodePremulPNG(huge, cfg.Width, cfg.Height); img != nil {
+		t.Error("a strike of 67 Mpixel was decoded")
+	}
+	runtime.ReadMemStats(&after)
+	if grew := after.TotalAlloc - before.TotalAlloc; grew > 1<<20 {
+		t.Errorf("refusing the oversized strike allocated %d bytes", grew)
+	}
+
+	// The cap is on the area, not on either side, so it is the product that decides. A strike sitting exactly on it
+	// decodes...
+	const capWidth, capHeight = 1 << 12, maxStrikePixels >> 12
+	var atTheCap bytes.Buffer
+	if err = png.Encode(&atTheCap, image.NewNRGBA(image.Rect(0, 0, capWidth, capHeight))); err != nil {
+		t.Fatal(err)
+	}
+	if img := decodePremulPNG(atTheCap.Bytes(), capWidth, capHeight); img == nil {
+		t.Errorf("a %dx%d strike, exactly at the %d-pixel cap, was refused", capWidth, capHeight, maxStrikePixels)
+	}
+	// ...and one pixel-row past it does not, whatever shape it takes, without allocating.
+	for _, c := range []struct {
+		name string
+		w, h int
+	}{
+		{name: "one row over", w: capWidth, h: capHeight + 1},
+		{name: "wide and short", w: maxGlyphWidth - 1, h: maxStrikePixels/(maxGlyphWidth-1) + 1},
+		{name: "tall and narrow", w: maxStrikePixels/(maxGlyphHeight-1) + 1, h: maxGlyphHeight - 1},
+	} {
+		crafted := craftedPNG(t, uint32(c.w), uint32(c.h))
+		runtime.ReadMemStats(&before)
+		if img := decodePremulPNG(crafted, c.w, c.h); img != nil {
+			t.Errorf("%s: %dx%d (%d pixels) decoded", c.name, c.w, c.h, c.w*c.h)
+		}
+		runtime.ReadMemStats(&after)
+		if grew := after.TotalAlloc - before.TotalAlloc; grew > 1<<20 {
+			t.Errorf("%s: refusing %dx%d allocated %d bytes", c.name, c.w, c.h, grew)
+		}
+	}
+
+	// The cap is far above any strike a shipping color font carries, so the real fonts are unaffected: their glyphs
+	// still decode and draw.
+	for _, name := range []string{"sbix.ttf", "cbdt.ttf"} {
+		g, action := smileyGlyph(t, loadColorTypeface(t, name), 128, nil)
+		if action != GlyphActionAccept || g.Image32 == nil {
+			t.Errorf("%s: the largest shipping strike no longer decodes (action %v)", name, action)
+		}
 	}
 }
 

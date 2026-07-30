@@ -21,6 +21,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/go-text/typesetting/font/opentype"
 	"github.com/go-text/typesetting/font/opentype/tables"
 
 	"github.com/richardwilkes/canvas/colorcore"
@@ -549,6 +550,93 @@ func TestCOLRv1ClipBox(t *testing.T) {
 		if ink.box != box {
 			t.Errorf("U+%X: ink box %v escapes the clip box %v", ch, ink.box, box)
 		}
+	}
+}
+
+// colrV1WithNullPaintOffset returns a copy of a COLR v1 font whose BaseGlyphList record for gid carries a null paint
+// Offset32. typesetting's parseBaseGlyphPaintRecord skips a null offset ("ignore null offset") and still accepts the
+// record, so COLR.Search answers ok=true with a nil PaintTable — a color-glyph record naming no artwork at all.
+func colrV1WithNullPaintOffset(t *testing.T, data []byte, gid uint16) []byte {
+	t.Helper()
+	patched := false
+	out := patchSfntTable(t, data, "COLR", func(tab []byte) {
+		if v := binary.BigEndian.Uint16(tab); v != 1 {
+			t.Fatalf("COLR version %d, want 1", v)
+		}
+		list := int(binary.BigEndian.Uint32(tab[14:])) // baseGlyphListOffset
+		for i := range int(binary.BigEndian.Uint32(tab[list:])) {
+			record := list + 4 + i*6
+			if binary.BigEndian.Uint16(tab[record:]) == gid {
+				binary.BigEndian.PutUint32(tab[record+2:], 0)
+				patched = true
+			}
+		}
+	})
+	if !patched {
+		t.Fatalf("no COLR v1 base-glyph record for glyph %d", gid)
+	}
+	return out
+}
+
+func TestCOLRv1NullPaintOffsetStaysOnTheOutlineLane(t *testing.T) {
+	// A BaseGlyphList record with a null paint offset is still a record typesetting reports, so the glyph looks like a
+	// color glyph while carrying no paint graph. Committing it to the v1 lane on that basis makes colrV1Bounds return an
+	// empty rect and traverse(nil) fall to its default and refuse: the glyph measures as nothing, draws as nothing, and
+	// never asks for the perfectly good glyf outline it also carries. FreeType rejects the record and Skia falls back to
+	// that outline.
+	const ch = 0xf0100
+	data := readTestFont(t, "test_glyphs-glyf_colr_1.ttf")
+	gid := loadCOLRv1Typeface(t).UnicharToGlyph(ch)
+	if gid == 0 {
+		t.Fatalf("U+%X not mapped", ch)
+	}
+	tf, err := NewTypefaceFromData(colrV1WithNullPaintOffset(t, data, gid), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// typesetting still claims the glyph, which is the whole problem.
+	if paint, ok := tf.face.COLR.Search(gid); !ok {
+		t.Fatal("the patched record no longer parses; the case proves nothing")
+	} else if paint != nil {
+		t.Fatalf("COLR.Search returned %T, want a nil paint", paint)
+	}
+	if paint, ok := tf.faceColorPaint(opentype.GID(gid)); ok || paint != nil {
+		t.Errorf("faceColorPaint = (%v, %v), want (nil, false)", paint, ok)
+	}
+
+	// The glyph is measured and drawn as the outline it still has, byte for byte as the same font with no COLR table at
+	// all draws it.
+	g, action := colrV1Glyph(t, tf, ch, 50, nil)
+	if action != GlyphActionAccept {
+		t.Fatalf("action %v, want accept", action)
+	}
+	if g.Format != MaskA8 {
+		t.Errorf("format %v, want A8 (the outline lane)", g.Format)
+	}
+	outlineOnly, err := NewTypefaceFromData(sfntWithoutTables(t, data, "COLR", "CPAL"), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref, action := colrV1Glyph(t, outlineOnly, ch, 50, nil)
+	if action != GlyphActionAccept {
+		t.Fatalf("the COLR-less reference was not accepted: action %v", action)
+	}
+	if g.IRect() != ref.IRect() {
+		t.Errorf("bounds %v, want the base outline's %v", g.IRect(), ref.IRect())
+	}
+	ink := 0
+	for i, v := range g.Image {
+		if i >= len(ref.Image) || v != ref.Image[i] {
+			t.Fatalf("mask differs from the base outline's at byte %d", i)
+		}
+		ink += int(v)
+	}
+	if ink == 0 {
+		t.Error("the glyph drew nothing")
+	}
+	// Every other glyph of the font still renders through the v1 lane: only the patched record changed lanes.
+	if other := mustRenderCOLRv1(t, tf, 0xf0300, nil); analyzeGlyphInk(other).count == 0 {
+		t.Error("U+F0300 lost its color artwork")
 	}
 }
 

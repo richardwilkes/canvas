@@ -14,6 +14,7 @@
 package font
 
 import (
+	"math"
 	"sync"
 	"unsafe"
 )
@@ -77,6 +78,10 @@ type Strike struct {
 var glyphOverhead = func() int {
 	return int(unsafe.Sizeof(Glyph{}) + unsafe.Sizeof(glyphEntry{}) + 32) // ~32 for map bucket overhead
 }()
+
+// interceptOverhead approximates what one cached per-band intercept retains: the 16-byte glyphIntercept plus the
+// pointer to it in the glyph's slice, with room for the slice's growth slack.
+const interceptOverhead = 32
 
 func newStrike(cache *StrikeCache, key *strikeKey, scaler *ScalerContext) *Strike {
 	return &Strike{
@@ -234,45 +239,63 @@ func (s *Strike) PreparePaths(glyphIDs []uint16, results []*Glyph) []*Glyph {
 // count is updated.
 func (s *Strike) FindIntercepts(bounds [2]float32, scale, xPos float32, g *Glyph, array []float32, count *int) []float32 {
 	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	offsetResults := func(interval [2]float32) {
+	interval, increase := interceptForBand(bounds, g)
+	s.mu.Unlock()
+	// A cached intercept is charged like any other retained glyph byte. Without it a caller asking about band after band
+	// grows the strike without ever moving the cache's accounting, so the byte budget never sees the growth and never
+	// purges the strike that holds it.
+	s.updateMemoryUsage(increase)
+	if interval[0] < interval[1] {
 		if array != nil {
 			array = append(array, interval[0]*scale+xPos, interval[1]*scale+xPos)
 		}
 		*count += 2
 	}
+	return array
+}
 
+// interceptForBand returns the glyph's cached interval for the band, computing and caching it on the first ask. increase
+// is the bytes the new entry added, 0 on a cache hit. Caller holds the owning strike's lock.
+func interceptForBand(bounds [2]float32, g *Glyph) (interval [2]float32, increase int) {
 	for _, ic := range g.intercepts {
-		if ic.bounds == bounds {
-			if ic.interval[0] < ic.interval[1] {
-				offsetResults(ic.interval)
-			}
-			return array
+		if sameInterceptBand(ic.bounds, bounds) {
+			return ic.interval, 0
 		}
 	}
+	// A band the path carves nothing out of is cached too (as the empty interval), so the walk is not repeated for it.
+	interval = bandInterval(bounds, g)
+	g.intercepts = append(g.intercepts, &glyphIntercept{bounds: bounds, interval: interval})
+	return interval, interceptOverhead
+}
 
-	ic := &glyphIntercept{
-		bounds:   bounds,
-		interval: [2]float32{scalarMax, scalarMin},
-	}
-	g.intercepts = append(g.intercepts, ic)
+// sameInterceptBand reports whether a cached band is the band being asked about. Ordinary values compare by value, so
+// +0 and -0 still share one entry, but a band is only as well-formed as its caller: textblob's GetIntercepts divides by
+// a scale its own comment says can be zero, so a zero-size run with a glyph at pos.Y == 0 asks about {NaN, NaN}. A NaN
+// is not equal to itself, so a plain comparison misses on every lookup — every call would then append another entry and
+// rescan the whole list, growing the glyph without bound at O(n²) cost. Comparing the bit patterns as well makes the
+// cache a cache again for those.
+func sameInterceptBand(a, b [2]float32) bool {
+	return a == b || (math.Float32bits(a[0]) == math.Float32bits(b[0]) &&
+		math.Float32bits(a[1]) == math.Float32bits(b[1]))
+}
+
+// bandInterval computes the x-interval the glyph's path carves out of the band, the empty (scalarMax, scalarMin)
+// interval when nothing intersects it.
+func bandInterval(bounds [2]float32, g *Glyph) [2]float32 {
+	empty := [2]float32{scalarMax, scalarMin}
 	p := g.Path()
 	if p == nil {
-		return array
+		return empty
 	}
 	pathBounds := p.Bounds()
 	if pathBounds.Bottom < bounds[0] || bounds[1] < pathBounds.Top {
-		return array
+		return empty
 	}
 	left, right := calculatePathGap(bounds[0], bounds[1], p)
 	if left >= right {
-		return array
+		return empty
 	}
-	ic.interval[0] = left
-	ic.interval[1] = right
-	offsetResults(ic.interval)
-	return array
+	return [2]float32{left, right}
 }
 
 // updateMemoryUsage folds this strike's growth into the cache totals.

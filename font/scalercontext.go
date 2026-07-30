@@ -516,14 +516,26 @@ func (c *ScalerContext) generateMetrics(packedID PackedGlyphID) glyphMetrics {
 	// outline lane): the strike glyph's font-unit extents are mapped through the single matrix to produce the
 	// strike-pixel bounds.
 	if t.hasBitmaps {
-		if bm, ext, ok := t.faceBitmapGlyph(opentype.GID(gid), c.strikePpem); ok && bm.Format == tsfont.PNG {
-			bounds := c.mapExtentsQuad(ext)
-			mx.maskFormat = MaskARGB32
-			mx.extraBits = scalerBitsBitmap
-			mx.neverRequestPath = true
-			// Bitmap glyphs only occur for effectively non-scalable faces, where sub-pixel positioning of the resampled
-			// bitmap is always allowed.
-			mx.bounds = c.offsetBoundsIfSubpixel(packedID, bounds, c.rec.isSubpixel())
+		if bm, ext, ok := t.faceBitmapGlyph(opentype.GID(gid), c.strikePpem); ok {
+			if bm.Format == tsfont.PNG {
+				bounds := c.mapExtentsQuad(ext)
+				mx.maskFormat = MaskARGB32
+				mx.extraBits = scalerBitsBitmap
+				mx.neverRequestPath = true
+				// Bitmap glyphs only occur for effectively non-scalable faces, where sub-pixel positioning of the
+				// resampled bitmap is always allowed.
+				mx.bounds = c.offsetBoundsIfSubpixel(packedID, bounds, c.rec.isSubpixel())
+				return mx
+			}
+			// A strike this lane will not draw (a B&W EBDT/CBDT image, an sbix 'jpg '/'tif ' graphic) leaves the glyph
+			// on the outline lane, so it has to be measured as an outline — and the extents lookup below cannot do
+			// that. go-text tries the strikes before 'glyf'/'CFF ' and the Face rests at ppem 0, where chooseStrike
+			// picks the *largest* strike, so a glyph carrying any strike at all gets that strike's ink box no matter
+			// which lane draws it: a bitmap-only EBLC/EBDT face (no outline table anywhere) would size every glyph off
+			// the strike and then fill it with the nil outline, drawing a correctly sized, fully transparent mask, and a
+			// hybrid face would clip its outline to the strike's box.
+			mx.maskFormat = c.rec.Format
+			mx.bounds = c.outlineDeviceBounds(packedID, gid, mx.maskFormat)
 			return mx
 		}
 	}
@@ -537,6 +549,54 @@ func (c *ScalerContext) generateMetrics(packedID PackedGlyphID) glyphMetrics {
 		mx.bounds = c.updateGlyphBoundsIfLCD(mx.maskFormat, mx.bounds)
 	}
 	return mx
+}
+
+// outlineDeviceBounds is the outline lane's bounds taken from the raw outline itself rather than from the extents
+// lookup, for the glyphs whose extents that lookup would answer from a bitmap strike. An empty rect (the glyph has no
+// outline at all) zaps the glyph, which is the honest answer for a bitmap-only face whose strikes this scaler cannot
+// decode. Everything downstream of the box — the mapping, the sub-pixel offset, the LCD outset — is the extents lane's.
+func (c *ScalerContext) outlineDeviceBounds(packedID PackedGlyphID, gid uint16, format MaskFormat) geom.Rect {
+	ext, ok := outlineControlBox(c.typeface, gid)
+	if !ok {
+		return geom.Rect{}
+	}
+	bounds := c.offsetBoundsIfSubpixel(packedID, c.mapExtentsQuad(ext), c.rec.isSubpixel())
+	return c.updateGlyphBoundsIfLCD(format, bounds)
+}
+
+// outlineControlBox returns the control box of gid's raw outline — every on- and off-curve point of every segment — as
+// font-unit extents in go-text's y-up convention, ok=false when the glyph has no outline. It is FT_Outline_Get_CBox,
+// and for a well-formed face it is the box the 'glyf' header stores and getExtentsFromGlyf hands back, computed from
+// the outline instead so that a face carrying bitmap strikes (which the extents lookup answers from first) can still be
+// asked what its outline measures.
+func outlineControlBox(t *Typeface, gid uint16) (tsfont.GlyphExtents, bool) {
+	outline, ok := t.faceGlyphOutline(opentype.GID(gid))
+	if !ok || len(outline.Segments) == 0 {
+		return tsfont.GlyphExtents{}, false
+	}
+	var xMin, yMin, xMax, yMax float32
+	first := true
+	for _, seg := range outline.Segments {
+		count := 1
+		switch seg.Op {
+		case opentype.SegmentOpQuadTo:
+			count = 2
+		case opentype.SegmentOpCubeTo:
+			count = 3
+		}
+		for _, pt := range seg.Args[:count] {
+			if first {
+				xMin, yMin, xMax, yMax = pt.X, pt.Y, pt.X, pt.Y
+				first = false
+				continue
+			}
+			xMin = min(xMin, pt.X)
+			yMin = min(yMin, pt.Y)
+			xMax = max(xMax, pt.X)
+			yMax = max(yMax, pt.Y)
+		}
+	}
+	return tsfont.GlyphExtents{XBearing: xMin, YBearing: yMax, Width: xMax - xMin, Height: yMin - yMax}, true
 }
 
 // updateGlyphBoundsIfLCD gives LCD16 masks one extra pixel on each side in the sampling direction (the FIR filter

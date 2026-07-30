@@ -57,7 +57,7 @@ const (
 // AdvancedMetrics holds the per-typeface information the PDF backend needs to embed a font. All the int16 fields except
 // ItalicAngle are in font (design) units.
 type AdvancedMetrics struct {
-	PostScriptName string           // FontName / BaseFont in the PDF
+	PostScriptName string           // FontName / BaseFont in the PDF (name ID 6, else the family name)
 	Style          uint32           // StyleFlags (fixed pitch, italic, ...)
 	Type           AdvancedFontType // the underlying font-program encoding
 	Flags          uint32           // FontFlags (variable, not embeddable, ...)
@@ -100,7 +100,14 @@ func (t *Typeface) GetAdvancedMetrics() *AdvancedMetrics {
 	if t.face == nil || t.nGlyphs <= 0 {
 		return nil
 	}
-	m := &AdvancedMetrics{PostScriptName: t.postScriptName, ItalicAngle: t.italicAngle}
+	// SkTypeface::getAdvancedMetrics falls back to the family name for a face with no PostScript name (name ID 6), which
+	// a CFF/OTF may legitimately omit. /FontName and /BaseFont have to name something: without the fallback the PDF
+	// carries a bare six-letter subset tag ("/BaseFont /ABCDEF+") naming no font at all.
+	postScriptName := t.postScriptName
+	if postScriptName == "" {
+		postScriptName = t.familyName
+	}
+	m := &AdvancedMetrics{PostScriptName: postScriptName, ItalicAngle: t.italicAngle}
 
 	switch {
 	case t.hasGlyf:
@@ -176,7 +183,9 @@ func (t *Typeface) FontData() (data []byte, collectionIndex int) { return t.data
 // typeface parsed from a single-face file returns its own bytes; one parsed from a collection returns a freshly
 // assembled font holding just this face's tables, since a 'ttcf' container is not a font program and its glyph IDs
 // resolve against face 0 rather than this face. Returns nil and an error for a collection whose header or table
-// directory is malformed. The single-face result is the typeface's own storage; callers must not mutate it.
+// directory is malformed, and for a container that is not an sfnt file at all (WOFF, dfont — see isStandardSfntData),
+// whose bytes are no more a font program than a collection's are. The single-face result is the typeface's own storage;
+// callers must not mutate it.
 func (t *Typeface) FontProgram() ([]byte, error) {
 	return extractFontProgram(t.data, t.collectionIndex)
 }
@@ -222,13 +231,25 @@ func isStandardSfntData(data []byte) bool {
 	}
 }
 
-// extractFontProgram returns the standalone sfnt font program for face index of data. Data that is not a collection is
+// extractFontProgram returns the standalone sfnt font program for face index of data. A plain single-face sfnt file is
 // returned unchanged. A collection face is reassembled into its own font: the sfnt header, the face's table directory
 // with every offset rebased onto the new file, the table data (4-byte aligned, as the specification requires), and a
 // recomputed head.checkSumAdjustment. Table contents are copied verbatim, so the per-table checksums already in the
 // directory stay valid (head's is defined with checkSumAdjustment treated as zero, so rewriting that field cannot
 // invalidate it).
+//
+// A container the sfnt reader accepts that is not a plain sfnt file — WOFF, or a dfont resource fork, which holds
+// several faces just as a collection does — is an error rather than a passthrough: handing back the wrapper would
+// return the whole container (every face of it, tables possibly compressed) as this face's font program, which is
+// exactly what the 'ttcf' lane below exists to avoid. Empty data (the empty typeface) has no program and no container
+// to complain about, so it stays the nil, no-error answer.
 func extractFontProgram(data []byte, index int) ([]byte, error) {
+	if len(data) == 0 {
+		return data, nil
+	}
+	if !isStandardSfntData(data) {
+		return nil, errors.New("font: the data is not an sfnt font program (WOFF, dfont, or unrecognized)")
+	}
 	if len(data) < 12 || binary.BigEndian.Uint32(data) != ttcTag {
 		return data, nil
 	}

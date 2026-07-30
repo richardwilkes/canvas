@@ -44,6 +44,7 @@ import (
 type Typeface struct {
 	os2             *tables.Os2
 	face            *tsfont.Face // nil only for the empty typeface
+	bitmapFace      *tsfont.Face // the bitmap-strike lane's own Face; created on first use, guarded by faceMu
 	post            *tables.Post
 	hhea            *tables.Hhea
 	colr0BadGlyphs  map[tables.GlyphID]struct{} // base glyphs whose COLRv0 layer range is out of bounds (nil normally)
@@ -88,6 +89,19 @@ const (
 	os2UseTypoMetricsBit = 1 << 7 // fsSelection USE_TYPO_METRICS
 )
 
+// usableOS2 returns the parsed OS/2 table, or nil when the face has none worth reading. FreeType stores version 0xFFFF
+// for a face whose OS/2 table it could not use (sfobjs.c), and both it and Skia then read nothing out of it — every
+// field past the version is whatever bytes happened to be there. Every OS/2 reader in this package goes through here so
+// that one answer holds everywhere: the style derivation (computeStyle), the vertical metrics, the strike's
+// x-height/cap-height/average-width/strikeout defaults, and the PDF cap height all agree about whether the face has an
+// OS/2 table at all.
+func (t *Typeface) usableOS2() *tables.Os2 {
+	if t.os2 == nil || t.os2.Version == os2NoTableVersion {
+		return nil
+	}
+	return t.os2
+}
+
 // verticalMetrics returns the face's ascent, descent (negative, below the baseline) and line gap in font units,
 // following FreeType's sfnt_load_face recipe (sfobjs.c) — the source of face->ascender/descender, which is what
 // SkTypeface_FreeType reports and therefore what the strike's font metrics and the PDF FontDescriptor's /Ascent and
@@ -100,18 +114,18 @@ const (
 //     a face with no hhea at all reports here — falls back to the OS/2 typographic values, then to
 //     usWinAscent/-usWinDescent. Without it a font in that state lays every line out on the same baseline.
 func (t *Typeface) verticalMetrics() (ascent, descent, lineGap int16) {
-	os2Usable := t.os2 != nil && t.os2.Version != os2NoTableVersion
-	if os2Usable && t.os2.FsSelection&os2UseTypoMetricsBit != 0 {
-		return t.os2.STypoAscender, t.os2.STypoDescender, t.os2.STypoLineGap
+	os2 := t.usableOS2()
+	if os2 != nil && os2.FsSelection&os2UseTypoMetricsBit != 0 {
+		return os2.STypoAscender, os2.STypoDescender, os2.STypoLineGap
 	}
 	if t.hhea != nil {
 		ascent, descent, lineGap = t.hhea.Ascender, t.hhea.Descender, t.hhea.LineGap
 	}
-	if ascent != 0 || descent != 0 || !os2Usable {
+	if ascent != 0 || descent != 0 || os2 == nil {
 		return ascent, descent, lineGap
 	}
-	if t.os2.STypoAscender != 0 || t.os2.STypoDescender != 0 {
-		return t.os2.STypoAscender, t.os2.STypoDescender, t.os2.STypoLineGap
+	if os2.STypoAscender != 0 || os2.STypoDescender != 0 {
+		return os2.STypoAscender, os2.STypoDescender, os2.STypoLineGap
 	}
 	return int16(t.usWinAscent), -int16(t.usWinDescent), 0
 }
@@ -284,12 +298,26 @@ func (t *Typeface) PaletteColor(index uint16, foreground colorcore.Color) (color
 	return t.palette[index], true
 }
 
-// facePpem sets the face's ppem (invalidating typesetting's extents cache only on change) and must be called with
-// faceMu held.
-func (t *Typeface) facePpem(ppem uint16) {
-	if x, y := t.face.Ppem(); x != ppem || y != ppem {
-		t.face.SetPpem(ppem, ppem)
+// bitmapLaneFace returns the Face the bitmap-strike lane resolves glyphs through, held at ppem and created on first
+// use. It must be called with faceMu held.
+//
+// The lane is the only reader that wants a nonzero ppem: go-text's GlyphExtents prefers ppem-scaled bitmap-strike
+// extents, so t.face must rest at ppem 0 or the design-unit readers (GlyphDesignBounds, glyphBounds, letterTop) return
+// stale, cross-strike, ppem-scaled bounds. Borrowing t.face for the lane therefore meant setting the ppem and putting
+// it back around every single glyph, and SetPpem invalidates the Face's whole per-glyph extents cache — so each glyph
+// paid two full nGlyphs-entry cache clears and then looked up into a cache guaranteed to be empty. A second Face over
+// the same Font (read-only, and shared rather than re-parsed) keeps the two ppem regimes apart: this one simply rests
+// at the strike's ppem, so a run of glyphs at one size clears the cache once and hits it thereafter, and t.face never
+// leaves ppem 0. The cost is one extra extents cache, allocated only for a face that actually has bitmap strikes and
+// only once a glyph is drawn from one.
+func (t *Typeface) bitmapLaneFace(ppem uint16) *tsfont.Face {
+	if t.bitmapFace == nil {
+		t.bitmapFace = tsfont.NewFace(t.face.Font)
 	}
+	if x, y := t.bitmapFace.Ppem(); x != ppem || y != ppem {
+		t.bitmapFace.SetPpem(ppem, ppem)
+	}
+	return t.bitmapFace
 }
 
 // faceBitmapGlyph returns the bitmap strike glyph (sbix/CBDT/EBDT) and its font-unit extents for gid at the requested
@@ -301,17 +329,12 @@ func (t *Typeface) faceBitmapGlyph(gid opentype.GID, ppem uint16) (tsfont.GlyphB
 	}
 	t.faceMu.Lock()
 	defer t.faceMu.Unlock()
-	t.facePpem(ppem)
-	// The bitmap lane is the only caller that changes the shared Face's ppem. Reset it to 0 before releasing the lock so
-	// the Face rests at ppem 0: go-text's GlyphExtents prefers ppem-scaled bitmap-strike extents, so a leaked non-zero
-	// ppem would make the design-unit extents readers (GlyphDesignBounds, glyphBounds, letterTop) return stale,
-	// cross-strike, ppem-scaled bounds for later glyphs on the same typeface.
-	defer t.facePpem(0)
-	bm, ok := t.face.GlyphDataBitmap(tables.GlyphID(gid))
+	face := t.bitmapLaneFace(ppem)
+	bm, ok := face.GlyphDataBitmap(tables.GlyphID(gid))
 	if !ok {
 		return tsfont.GlyphBitmap{}, tsfont.GlyphExtents{}, false
 	}
-	ext, ok := t.face.GlyphExtents(gid)
+	ext, ok := face.GlyphExtents(gid)
 	if !ok {
 		return tsfont.GlyphBitmap{}, tsfont.GlyphExtents{}, false
 	}
@@ -424,8 +447,9 @@ func NewTypefaceFromData(data []byte, index int) (*Typeface, error) {
 		if os2, _, err2 := tables.ParseOs2(raw); err2 == nil {
 			t.os2 = &os2
 			// OS/2 v2+ appends (after usWinDescent): ulCodePageRange1/2 (8 bytes), sxHeight, sCapHeight, usDefaultChar,
-			// usBreakChar, usMaxContext. typesetting keeps those in HigherVersionData.
-			if os2.Version >= 2 && len(os2.HigherVersionData) >= 12 {
+			// usBreakChar, usMaxContext. typesetting keeps those in HigherVersionData. The 0xFFFF sentinel is not a
+			// version 65535 table (see usableOS2), so its trailing bytes are not those fields.
+			if t.usableOS2() != nil && os2.Version >= 2 && len(os2.HigherVersionData) >= 12 {
 				t.sxHght = int16(binary.BigEndian.Uint16(os2.HigherVersionData[8:]))
 				t.sCapHgt = int16(binary.BigEndian.Uint16(os2.HigherVersionData[10:]))
 			}
@@ -459,12 +483,19 @@ func NewTypefaceFromData(data []byte, index int) (*Typeface, error) {
 	return t, nil
 }
 
-// computeStyle derives the Style from OS/2 (weight/width/slant), falling back to head.macStyle.
+// computeStyle derives the Style from OS/2 (weight/width/slant), falling back to head.macStyle. The 0xFFFF sentinel
+// version means the face has no usable OS/2 table (see Typeface.usableOS2), so it takes the macStyle lane.
+//
+// fsSelection bit 9 (OBLIQUE) is honored at every version, as both FreeType (sfobjs.c, which maps it to its italic
+// style flag) and Skia (SkFontHost_FreeType.cpp, which maps it to kOblique_Slant) do. The bit was only *defined* in
+// version 4, but a face declaring an earlier version with it set is still saying it is oblique, and reading it as
+// upright ranks an oblique face as an upright candidate in the font manager and drops StyleItalic from the PDF
+// FontDescriptor.
 func computeStyle(os2 *tables.Os2, head tables.Head) Style {
 	weight := WeightNormal
 	width := WidthNormal
 	slant := SlantUpright
-	if os2 != nil && os2.Version != 0xFFFF {
+	if os2 != nil && os2.Version != os2NoTableVersion {
 		if os2.USWeightClass != 0 {
 			weight = int(os2.USWeightClass)
 		}
@@ -474,7 +505,7 @@ func computeStyle(os2 *tables.Os2, head tables.Head) Style {
 		if os2.FsSelection&0x01 != 0 { // ITALIC
 			slant = SlantItalic
 		}
-		if os2.Version >= 4 && os2.FsSelection&0x200 != 0 { // OBLIQUE
+		if os2.FsSelection&0x200 != 0 { // OBLIQUE
 			slant = SlantOblique
 		}
 	} else {

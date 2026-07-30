@@ -1207,6 +1207,68 @@ func TestBitmapFontMeasure(t *testing.T) {
 	}
 }
 
+// TestBitmapLaneKeepsItsOwnFace covers the split between the bitmap-strike lane's Face and the design-unit one. The
+// lane is the only reader that wants a nonzero ppem, and typesetting's SetPpem throws away the Face's entire per-glyph
+// extents cache; borrowing the shared Face meant setting the ppem and putting it back around every glyph, so each glyph
+// paid two full nGlyphs-entry cache clears and then looked into a cache that was guaranteed empty. With a Face of its
+// own the lane simply rests at the strike's ppem, so the cache survives from glyph to glyph — while the design-unit
+// readers keep seeing a Face that never left ppem 0.
+func TestBitmapLaneKeepsItsOwnFace(t *testing.T) {
+	tf := loadColorTypeface(t, "sbix.ttf")
+	gid := opentype.GID(tf.UnicharToGlyph(smiley))
+	if gid == 0 {
+		t.Fatal("U+1F600 not mapped")
+	}
+
+	// Warm the design-unit cache first: it must still be warm after the bitmap lane has run.
+	if tf.GlyphDesignBounds(uint16(gid)).IsEmpty() {
+		t.Fatal("design bounds empty")
+	}
+	const ppem = 64
+	if _, _, ok := tf.faceBitmapGlyph(gid, ppem); !ok {
+		t.Fatalf("no strike bitmap at ppem %d", ppem)
+	}
+	if tf.bitmapFace == nil {
+		t.Fatal("the bitmap lane did not take a Face of its own")
+	}
+	if tf.bitmapFace == tf.face {
+		t.Fatal("the bitmap lane is sharing the design-unit Face")
+	}
+	if x, y := tf.bitmapFace.Ppem(); x != ppem || y != ppem {
+		t.Errorf("the lane's Face rests at ppem (%d, %d), want (%d, %d) so its extents cache survives the call",
+			x, y, ppem, ppem)
+	}
+	if x, y := tf.face.Ppem(); x != 0 || y != 0 {
+		t.Errorf("the design-unit Face was left at ppem (%d, %d), want (0, 0)", x, y)
+	}
+
+	// An extents cache hit returns the stored value; a miss re-derives it, which for an sbix strike means decoding the
+	// PNG header and therefore allocating. Zero allocations is the cache being consulted rather than reset.
+	var extents tsfont.GlyphExtents
+	if allocs := testing.AllocsPerRun(20, func() { extents, _ = tf.bitmapFace.GlyphExtents(gid) }); allocs != 0 {
+		t.Errorf("re-reading the lane's extents allocated %v times per call, want 0 (the cache is being reset)", allocs)
+	}
+	if extents == (tsfont.GlyphExtents{}) {
+		t.Error("the lane reported empty extents")
+	}
+	// The same for the design-unit face: the bitmap lane must not have invalidated what was cached there either.
+	if allocs := testing.AllocsPerRun(20, func() { extents, _ = tf.face.GlyphExtents(gid) }); allocs != 0 {
+		t.Errorf("re-reading the design-unit extents allocated %v times per call, want 0", allocs)
+	}
+
+	// Another glyph at the same ppem must not disturb the ppem the lane rests at, and switching ppem must move only the
+	// lane's Face.
+	if _, _, ok := tf.faceBitmapGlyph(gid, 16); !ok {
+		t.Fatal("no strike bitmap at ppem 16")
+	}
+	if x, y := tf.bitmapFace.Ppem(); x != 16 || y != 16 {
+		t.Errorf("after a ppem 16 glyph the lane's Face is at (%d, %d), want (16, 16)", x, y)
+	}
+	if x, y := tf.face.Ppem(); x != 0 || y != 0 {
+		t.Errorf("the ppem 16 glyph moved the design-unit Face to (%d, %d), want (0, 0)", x, y)
+	}
+}
+
 func TestBitmapFacePpemDoesNotLeak(t *testing.T) {
 	// go-text's GlyphExtents prefers ppem-scaled bitmap-strike extents, so the bitmap lane must leave the shared Face at
 	// ppem 0. If it leaked a strike ppem, the design-unit extents readers (GlyphDesignBounds, glyphBounds, letterTop)

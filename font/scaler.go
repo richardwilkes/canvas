@@ -308,11 +308,11 @@ func (st *strike) fontMetrics() Metrics {
 	capHeight := float32(0)
 	strikeoutThickness := float32(0)
 	strikeoutPosition := float32(0)
-	if t.os2 != nil {
+	if os2 := t.usableOS2(); os2 != nil {
 		xHeight = float32(t.sxHght) / upem * scaleY
-		avgCharWidth = float32(t.os2.XAvgCharWidth) / upem
-		strikeoutThickness = float32(t.os2.YStrikeoutSize) / upem
-		strikeoutPosition = -float32(t.os2.YStrikeoutPosition) / upem
+		avgCharWidth = float32(os2.XAvgCharWidth) / upem
+		strikeoutThickness = float32(os2.YStrikeoutSize) / upem
+		strikeoutPosition = -float32(os2.YStrikeoutPosition) / upem
 		m.Flags |= MetricsFlagStrikeoutThicknessIsValid | MetricsFlagStrikeoutPositionIsValid
 		capHeight = float32(t.sCapHgt) / upem * scaleY
 	}

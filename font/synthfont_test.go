@@ -177,24 +177,45 @@ func synthCmapFormat13(groups ...[3]uint32) []byte {
 	return out
 }
 
-// os2FsSelectionOffset is the byte offset of fsSelection within the OS/2 table.
-const os2FsSelectionOffset = 62
+// Byte offsets within the OS/2 table of the two fields the synthetic cases patch.
+const (
+	os2VersionOffset     = 0
+	os2FsSelectionOffset = 62
+)
 
-// os2WithFsSelectionBits returns a copy of data's OS/2 table with bits set or cleared in fsSelection.
-func os2WithFsSelectionBits(t *testing.T, data []byte, bits uint16, set bool) []byte {
+// os2Patched returns a copy of data's OS/2 table with patch applied to it. The table is otherwise left alone, which is
+// the point of the version cases: a table declaring a version that says "read nothing here" still carries every byte a
+// reader could misread.
+func os2Patched(t *testing.T, data []byte, patch func(os2 []byte)) []byte {
 	t.Helper()
 	out := append([]byte(nil), rawSfntTable(t, data, "OS/2")...)
 	if len(out) < os2FsSelectionOffset+2 {
 		t.Fatalf("OS/2 table is %d bytes, too short to hold fsSelection", len(out))
 	}
-	fsSelection := binary.BigEndian.Uint16(out[os2FsSelectionOffset:])
-	if set {
-		fsSelection |= bits
-	} else {
-		fsSelection &^= bits
-	}
-	binary.BigEndian.PutUint16(out[os2FsSelectionOffset:], fsSelection)
+	patch(out)
 	return out
+}
+
+// os2WithFsSelectionBits returns a copy of data's OS/2 table with bits set or cleared in fsSelection.
+func os2WithFsSelectionBits(t *testing.T, data []byte, bits uint16, set bool) []byte {
+	t.Helper()
+	return os2Patched(t, data, func(os2 []byte) {
+		fsSelection := binary.BigEndian.Uint16(os2[os2FsSelectionOffset:])
+		if set {
+			fsSelection |= bits
+		} else {
+			fsSelection &^= bits
+		}
+		binary.BigEndian.PutUint16(os2[os2FsSelectionOffset:], fsSelection)
+	})
+}
+
+// os2WithVersion returns a copy of data's OS/2 table with only its version field replaced.
+func os2WithVersion(t *testing.T, data []byte, version uint16) []byte {
+	t.Helper()
+	return os2Patched(t, data, func(os2 []byte) {
+		binary.BigEndian.PutUint16(os2[os2VersionOffset:], version)
+	})
 }
 
 // synthFvarTable builds an 'fvar' table declaring axisCount weight axes and no named instances — enough for a parse that
@@ -290,6 +311,62 @@ func woffWrap(t *testing.T, data []byte) []byte {
 	}
 	binary.BigEndian.PutUint32(out[8:], uint32(len(out))) // length: the whole WOFF file
 	return out
+}
+
+// dfontWrap repackages each single-face sfnt in faces as one 'sfnt' resource of a Macintosh resource fork ("dfont").
+// It is the other multi-face container the sfnt reader accepts — identified, like the reader does, by the resource data
+// offset 0x00000100 sitting where a font's magic would be — and like WOFF its bytes are not a font program.
+//
+// The layout is the one typesetting's parseDfont reads (per
+// https://github.com/kreativekorp/ksfl/wiki/Macintosh-Resource-File-Format): a 16-byte header, the resource data at the
+// fixed offset 0x100 with each resource prefixed by its own 4-byte length, and a resource map whose type list carries
+// the single 'sfnt' entry pointing at a reference list with one 12-byte record per face. Counts are stored minus one,
+// as the format has it, and every offset in the map is relative to the map or the type list rather than the file.
+func dfontWrap(t *testing.T, faces ...[]byte) []byte {
+	t.Helper()
+	const (
+		resourceDataOffset = 0x100 // both the resource data's position and the format's magic number
+		mapHeaderSize      = 28
+		typeListOffset     = mapHeaderSize
+		typeListOffsetSlot = 24
+		typeEntrySize      = 8
+		refEntrySize       = 12
+	)
+	if len(faces) == 0 {
+		t.Fatal("a dfont needs at least one face")
+	}
+
+	out := make([]byte, resourceDataOffset)
+	dataOffsets := make([]uint32, len(faces))
+	for i, face := range faces {
+		dataOffsets[i] = uint32(len(out) - resourceDataOffset)
+		out = binary.BigEndian.AppendUint32(out, uint32(len(face)))
+		out = append(out, face...)
+	}
+	dataLength := uint32(len(out) - resourceDataOffset)
+	mapOffset := uint32(len(out))
+
+	// The reference list follows the type list's own count and its single entry, counted from the type list's start.
+	refListOffset := 2 + typeEntrySize
+	resourceMap := make([]byte, typeListOffset+refListOffset+refEntrySize*len(faces))
+	binary.BigEndian.PutUint16(resourceMap[typeListOffsetSlot:], typeListOffset)
+	binary.BigEndian.PutUint16(resourceMap[typeListOffset:], 0) // one type, minus one
+	typeEntry := resourceMap[typeListOffset+2:]
+	copy(typeEntry, "sfnt")
+	binary.BigEndian.PutUint16(typeEntry[4:], uint16(len(faces)-1)) // the resource count, minus one
+	binary.BigEndian.PutUint16(typeEntry[6:], uint16(refListOffset))
+	for i, offset := range dataOffsets {
+		ref := resourceMap[typeListOffset+refListOffset+refEntrySize*i:]
+		binary.BigEndian.PutUint16(ref, uint16(i))  // resource ID
+		binary.BigEndian.PutUint16(ref[2:], 0xFFFF) // name offset: this resource has no name
+		binary.BigEndian.PutUint32(ref[4:], offset) // a zero attributes byte over the 24-bit data offset
+	}
+
+	binary.BigEndian.PutUint32(out, resourceDataOffset)
+	binary.BigEndian.PutUint32(out[4:], mapOffset)
+	binary.BigEndian.PutUint32(out[8:], dataLength)
+	binary.BigEndian.PutUint32(out[12:], uint32(len(resourceMap)))
+	return append(out, resourceMap...)
 }
 
 // readTestFont returns the raw bytes of a font in testdata.

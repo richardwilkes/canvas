@@ -14,6 +14,8 @@ import (
 	"encoding/binary"
 	"os"
 	"testing"
+
+	"github.com/go-text/typesetting/font/opentype/tables"
 )
 
 // TestAdvancedMetricsFlags covers the font flags the PDF backend branches on to decide between embedding the font
@@ -116,6 +118,167 @@ func TestAdvancedMetricsPCLT(t *testing.T) {
 			t.Errorf("serifStyle %#x (%s): cap height = %d, want the PCLT value %d (OS/2 says %d)",
 				c.serifStyle, c.desc, m.CapHeight, pcltCapHeight, os2CapHeight)
 		}
+	}
+}
+
+// TestAdvancedMetricsPostScriptNameFallback covers the name the PDF's /FontName and /BaseFont are built from. Name ID 6
+// is optional — a CFF/OTF may carry none — and SkTypeface::getAdvancedMetrics falls back to the family name rather than
+// emitting nothing, since the PDF backend prepends a six-letter subset tag to whatever comes back and "/BaseFont
+// /ABCDEF+" names no font at all.
+func TestAdvancedMetricsPostScriptNameFallback(t *testing.T) {
+	base := readTestFont(t, "Roboto-Regular.ttf")
+	for _, c := range []struct {
+		names map[tables.NameID]string
+		desc  string
+		want  string
+	}{
+		{
+			desc:  "name ID 6 is used verbatim when the face has one",
+			names: map[tables.NameID]string{1: "Legacy Family", 6: "The-PostScript-Name"},
+			want:  "The-PostScript-Name",
+		},
+		{
+			desc:  "the family name stands in when name ID 6 is missing",
+			names: map[tables.NameID]string{1: "Legacy Family"},
+			want:  "Legacy Family",
+		},
+		{
+			// The fallback is FamilyName(), so it follows the same WWS-aware precedence, not just name ID 1.
+			desc:  "the fallback is the family name the face reports, not the legacy record",
+			names: map[tables.NameID]string{1: "Legacy Family", 16: "Typographic Family"},
+			want:  "Typographic Family",
+		},
+		{
+			desc:  "a face naming itself nothing still reports nothing",
+			names: map[tables.NameID]string{2: "Regular"},
+			want:  "",
+		},
+	} {
+		t.Run(c.desc, func(t *testing.T) {
+			data := sfntWithTables(t, base, map[string][]byte{"name": synthNameTable(c.names)})
+			tf, err := NewTypefaceFromData(data, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := tf.GetAdvancedMetrics().PostScriptName; got != c.want {
+				t.Errorf("PostScriptName = %q, want %q (family name %q)", got, c.want, tf.FamilyName())
+			}
+		})
+	}
+}
+
+// TestAdvancedMetricsIgnoresSentinelOS2 covers the OS/2 version 0xFFFF sentinel: FreeType stores it for a face whose
+// OS/2 table it could not use, and it and Skia then read nothing out of the table. The bytes where sxHeight and
+// sCapHeight would live in a real version 2+ table are still present, so a reader testing only "version >= 2" hands the
+// PDF a cap height — and the strike an x-height, average width and strikeout — taken from a table nothing else in the
+// stack believes exists.
+func TestAdvancedMetricsIgnoresSentinelOS2(t *testing.T) {
+	base := readTestFont(t, "Roboto-Regular.ttf")
+	unpatched, err := NewTypefaceFromData(base, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantCapHeight := unpatched.GetAdvancedMetrics().CapHeight
+	if wantCapHeight == 0 || unpatched.sxHght == 0 {
+		t.Fatalf("Roboto must report a nonzero OS/2 cap height (%d) and x-height (%d) for this to mean anything",
+			wantCapHeight, unpatched.sxHght)
+	}
+
+	// Version 2 is the first that defines the fields, and it must still be read: only the sentinel is excluded.
+	v2, err := NewTypefaceFromData(sfntWithTables(t, base, map[string][]byte{"OS/2": os2WithVersion(t, base, 2)}), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := v2.GetAdvancedMetrics().CapHeight; got != wantCapHeight {
+		t.Errorf("version 2 cap height = %d, want the same %d the real table reports", got, wantCapHeight)
+	}
+
+	data := sfntWithTables(t, base, map[string][]byte{"OS/2": os2WithVersion(t, base, os2NoTableVersion)})
+	sentinel, err := NewTypefaceFromData(data, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sentinel.sCapHgt != 0 || sentinel.sxHght != 0 {
+		t.Errorf("the sentinel table yielded sCapHeight %d and sxHeight %d, want both unread",
+			sentinel.sCapHgt, sentinel.sxHght)
+	}
+	if got := sentinel.GetAdvancedMetrics().CapHeight; got != 0 {
+		t.Errorf("cap height = %d, want 0 (the PDF backend guesses); the real table says %d", got, wantCapHeight)
+	}
+	// The rest of the strike's OS/2 lane must go with it: a face with no usable OS/2 table has no strikeout to report,
+	// so the validity flags the strike sets alongside those values must be off too.
+	var m Metrics
+	NewFont(sentinel, 100, 1, 0).Metrics(&m)
+	if m.Flags&(MetricsFlagStrikeoutThicknessIsValid|MetricsFlagStrikeoutPositionIsValid) != 0 {
+		t.Errorf("strikeout reported valid (flags %#x) from a table with no usable OS/2 version", m.Flags)
+	}
+	if m.StrikeoutThickness != 0 || m.StrikeoutPosition != 0 {
+		t.Errorf("strikeout = (%v, %v), want both unread", m.StrikeoutThickness, m.StrikeoutPosition)
+	}
+	// Average width has a synthesis (the head bbox width) behind the OS/2 value, so the observable is that the strike
+	// fell back to it rather than reading xAvgCharWidth out of the sentinel table.
+	var realMetrics Metrics
+	NewFont(unpatched, 100, 1, 0).Metrics(&realMetrics)
+	if realMetrics.AvgCharWidth == realMetrics.MaxCharWidth {
+		t.Fatal("Roboto's OS/2 average width already equals the head bbox width; the fallback would be invisible")
+	}
+	if m.AvgCharWidth != m.MaxCharWidth {
+		t.Errorf("average char width = %v, want the head bbox width %v (the OS/2 table says %v)",
+			m.AvgCharWidth, m.MaxCharWidth, realMetrics.AvgCharWidth)
+	}
+}
+
+// TestFontProgramRejectsNonSfntContainers covers the containers the sfnt reader accepts whose bytes are not a font
+// program. A dfont resource fork holds several faces exactly as a 'ttcf' collection does, so returning it untouched
+// would both hand a PDF a wrapper instead of a font program and, for a face index above 0, return the wrong face's
+// glyphs; a WOFF's tables are individually compressible inside the wrapper. Both already report
+// FontFlagAltDataFormat, which is what keeps the PDF backend off this path — the contract has to hold for every other
+// caller too.
+func TestFontProgramRejectsNonSfntContainers(t *testing.T) {
+	roboto := readTestFont(t, "Roboto-Regular.ttf")
+	dejaVu := readTestFont(t, "DejaVuSans.subset.ttf")
+	dfont := dfontWrap(t, roboto, dejaVu)
+
+	// The fork really does hold two distinguishable faces, so "returned the container" is also "returned face 0".
+	faces := make([]*Typeface, 2)
+	for index := range faces {
+		tf, err := NewTypefaceFromData(dfont, index)
+		if err != nil {
+			t.Fatalf("dfont face %d: %v", index, err)
+		}
+		faces[index] = tf
+	}
+	if faces[0].FamilyName() == faces[1].FamilyName() {
+		t.Fatalf("both dfont faces name themselves %q; the wrong-face case would be invisible", faces[0].FamilyName())
+	}
+
+	woff, err := NewTypefaceFromData(woffWrap(t, roboto), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct {
+		tf   *Typeface
+		desc string
+	}{
+		{desc: "dfont face 0", tf: faces[0]},
+		{desc: "dfont face 1", tf: faces[1]},
+		{desc: "WOFF", tf: woff},
+	} {
+		t.Run(c.desc, func(t *testing.T) {
+			if c.tf.GetAdvancedMetrics().Flags&FontFlagAltDataFormat == 0 {
+				t.Error("the container was not reported as an alternate data format")
+			}
+			program, err2 := c.tf.FontProgram()
+			if err2 == nil {
+				t.Errorf("FontProgram returned %d bytes and no error", len(program))
+			}
+			if program != nil {
+				t.Errorf("FontProgram returned %d bytes alongside the error", len(program))
+			}
+			if raw, _ := c.tf.FontData(); bytes.Equal(program, raw) {
+				t.Error("the whole container came back as the font program")
+			}
+		})
 	}
 }
 

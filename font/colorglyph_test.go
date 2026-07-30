@@ -407,13 +407,21 @@ func TestBitmapGlyphMetrics(t *testing.T) {
 func TestBitmapGlyphImageNativeSize(t *testing.T) {
 	// At the strike-native size the bitmap transform is the identity, so the mask must be a byte-exact premultiplied
 	// copy of the strike PNG (the FT direct-copy lane; the shader's linear filter degrades to nearest at integer
-	// translates).
+	// translates). "Byte-exact" is only meaningful against the premultiply decodePremulPNG promises — MulDiv255Round —
+	// so the expectation is computed with that same round-to-nearest formula over the PNG's unpremultiplied samples.
+	// The obvious color.Color.RGBA() route premultiplies in 16 bits with truncation instead and disagrees by up to 1 on
+	// the antialiased edge, and tolerating that difference here would hide a swap of MulDiv255Round for a truncating
+	// x*a/255 (which TestDecodePremulPNGRoundsToNearest pins directly).
 	tf := loadColorTypeface(t, "sbix.ttf")
 	g, action := smileyGlyph(t, tf, 64, nil)
 	if action != GlyphActionAccept || g.Image32 == nil {
 		t.Fatalf("no image (action %v)", action)
 	}
-	bm, _, ok := tf.faceBitmapGlyph(3, 64)
+	gid := tf.UnicharToGlyph(smiley)
+	if gid == 0 {
+		t.Fatal("U+1F600 not mapped")
+	}
+	bm, _, ok := tf.faceBitmapGlyph(opentype.GID(gid), 64)
 	if !ok {
 		t.Fatal("no strike bitmap")
 	}
@@ -425,26 +433,83 @@ func TestBitmapGlyphImageNativeSize(t *testing.T) {
 	if int32(b.Dx()) != g.Width || int32(b.Dy()) != g.Height {
 		t.Fatalf("dims %dx%d vs glyph %dx%d", b.Dx(), b.Dy(), g.Width, g.Height)
 	}
+	nrgba, ok := src.(*image.NRGBA)
+	if !ok {
+		t.Fatalf("the strike PNG decoded to %T; the comparison needs its unpremultiplied samples", src)
+	}
 	mismatches := 0
-	for y := 0; y < b.Dy(); y++ {
-		for x := 0; x < b.Dx(); x++ {
-			r, gr, bl, a := src.At(b.Min.X+x, b.Min.Y+y).RGBA() // premultiplied 16-bit
-			want := r>>8 | (gr>>8)<<8 | (bl>>8)<<16 | (a>>8)<<24
-			got := g.Image32[y*int(g.Width)+x]
-			if got != want {
-				if delta(got, want) > 1 {
-					mismatches++
-				}
+	for y := range b.Dy() {
+		for x := range b.Dx() {
+			i := nrgba.PixOffset(b.Min.X+x, b.Min.Y+y)
+			a := nrgba.Pix[i+3]
+			want := uint32(colorcore.MulDiv255Round(nrgba.Pix[i], a)) |
+				uint32(colorcore.MulDiv255Round(nrgba.Pix[i+1], a))<<8 |
+				uint32(colorcore.MulDiv255Round(nrgba.Pix[i+2], a))<<16 |
+				uint32(a)<<24
+			if g.Image32[y*int(g.Width)+x] != want {
+				mismatches++
 			}
 		}
 	}
 	if mismatches != 0 {
-		t.Errorf("%d pixels differ by more than 1 per channel", mismatches)
+		t.Errorf("%d of %d pixels are not a byte-exact premultiplied copy of the strike PNG", mismatches,
+			b.Dx()*b.Dy())
 	}
 	// And the well-known center color.
 	cx, cy := int(g.Width)/2, int(g.Height)/2
 	if got := g.Image32[cy*int(g.Width)+cx]; got != faceCenterWord {
 		t.Errorf("center %#08x, want %#08x", got, faceCenterWord)
+	}
+}
+
+func TestDecodePremulPNGRoundsToNearest(t *testing.T) {
+	// decodePremulPNG documents a round-to-nearest premultiply (MulDiv255Round). The truncating x*a/255 a hand-rolled
+	// premultiply falls into differs by 1 on a large share of partially transparent samples — the antialiased edge of
+	// every bitmap strike — so the direct-copy lane's "byte-exact copy of the strike PNG" claim only means something
+	// with the formula pinned exactly. The sweep below covers every alpha step against varied color samples, and the
+	// truncation counter proves the assertion can tell the two formulas apart.
+	const side = 16
+	src := image.NewNRGBA(image.Rect(0, 0, side, side))
+	for y := range side {
+		for x := range side {
+			src.SetNRGBA(x, y, color.NRGBA{
+				R: uint8(x * 17),
+				G: uint8(255 - x*17),
+				B: uint8(x*13 + y),
+				A: uint8(y * 17),
+			})
+		}
+	}
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, src); err != nil {
+		t.Fatal(err)
+	}
+	img := decodePremulPNG(buf.Bytes(), side, side)
+	if img == nil {
+		t.Fatal("the strike did not decode")
+	}
+	pm := img.Image.Pixmap()
+	if pm == nil {
+		t.Fatal("the decoded strike has no pixels")
+	}
+	truncationWouldDiffer := 0
+	for y := range side {
+		for x := range side {
+			c := src.NRGBAAt(x, y)
+			want := uint32(colorcore.MulDiv255Round(c.R, c.A)) | uint32(colorcore.MulDiv255Round(c.G, c.A))<<8 |
+				uint32(colorcore.MulDiv255Round(c.B, c.A))<<16 | uint32(c.A)<<24
+			if got := pm.Pix[y*int(pm.RowPixels)+x]; got != want {
+				t.Fatalf("(%d, %d) = %#08x, want %#08x (round-to-nearest premultiply)", x, y, got, want)
+			}
+			trunc := (uint32(c.R) * uint32(c.A) / 255) | (uint32(c.G)*uint32(c.A)/255)<<8 |
+				(uint32(c.B)*uint32(c.A)/255)<<16 | uint32(c.A)<<24
+			if trunc != want {
+				truncationWouldDiffer++
+			}
+		}
+	}
+	if truncationWouldDiffer == 0 {
+		t.Fatal("no sample distinguishes round-to-nearest from a truncating premultiply; the test proves nothing")
 	}
 }
 

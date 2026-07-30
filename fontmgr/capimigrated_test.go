@@ -7,8 +7,9 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// Checks for the public font-manager entry points — most importantly the system-font Default() manager, which the
-// rest of the suite avoids for hermeticity.
+// Checks for the public font-manager entry points — most importantly the system-font Default() manager. Reaching
+// Default scans the system font directories and writes an index cache, so the tests that do are opt-in
+// (requireSystemFonts) and the suite stays hermetic by default, exactly as fontmgr_test.go's header claims.
 
 package fontmgr
 
@@ -22,6 +23,7 @@ import (
 // TestDefaultManagerEnumeration verifies the process-wide default manager builds from the system font index and its
 // enumeration entry points stay consistent.
 func TestDefaultManagerEnumeration(t *testing.T) {
+	requireSystemFonts(t)
 	mgr := Default()
 	if mgr == nil {
 		t.Fatal("default font manager is nil")
@@ -48,6 +50,7 @@ func TestDefaultManagerEnumeration(t *testing.T) {
 // an empty, non-nil style set; a real family matches; style matching resolves a face; and character coverage matching
 // finds a face that really covers the probe rune.
 func TestDefaultManagerMatching(t *testing.T) {
+	requireSystemFonts(t)
 	mgr := Default()
 	empty := mgr.MatchFamily("This Family Does Not Exist 12345")
 	if empty == nil {
@@ -96,10 +99,14 @@ func TestDefaultManagerMatching(t *testing.T) {
 	}
 }
 
-// TestDefaultManagerMakeFromData verifies MakeFromData's semantics: valid font bytes parse to a typeface, garbage
-// yields nil.
-func TestDefaultManagerMakeFromData(t *testing.T) {
-	mgr := Default()
+// TestMakeFromData verifies MakeFromData's semantics: valid font bytes parse to a typeface, garbage yields nil. It
+// parses only the bytes it is handed and never consults the manager's inventory, so an empty manager answers exactly
+// as the system one does — which is what keeps this case off the system font directories.
+func TestMakeFromData(t *testing.T) {
+	mgr := NewFromData()
+	if got := mgr.CountFamilies(); got != 0 {
+		t.Fatalf("the empty manager holds %d families; MakeFromData must not need an inventory", got)
+	}
 	data, err := os.ReadFile("../font/testdata/Roboto-Regular.ttf")
 	if err != nil {
 		t.Fatalf("read test font: %v", err)
@@ -113,5 +120,9 @@ func TestDefaultManagerMakeFromData(t *testing.T) {
 	}
 	if bad := mgr.MakeFromData([]byte("not a font"), 0); bad != nil {
 		t.Error("MakeFromData should return nil for garbage bytes")
+	}
+	// A collection index past the end of the file is nil too, rather than a face from another index.
+	if bad := mgr.MakeFromData(data, 1); bad != nil {
+		t.Error("MakeFromData should return nil for an out-of-range collection index")
 	}
 }

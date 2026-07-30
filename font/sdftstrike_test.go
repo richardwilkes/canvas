@@ -117,14 +117,23 @@ func TestSDFTMaskSpecGlyph(t *testing.T) {
 	if inside <= 128 {
 		t.Errorf("SDF at strongest A8 texel = %d, want > 128 (inside)", inside)
 	}
+}
 
-	// An empty glyph (space) drops.
-	var spaceGlyphs [1]uint16
-	if f.TextToGlyphs([]byte(" "), TextEncodingUTF8, spaceGlyphs[:]) == 1 && spaceGlyphs[0] != 0 {
-		_, action = sdfStrike.DigestFor(ActionSDFT, PackGlyphID(spaceGlyphs[0]))
-		if action != GlyphActionDrop {
-			t.Errorf("space kSDFT action = %v, want drop", action)
-		}
+// TestSDFTEmptyGlyphDrops pins the other half of the kSDFT gate: a glyph that rasterizes to nothing (the space) drops
+// rather than reaching the atlas. Resolving the space is a precondition of the case, not a condition on it — a cmap
+// lane regressing to glyph 0 is itself a bug worth failing on, and guarding the assertion on the lookup would delete
+// the check exactly when that happened.
+func TestSDFTEmptyGlyphDrops(t *testing.T) {
+	f := loadSDFTestFont(t, 162)
+	f.SetEdging(EdgingAntiAlias)
+	f.SetSubpixel(false)
+	var glyphs [1]uint16
+	if f.TextToGlyphs([]byte(" "), TextEncodingUTF8, glyphs[:]) != 1 || glyphs[0] == 0 {
+		t.Fatal("no glyph for the space character")
+	}
+	spec := MakeSDFTMaskSpec(f, nil)
+	if _, action := spec.FindOrCreateStrike().DigestFor(ActionSDFT, PackGlyphID(glyphs[0])); action != GlyphActionDrop {
+		t.Errorf("space kSDFT action = %v, want drop", action)
 	}
 }
 

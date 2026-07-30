@@ -11,20 +11,28 @@
 // fonts are touched. Coverage facts about the corpus (from the fonts' cmaps):
 //
 //	Roboto-Regular.ttf    family "Roboto"      (400,5,upright) "Regular"  covers NUL, CR, ASCII (215 runes)
-//	DejaVuSans.subset.ttf family "DejaVu Sans" (400,5,upright) "Book"     covers 'H' 'a' 'x'
+//	DejaVuSans.subset.ttf family "Corpus Sans" (400,5,upright) "Book"     covers 'H' 'a' 'x'
 //	test.ttc[0]           family "Test"        (400,5,upright) "Regular"  covers '!' '"' '0'-'4' 'A'
 //	test.ttc[1]           family "Test"        (700,5,upright) "Bold"     covers '!'
+//
+// The sans face is really DejaVu Sans, renamed in memory because that name is a platform default family (see
+// corpusSansFamily); no corpus family is a default on any GOOS, which is what TestCorpusHoldsNoPlatformDefaultFamily
+// guards.
 //
 // Roboto's NUL/CR entries map real glyphs. The other three faces additionally carry a cmap4 sentinel segment mapping
 // U+FFFF to glyph 0 (.notdef): go-text's scanner counts it into the footprint rune set, but it maps no real glyph — the
 // character-fallback verification cases below rely on that.
 //
-// The system manager (Default) is exercised only by the opt-in system-scan test at the bottom of this file; the live
-// oracle probe that once compared it against the C library's platform host was removed along with that library.
+// The system manager (Default) scans every system font directory and serializes an index cache into the user's cache
+// dir, so nothing here calls it by default: every test that does is gated on CANVAS_FONTMGR_SYSTEM through
+// requireSystemFonts, in this file and in capimigrated_test.go alike. The live oracle probe that once compared the
+// system manager against the C library's platform host was removed along with that library.
 
 package fontmgr
 
 import (
+	"bytes"
+	"encoding/binary"
 	"os"
 	"sync"
 	"testing"
@@ -36,21 +44,29 @@ import (
 	"github.com/richardwilkes/canvas/font"
 )
 
-// newTestFaceRec builds a faceRec for one face of a testdata font, deriving the grouping key and rune coverage from the
-// file exactly as the fontscan footprints would.
+// newTestFaceRec builds a file-backed faceRec for one face of a testdata font, deriving the grouping key and rune
+// coverage from the file exactly as the fontscan footprints would.
 func newTestFaceRec(t *testing.T, file string, index int, langs ...string) *faceRec {
 	t.Helper()
 	path := "../font/testdata/" + file
-	info, err := font.DescribeFaceFile(path, index)
-	if err != nil {
-		t.Fatalf("%s[%d]: describe: %v", file, index, err)
-	}
-	f, err := os.Open(path)
+	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close() //nolint:errcheck // read-only file; close errors are irrelevant
-	lds, err := opentype.NewLoaders(f)
+	f := newTestDataFaceRec(t, data, index, langs...)
+	f.data, f.path = nil, path
+	return f
+}
+
+// newTestDataFaceRec is newTestFaceRec over in-memory font bytes: the same derivation, against the data lane of every
+// lazy read rather than the file lane.
+func newTestDataFaceRec(t *testing.T, data []byte, index int, langs ...string) *faceRec {
+	t.Helper()
+	info, err := font.DescribeFaceData(data, index)
+	if err != nil {
+		t.Fatalf("face %d: describe: %v", index, err)
+	}
+	lds, err := opentype.NewLoaders(bytes.NewReader(data))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +90,7 @@ func newTestFaceRec(t *testing.T, file string, index int, langs ...string) *face
 	}
 	return &faceRec{
 		key:    tsfont.NormalizeFamily(info.Family),
-		path:   path,
+		data:   data,
 		index:  index,
 		runes:  runes,
 		langs:  langSet,
@@ -82,21 +98,93 @@ func newTestFaceRec(t *testing.T, file string, index int, langs ...string) *face
 	}
 }
 
-// newNonDefaultFaceRec builds a corpus faceRec re-keyed to a family name no platform's default-family list can hold,
-// for tests that need a family ranking strictly below every default tier. A corpus face cannot serve as that family
-// under its own name: "DejaVu Sans" is the first default on every non-darwin, non-windows GOOS, so on the Linux legs
-// the face lands in the very tier it is supposed to rank below. The face keeps its real family name — only the grouping
-// key changes — so assertions on the answering typeface's FamilyName still read naturally.
-func newNonDefaultFaceRec(t *testing.T, file string, index int) *faceRec {
+// corpusSansFamily is the family the corpus's sans face carries. The face really is DejaVu Sans, which is the *first*
+// entry of defaultFamilies() on every non-darwin, non-windows GOOS: under its own name it lands in the default-family
+// tier on the Linux legs, so the platform, not the test, decides which branch of lookupOrDefault and
+// matchCoveringTiered answers — leaving the first-visible-family fallback and the family-sorted tie-break unexercised
+// there. Renaming it to a name no platform defaults to puts the same branch under test on every GOOS. The replacement
+// is the same length as the original (the rename overwrites the name strings in place) and still normalizes below
+// "roboto", so the corpus's family order is unchanged.
+const corpusSansFamily = "Corpus Sans"
+
+// newSansFaceRec builds the corpus's sans face: DejaVuSans.subset.ttf renamed to corpusSansFamily. The rename lives in
+// memory — the checked-in font is untouched — so the face is data-backed, which also keeps the data lane of the lazy
+// reads under test alongside the file lane the rest of the corpus uses.
+func newSansFaceRec(t *testing.T, langs ...string) *faceRec {
 	t.Helper()
-	f := newTestFaceRec(t, file, index)
-	f.key = "notadefaultfamily"
-	for _, name := range defaultFamilies() {
-		if tsfont.NormalizeFamily(name) == f.key {
-			t.Fatalf("the non-default key %q is one of this platform's default families %v", f.key, defaultFamilies())
-		}
+	data, err := os.ReadFile("../font/testdata/DejaVuSans.subset.ttf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := newTestDataFaceRec(t, renameSfntFamily(t, data, "DejaVu Sans", corpusSansFamily), 0, langs...)
+	if want := tsfont.NormalizeFamily(corpusSansFamily); f.key != want {
+		t.Fatalf("the renamed sans face keys as %q, want %q", f.key, want)
 	}
 	return f
+}
+
+// sfntTable returns tag's table bytes within a single-font sfnt file, as a slice aliasing data.
+func sfntTable(t *testing.T, data []byte, tag string) []byte {
+	t.Helper()
+	for i := range int(binary.BigEndian.Uint16(data[4:])) {
+		rec := 12 + i*16
+		if string(data[rec:rec+4]) != tag {
+			continue
+		}
+		off := int(binary.BigEndian.Uint32(data[rec+8:]))
+		return data[off : off+int(binary.BigEndian.Uint32(data[rec+12:]))]
+	}
+	t.Fatalf("%s table not found", tag)
+	return nil
+}
+
+// renameSfntFamily returns a copy of a single-font sfnt whose family-name records — the name-table IDs the family
+// precedence in font.DescribeFace reads, 21, 16 and 1 — currently reading from are rewritten to to. Both names must be
+// ASCII and the same length, so every name string keeps its byte length in the UTF-16BE and single-byte encodings
+// alike and no offset in the table moves; records sharing a rewritten string (the full name and unique ID commonly
+// alias the family name) are rewritten with it.
+func renameSfntFamily(t *testing.T, data []byte, from, to string) []byte {
+	t.Helper()
+	if len(from) != len(to) {
+		t.Fatalf("%q and %q differ in length; the rewrite must not move a name-table offset", from, to)
+	}
+	out := bytes.Clone(data)
+	tab := sfntTable(t, out, "name")
+	strOff := int(binary.BigEndian.Uint16(tab[4:]))
+	renamed := 0
+	for i := range int(binary.BigEndian.Uint16(tab[2:])) {
+		rec := 6 + i*12
+		switch binary.BigEndian.Uint16(tab[rec+6:]) { // nameID
+		case 1, 16, 21:
+		default:
+			continue
+		}
+		// Platform 1 (Macintosh) encodes one byte per character; the Unicode and Windows platforms use UTF-16BE.
+		wide := binary.BigEndian.Uint16(tab[rec:]) != 1
+		off := strOff + int(binary.BigEndian.Uint16(tab[rec+10:]))
+		s := tab[off : off+int(binary.BigEndian.Uint16(tab[rec+8:]))]
+		if !bytes.Equal(s, encodeSfntName(from, wide)) {
+			continue
+		}
+		copy(s, encodeSfntName(to, wide))
+		renamed++
+	}
+	if renamed == 0 {
+		t.Fatalf("no family-name record reads %q", from)
+	}
+	return out
+}
+
+// encodeSfntName encodes an ASCII name-table string, either as UTF-16BE or as one byte per character.
+func encodeSfntName(s string, wide bool) []byte {
+	if !wide {
+		return []byte(s)
+	}
+	out := make([]byte, 0, len(s)*2)
+	for _, r := range s {
+		out = binary.BigEndian.AppendUint16(out, uint16(r))
+	}
+	return out
 }
 
 // readTestFontData returns the raw bytes of a font in the shared corpus, for the in-memory (data-backed) faces.
@@ -109,15 +197,28 @@ func readTestFontData(t *testing.T, file string) []byte {
 	return data
 }
 
-// newTestManager builds the standard four-face corpus manager: Roboto tagged "en", DejaVu Sans tagged "fr".
+// newTestManager builds the standard four-face corpus manager: Roboto tagged "en", Corpus Sans tagged "fr".
 func newTestManager(t *testing.T) *Manager {
 	t.Helper()
 	return newManager([]*faceRec{
 		newTestFaceRec(t, "Roboto-Regular.ttf", 0, "en"),
-		newTestFaceRec(t, "DejaVuSans.subset.ttf", 0, "fr"),
+		newSansFaceRec(t, "fr"),
 		newTestFaceRec(t, "test.ttc", 0),
 		newTestFaceRec(t, "test.ttc", 1),
 	})
+}
+
+func TestCorpusHoldsNoPlatformDefaultFamily(t *testing.T) {
+	// The branch split the whole corpus rests on: no corpus family may be one of this platform's default families, or
+	// the default-family branches of lookupOrDefault and matchCoveringTiered answer the empty-family and
+	// character-fallback cases instead of the first-visible-family fallback and the family-sorted tie-break those cases
+	// are written for — silently, and only on the platforms whose defaults collide (see corpusSansFamily).
+	m := newTestManager(t)
+	for _, name := range defaultFamilies() {
+		if fam := m.byKey[tsfont.NormalizeFamily(name)]; fam != nil {
+			t.Errorf("the corpus holds %q, one of this platform's default families %v", name, defaultFamilies())
+		}
+	}
 }
 
 // familyOf names a matched typeface's family for a failure message (a %v verb on the typeface itself dumps the whole
@@ -138,8 +239,8 @@ func TestManagerEnumeration(t *testing.T) {
 	if got := m.CountFamilies(); got != 3 {
 		t.Fatalf("CountFamilies = %d, want 3", got)
 	}
-	// Families sort by normalized key: dejavusans < roboto < test.
-	want := []string{"DejaVu Sans", "Roboto", "Test"}
+	// Families sort by normalized key: corpussans < roboto < test.
+	want := []string{corpusSansFamily, "Roboto", "Test"}
 	for i, name := range want {
 		if got := m.FamilyName(i); got != name {
 			t.Errorf("FamilyName(%d) = %q, want %q", i, got, name)
@@ -213,9 +314,8 @@ func TestManagerMatchFamilyEmptyNameResolvesTheDefault(t *testing.T) {
 		t.Errorf(`MatchFamily("").MatchStyle() = %s, MatchFamilyStyle("") = %s: the two disagree`,
 			familyOf(viaSet), familyOf(viaStyle))
 	}
-	// They keep agreeing in the four-face corpus, where which branch of lookupOrDefault answers depends on the platform
-	// (the Linux defaults include DejaVu Sans; the darwin and windows ones are absent, so the first visible family
-	// wins).
+	// They keep agreeing in the four-face corpus, which holds no default family on any platform, so the other branch —
+	// the first-visible-family fallback — is what answers there.
 	m = newTestManager(t)
 	viaSet, viaStyle = m.MatchFamily("").MatchStyle(font.NormalStyle()), m.MatchFamilyStyle("", font.NormalStyle())
 	if viaSet == nil || viaSet != viaStyle {
@@ -227,22 +327,22 @@ func TestManagerMatchFamilyEmptyNameResolvesTheDefault(t *testing.T) {
 func TestManagerCharacterFallbackScoresDefaultsInOrder(t *testing.T) {
 	// defaultFamilies is a search order, not one pool: the first default family present answers whenever it covers the
 	// character, even when a later default family holds the better style match. Keying corpus faces to the platform's
-	// own default names, and the ranked-below family to a name no platform defaults to, makes the tiers testable on
-	// every GOOS.
+	// own default names — over a corpus that holds none of them under its own names — makes the tiers testable on every
+	// GOOS.
 	defaults := defaultFamilies()
 	first := newTestFaceRec(t, "Roboto-Regular.ttf", 0) // regular weight: a near miss for a bold request
 	first.key = tsfont.NormalizeFamily(defaults[0])
 	second := newTestFaceRec(t, "test.ttc", 1) // the exact bold match, covering '!'
 	second.key = tsfont.NormalizeFamily(defaults[1])
-	m := newManager([]*faceRec{newNonDefaultFaceRec(t, "DejaVuSans.subset.ttf", 0), second, first})
+	m := newManager([]*faceRec{newSansFaceRec(t), second, first})
 	if tf := m.MatchFamilyStyleCharacter("", font.BoldStyle(), nil, '!'); tf == nil || tf.FamilyName() != "Roboto" {
 		t.Errorf("bold '!' = %s, want Roboto, the first default family's regular face (the second default is an exact "+
 			"style match, but it is second)", familyOf(tf))
 	}
-	// The non-default families still rank below every default: DejaVu Sans covers 'x' and ties Roboto on style, but the
+	// The non-default families still rank below every default: Corpus Sans covers 'x' and ties Roboto on style, but the
 	// default-family tier answers first.
 	if tf := m.MatchFamilyStyleCharacter("", font.NormalStyle(), nil, 'x'); tf == nil || tf.FamilyName() != "Roboto" {
-		t.Errorf("normal 'x' = %s, want the default family's Roboto over the non-default DejaVu Sans", familyOf(tf))
+		t.Errorf("normal 'x' = %s, want the default family's Roboto over the non-default Corpus Sans", familyOf(tf))
 	}
 	// A default family that does not cover the character drops out and the next default in the order answers — still
 	// ahead of the non-default families that cover it too.
@@ -250,7 +350,7 @@ func TestManagerCharacterFallbackScoresDefaultsInOrder(t *testing.T) {
 	first.key = tsfont.NormalizeFamily(defaults[0])
 	second = newTestFaceRec(t, "Roboto-Regular.ttf", 0)
 	second.key = tsfont.NormalizeFamily(defaults[1])
-	m = newManager([]*faceRec{newNonDefaultFaceRec(t, "DejaVuSans.subset.ttf", 0), second, first})
+	m = newManager([]*faceRec{newSansFaceRec(t), second, first})
 	if tf := m.MatchFamilyStyleCharacter("", font.NormalStyle(), nil, 'x'); tf == nil || tf.FamilyName() != "Roboto" {
 		t.Errorf("normal 'x' = %s, want the second default family's Roboto (the first does not cover it)", familyOf(tf))
 	}
@@ -390,11 +490,12 @@ func TestManagerMatchFamilyStyle(t *testing.T) {
 	if tf := m.MatchFamilyStyle("ῢ ΰ ῤ ῦ ῧ Ῠ Ῡ Ὺ Ύ Ῥ ῲ ῳ ῴ ῶ ῷ Ὸ Ό Ὼ Ώ ῼ", font.NormalStyle()); tf != nil {
 		t.Errorf("MatchFamilyStyle(case-folding torture name) != nil")
 	}
-	// The empty name requests the platform default family; none of the defaults exist in the test corpus, so the first
-	// family (DejaVu Sans) answers.
+	// The empty name requests the platform default family; no corpus family is one of the defaults on any GOOS
+	// (TestCorpusHoldsNoPlatformDefaultFamily), so lookupOrDefault's first-visible-family fallback answers with Corpus
+	// Sans everywhere.
 	tf := m.MatchFamilyStyle("", font.NormalStyle())
-	if tf == nil || tf.FamilyName() != "DejaVu Sans" {
-		t.Errorf("MatchFamilyStyle(\"\") = %v, want the first family", tf)
+	if tf == nil || tf.FamilyName() != corpusSansFamily {
+		t.Errorf("MatchFamilyStyle(\"\") = %s, want the first family", familyOf(tf))
 	}
 	// An empty manager returns nil for everything.
 	empty := newManager(nil)
@@ -423,32 +524,32 @@ func TestManagerMatchFamilyStyleCharacter(t *testing.T) {
 	if tf := match("Test", font.BoldStyle(), nil, 'A'); tf == nil || tf.Style().Weight() != 400 {
 		t.Errorf("(Test, bold, 'A') = %v, want the regular face", tf)
 	}
-	// The family does not cover 'x': fall back to the global scan. Roboto and DejaVu tie on style, and the
-	// family-sorted candidate order makes DejaVu Sans (first) win.
-	if tf := match("Test", font.NormalStyle(), nil, 'x'); tf == nil || tf.FamilyName() != "DejaVu Sans" {
-		t.Errorf("(Test, normal, 'x') = %v, want DejaVu Sans", tf)
+	// The family does not cover 'x': fall back to the global scan. Roboto and Corpus Sans tie on style, and the
+	// family-sorted candidate order makes Corpus Sans (first) win.
+	if tf := match("Test", font.NormalStyle(), nil, 'x'); tf == nil || tf.FamilyName() != corpusSansFamily {
+		t.Errorf("(Test, normal, 'x') = %s, want Corpus Sans", familyOf(tf))
 	}
 	// No family: same global scan.
-	if tf := match("", font.NormalStyle(), nil, 'x'); tf == nil || tf.FamilyName() != "DejaVu Sans" {
-		t.Errorf("(\"\", normal, 'x') = %v, want DejaVu Sans", tf)
+	if tf := match("", font.NormalStyle(), nil, 'x'); tf == nil || tf.FamilyName() != corpusSansFamily {
+		t.Errorf("(\"\", normal, 'x') = %s, want Corpus Sans", familyOf(tf))
 	}
 	// BCP-47: the most significant tag is last; 'x' is covered by both tagged fonts.
 	if tf := match("", font.NormalStyle(), []string{"fr", "en"}, 'x'); tf == nil || tf.FamilyName() != "Roboto" {
 		t.Errorf("bcp47 [fr en] = %v, want Roboto (en most significant)", tf)
 	}
-	if tf := match("", font.NormalStyle(), []string{"en", "fr"}, 'x'); tf == nil || tf.FamilyName() != "DejaVu Sans" {
-		t.Errorf("bcp47 [en fr] = %v, want DejaVu Sans (fr most significant)", tf)
+	if tf := match("", font.NormalStyle(), []string{"en", "fr"}, 'x'); tf == nil || tf.FamilyName() != corpusSansFamily {
+		t.Errorf("bcp47 [en fr] = %s, want Corpus Sans (fr most significant)", familyOf(tf))
 	}
 	// Unmatched tags fall through to the next most significant, then to the unrestricted scan.
 	if tf := match("", font.NormalStyle(), []string{"en", "ja"}, 'x'); tf == nil || tf.FamilyName() != "Roboto" {
 		t.Errorf("bcp47 [en ja] = %v, want Roboto (ja unmatched, en next)", tf)
 	}
-	if tf := match("", font.NormalStyle(), []string{"ja"}, 'x'); tf == nil || tf.FamilyName() != "DejaVu Sans" {
-		t.Errorf("bcp47 [ja] = %v, want DejaVu Sans (unrestricted scan)", tf)
+	if tf := match("", font.NormalStyle(), []string{"ja"}, 'x'); tf == nil || tf.FamilyName() != corpusSansFamily {
+		t.Errorf("bcp47 [ja] = %s, want Corpus Sans (unrestricted scan)", familyOf(tf))
 	}
 	// A derived language tag maps to its primary ("fr-CA" → "fr").
-	if tf := match("", font.NormalStyle(), []string{"fr-CA"}, 'x'); tf == nil || tf.FamilyName() != "DejaVu Sans" {
-		t.Errorf("bcp47 [fr-CA] = %v, want DejaVu Sans", tf)
+	if tf := match("", font.NormalStyle(), []string{"fr-CA"}, 'x'); tf == nil || tf.FamilyName() != corpusSansFamily {
+		t.Errorf("bcp47 [fr-CA] = %s, want Corpus Sans", familyOf(tf))
 	}
 	// Roboto maps NUL to a real glyph, so even character 0 resolves (the coverage sets decide, no special-casing of
 	// control characters).
@@ -459,7 +560,7 @@ func TestManagerMatchFamilyStyleCharacter(t *testing.T) {
 	if tf := match("", font.NormalStyle(), nil, 0x4E2D); tf != nil {
 		t.Errorf("uncovered character = %v, want nil", tf)
 	}
-	// Footprint-only coverage is not coverage: the DejaVu subset and both Test faces carry the cmap4 sentinel segment
+	// Footprint-only coverage is not coverage: the sans face and both Test faces carry the cmap4 sentinel segment
 	// mapping U+FFFF to glyph 0, which the footprint rune sets count but no host does (FreeType's charcode iteration
 	// skips glyph-0 entries, so fontconfig charsets never contain them; the CoreText/DirectWrite cmap lookups yield the
 	// missing glyph). The verified answer is nil, in the global scan and within a named family alike.
@@ -472,7 +573,7 @@ func TestManagerMatchFamilyStyleCharacter(t *testing.T) {
 	// A face whose footprint claims a rune its cmap does not really map (the fontconfig-leg CI machines'
 	// DejaVuSans-ExtraLight maps NUL to glyph 0) is skipped in rank order and the genuinely covering face answers, even
 	// though the liar ranks first (family-sorted tie-break, as in the 'x' cases above).
-	liar := newTestFaceRec(t, "DejaVuSans.subset.ttf", 0)
+	liar := newSansFaceRec(t)
 	liar.runes.Add(0)
 	m2 := newManager([]*faceRec{liar, newTestFaceRec(t, "Roboto-Regular.ttf", 0)})
 	if tf := m2.MatchFamilyStyleCharacter("", font.NormalStyle(), nil, 0); tf == nil || tf.FamilyName() != "Roboto" {
@@ -508,7 +609,7 @@ func TestManagerMatchCharacterBCP47Fallthrough(t *testing.T) {
 	// A liar: the footprint claims NUL (as the fontconfig-leg CI machines' DejaVuSans-ExtraLight does) but its cmap
 	// maps NUL to glyph 0. Roboto maps NUL to a real glyph.
 	newLiar := func(langs ...string) *faceRec {
-		f := newTestFaceRec(t, "DejaVuSans.subset.ttf", 0, langs...)
+		f := newSansFaceRec(t, langs...)
 		f.runes.Add(0)
 		return f
 	}
@@ -527,7 +628,7 @@ func TestManagerMatchCharacterBCP47Fallthrough(t *testing.T) {
 	ghost := &faceRec{
 		key:    "ghost",
 		path:   "../font/testdata/does-not-exist.ttf",
-		runes:  newTestFaceRec(t, "DejaVuSans.subset.ttf", 0).runes,
+		runes:  newSansFaceRec(t).runes,
 		langs:  langSetOf(t, "fr"),
 		approx: font.NormalStyle(),
 	}
@@ -542,10 +643,10 @@ func TestManagerMatchCharacterBCP47Fallthrough(t *testing.T) {
 		t.Errorf("bcp47 [en fr] with no genuine coverage = %v, want nil", tf)
 	}
 	// A tag with a genuinely covering candidate still wins over the less significant ones (no over-eager fall-through).
-	m = newManager([]*faceRec{newTestFaceRec(t, "DejaVuSans.subset.ttf", 0, "fr"), roboto()})
+	m = newManager([]*faceRec{newSansFaceRec(t, "fr"), roboto()})
 	if tf := m.MatchFamilyStyleCharacter("", font.NormalStyle(), []string{"en", "fr"}, 'x'); tf == nil ||
-		tf.FamilyName() != "DejaVu Sans" {
-		t.Errorf("bcp47 [en fr] = %v, want DejaVu Sans (fr most significant and covering)", tf)
+		tf.FamilyName() != corpusSansFamily {
+		t.Errorf("bcp47 [en fr] = %s, want Corpus Sans (fr most significant and covering)", familyOf(tf))
 	}
 }
 
@@ -568,7 +669,7 @@ func TestManagerCharacterFallbackLoadsOnlyTheAnswer(t *testing.T) {
 	// footprint rune sets over-claim exactly the characters that reject the most candidates (U+0000/U+FFFF .notdef
 	// sentinels), so a single call could retain most of a system inventory.
 	m := newTestManager(t)
-	// U+FFFF: the DejaVu subset and both test.ttc faces claim it in their footprints via the cmap4 sentinel segment and
+	// U+FFFF: the sans face and both test.ttc faces claim it in their footprints via the cmap4 sentinel segment and
 	// none of them maps it. The answer is nil, and no candidate may be loaded to establish that.
 	if tf := m.MatchFamilyStyleCharacter("", font.NormalStyle(), nil, 0xFFFF); tf != nil {
 		t.Fatalf("footprint-only coverage (U+FFFF) = %v, want nil", tf)
@@ -578,7 +679,7 @@ func TestManagerCharacterFallbackLoadsOnlyTheAnswer(t *testing.T) {
 	}
 	// The same walk with a real answer at the end of it: the higher-ranked liar (family-sorted, so it is scored first)
 	// must be rejected without a load, and only the answering face ends up cached.
-	liar := newTestFaceRec(t, "DejaVuSans.subset.ttf", 0)
+	liar := newSansFaceRec(t)
 	liar.runes.Add(0)
 	roboto := newTestFaceRec(t, "Roboto-Regular.ttf", 0)
 	m2 := newManager([]*faceRec{liar, roboto})
@@ -698,24 +799,41 @@ func TestManagerHiddenFamilies(t *testing.T) {
 	// character fallback only when no visible font covers.
 	hidden := newTestFaceRec(t, "Roboto-Regular.ttf", 0)
 	hidden.key = ".hiddensans" // keys are always in normalized (lowercase, space-free) form
-	visible := newTestFaceRec(t, "DejaVuSans.subset.ttf", 0)
+	visible := newSansFaceRec(t)
 	m := newManager([]*faceRec{hidden, visible})
 	if got := m.CountFamilies(); got != 1 {
 		t.Fatalf("CountFamilies = %d, want 1 (hidden excluded)", got)
 	}
-	if got := m.FamilyName(0); got != "DejaVu Sans" {
-		t.Errorf("FamilyName(0) = %q, want DejaVu Sans", got)
+	if got := m.FamilyName(0); got != corpusSansFamily {
+		t.Errorf("FamilyName(0) = %q, want %q", got, corpusSansFamily)
 	}
 	if got := m.MatchFamily(".Hidden Sans").Count(); got != 1 {
 		t.Errorf("MatchFamily(.Hidden Sans) count = %d, want 1 (hidden families stay matchable)", got)
 	}
 	// 'x' is covered by both; the visible font wins. NUL is covered only by the hidden Roboto, which then answers as
 	// the last tier.
-	if tf := m.MatchFamilyStyleCharacter("", font.NormalStyle(), nil, 'x'); tf == nil || tf.FamilyName() != "DejaVu Sans" {
-		t.Errorf("fallback for 'x' = %v, want the visible DejaVu Sans", tf)
+	if tf := m.MatchFamilyStyleCharacter("", font.NormalStyle(), nil, 'x'); tf == nil ||
+		tf.FamilyName() != corpusSansFamily {
+		t.Errorf("fallback for 'x' = %s, want the visible Corpus Sans", familyOf(tf))
 	}
 	if tf := m.MatchFamilyStyleCharacter("", font.NormalStyle(), nil, 0); tf == nil || tf.FamilyName() != "Roboto" {
 		t.Errorf("fallback for NUL = %v, want the hidden face", tf)
+	}
+	// An empty family name lands on lookupOrDefault's first-*visible*-family fallback, no corpus family being one of
+	// this platform's defaults. The hidden family sorts before the visible one (a dot leads every letter), so this is
+	// the arrangement that tells that fallback apart from the all-families one behind it — over a corpus whose only
+	// family is visible, either answers the same face.
+	for _, c := range []struct {
+		got  *font.Typeface
+		name string
+	}{
+		{got: m.MatchFamilyStyle("", font.NormalStyle()), name: `MatchFamilyStyle("")`},
+		{got: m.MatchFamily("").MatchStyle(font.NormalStyle()), name: `MatchFamily("").MatchStyle()`},
+	} {
+		if c.got == nil || c.got.FamilyName() != corpusSansFamily {
+			t.Errorf("%s = %s, want the first visible family, not the hidden one sorting ahead of it", c.name,
+				familyOf(c.got))
+		}
 	}
 }
 
@@ -741,12 +859,21 @@ func TestStyleFromAspect(t *testing.T) {
 	}
 }
 
-// TestDefaultManagerSystem exercises the system scan. It is opt-in (CANVAS_FONTMGR_SYSTEM=1) so the unit suite stays
-// hermetic; it is the only coverage the system manager has now that the C-library comparison probe is gone.
-func TestDefaultManagerSystem(t *testing.T) {
+// requireSystemFonts skips unless the system-font tests have been opted into. Default's first call runs
+// fontscan.SystemFonts, which walks every system font directory and serializes a font_index_v*.cache file into the
+// user's cache directory, so a test that reaches it is neither hermetic nor free of side effects and its runtime
+// depends on the machine's font inventory. Every test that calls Default gates on this.
+func requireSystemFonts(t *testing.T) {
+	t.Helper()
 	if os.Getenv("CANVAS_FONTMGR_SYSTEM") == "" {
 		t.Skip("set CANVAS_FONTMGR_SYSTEM=1 to scan system fonts")
 	}
+}
+
+// TestDefaultManagerSystem exercises the system scan end to end. Like the other system-font tests it is opt-in, so the
+// unit suite stays hermetic.
+func TestDefaultManagerSystem(t *testing.T) {
+	requireSystemFonts(t)
 	m := Default()
 	n := m.CountFamilies()
 	if n == 0 {

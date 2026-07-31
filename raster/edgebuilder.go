@@ -107,7 +107,7 @@ func buildPolyEdges(b edgeSink, p *path.Path, iclip *geom.IRect, canCullToTheRig
 // iterator, one *EdgeIter per build otherwise), clip (ClipPath's iterator + clipper + conic->quad scratch, reused
 // across clipped builds), chop (>= 10 points) for the clipper output and Y-extrema chopping, lines for buildPolyEdges'
 // per-segment line clipper output, and conic for the conic->quad approximation, sized to the worst case
-// (1 + 2*(1<<MaxConicToQuadPOW2)). Both builders embed one and pass it to the build drivers; because these buffers flow
+// (geom.MaxConicToQuadPointCount). Both builders embed one and pass it to the build drivers; because these buffers flow
 // into the edgeSink interface calls (which forces them to escape), a reused builder field turns per-segment/per-build
 // heap allocations into one-time, pooled ones.
 type edgeScratch struct {
@@ -115,7 +115,7 @@ type edgeScratch struct {
 	clip  path.EdgeClipScratch
 	chop  [10]geom.Point
 	lines [geom.LineClipperMaxPoints]geom.Point
-	conic [1 + 2*(1<<geom.MaxConicToQuadPOW2)]geom.Point
+	conic [geom.MaxConicToQuadPointCount]geom.Point
 }
 
 // release drops the *path.Path references iter and clip's iterator retain from the last build, so an idle pooled

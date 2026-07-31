@@ -11,8 +11,14 @@ package geom
 
 import "math"
 
-// MaxConicToQuadPOW2 is the limit on how many quads approximate one conic.
+// MaxConicToQuadPOW2 is the limit on the power-of-two *exponent* passed to ChopIntoQuadsPOW2, not on the quad count
+// itself: at this limit the conic becomes 1<<5 = 32 quads occupying 2*32+1 = 65 points. Size a pts buffer from
+// MaxConicToQuadPointCount, never from this constant.
 const MaxConicToQuadPOW2 = 5
+
+// MaxConicToQuadPointCount is the number of points ChopIntoQuadsPOW2 can write, i.e. the size a pts buffer must have
+// to accept any pow2 up to MaxConicToQuadPOW2.
+const MaxConicToQuadPointCount = 2*(1<<MaxConicToQuadPOW2) + 1
 
 // MaxConicsForArc is the maximum number of conics BuildUnitArc can emit.
 const MaxConicsForArc = 5

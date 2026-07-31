@@ -117,12 +117,12 @@ func (it *EdgeIter) Next() (result EdgeIterResult, ok bool) {
 // ConicToQuads approximates the conic with quads at the given tolerance, returning the shared quad points (1 + 2*count
 // points) and the quad count.
 func ConicToQuads(pts []geom.Point, weight, tol float32) (quadPts []geom.Point, quadCount int) {
-	return ConicToQuadsInto(pts, weight, tol, make([]geom.Point, 1+2*(1<<geom.MaxConicToQuadPOW2)))
+	return ConicToQuadsInto(pts, weight, tol, make([]geom.Point, geom.MaxConicToQuadPointCount))
 }
 
 // ConicToQuadsInto is ConicToQuads writing into a caller-provided buffer instead of allocating one, so hot callers (the
-// scan converter's edge builder) can reuse a single buffer across conics. dst must have capacity for the worst case, 1
-// + 2*(1<<geom.MaxConicToQuadPOW2) points; the returned slice is a prefix of dst.
+// scan converter's edge builder) can reuse a single buffer across conics. dst must have capacity for the worst case,
+// geom.MaxConicToQuadPointCount points; the returned slice is a prefix of dst.
 func ConicToQuadsInto(pts []geom.Point, weight, tol float32, dst []geom.Point) (quadPts []geom.Point, quadCount int) {
 	conic := geom.MakeConic(pts[0], pts[1], pts[2], weight)
 	pow2 := conic.ComputeQuadPOW2(tol)
@@ -140,7 +140,7 @@ const kConicTol = 0.25
 type EdgeClipScratch struct {
 	iter    EdgeIter
 	clipper geom.EdgeClipper
-	conic   [1 + 2*(1<<geom.MaxConicToQuadPOW2)]geom.Point
+	conic   [geom.MaxConicToQuadPointCount]geom.Point
 }
 
 // Release drops the scratch's reference to the path it last clipped so an idle pooled owner does not pin it against

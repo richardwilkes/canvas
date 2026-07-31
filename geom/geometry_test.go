@@ -441,3 +441,28 @@ func TestEvalCubicCurvatureAtScale(t *testing.T) {
 		}
 	}
 }
+
+func TestMaxConicToQuadPointCount(t *testing.T) {
+	// MaxConicToQuadPOW2 is an exponent, not a quad count: sizing a buffer from it directly (5 or 1+2*5 points) would
+	// overrun. MaxConicToQuadPointCount is the size ChopIntoQuadsPOW2 can actually fill.
+	if MaxConicToQuadPointCount != 65 {
+		t.Fatalf("MaxConicToQuadPointCount = %d, want 65 (1 + 2*(1<<5))", MaxConicToQuadPointCount)
+	}
+	// A conic weighted so no early-out fires must fill the whole buffer at the maximum pow2, and must not write past
+	// it: the guard element after the buffer stays untouched.
+	var storage [MaxConicToQuadPointCount + 1]Point
+	guard := Point{X: -12345, Y: -54321}
+	storage[MaxConicToQuadPointCount] = guard
+	c := MakeConic(Point{X: 0, Y: 0}, Point{X: 100, Y: 0}, Point{X: 100, Y: 100}, 0.5)
+	quads := c.ChopIntoQuadsPOW2(storage[:MaxConicToQuadPointCount], MaxConicToQuadPOW2)
+	if quads != 1<<MaxConicToQuadPOW2 {
+		t.Fatalf("quads = %d, want %d", quads, 1<<MaxConicToQuadPOW2)
+	}
+	if 1+2*quads != MaxConicToQuadPointCount {
+		t.Errorf("%d quads occupy %d points, but MaxConicToQuadPointCount is %d", quads, 1+2*quads,
+			MaxConicToQuadPointCount)
+	}
+	if storage[MaxConicToQuadPointCount] != guard {
+		t.Error("ChopIntoQuadsPOW2 wrote past MaxConicToQuadPointCount")
+	}
+}

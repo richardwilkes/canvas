@@ -94,3 +94,53 @@ func TestSetPointLengthRoundsOnce(t *testing.T) {
 		t.Fatalf("NormalizeWithLength = %v (len %v), want %v (len 0.5)", nl, got, n)
 	}
 }
+
+func TestPointLengthIsUnfused(t *testing.T) {
+	// Length must derive its squared magnitude from LengthSqd (which Dot pins unfused) rather than computing
+	// p.X*p.X + p.Y*p.Y inline, which the compiler fuses into an FMA on arm64. A fused mag2 makes the length
+	// platform-dependent and lets it disagree with LengthSqd for the same point.
+	check := func(p Point) {
+		t.Helper()
+		mag2 := p.LengthSqd()
+		if !IsFinite(mag2) {
+			return // the double-precision fallback path, not the one under test
+		}
+		want := float32(math.Sqrt(float64(mag2)))
+		if got := p.Length(); got != want {
+			t.Errorf("Length(%v) = %v, want %v (sqrt of LengthSqd); mag2 was computed fused", p, got, want)
+		}
+	}
+	// Values chosen so the fused and unfused products differ: the low bits of X*X must not survive rounding.
+	for _, p := range []Point{
+		{X: 1, Y: 0},
+		{X: 3, Y: 4},
+		{X: 1e-20, Y: 1},
+		{X: 1, Y: 1e-20},
+		{X: 0.1, Y: 0.2},
+		{X: 16777217, Y: 1},
+		{X: 1.0000001, Y: 0.9999999},
+		{X: -2.5e-8, Y: 3.7e8},
+	} {
+		check(p)
+	}
+	rng := rand.New(rand.NewSource(3))
+	for range 200000 {
+		check(Point{X: rng.Float32()*2e4 - 1e4, Y: rng.Float32()*2e4 - 1e4})
+	}
+}
+
+func TestPointLengthOverflowFallback(t *testing.T) {
+	// When the float32 squared magnitude overflows, Length falls back to double math instead of returning +Inf.
+	// Both components and the resulting length are representable in float32; only the squared magnitude overflows.
+	p := Point{X: 3e38, Y: 1e38}
+	if IsFinite(p.LengthSqd()) {
+		t.Fatal("test case must overflow the float32 squared magnitude")
+	}
+	got := p.Length()
+	if !IsFinite(got) {
+		t.Fatalf("Length = %v, want a finite fallback result", got)
+	}
+	if want := float32(3.1622777e38); got < want*0.999 || got > want*1.001 {
+		t.Errorf("Length = %v, want ~%v", got, want)
+	}
+}

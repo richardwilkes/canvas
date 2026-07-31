@@ -27,17 +27,22 @@ const (
 	ClipVerbCubic
 )
 
-// EdgeClipper limits. ClipCubic chops at the Y extrema and then at the X extrema, but each axis' derivative is a single
-// quadratic, so there are at most 2 chops per axis over the whole curve (chopping in Y does not manufacture new X
-// extrema); at most 4 chops means at most 5 monotonic pieces reach clipMonoCubic. A piece emits at most 3 verbs and 8
-// points — the left vline (2), the clipped cubic (4), then the right vline (2) — for a worst case of 15 verbs and 40
-// points. Quads bound tighter (at most 1 chop per axis, so 3 pieces of 3 verbs / 7 points) and a clipped line yields at
-// most 3 verbs / 6 points, so the cubic case sets the limits. The constants below are one piece larger than that
-// derived worst case (6 pieces rather than 5), preserving the safety margin the port inherits from Skia; do not shrink
-// them to 15/40.
+// EdgeClipper limits. These are derived from the structure of ClipCubic's nested loops alone, deliberately *not* from
+// the exact-math argument that chopping in Y cannot manufacture new X extrema. That argument is false in float32:
+// ChopCubicAtXExtrema re-runs FindCubicExtrema on each already-rounded Y-piece, so a piece can report an X extremum the
+// unchopped curve did not have. The cubic {-36124.6,100},{-1343.5917,-4e6},{-236631.27,99.5},{-107986.55,-4e6} (which
+// passes tooBigForReliableFloatMath) yields countY=2 with countX=1 in all three Y-pieces, i.e. 6 pieces where the
+// exact-math bound predicts 5 — exhausting the old 18-verb limit exactly, with a 7th piece panicking in appendVLine
+// rather than being rejected.
+//
+// The bound that does hold: ChopCubicAtYExtrema returns countY in [0, 2], so the y loop runs at most 3 times, and
+// likewise the x loop, for at most 9 pieces reaching clipMonoCubic no matter what the float math reports. A piece emits
+// at most 3 verbs and 8 points — the left vline (2), the clipped cubic (4), then the right vline (2) — giving 27 verbs
+// and 72 points. Quads bound tighter (countY and countX in [0, 1], so at most 4 pieces of 3 verbs / 7 points) and a
+// clipped line yields at most 3 verbs / 6 points, so the cubic case sets the limits.
 const (
-	edgeClipperMaxVerbs  = 18
-	edgeClipperMaxPoints = 54
+	edgeClipperMaxVerbs  = 27
+	edgeClipperMaxPoints = 72
 )
 
 // EdgeClipper clips line/quad/cubic segments against a rect. It is initialized with a segment and a clip via

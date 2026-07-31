@@ -241,8 +241,11 @@ func TestClipCubicSinglePieceWorstCase(t *testing.T) {
 }
 
 func TestEdgeClipperStaysWithinBufferLimits(t *testing.T) {
-	// Exercises the bound documented above edgeClipperMaxVerbs: a cubic yields at most 5 monotonic pieces of 3 verbs /
-	// 8 points, and a quad at most 3 pieces of 3 verbs / 7 points. Anything worse would index past the fixed arrays.
+	// For well-conditioned inputs the exact-math argument holds — chopping in Y manufactures no new X extrema, so a
+	// cubic yields at most 5 monotonic pieces of 3 verbs / 8 points and a quad at most 3 pieces of 3 verbs / 7 points.
+	// These are the tight bounds for the inputs exercised here, NOT the buffer sizes: float32 rounding can push a cubic
+	// past them, which is why edgeClipperMaxVerbs/Points are derived from the loops' structural bound instead. See
+	// TestEdgeClipperFloat32ExceedsExactMathPieceBound.
 	const (
 		cubicMaxVerbs  = 15
 		cubicMaxPoints = 40
@@ -307,5 +310,60 @@ func TestIntersectLine(t *testing.T) {
 	miss := [2]Point{{X: -5, Y: 15}, {X: 15, Y: 20}}
 	if IntersectLine(&miss, clip, &dst) {
 		t.Error("expected miss")
+	}
+}
+
+func TestEdgeClipperFloat32ExceedsExactMathPieceBound(t *testing.T) {
+	// Regression for the buffer-limit derivation. ChopCubicAtXExtrema re-runs FindCubicExtrema on each already-rounded
+	// Y-piece, so in float32 a piece can report an X extremum the unchopped curve did not have. This cubic passes
+	// tooBigForReliableFloatMath yet splits into 6 pieces, one more than the exact-math bound of 5 — which is why the
+	// buffers are sized from the loops' structural bound (3 Y-pieces x 3 X-pieces) rather than from that argument.
+	src := []Point{
+		{X: -36124.6, Y: 100},
+		{X: -1343.5917, Y: -4e6},
+		{X: -236631.27, Y: 99.5},
+		{X: -107986.55, Y: -4e6},
+	}
+	if tooBigForReliableFloatMath(BoundsOrEmpty(src)) {
+		t.Fatal("cubic must reach the chopping path, not the too-big line fallback")
+	}
+	var monoY [10]Point
+	countY := ChopCubicAtYExtrema(src, monoY[:])
+	pieces := 0
+	for y := 0; y <= countY; y++ {
+		var monoX [10]Point
+		pieces += ChopCubicAtXExtrema(monoY[y*3:y*3+4], monoX[:]) + 1
+	}
+	if pieces <= 5 {
+		t.Fatalf("pieces = %d, want > 5 (the float32 pathology this case exists to pin)", pieces)
+	}
+	// The old 18-verb limit was exactly 6 pieces x 3 verbs, leaving no headroom; clipping must stay inside the buffers.
+	for _, cull := range []bool{false, true} {
+		e := NewEdgeClipper(cull)
+		e.ClipCubic(src, RectLTRB(-200000, -100, 0, 100))
+		verbs, points := clipperEmission(e)
+		if verbs > edgeClipperMaxVerbs || points > edgeClipperMaxPoints {
+			t.Fatalf("cull=%v: emitted %d verbs / %d points, past the %d / %d buffers", cull, verbs, points,
+				edgeClipperMaxVerbs, edgeClipperMaxPoints)
+		}
+	}
+}
+
+func TestEdgeClipperBuffersCoverStructuralWorstCase(t *testing.T) {
+	// ChopCubicAtYExtrema and ChopCubicAtXExtrema each return a count in [0, 2], so ClipCubic's loops run at most 3x3
+	// times no matter what the float math reports, and each piece emits at most 3 verbs / 8 points via clipMonoCubic.
+	// The buffers must cover that regardless of any exact-math reasoning about extrema.
+	const (
+		maxPieces        = 3 * 3
+		verbsPerPiece    = 3
+		pointsPerPiece   = 8
+		structuralVerbs  = maxPieces * verbsPerPiece
+		structuralPoints = maxPieces * pointsPerPiece
+	)
+	if edgeClipperMaxVerbs < structuralVerbs {
+		t.Errorf("edgeClipperMaxVerbs = %d, want at least %d", edgeClipperMaxVerbs, structuralVerbs)
+	}
+	if edgeClipperMaxPoints < structuralPoints {
+		t.Errorf("edgeClipperMaxPoints = %d, want at least %d", edgeClipperMaxPoints, structuralPoints)
 	}
 }

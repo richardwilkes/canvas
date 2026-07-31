@@ -67,9 +67,12 @@ func (p Point) Cross(q Point) float32 {
 }
 
 // Length returns the vector's length, computed in float32, falling back to double math when the squared magnitude
-// overflows to infinity.
+// overflows to infinity. The squared magnitude comes from LengthSqd rather than an inline p.X*p.X + p.Y*p.Y so it is
+// the same unfused value Dot produces: the inline form fuses on arm64, which would make the length platform-dependent
+// and let it disagree with LengthSqd() for the same point, feeding the near-zero tolerance test in
+// Matrix.DecomposeScale and the scale > 0 test in ComputeResScaleForStroking.
 func (p Point) Length() float32 {
-	mag2 := p.X*p.X + p.Y*p.Y
+	mag2 := p.LengthSqd()
 	if IsFinite(mag2) {
 		return float32(math.Sqrt(float64(mag2)))
 	}

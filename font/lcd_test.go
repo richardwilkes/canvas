@@ -16,11 +16,13 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/richardwilkes/canvas/colorcore"
 	"github.com/richardwilkes/canvas/geom"
 	"github.com/richardwilkes/canvas/maskfilter"
+	"github.com/richardwilkes/canvas/raster"
 )
 
 func lcdTestFont(t *testing.T, size float32) *Font {
@@ -549,4 +551,86 @@ func TestLCDVerticalGlyph(t *testing.T) {
 	if fringe == 0 {
 		t.Error("vertical LCD16 mask has no fringing")
 	}
+}
+
+// probeDecliningMaskFilter is the shape of an out-of-tree mask filter — the interface is exported, and
+// StrikeSpec.Keyable's doc anticipates third-party implementations — that answers makeGlyph's bounds-only probe (a src
+// with a nil Image) and the real mask differently: it declines the probe, so the glyph keeps its unfiltered format and
+// bounds, then succeeds on the mask itself. Nothing in the contract forbids that, and getImage must not assume the two
+// passes agreed. With declineAll set it declines both passes instead, the in-contract behavior a blur under its no-blur
+// cutoff already has, which is the baseline the divergent case has to match.
+type probeDecliningMaskFilter struct{ declineAll bool }
+
+func (f probeDecliningMaskFilter) FilterMask(src *raster.Mask, _ *geom.Matrix) (*raster.Mask, geom.IPoint, bool) {
+	if f.declineAll || src.Image == nil {
+		return nil, geom.IPoint{}, false
+	}
+	dst := &raster.Mask{
+		Bounds:   src.Bounds,
+		RowBytes: src.Bounds.Width(),
+		Image:    make([]uint8, int(src.Bounds.Width())*int(src.Bounds.Height())),
+	}
+	for i := range dst.Image {
+		dst.Image[i] = 0x7F
+	}
+	return dst, geom.IPoint{}, true
+}
+
+func (probeDecliningMaskFilter) ComputeFastBounds(src geom.Rect) geom.Rect { return src }
+
+// TestLCD16MaskFilterDecliningTheBoundsProbe pins the LCD16 lane of getImage against a mask filter whose bounds-only
+// probe fails while the real mask succeeds. The filtered dst is A8, but the glyph is still LCD16 — the bounds pass
+// never demoted it — so it has no Image plane to receive the filtered bytes, and copying into one panicked with a
+// slice-bounds-out-of-range inside Strike.PrepareImage. The glyph must come out as the unfiltered LCD16 mask instead,
+// which is what the filter-did-nothing path already produces.
+func TestLCD16MaskFilterDecliningTheBoundsProbe(t *testing.T) {
+	f := lcdTestFont(t, 20)
+	identity := geom.IdentityMatrix()
+	rgbh := &DeviceProps{PixelGeometry: PixelGeometryRGBH}
+	gid := f.Typeface().UnicharToGlyph('A')
+	if gid == 0 {
+		t.Fatal("test font does not map 'A'")
+	}
+	lum := colorcore.RGB(0, 0, 0)
+
+	filtered := MakeMaskSpec(f, &ScalerPaint{LumColor: lum, MaskFilter: probeDecliningMaskFilter{}}, &identity, rgbh)
+	if filtered.Rec.Format != MaskLCD16 {
+		t.Fatalf("rec format = %d, want MaskLCD16", filtered.Rec.Format)
+	}
+	cache := NewStrikeCache()
+	g := cache.FindOrCreateStrike(&filtered).PrepareImage(PackGlyphID(gid))
+	if g.Format != MaskLCD16 {
+		t.Fatalf("glyph format = %d, want MaskLCD16: the declined probe left the glyph LCD16", g.Format)
+	}
+	if g.Image != nil {
+		t.Error("an LCD16 glyph must have no A8 plane")
+	}
+	if g.Image16 == nil {
+		t.Fatal("LCD16 glyph has no mask")
+	}
+
+	// The filter could not be applied, so the bytes must be exactly what a filter declining both passes produces: the
+	// unfiltered LCD16 plane, at the unfiltered bounds. (A paint with no filter at all is not the baseline — a filtered
+	// context applies no mask-gamma pre-blend, so its plane legitimately differs from that one.)
+	declined := MakeMaskSpec(f, &ScalerPaint{LumColor: lum, MaskFilter: probeDecliningMaskFilter{declineAll: true}},
+		&identity, rgbh)
+	want := NewStrikeCache().FindOrCreateStrike(&declined).PrepareImage(PackGlyphID(gid))
+	if g.IRect() != want.IRect() {
+		t.Fatalf("filtered bounds %v, unfiltered %v", g.IRect(), want.IRect())
+	}
+	if !slices.Equal(g.Image16, want.Image16) {
+		t.Error("the mask differs from the unfiltered one, which is the only mask this lane can produce")
+	}
+	if maskInk16(g) == 0 {
+		t.Error("mask has no ink")
+	}
+}
+
+// maskInk16 sums the green channels of an LCD16 mask.
+func maskInk16(g *Glyph) int {
+	ink := 0
+	for _, w := range g.Image16 {
+		ink += int(w >> 5 & 0x3F)
+	}
+	return ink
 }

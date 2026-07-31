@@ -17,8 +17,10 @@ import (
 	"github.com/richardwilkes/canvas/stroke"
 )
 
-// Hinting selects the requested hinting level. only HintingNone and HintingSlight change nothing here (rendering is
-// always unhinted); HintingNormal/HintingFull are accepted and recorded but not honored.
+// Hinting selects the requested hinting level. Every level is accepted and recorded, but none is honored: rendering
+// here is always unhinted with linear metrics, and no lane reads the recorded level. It therefore stays out of the
+// scaler rec, where it would only fragment strikes that render identically (the treatment SetEmbeddedBitmaps and
+// SetEmbolden get).
 type Hinting uint8
 
 // Hinting values.
@@ -52,9 +54,10 @@ const (
 	flagBaselineSnap     = 1 << 5
 )
 
-// Defaults for a newly constructed Font: 12pt size, baseline-snapping enabled, anti-aliased edging, and normal hinting.
+// Defaults for a newly constructed Font: baseline-snapping enabled, anti-aliased edging, and normal hinting. There is
+// deliberately no default size — NewFont is the only constructor and every caller states the size it wants, so a
+// default here would only be a value no Font ever holds (a zero size renders and measures nothing; see validSize).
 const (
-	defaultSize    = 12
 	defaultFlags   = flagBaselineSnap
 	defaultEdging  = EdgingAntiAlias
 	defaultHinting = HintingNormal
@@ -173,15 +176,27 @@ func (f *Font) SetBaselineSnap(on bool) { f.setFlag(flagBaselineSnap, on) }
 // BaselineSnap reports whether the baseline of horizontal text is snapped to whole pixels.
 func (f *Font) BaselineSnap() bool { return f.flags&flagBaselineSnap != 0 }
 
-// SetHinting sets the requested hinting level (only HintingNone/HintingSlight are honored; the library is always
-// unhinted with linear metrics).
+// SetHinting sets the requested hinting level (recorded, never honored: the library is always unhinted with linear
+// metrics, so the level stays out of the scaler rec — see Hinting).
 func (f *Font) SetHinting(h Hinting) { f.hinting = h }
 
 // Hinting returns the recorded hinting.
 func (f *Font) Hinting() Hinting { return f.hinting }
 
-// SetEdging sets the anti-aliasing treatment.
-func (f *Font) SetEdging(e Edging) { f.edging = e }
+// SetEdging sets the anti-aliasing treatment. A value outside the Edging set becomes EdgingAntiAlias, the constructor
+// default: the lanes test the recorded value against different members of the set — the mask lane rasterizes hard edges
+// for exactly EdgingAlias while the path and distance-field lanes take anti-aliasing from HasSomeAntiAliasing, true for
+// exactly the two AA values — so an out-of-set value would draw anti-aliased at one size and hard-edged at another,
+// contradicting Edging's promise of the same treatment at every size.
+func (f *Font) SetEdging(e Edging) { f.edging = validEdging(e) }
+
+// validEdging maps a requested edging onto the Edging set, folding anything outside it onto the default.
+func validEdging(e Edging) Edging {
+	if e > EdgingSubpixelAntiAlias {
+		return defaultEdging
+	}
+	return e
+}
 
 // Edging returns the recorded edging.
 func (f *Font) Edging() Edging { return f.edging }

@@ -438,6 +438,79 @@ func TestStylePacking(t *testing.T) {
 	}
 }
 
+// TestNewFontDefaults pins the constructor's documented defaults, including the absence of a default size. NewFont's
+// size argument is the size: nothing substitutes a nominal one for a zero, so a caller who passes zero expecting a
+// documented default gets a font whose every measurement is zero, and that has to be visible here rather than promised
+// away in a comment.
+func TestNewFontDefaults(t *testing.T) {
+	tf := loadTypeface(t, "Roboto-Regular.ttf", 0)
+	f := NewFont(tf, 0, 1, 0)
+	if f.Size() != 0 {
+		t.Errorf("NewFont(…, 0, …).Size() = %v, want 0 — there is no default size", f.Size())
+	}
+	var bounds geom.Rect
+	if width := f.MeasureText([]byte("Ag"), TextEncodingUTF8, &bounds, nil); width != 0 || !bounds.IsEmpty() {
+		t.Errorf("zero-size MeasureText = %v with bounds %v, want 0 and empty", width, bounds)
+	}
+	widths := make([]float32, 1)
+	f.GlyphWidths([]uint16{tf.UnicharToGlyph('A')}, widths)
+	if widths[0] != 0 {
+		t.Errorf("zero-size GlyphWidths = %v, want 0", widths[0])
+	}
+	// The defaults that do exist.
+	if !f.BaselineSnap() {
+		t.Error("baseline snapping should default on")
+	}
+	if got := f.Edging(); got != EdgingAntiAlias {
+		t.Errorf("edging defaults to %d, want EdgingAntiAlias", got)
+	}
+	if got := f.Hinting(); got != HintingNormal {
+		t.Errorf("hinting defaults to %d, want HintingNormal", got)
+	}
+	if f.ForceAutoHinting() || f.Subpixel() || f.LinearMetrics() || f.EmbeddedBitmaps() || f.Embolden() {
+		t.Errorf("every other request should default off: flags = %#x", f.flags)
+	}
+}
+
+// TestEdgingValidation pins SetEdging's fold of values outside the Edging set. Edging promises one edge treatment at
+// every size, but the lanes read the recorded value through different tests: the mask lane sets recFlagAliased for
+// exactly EdgingAlias, while the path and distance-field lanes take their anti-aliasing from HasSomeAntiAliasing, true
+// for exactly the two AA values. A value in neither set therefore draws anti-aliased through the mask lane and
+// hard-edged once the size crosses ShouldDrawAsPathMatrix into the path lane, which is the promise broken.
+func TestEdgingValidation(t *testing.T) {
+	tf := loadTypeface(t, "Roboto-Regular.ttf", 0)
+	f := NewFont(tf, 20, 1, 0)
+	identity := geom.IdentityMatrix()
+	aaRec, _ := MakeRecAndEffects(f, nil, &identity, nil) // the default edging, for the folded cases to land on
+	for _, c := range []struct {
+		name string
+		set  Edging
+		want Edging
+	}{
+		{name: "alias", set: EdgingAlias, want: EdgingAlias},
+		{name: "anti-alias", set: EdgingAntiAlias, want: EdgingAntiAlias},
+		{name: "subpixel anti-alias", set: EdgingSubpixelAntiAlias, want: EdgingSubpixelAntiAlias},
+		{name: "one past the set", set: Edging(3), want: EdgingAntiAlias},
+		{name: "far outside the set", set: Edging(255), want: EdgingAntiAlias},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			f.SetEdging(c.set)
+			if got := f.Edging(); got != c.want {
+				t.Errorf("SetEdging(%d) recorded %d, want %d", c.set, got, c.want)
+			}
+			rec, _ := MakeRecAndEffects(f, nil, &identity, nil)
+			if aliased := rec.Flags&recFlagAliased != 0; aliased == f.HasSomeAntiAliasing() {
+				t.Errorf("the mask lane's aliased flag (%v) and HasSomeAntiAliasing (%v) agree, so this edging "+
+					"renders one way through the mask lane and the other through the path lane", aliased,
+					f.HasSomeAntiAliasing())
+			}
+			if c.set > EdgingSubpixelAntiAlias && rec != aaRec {
+				t.Error("a folded edging must produce the default edging's rec, and therefore its strike")
+			}
+		})
+	}
+}
+
 func TestLinearMetricsFlag(t *testing.T) {
 	f := NewFont(loadTypeface(t, "Roboto-Regular.ttf", 0), 12, 1, 0)
 	if f.LinearMetrics() {

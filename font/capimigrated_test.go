@@ -53,16 +53,56 @@ func TestFontFlagAndHintingRoundTrip(t *testing.T) {
 		t.Errorf("Hinting defaults to %v, want %v", got, HintingNormal)
 	}
 	identity := geom.IdentityMatrix()
+	base, _ := MakeRecAndEffects(f, nil, &identity, nil)
 	for _, h := range []Hinting{HintingNone, HintingSlight, HintingFull, HintingNormal} {
 		f.SetHinting(h)
 		if got := f.Hinting(); got != h {
 			t.Errorf("SetHinting(%v) recorded %v", h, got)
 		}
-		// The recorded level reaches the strike key, which is the only place it is consumed: a level that never left
-		// the Font would collapse every hinting request onto one strike.
-		if rec, _ := MakeRecAndEffects(f, nil, &identity, nil); rec.Hinting != h {
-			t.Errorf("SetHinting(%v) put %v in the scaler rec", h, rec.Hinting)
+		// The recorded level must not reach the strike key: no lane honors hinting, so a level in the rec would only
+		// split byte-identical masks across two strikes and charge the cache budget for both.
+		if rec, _ := MakeRecAndEffects(f, nil, &identity, nil); rec != base {
+			t.Errorf("SetHinting(%v) changed the scaler rec, which no lane reads the level from", h)
 		}
+	}
+}
+
+// TestHintingDoesNotFragmentStrikes is the consequence TestFontFlagAndHintingRoundTrip's rec comparison exists to
+// prevent: since nothing honors the recorded level, two fonts differing only in hinting must resolve to the same strike
+// (and therefore the same cached glyph masks) rather than to two strikes holding identical bytes.
+func TestHintingDoesNotFragmentStrikes(t *testing.T) {
+	cache := NewStrikeCache()
+	base := loadMigratedTestFont(t, 20)
+	strikeFor := func(h Hinting) *Strike {
+		f := *base // same typeface, so only the hinting level differs
+		f.SetHinting(h)
+		spec := MakeWithNoDeviceSpec(&f, nil)
+		return cache.FindOrCreateStrike(&spec)
+	}
+	normal := strikeFor(HintingNormal)
+	none := strikeFor(HintingNone)
+	if normal != none {
+		t.Fatal("HintingNormal and HintingNone produced different strikes for identical rendering")
+	}
+	gid := base.Typeface().UnicharToGlyph('A')
+	if gid == 0 {
+		t.Fatal("test font does not map 'A'")
+	}
+	used := cache.TotalMemoryUsed()
+	if normal.PrepareImage(PackGlyphID(gid)) == nil {
+		t.Fatal("no glyph produced")
+	}
+	grew := cache.TotalMemoryUsed() - used
+	if grew <= 0 {
+		t.Fatalf("mask generation charged %d bytes to the cache, want a positive amount", grew)
+	}
+	// The second font's mask comes out of the shared strike, so it costs nothing more. Keying on hinting would charge
+	// the same bytes again.
+	if none.PrepareImage(PackGlyphID(gid)) == nil {
+		t.Fatal("no glyph produced for the second hinting level")
+	}
+	if again := cache.TotalMemoryUsed() - used; again != grew {
+		t.Errorf("the second hinting level added %d more bytes to the cache, want %d", again-grew, 0)
 	}
 }
 

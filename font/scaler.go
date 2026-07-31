@@ -13,8 +13,8 @@
 //
 //   - makeCanonicalized decides whether the strike measures at the requested size or at the canonical path size
 //     (canonicalTextSizeForPaths = 64) with a strike→source scale, dropping the paint in the canonical case.
-//   - Advances are always linear (only hinting HintingNone/HintingSlight are honored): the design-space advance mapped
-//     through the text matrix, the same values an unhinted linear-metrics lane would produce.
+//   - Advances are always linear (no hinting level is honored): the design-space advance mapped through the text
+//     matrix, the same values an unhinted linear-metrics lane would produce.
 //   - Fill bounds come from the glyph extents (the outline control box) mapped through the text matrix and rounded out
 //     (saturateBounds) — except for the color and bitmap-strike lanes, whose extent the control box does not describe:
 //     those come from the drawing scaler itself (scalerContext), the same source SkFont::measureText routes through.

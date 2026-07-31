@@ -1373,3 +1373,52 @@ func TestStrikeConcurrentAccess(t *testing.T) {
 			cache.count, cache.countLimit)
 	}
 }
+
+// TestScalerContextRecIsACopy pins that the exported accessor cannot be used to retune a live context. NewScalerContext
+// snapshots the single matrix, the singular flag, the bitmap-strike ppem and the pre-blend out of the rec, and
+// StrikeCache keys the strike on its own copy, so a rec handed out by reference would let a caller move the glyph space
+// out from under all four: paths and masks in inconsistent spaces on a strike removeStrike still deletes under the
+// unmodified key.
+func TestScalerContextRecIsACopy(t *testing.T) {
+	tf := loadTypeface(t, "Roboto-Regular.ttf", 0)
+	f := NewFont(tf, 24, 1, 0)
+	gid := tf.UnicharToGlyph('A')
+	if gid == 0 {
+		t.Fatal("Roboto should map 'A'")
+	}
+	identity := geom.IdentityMatrix()
+	spec := MakeMaskSpec(f, nil, &identity, nil)
+	cache := NewStrikeCache()
+	strike := cache.FindOrCreateStrike(&spec)
+	c := strike.scaler
+	before := c.Rec()
+	wantBounds := strike.PrepareImage(PackGlyphID(gid)).IRect()
+
+	// Retuning the returned rec must not reach the context: everything derived from it stays put.
+	rec := c.Rec()
+	rec.TextSize *= 2
+	rec.Post2x2[0] = 4
+	if got := c.Rec(); got != before {
+		t.Errorf("the context's rec changed to %+v, want %+v", got, before)
+	}
+	// geom.Matrix carries a lazily filled type mask, so compare where the matrices send a point, not the structs.
+	want := before.singleMatrix()
+	if got, expected := c.single.MapXY(1, 1), want.MapXY(1, 1); got != expected {
+		t.Errorf("the cached single matrix maps (1,1) to %v, the rec's to %v", got, expected)
+	}
+	scale, ok := before.computeScale()
+	if !ok || c.isSing {
+		t.Fatal("the rec should not be singular")
+	}
+	if c.strikePpem != strikePpemFor(scale.Y) {
+		t.Error("the cached bitmap-strike ppem no longer matches the rec")
+	}
+
+	// And the strike is still the one the unmodified key resolves to, still generating the same glyph.
+	if again := cache.FindOrCreateStrike(&spec); again != strike {
+		t.Error("the strike is no longer reachable under its own key")
+	}
+	if got := strike.PrepareImage(PackGlyphID(gid)).IRect(); got != wantBounds {
+		t.Errorf("glyph bounds moved to %v, want %v", got, wantBounds)
+	}
+}

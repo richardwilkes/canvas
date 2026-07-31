@@ -107,22 +107,26 @@ func TestFaceRunesDataMatchesFaceCoversRune(t *testing.T) {
 	}
 }
 
-// TestFaceRunesDataFiltersUnmappedGlyphs pins the two filters that make the returned set exact where a scanned
-// fontscan footprint over-claims: a cmap entry resolving to glyph 0 is not coverage, and neither is one resolving past
-// the 0xFFFF ceiling an sfnt glyph store can hold. Both are what the per-rune probe already answers, so dropping either
-// would put runes in fontmgr's in-memory index that the face's own cmap check then rejects.
+// TestFaceRunesDataFiltersUnmappedGlyphs pins the three filters that make the returned set exact where a scanned
+// fontscan footprint over-claims: a cmap entry resolving to glyph 0 is not coverage, neither is one resolving past the
+// 0xFFFF ceiling an sfnt glyph store can hold, and neither is one whose code point is outside Unicode — a cmap's code
+// points are just 32-bit values, and fontscan.RuneSet.Add pages on uint16(r>>8), so 0x1000041 would fold onto page 0
+// bit 0x41 and make fontmgr's in-memory index claim the face covers U+0041. All three are what the per-rune probe
+// already answers, so dropping any would put runes in that index the face's own cmap check then rejects.
 func TestFaceRunesDataFiltersUnmappedGlyphs(t *testing.T) {
 	roboto := readTestFont(t, "Roboto-Regular.ttf")
 	data := sfntWithTables(t, roboto, map[string][]byte{"cmap": synthCmapFormat13(
-		[3]uint32{'A', 'C', 1},       // real glyphs: kept
-		[3]uint32{'D', 'F', 0},       // .notdef: not coverage
-		[3]uint32{'G', 'I', 0x10000}, // past the sfnt glyph-ID ceiling: not coverage
+		[3]uint32{'A', 'C', 1},               // real glyphs: kept
+		[3]uint32{'D', 'F', 0},               // .notdef: not coverage
+		[3]uint32{'G', 'I', 0x10000},         // past the sfnt glyph-ID ceiling: not coverage
+		[3]uint32{0x1000041, 0x1000041, 1},   // past the last code point: not coverage
+		[3]uint32{0xFFFFFFF0, 0xFFFFFFF0, 1}, // and again where the rune would come out negative
 	)})
 	want := []rune{'A', 'B', 'C'}
 	if got := FaceRunesData(data, 0); !slices.Equal(got, want) {
 		t.Errorf("FaceRunesData = %#x, want %#x", got, want)
 	}
-	for _, r := range []rune{'D', 'E', 'F', 'G', 'H', 'I'} {
+	for _, r := range []rune{'D', 'E', 'F', 'G', 'H', 'I', 0x1000041, -16} {
 		if FaceCoversRuneData(data, 0, r) {
 			t.Errorf("FaceCoversRuneData(%#x) = true, so the two lanes disagree about the filter", r)
 		}
@@ -158,30 +162,45 @@ func TestFaceRunesDataUnknowable(t *testing.T) {
 // TestFaceRunesDataBoundsTheCmapWalk pins the bound on the per-code-point cmap walk. typesetting's format-12/13
 // iterator yields one code point at a time and takes a group's length from EndCharCode-StartCharCode in unsigned
 // arithmetic, so a group declaring an EndCharCode of 0xFFFFFFFF — or one below its StartCharCode, which wraps to the
-// same count — asks for 4.29e9 iterations and ~17 GB of appended runes. fontmgr.NewFromData calls this for every face
-// of every supplied blob, so one malformed embedded font would otherwise kill manager construction.
+// same count — asks for 4.29e9 iterations. fontmgr.NewFromData calls this for every face of every supplied blob, so one
+// malformed embedded font would otherwise hang manager construction. The count of entries examined is what pins the
+// bound: the runes returned cannot, since a malformed group's code points climb straight past U+10FFFF, where the
+// code-point filter rejects every one of them, so an unbounded walk would return the same runes as this one.
 func TestFaceRunesDataBoundsTheCmapWalk(t *testing.T) {
 	roboto := readTestFont(t, "Roboto-Regular.ttf")
 	for _, c := range []struct {
-		name   string
-		groups [][3]uint32
-		want   int
+		name       string
+		groups     [][3]uint32
+		want       int
+		wantWalked int
 	}{
 		// The control: a well-formed group is walked to its end, so the bound costs a real font nothing.
-		{name: "well-formed", groups: [][3]uint32{{'A', 'C', 1}}, want: 3},
-		{name: "unbounded end", groups: [][3]uint32{{0, 0xFFFFFFFF, 1}}, want: maxCmapEntries},
-		{name: "end below start", groups: [][3]uint32{{'A', 'A' - 1, 1}}, want: maxCmapEntries},
+		{name: "well-formed", groups: [][3]uint32{{'A', 'C', 1}}, want: 3, wantWalked: 3},
+		{
+			name: "unbounded end", groups: [][3]uint32{{0, 0xFFFFFFFF, 1}},
+			want: maxCmapEntries, wantWalked: maxCmapEntries,
+		},
+		{
+			// Starting at 'A' pushes the walk's last 'A' entries past U+10FFFF, so the returned count falls short
+			// of the entries examined by exactly that much.
+			name: "end below start", groups: [][3]uint32{{'A', 'A' - 1, 1}},
+			want: maxCmapEntries - 'A', wantWalked: maxCmapEntries,
+		},
 		// The bound is over the whole walk rather than per group, so a cmap packed with malformed groups costs no more
 		// than one of them does.
 		{
-			name:   "many groups",
-			groups: [][3]uint32{{0, 0xFFFFFFFF, 1}, {0, 0xFFFFFFFF, 2}, {0, 0xFFFFFFFF, 3}},
-			want:   maxCmapEntries,
+			name:       "many groups",
+			groups:     [][3]uint32{{0, 0xFFFFFFFF, 1}, {0, 0xFFFFFFFF, 2}, {0, 0xFFFFFFFF, 3}},
+			want:       maxCmapEntries,
+			wantWalked: maxCmapEntries,
 		},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			data := sfntWithTables(t, roboto, map[string][]byte{"cmap": synthCmapFormat13(c.groups...)})
-			runes := FaceRunesData(data, 0)
+			runes, walked := faceRunesData(data, 0)
+			if walked != c.wantWalked {
+				t.Fatalf("the walk examined %d cmap entries, want %d", walked, c.wantWalked)
+			}
 			if len(runes) != c.want {
 				t.Fatalf("FaceRunesData returned %d runes, want %d", len(runes), c.want)
 			}

@@ -10,8 +10,8 @@
 // Typeface's surface (family name, font style, units-per-em, fixed pitch, text→glyph conversion), built over
 // go-text/typesetting's font parser: the sfnt tables are read directly rather than through a platform text-rendering
 // host, following the rules closest to raw table data. The deltas that follow from that are: rendering is always
-// unhinted with linear metrics (hinting is recorded but only HintingNone/HintingSlight are honored, and
-// forceAutoHinting is recorded but never honored — there is no hinter here); embedded bitmap strikes are always used
+// unhinted with linear metrics (hinting and forceAutoHinting are recorded but never honored — there is no hinter here,
+// so neither reaches the scaler rec); embedded bitmap strikes are always used
 // when present and no flag gates them (the embeddedBitmaps request is recorded but never consulted, because the scaler
 // decodes an sbix/CBDT/EBDT PNG strike into an ARGB32 mask whenever the typeface carries one for the size being
 // rendered); font metrics follow the FreeType table recipe (hhea, or OS/2 typo metrics when fsSelection UseTypoMetrics

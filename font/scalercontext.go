@@ -25,9 +25,10 @@
 // only LCD16 recs carry a luminance color (LumBits) — A8 strikes stay color-independent, where keying every rec on the
 // canonical color would fragment strikes with no pixel difference. The device gamma and contrast rec fields have no
 // reachable variation (the surface-props text contrast/gamma constructor is not exposed) and stay the defaults inside
-// maskgamma.go. Embolden (fake bold) and the embedded-bitmap request are recorded on the Font but have no lane here
-// (there is no synthetic-bold generator, and bitmap strikes are decoded whenever the typeface carries them), so neither
-// reaches the rec: keying strikes on a request that changes no pixel would only fragment the cache.
+// maskgamma.go. Embolden (fake bold), the embedded-bitmap request, and the hinting level are recorded on the Font but
+// have no lane here (there is no synthetic-bold generator, bitmap strikes are decoded whenever the typeface carries
+// them, and rendering is always unhinted), so none of them reaches the rec: keying strikes on a request that changes no
+// pixel would only fragment the cache.
 
 package font
 
@@ -96,7 +97,6 @@ type ScalerRec struct {
 	StrokeJoin stroke.Join
 	StrokeCap  stroke.Cap
 	Flags      uint16
-	Hinting    Hinting
 	// Format is the mask format for the outline lane: MaskA8, MaskLCD16, or MaskSDF (the color lanes override it per
 	// glyph, to MaskARGB32). MakeRecAndEffects itself only ever produces A8 or LCD16; MaskSDF reaches the rec through
 	// MakeSDFTMaskSpec, which assigns the field after rec construction. The zero value is MaskA8, so a construction site
@@ -243,7 +243,8 @@ func MakeRecAndEffects(f *Font, paint *ScalerPaint, deviceMatrix *geom.Matrix, p
 	if f.flags&flagBaselineSnap != 0 {
 		rec.Flags |= recFlagBaselineSnap
 	}
-	rec.Hinting = f.hinting
+	// The requested hinting level deliberately does not enter the rec: nothing here honors it (rendering is always
+	// unhinted), so keying strikes on it would only charge the cache twice for byte-identical masks. See Hinting.
 
 	// The paint color enters the rec (and the strike key) only when the typeface's glyph masks may paint with it, so
 	// ordinary fonts never fragment strikes per color.
@@ -435,8 +436,11 @@ func strikePpemFor(scaleY float32) uint16 {
 	return uint16(ppem)
 }
 
-// Rec returns the context's rec.
-func (c *ScalerContext) Rec() *ScalerRec { return &c.rec }
+// Rec returns a copy of the context's rec. It is deliberately not a pointer into the live rec: NewScalerContext
+// snapshots single, isSing, strikePpem and preBlend from it, and StrikeCache keys the strike on its own copy, so a
+// mutation applied here would leave the context mapping glyphs through the old matrix and ppem while removeStrike still
+// deleted under the unmodified key. Build a new context (or strike spec) from a modified rec instead.
+func (c *ScalerContext) Rec() ScalerRec { return c.rec }
 
 // Typeface returns the context's typeface.
 func (c *ScalerContext) Typeface() *Typeface { return c.typeface }
@@ -896,11 +900,14 @@ func (c *ScalerContext) getImage(g *Glyph) {
 		}
 		m := c.rec.matrixFrom2x2()
 		dst, _, ok := mf.FilterMask(&srcMask, &m)
-		if !ok || dst == nil || dst.Image == nil {
-			// Filter did nothing (a blur whose CTM-adjusted sigma falls under the no-blur cutoff returns false). The
-			// bounds pass failed the same way, so the glyph kept its ARGB32 format and unfiltered bounds: copy the
-			// unfiltered color mask, as the LCD16 and A8 lanes below do. Anything else leaves the freshly allocated
-			// (zeroed) plane.
+		if !ok || dst == nil || dst.Image == nil || g.Format != MaskA8 {
+			// Filter did nothing (a blur whose CTM-adjusted sigma falls under the no-blur cutoff returns false), so the
+			// bounds pass failed the same way and the glyph kept its ARGB32 format and unfiltered bounds: copy the
+			// unfiltered color mask, as the LCD16 and A8 lanes below do. The g.Format test guards the converse — a
+			// filter succeeding here but not on makeGlyph's bounds-only probe (nil src.Image) leaves the glyph ARGB32,
+			// with no A8 plane the filtered mask could go into. Only the blur filter reaches this lane at all
+			// (AcceptsColorMask), and it answers both passes alike, so the test is defensive here; the LCD16 lane
+			// below, which any filter reaches, needs it. Anything else leaves the freshly allocated (zeroed) plane.
 			if unfiltered.IRect() == g.IRect() && g.Format == MaskARGB32 {
 				copy(g.Image32, unfiltered.Image32)
 			}
@@ -921,9 +928,10 @@ func (c *ScalerContext) getImage(g *Glyph) {
 		}
 		m := c.rec.matrixFrom2x2()
 		dst, _, ok := mf.FilterMask(&srcMask, &m)
-		if !ok || dst == nil || dst.Image == nil {
-			// Filter did nothing; the glyph kept its LCD16 format, so copy the unfiltered plane when the bounds line
-			// up.
+		if !ok || dst == nil || dst.Image == nil || g.Format != MaskA8 {
+			// Filter did nothing, or it succeeded here but failed makeGlyph's bounds-only probe (nil src.Image), which
+			// only an out-of-tree filter does; either way the glyph kept its LCD16 format and has no A8 plane the
+			// filtered mask could go into, so copy the unfiltered plane when the bounds line up.
 			if unfiltered.IRect() == g.IRect() && g.Format == MaskLCD16 {
 				copy(g.Image16, unfiltered.Image16)
 			} else {

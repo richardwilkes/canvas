@@ -31,9 +31,11 @@ const (
 // the exact-math argument that chopping in Y cannot manufacture new X extrema. That argument is false in float32:
 // ChopCubicAtXExtrema re-runs FindCubicExtrema on each already-rounded Y-piece, so a piece can report an X extremum the
 // unchopped curve did not have. The cubic {-36124.6,100},{-1343.5917,-4e6},{-236631.27,99.5},{-107986.55,-4e6} (which
-// passes tooBigForReliableFloatMath) yields countY=2 with countX=1 in all three Y-pieces, i.e. 6 pieces where the
-// exact-math bound predicts 5 — exhausting the old 18-verb limit exactly, with a 7th piece panicking in appendVLine
-// rather than being rejected.
+// passes tooBigForReliableFloatMath) splits into 6 pieces on arm64 where the exact-math bound predicts 5, and small
+// perturbations of it reach 7 — past the 15 verbs that bound implies and past the 18 the buffers used to hold. How far
+// it goes is architecture-dependent (the same family stays at 5 on amd64, whose chop math emits no FMAs), which is
+// exactly why the limits cannot be derived from the float behavior at all. See
+// TestEdgeClipperFloat32ExceedsExactMathPieceBound.
 //
 // The bound that does hold: ChopCubicAtYExtrema returns countY in [0, 2], so the y loop runs at most 3 times, and
 // likewise the x loop, for at most 9 pieces reaching clipMonoCubic no matter what the float math reports. A piece emits

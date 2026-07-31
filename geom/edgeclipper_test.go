@@ -10,9 +10,15 @@
 package geom
 
 import (
+	"math"
 	"math/rand"
 	"testing"
 )
+
+// structuralMaxPieces is the most monotonic pieces ClipCubic can hand to clipMonoCubic: ChopCubicAtYExtrema and
+// ChopCubicAtXExtrema each return a count in [0, 2], so both loops run at most 3 times regardless of what the float
+// math reports. edgeClipperMaxVerbs/Points are sized from this.
+const structuralMaxPieces = 3 * 3
 
 // collectClipped drains the clipper into (verb, points) records.
 type clippedSeg struct {
@@ -315,50 +321,92 @@ func TestIntersectLine(t *testing.T) {
 
 func TestEdgeClipperFloat32ExceedsExactMathPieceBound(t *testing.T) {
 	// Regression for the buffer-limit derivation. ChopCubicAtXExtrema re-runs FindCubicExtrema on each already-rounded
-	// Y-piece, so in float32 a piece can report an X extremum the unchopped curve did not have. This cubic passes
-	// tooBigForReliableFloatMath yet splits into 6 pieces, one more than the exact-math bound of 5 — which is why the
-	// buffers are sized from the loops' structural bound (3 Y-pieces x 3 X-pieces) rather than from that argument.
-	src := []Point{
+	// Y-piece, so in float32 a piece can report an X extremum the unchopped curve did not have, defeating the
+	// exact-math argument that 2 extrema per axis cap the split at 5 pieces.
+	//
+	// How far past 5 it goes is architecture-dependent: this seed splits into 6 pieces on arm64 (where the chop math
+	// contracts into FMAs) and perturbations of it reach 7, while on amd64 the same family stays at 5. So the piece
+	// count is reported, not asserted. What is asserted holds everywhere: the split never exceeds the 3x3 structural
+	// bound the buffers are sized from, and clipping never overruns those buffers.
+	seed := []Point{
 		{X: -36124.6, Y: 100},
 		{X: -1343.5917, Y: -4e6},
 		{X: -236631.27, Y: 99.5},
 		{X: -107986.55, Y: -4e6},
 	}
-	if tooBigForReliableFloatMath(BoundsOrEmpty(src)) {
-		t.Fatal("cubic must reach the chopping path, not the too-big line fallback")
+	pieces := func(src []Point) int {
+		if tooBigForReliableFloatMath(BoundsOrEmpty(src)) {
+			return -1 // the line fallback, which does no chopping
+		}
+		var monoY [10]Point
+		countY := ChopCubicAtYExtrema(src, monoY[:])
+		n := 0
+		for y := 0; y <= countY; y++ {
+			var monoX [10]Point
+			n += ChopCubicAtXExtrema(monoY[y*3:y*3+4], monoX[:]) + 1
+		}
+		return n
 	}
-	var monoY [10]Point
-	countY := ChopCubicAtYExtrema(src, monoY[:])
-	pieces := 0
-	for y := 0; y <= countY; y++ {
-		var monoX [10]Point
-		pieces += ChopCubicAtXExtrema(monoY[y*3:y*3+4], monoX[:]) + 1
+	if pieces(seed) < 0 {
+		t.Fatal("seed must reach the chopping path, not the too-big line fallback")
 	}
-	if pieces <= 5 {
-		t.Fatalf("pieces = %d, want > 5 (the float32 pathology this case exists to pin)", pieces)
+	// Clip rects chosen to straddle the seed family in X and in Y, so pieces are kept rather than trivially rejected.
+	clips := []Rect{
+		RectLTRB(-200000, -100, 0, 100),
+		RectLTRB(-150000, -5e6, -50000, 5e6),
+		RectLTRB(-236000, -4e6, -1400, 4e6),
 	}
-	// The old 18-verb limit was exactly 6 pieces x 3 verbs, leaving no headroom; clipping must stay inside the buffers.
-	for _, cull := range []bool{false, true} {
-		e := NewEdgeClipper(cull)
-		e.ClipCubic(src, RectLTRB(-200000, -100, 0, 100))
-		verbs, points := clipperEmission(e)
-		if verbs > edgeClipperMaxVerbs || points > edgeClipperMaxPoints {
-			t.Fatalf("cull=%v: emitted %d verbs / %d points, past the %d / %d buffers", cull, verbs, points,
-				edgeClipperMaxVerbs, edgeClipperMaxPoints)
+	clippers := []*EdgeClipper{NewEdgeClipper(false), NewEdgeClipper(true)}
+	maxPieces, maxVerbs, maxPoints, beyondExactMath := 0, 0, 0, 0
+	check := func(src []Point) {
+		t.Helper()
+		n := pieces(src)
+		if n < 0 {
+			return
+		}
+		maxPieces = max(maxPieces, n)
+		if n > 5 {
+			beyondExactMath++
+		}
+		if n > structuralMaxPieces {
+			t.Fatalf("%v split into %d pieces, past the %d the buffers are sized for", src, n, structuralMaxPieces)
+		}
+		for _, e := range clippers {
+			for _, clip := range clips {
+				e.ClipCubic(src, clip)
+				verbs, points := clipperEmission(e)
+				maxVerbs, maxPoints = max(maxVerbs, verbs), max(maxPoints, points)
+				if verbs > edgeClipperMaxVerbs || points > edgeClipperMaxPoints {
+					t.Fatalf("%v under %v: emitted %d verbs / %d points, past the %d / %d buffers", src, clip, verbs,
+						points, edgeClipperMaxVerbs, edgeClipperMaxPoints)
+				}
+			}
 		}
 	}
+	check(seed)
+	// Perturbing the seed across a range of relative magnitudes is what surfaces the worst splits on arm64.
+	rng := rand.New(rand.NewSource(4))
+	for range 200000 {
+		mag := math.Pow(10, rng.Float64()*6-7)
+		src := make([]Point, 4)
+		for i, p := range seed {
+			jitter := func(v float32) float32 { return float32(float64(v) * (1 + (rng.Float64()*2-1)*mag)) }
+			src[i] = Point{X: jitter(p.X), Y: jitter(p.Y)}
+		}
+		check(src)
+	}
+	t.Logf("max pieces %d (%d cases past the exact-math bound of 5), max emission %d verbs / %d points, buffers %d / %d",
+		maxPieces, beyondExactMath, maxVerbs, maxPoints, edgeClipperMaxVerbs, edgeClipperMaxPoints)
 }
 
 func TestEdgeClipperBuffersCoverStructuralWorstCase(t *testing.T) {
-	// ChopCubicAtYExtrema and ChopCubicAtXExtrema each return a count in [0, 2], so ClipCubic's loops run at most 3x3
-	// times no matter what the float math reports, and each piece emits at most 3 verbs / 8 points via clipMonoCubic.
-	// The buffers must cover that regardless of any exact-math reasoning about extrema.
+	// Each of the structuralMaxPieces pieces emits at most 3 verbs / 8 points via clipMonoCubic. The buffers must cover
+	// that regardless of any exact-math reasoning about how extrema distribute.
 	const (
-		maxPieces        = 3 * 3
 		verbsPerPiece    = 3
 		pointsPerPiece   = 8
-		structuralVerbs  = maxPieces * verbsPerPiece
-		structuralPoints = maxPieces * pointsPerPiece
+		structuralVerbs  = structuralMaxPieces * verbsPerPiece
+		structuralPoints = structuralMaxPieces * pointsPerPiece
 	)
 	if edgeClipperMaxVerbs < structuralVerbs {
 		t.Errorf("edgeClipperMaxVerbs = %d, want at least %d", edgeClipperMaxVerbs, structuralVerbs)

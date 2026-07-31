@@ -40,6 +40,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -486,6 +487,112 @@ func TestNewFromData(t *testing.T) {
 	}
 	if got := NewFromData().CountFamilies(); got != 0 {
 		t.Errorf("no-blob CountFamilies = %d, want 0", got)
+	}
+}
+
+// TestNewFromDataCoverageUnderClaimsRemappedCmaps covers the other half of what NewFromData's per-face cmap read buys.
+// It removes the scan footprints' over-claim (TestNewFromData pins that), but not the under-claim: the read iterates
+// the raw subtable, so it cannot see the mappings go-text's remapping wrappers add on top of it. A symbol-encoded face
+// therefore records the U+F000 page and nothing below it, while every resolver — Typeface.UnicharToGlyph and the cmap
+// probe behind faceRec.covers alike — answers U+0020–U+00FF out of that page. The set is a filter in front of the
+// probe, never a statement of what the face covers, and faceRec.claims is what keeps the filter wide enough.
+func TestNewFromDataCoverageUnderClaimsRemappedCmaps(t *testing.T) {
+	data := symbolizeSfntCmap(t, renameSfntFamily(t, readTestFontData(t, "DejaVuSans.subset.ttf"),
+		"DejaVu Sans", corpusSymbolFamily))
+	runes := font.FaceRunesData(data, 0)
+	if len(runes) == 0 {
+		t.Fatal("the symbolized face records no coverage at all")
+	}
+	probe := []rune{'H', 'a', 'x'} // the three characters DejaVuSans.subset.ttf carries
+	for _, r := range probe {
+		if slices.Contains(runes, r) {
+			t.Errorf("the recorded coverage holds U+%04X; the cmap was not moved into the U+F000 page", r)
+		}
+		if !slices.Contains(runes, symbolPUAPage+r) {
+			t.Errorf("the recorded coverage lacks U+%04X, which is where the symbolized cmap keys it",
+				symbolPUAPage+r)
+		}
+	}
+	m := NewFromData(data)
+	tf := m.MatchFamilyStyle(corpusSymbolFamily, font.NormalStyle())
+	if tf == nil {
+		t.Fatalf("MatchFamilyStyle(%s) found no face", corpusSymbolFamily)
+	}
+	for _, r := range probe {
+		// The premise: the face really does resolve the character the set omits.
+		if tf.UnicharToGlyph(r) == 0 {
+			t.Fatalf("the face does not resolve U+%04X after all; the case is vacuous", r)
+		}
+		if got := m.MatchFamilyStyleCharacter("", font.NormalStyle(), nil, r); got == nil ||
+			got.FamilyName() != corpusSymbolFamily {
+			t.Errorf("fallback for U+%04X = %s, want the symbol face, whose recorded set omits it",
+				r, familyOf(got))
+		}
+	}
+}
+
+// TestFaceRecCoversMemoSurvivesInterleavedRunes covers the memo behind covers. Every miss is a file open and a cmap
+// parse, and a fallback scan re-asks the same face about the same rune once per tier and once per BCP-47 tag, so the
+// memo is what keeps a scan from re-parsing the claiming inventory several times over. Remembering only the rune in
+// flight meant the next distinct character evicted the last one's verdict and a run mixing a few uncovered characters
+// paid the whole scan for each of them, over and over.
+//
+// A data-backed face makes the memo directly observable: swapping the face's bytes for garbage after the probes leaves
+// a memoized verdict as the only way any answer can still come back true.
+func TestFaceRecCoversMemoSurvivesInterleavedRunes(t *testing.T) {
+	roboto := readTestFontData(t, "Roboto-Regular.ttf")
+	covered := []rune{'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'}
+	uncovered := []rune{0x4E00, 0x4E01, 0x4E02, 0x4E03} // Roboto carries ASCII, no CJK
+
+	f := newTestDataFaceRec(t, roboto, 0)
+	// Interleaved, which is the arrangement a single-entry memo cannot survive: each uncovered probe used to evict the
+	// covered verdict before it.
+	for i, r := range covered {
+		if !f.covers(r) {
+			t.Fatalf("Roboto does not cover U+%04X; the corpus assumption is wrong", r)
+		}
+		if i < len(uncovered) {
+			if f.covers(uncovered[i]) {
+				t.Fatalf("Roboto covers U+%04X; the corpus assumption is wrong", uncovered[i])
+			}
+		}
+	}
+	f.data = []byte("not a font")
+	for _, r := range covered {
+		if !f.covers(r) {
+			t.Errorf("U+%04X was re-probed rather than remembered: %d distinct runes must fit the memo",
+				r, len(covered)+len(uncovered))
+		}
+	}
+	// Non-vacuity: the bytes really are unreadable now, so the answers above came from the memo and not from a probe.
+	if f.covers('z') {
+		t.Fatal("a never-probed rune still resolved; the face's bytes were not actually invalidated")
+	}
+
+	// The memo is bounded, and evicts oldest-first. A system inventory holds thousands of these records, so unbounded
+	// growth is not an option however cheap each entry is.
+	g := newTestDataFaceRec(t, roboto, 0)
+	all := make([]rune, 0, coverMemoSize+1)
+	for r := 'a'; len(all) < coverMemoSize+1; r++ {
+		all = append(all, r)
+		if !g.covers(r) {
+			t.Fatalf("Roboto does not cover U+%04X; pick a different run", r)
+		}
+	}
+	if g.coverLen != coverMemoSize {
+		t.Errorf("after %d distinct probes the memo holds %d entries, want the %d cap",
+			len(all), g.coverLen, coverMemoSize)
+	}
+	g.data = []byte("not a font")
+	// Newest first: reading an evicted rune would re-probe and write its (false) verdict back into the ring.
+	for _, r := range all[1:] {
+		if !g.covers(r) {
+			t.Errorf("U+%04X fell out of the memo, but it is one of the newest %d runes probed", r, coverMemoSize)
+		}
+	}
+	if g.covers(all[0]) {
+		t.Errorf("U+%04X survived %d newer probes; the memo is not bounded at %d",
+			all[0], coverMemoSize, coverMemoSize)
 	}
 }
 

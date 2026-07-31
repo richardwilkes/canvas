@@ -207,12 +207,14 @@ func TestCSS3ScoreWidthTierOrder(t *testing.T) {
 	}
 }
 
-// TestSelectStyleCSS3WalkOrder pins the order the partial selection walks: exactly the stable descending-score order a
-// full sort of the candidates produces. The walk extracts one maximum at a time so the common case (the first
-// candidate answers) never orders the rest, and every caller depends on the remainder still arriving best-first, with
-// ties keeping first-wins preference.
+// TestSelectStyleCSS3WalkOrder pins the order the walk produces: exactly the stable descending-score order a full sort
+// of the candidates produces. Only the maximum is extracted up front, so the common case (the first candidate answers)
+// never orders the rest; every caller depends on the remainder still arriving best-first, with ties keeping first-wins
+// preference. The large tie-heavy set at the end is what puts the deferred sort under load — it is the only part of the
+// walk the maximum extraction does not cover, and the order it produces has to be indistinguishable from the
+// extraction's.
 func TestSelectStyleCSS3WalkOrder(t *testing.T) {
-	sets := make([][]font.Style, 0, len(matchStyleCSS3Tests)+1)
+	sets := make([][]font.Style, 0, len(matchStyleCSS3Tests)+2)
 	for _, test := range matchStyleCSS3Tests {
 		sets = append(sets, test.set)
 	}
@@ -222,7 +224,8 @@ func TestSelectStyleCSS3WalkOrder(t *testing.T) {
 		ties = append(ties, normalNormal100, normalNormal400, normalNormal900,
 			condensedItalic100, expandedObliqu900, normalNormal400)
 	}
-	sets = append(sets, ties)
+	// ... and a cross-family fallback set at real scale, where distinct scores are far outnumbered by ties.
+	sets = append(sets, ties, benchmarkStyleSet(2000))
 
 	patterns := []font.Style{
 		normalNormal400, normalNormal900, condensedItalic100, expandedObliqu900, condensedNormal900,
@@ -389,8 +392,9 @@ func benchmarkStyleSet(count int) []font.Style {
 }
 
 // BenchmarkSelectStyleCSS3FirstAccepted measures the common case on the cross-family fallback path: a large candidate
-// set whose best-scoring face answers immediately. The walk costs two linear passes — measured at n=3000, ~50x less
-// than the full insertion sort it replaced (51 µs against 2.5 ms).
+// set whose best-scoring face answers immediately. Scoring and the maximum extraction share one linear pass and no
+// ordering happens at all — measured at n=3000, ~57x less than the full insertion sort this replaced (44 µs against
+// 2.5 ms).
 func BenchmarkSelectStyleCSS3FirstAccepted(b *testing.B) {
 	set := benchmarkStyleSet(3000)
 	pattern := font.NewStyle(font.WeightNormal, font.WidthNormal, font.SlantUpright)
@@ -400,8 +404,21 @@ func BenchmarkSelectStyleCSS3FirstAccepted(b *testing.B) {
 	}
 }
 
-// BenchmarkSelectStyleCSS3FullWalk measures the worst case the partial selection cannot improve on: every candidate
-// turned down, so the walk orders the whole set.
+// BenchmarkSelectStyleCSS3FullWalk and its Big twin measure the case the maximum extraction cannot help with: every
+// candidate turned down, so the whole set has to be ordered. That is not an exotic case — it is what a character
+// *nothing* covers costs, on every tier of every BCP-47 tag. Ordering the remainder by repeated max extraction made it
+// quadratic; a stable sort makes it n log n, which is the difference between 75 µs and 16 µs at n=300 and between
+// 7.5 ms and 0.32 ms at n=3000. Read the pair together: the scaling from 300 to 3000 is what separates the two, 100x
+// against 21x.
+func BenchmarkSelectStyleCSS3FullWalkBig(b *testing.B) {
+	set := benchmarkStyleSet(3000)
+	pattern := font.NewStyle(font.WeightNormal, font.WidthNormal, font.SlantUpright)
+	styleAt := func(i int) font.Style { return set[i] }
+	for b.Loop() {
+		selectStyleCSS3(pattern, len(set), styleAt, func(int) bool { return false })
+	}
+}
+
 func BenchmarkSelectStyleCSS3FullWalk(b *testing.B) {
 	set := benchmarkStyleSet(300)
 	pattern := font.NewStyle(font.WeightNormal, font.WidthNormal, font.SlantUpright)

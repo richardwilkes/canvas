@@ -244,6 +244,13 @@ type colrV1Walker struct {
 // renderCOLRv1 interprets the paint graph onto the glyph's (zeroed) ARGB32 mask. The CTM seed is the mask-local
 // translation including the sub-pixel phase (translate(-left, -top) then translate(subX, subY)); startGlyph then
 // applies the root transform and the optional ClipList clip.
+//
+// A refused traversal blanks the mask. Refusal is all-or-nothing by contract — a guard fired, or a node named artwork
+// the tables cannot produce — and the walk refuses partway through, after the layers before the refusal have already
+// painted. Keeping those would cache a fragment of the glyph under a strike that measures it at full size: the bounds
+// pass applies the same guards to the same graph and refuses with it (colrV1Bounds then zaps the glyph), but only when
+// it walks the graph at all — a ClipList box answers the metrics lane without a traversal, which is exactly the case
+// that reaches here with a non-empty mask.
 func (c *ScalerContext) renderCOLRv1(g *Glyph) {
 	colr := c.typeface.colrTable()
 	if colr == nil {
@@ -257,7 +264,16 @@ func (c *ScalerContext) renderCOLRv1(g *Glyph) {
 		canvas:  newColrV1Canvas(&pm, g.Width, g.Height, c.maskLocalTranslate(g)),
 		visited: make(map[uint16]bool),
 	}
-	w.startGlyph(g.packedID.GlyphID(), true)
+	w.renderTo(g)
+}
+
+// renderTo runs the top-level traversal for g on an already-configured draw-mode walker, blanking the mask when the
+// traversal is refused (see renderCOLRv1). It is separate from renderCOLRv1 only so the refusal can be reached with a
+// pre-charged guard rather than with a font crafted to trip one.
+func (w *colrV1Walker) renderTo(g *Glyph) {
+	if !w.startGlyph(g.packedID.GlyphID(), true) {
+		clear(g.Image32)
+	}
 }
 
 // colrV1Bounds returns the ClipList box when present (the font-unit corners map through mapDesignPoint), else the
@@ -395,12 +411,11 @@ func (w *colrV1Walker) traverseDraw(paint tables.PaintTable) bool {
 			return false
 		}
 		if colrIsFillPaint(p.Paint) {
-			// The paint-graph leaf fast path: drawPath with the fill paint directly instead of clipPath + drawPaint.
-			fill, ok := w.configurePaint(p.Paint)
-			if !ok {
-				return false
+			// The paint-graph leaf fast path: drawPath with the fill paint directly instead of clipPath + drawPaint. A
+			// fill the tables cannot produce skips this layer rather than failing the subtree (see the fill lane below).
+			if fill, ok := w.configurePaint(p.Paint); ok {
+				w.canvas.drawPath(outline, &fill)
 			}
-			w.canvas.drawPath(outline, &fill)
 			return true
 		}
 		w.canvas.clipPath(outline)
@@ -432,12 +447,15 @@ func (w *colrV1Walker) traverseDraw(paint tables.PaintTable) bool {
 		tables.PaintLinearGradient, tables.PaintVarLinearGradient,
 		tables.PaintRadialGradient, tables.PaintVarRadialGradient,
 		tables.PaintSweepGradient, tables.PaintVarSweepGradient:
-		// The fill lane: fill the current clip.
-		fill, ok := w.configurePaint(paint)
-		if !ok {
-			return false
+		// The fill lane: fill the current clip. configurePaint refuses only for a fill the tables cannot produce — an
+		// out-of-range CPAL index, an empty color line — and that skips this layer, exactly as renderCOLRv0 continues
+		// past a layer with a bad palette index and as drawPath/drawPaint already no-op on a shader that will not
+		// compile. Failing instead would unwind through every enclosing PaintColrLayers loop, abandoning the layers
+		// after the bad one and caching the partial mask: a 20-layer glyph with one bad stop in layer 5 would lose
+		// layers 5 through 20 rather than the one layer that is actually unpaintable.
+		if fill, ok := w.configurePaint(paint); ok {
+			w.canvas.drawPaint(&fill)
 		}
-		w.canvas.drawPaint(&fill)
 		return true
 	default:
 		if m, child, ok := colrTransform(paint); ok {
@@ -472,7 +490,18 @@ func (w *colrV1Walker) traverseBounds(paint tables.PaintTable) bool {
 		if b := dev.Bounds(); !b.IsEmpty() {
 			w.bounds.Join(b)
 		}
-		return true
+		if colrIsFillPaint(p.Paint) {
+			return true // the leaf the draw pass fills directly, charging nothing more
+		}
+		// The draw pass clips everything below this node to the outline, so the subtree contributes no bounds of its
+		// own — but it does spend depth and nodes there, and the two passes have to agree about the guards. Measuring a
+		// subtree the draw pass will refuse reports full-size metrics for a mask that comes back blank (a PaintGlyph
+		// over a 64-deep transform chain trips the depth cap in the draw pass alone), so the walk happens here too and
+		// only its bounds are discarded.
+		saved := *w.bounds
+		ok := w.traverse(p.Paint)
+		*w.bounds = saved
+		return ok
 	case tables.PaintColrGlyph:
 		return w.startGlyph(p.GlyphID, false)
 	case tables.PaintComposite:
@@ -714,7 +743,8 @@ func colrTileMode(extend tables.Extend) shaders.TileMode {
 var colrTransparent = colrV1Paint{color: 0}
 
 // fetchColorStops resolves palette/foreground colors, scales alpha, and stable-sorts by stop offset. Returns false for
-// an empty color line or an out-of-range palette index (the layer is not drawn).
+// an empty color line or an out-of-range palette index, which skips the one layer being configured and leaves the rest
+// of the paint graph to draw (see traverseDraw's fill lane).
 func (w *colrV1Walker) fetchColorStops(stops []tables.ColorStop) ([]float32, []colorcore.Color4f, bool) {
 	if len(stops) == 0 {
 		return nil, nil, false
@@ -761,7 +791,9 @@ func colrColors4b(colors []colorcore.Color4f) []colorcore.Color {
 	return out
 }
 
-// configurePaint builds a colrV1Paint for the four fill formats (and their Var twins, on base values).
+// configurePaint builds a colrV1Paint for the four fill formats (and their Var twins, on base values). ok=false means
+// the fill is not paintable — an out-of-range CPAL index, an empty color line, a shader that will not compile — and
+// skips the layer it configures, not the rest of the graph.
 func (w *colrV1Walker) configurePaint(paint tables.PaintTable) (colrV1Paint, bool) {
 	switch p := paint.(type) {
 	case tables.PaintSolid:
@@ -809,7 +841,8 @@ func (w *colrV1Walker) configurePaint(paint tables.PaintTable) (colrV1Paint, boo
 	}
 }
 
-// solidPaint handles the solid-color paint format: the palette (or foreground) color with its alpha scaled.
+// solidPaint handles the solid-color paint format: the palette (or foreground) color with its alpha scaled. ok=false
+// for an out-of-range palette index, which skips the layer (see configurePaint).
 func (w *colrV1Walker) solidPaint(paletteIndex uint16, alpha tables.Fixed214) (colrV1Paint, bool) {
 	col, ok := w.t.PaletteColor(paletteIndex, w.c.rec.ForegroundColor)
 	if !ok {

@@ -18,6 +18,7 @@ package font
 
 import (
 	"encoding/binary"
+	"fmt"
 	"slices"
 	"testing"
 
@@ -484,6 +485,237 @@ func TestCOLRv1CompositeDegradesWhenLayerBudgetExhausted(t *testing.T) {
 	}
 }
 
+func TestCOLRv1UnpaintableLayerSkipsOnlyThatLayer(t *testing.T) {
+	// A fill the tables cannot produce — an out-of-range CPAL index, an empty color line — skips the one layer it
+	// configures. Failing the node instead unwound through every enclosing PaintColrLayers loop, so a 20-layer glyph
+	// with one bad stop in layer 5 abandoned layers 5 through 20 and cached the partial mask, while renderCOLRv0
+	// genuinely continues past a layer with a bad palette index.
+	const side = 4
+	// Translucent, so each src-over layer moves the pixels and the layers that drew can be counted from the result.
+	fg := colorcore.ARGB(0x80, 0xFF, 0x40, 0x20)
+	newWalker := func(cv *colrV1Canvas, colr *tables.COLR1) *colrV1Walker {
+		return &colrV1Walker{
+			c: &ScalerContext{rec: ScalerRec{ForegroundColor: fg}}, t: &Typeface{},
+			colr: colr, canvas: cv, visited: map[uint16]bool{},
+		}
+	}
+	render := func(t *testing.T, records ...[]byte) []uint32 {
+		t.Helper()
+		pm := raster.NewPixmap(side, side)
+		w := newWalker(newColrV1Canvas(pm, side, side, geom.IdentityMatrix()), synthCOLRv1Layers(t, records...))
+		if !w.traverse(tables.PaintColrLayers{NumLayers: uint8(len(records))}) {
+			t.Fatalf("the %d-layer traversal failed", len(records))
+		}
+		return slices.Clone(pm.Pix)
+	}
+	good := colrSolidRecordAt(0xFFFF)
+	bad := colrSolidRecordAt(0)
+
+	// The premise: the bad record really is unpaintable against a face with no CPAL, and the good one really paints.
+	probe := newWalker(nil, nil)
+	if _, ok := probe.solidPaint(0, 1<<14); ok {
+		t.Fatal("palette index 0 resolves against an empty palette; the case is vacuous")
+	}
+	if paint, ok := probe.solidPaint(0xFFFF, 1<<14); !ok || paint.color != fg {
+		t.Fatalf("the foreground index resolved to (%v, %v), want (%v, true)", paint.color, ok, fg)
+	}
+
+	one, three := render(t, good), render(t, good, good, good)
+	if slices.Equal(one, three) {
+		t.Fatal("one layer and three render alike; stacking is not observable and the case is vacuous")
+	}
+	if got := render(t, good, bad, good, good); !slices.Equal(got, three) {
+		t.Errorf("a bad second layer of four rendered %v, want the three good layers' %v", got, three)
+	}
+	if got := render(t, bad, good, good, good); !slices.Equal(got, three) {
+		t.Errorf("a bad first layer of four rendered %v, want the three good layers' %v", got, three)
+	}
+	if got := render(t, bad); !slices.Equal(got, make([]uint32, side*side)) {
+		t.Errorf("a lone bad layer rendered %v, want an untouched mask", got)
+	}
+
+	// The PaintGlyph fill fast path configures its paint the same way and takes the same skip: nothing is drawn, and
+	// the node still succeeds. It needs a real outline, so it runs against the conformance font.
+	tf := loadCOLRv1Typeface(t)
+	gid := tf.UnicharToGlyph(0xf0100)
+	if gid == 0 {
+		t.Fatal("U+F0100 not mapped")
+	}
+	const outOfRange = 0xFF00
+	if _, ok := tf.PaletteColor(outOfRange, fg); ok {
+		t.Fatalf("palette index %#x is in range for the conformance font; pick a higher one", outOfRange)
+	}
+	// The outline is in font units over the font's 0..1000 em square (with y negated into layer space), so the mask has
+	// to be big enough to hold it: 1/20 of the em square, offset so the negated y lands on the mask.
+	const emSide = 64
+	glyphCTM := geom.ScaleMatrix(1.0/20, 1.0/20)
+	glyphCTM.PostTranslate(0, emSide)
+	drawnInk := func(paletteIndex uint16) int {
+		pm := raster.NewPixmap(emSide, emSide)
+		w := newWalker(newColrV1Canvas(pm, emSide, emSide, glyphCTM), nil)
+		w.t = tf
+		if !w.traverse(tables.PaintGlyph{
+			GlyphID: gid,
+			Paint:   tables.PaintSolid{PaletteIndex: paletteIndex, Alpha: 1 << 14},
+		}) {
+			t.Fatalf("the PaintGlyph fast path failed for palette index %#x", paletteIndex)
+		}
+		ink := 0
+		for _, w := range pm.Pix {
+			if w != 0 {
+				ink++
+			}
+		}
+		return ink
+	}
+	if ink := drawnInk(0xFFFF); ink == 0 {
+		t.Fatal("the paintable PaintGlyph leaf drew nothing; the skip below proves nothing")
+	}
+	if ink := drawnInk(outOfRange); ink != 0 {
+		t.Errorf("the unpaintable PaintGlyph leaf drew %d pixels, want none", ink)
+	}
+}
+
+func TestCOLRv1BoundsAndDrawChargeTheSameGuards(t *testing.T) {
+	// The bounds pass treated PaintGlyph as a leaf while the draw pass descends into its paint, so the two reached
+	// different depths and node counts against the same caps. A graph the draw pass refuses then still measured at full
+	// size, and the strike cached whatever the draw pass had painted before it gave up. Both passes must charge the
+	// same budget for the same graph and reach the same verdict.
+	tf := loadCOLRv1Typeface(t)
+	gid := tf.UnicharToGlyph(0xf0100)
+	if gid == 0 {
+		t.Fatal("U+F0100 not mapped")
+	}
+	solid := tables.PaintSolid{PaletteIndex: 0xFFFF, Alpha: 1 << 14}
+	// A translate chain under the outline: nothing but PaintGlyph's own descent puts it inside the depth cap's reach.
+	nested := func(depth int) tables.PaintTable {
+		var p tables.PaintTable = solid
+		for range depth {
+			p = tables.PaintTranslate{Dx: 4000, Dy: 4000, Paint: p}
+		}
+		return tables.PaintGlyph{GlyphID: gid, Paint: p}
+	}
+	measure := func(paint tables.PaintTable) (geom.Rect, int, bool) {
+		var b geom.Rect
+		w := &colrV1Walker{c: &ScalerContext{}, t: tf, bounds: &b, visited: map[uint16]bool{}}
+		w.ctm.SetIdentity()
+		ok := w.traverse(paint)
+		return b, w.nodes, ok
+	}
+	draw := func(paint tables.PaintTable) (int, bool) {
+		const side = 8
+		cv := newColrV1Canvas(raster.NewPixmap(side, side), side, side, geom.IdentityMatrix())
+		w := &colrV1Walker{c: &ScalerContext{}, t: tf, canvas: cv, visited: map[uint16]bool{}}
+		ok := w.traverse(paint)
+		return w.nodes, ok
+	}
+	for _, c := range []struct {
+		paint tables.PaintTable
+		name  string
+		want  bool
+	}{
+		{name: "fill leaf", paint: tables.PaintGlyph{GlyphID: gid, Paint: solid}, want: true},
+		{name: "shallow subtree", paint: nested(4), want: true},
+		{name: "at the depth cap", paint: nested(colrV1MaxDepth - 3), want: true},
+		{name: "past the depth cap", paint: nested(colrV1MaxDepth)},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			_, boundsNodes, boundsOK := measure(c.paint)
+			drawNodes, drawOK := draw(c.paint)
+			if boundsOK != c.want || drawOK != c.want {
+				t.Errorf("bounds = %v, draw = %v, want both %v", boundsOK, drawOK, c.want)
+			}
+			if boundsNodes != drawNodes {
+				t.Errorf("the bounds pass charged %d nodes, the draw pass %d", boundsNodes, drawNodes)
+			}
+		})
+	}
+
+	// Walking the subtree must not widen the measurement: the draw pass clips everything under a PaintGlyph to its
+	// outline, so a nested PaintGlyph translated far outside it contributes nothing however far it moves.
+	leaf, _, _ := measure(tables.PaintGlyph{GlyphID: gid, Paint: solid})
+	if leaf.IsEmpty() {
+		t.Fatal("the outline measured empty; the comparisons below prove nothing")
+	}
+	clipped, _, _ := measure(tables.PaintGlyph{
+		GlyphID: gid,
+		Paint: tables.PaintTranslate{
+			Dx: 4000, Dy: 4000,
+			Paint: tables.PaintGlyph{GlyphID: gid, Paint: solid},
+		},
+	})
+	if clipped != leaf {
+		t.Errorf("a nested clipped PaintGlyph measured %v, want the clipping outline's %v", clipped, leaf)
+	}
+}
+
+func TestCOLRv1RefusedTraversalBlanksTheMask(t *testing.T) {
+	// A traversal refused by a guard gives up partway, with the layers ahead of the refusal already painted. Those must
+	// not survive into the strike: the metrics lane answers a ClipList-boxed glyph from its box without walking the
+	// graph at all, so it never learns the draw pass gave up, and the fragment would be cached under full-size bounds.
+	// Both glyphs below carry such a box. The node budget stands in for the guard — charging it up front reaches the
+	// refusal without a font crafted to trip one.
+	tf := loadCOLRv1Typeface(t)
+	for _, ch := range []rune{0xf0c00, 0xf0a03} {
+		t.Run(fmt.Sprintf("U+%X", ch), func(t *testing.T) {
+			gid := tf.UnicharToGlyph(ch)
+			if gid == 0 {
+				t.Fatalf("U+%X not mapped", ch)
+			}
+			if _, _, _, _, ok := colrClipBox(tf.colrTable(), gid); !ok {
+				t.Fatalf("U+%X has no ClipList box, so the metrics lane walks the graph and refuses with the draw "+
+					"pass; pick a boxed glyph", ch)
+			}
+			newWalk := func(spentNodes int) (*Glyph, *colrV1Walker) {
+				identity := geom.IdentityMatrix()
+				spec := MakeMaskSpec(NewFont(tf, 50, 1, 0), nil, &identity, nil)
+				c := NewScalerContext(spec.Typeface, spec.Rec, spec.Effects)
+				g := c.makeGlyph(PackGlyphID(gid))
+				if g.ImageSize() == 0 {
+					t.Fatalf("U+%X: empty glyph", ch)
+				}
+				allocGlyphImage(g)
+				pm := g.Pixmap()
+				return g, &colrV1Walker{
+					c: c, t: tf, colr: tf.colrTable(), visited: map[uint16]bool{},
+					canvas: newColrV1Canvas(&pm, g.Width, g.Height, c.maskLocalTranslate(g)),
+					nodes:  spentNodes,
+				}
+			}
+			g, w := newWalk(0)
+			if !w.startGlyph(gid, true) {
+				t.Fatalf("U+%X: the graph does not traverse with a fresh budget", ch)
+			}
+			total := w.nodes
+			if analyzeGlyphInk(g).count == 0 {
+				t.Fatalf("U+%X drew nothing at all; the refusals below prove nothing", ch)
+			}
+
+			// Which budgets refuse the graph *after* it has painted: those are the ones where blanking is the whole
+			// difference between caching a fragment and caching nothing. Discovering them beats pinning a constant, so
+			// the test keeps its meaning if the conformance font's graph changes shape.
+			var midPaint []int
+			for k := 1; k <= total+1; k++ {
+				partial, pw := newWalk(colrV1MaxNodes - k)
+				if !pw.startGlyph(gid, true) && analyzeGlyphInk(partial).count != 0 {
+					midPaint = append(midPaint, colrV1MaxNodes-k)
+				}
+			}
+			if len(midPaint) == 0 {
+				t.Fatalf("U+%X: no budget refuses the %d-node graph mid-paint; the case is vacuous", ch, total)
+			}
+			for _, spent := range midPaint {
+				refused, rw := newWalk(spent)
+				rw.renderTo(refused)
+				if ink := analyzeGlyphInk(refused).count; ink != 0 {
+					t.Errorf("U+%X with %d of %d nodes already spent: a refused traversal left %d ink pixels, "+
+						"want a blank mask", ch, spent, colrV1MaxNodes, ink)
+				}
+			}
+		})
+	}
+}
+
 func TestCOLRv1BlendModeMapping(t *testing.T) {
 	// ToSkBlendMode's table, all 28 modes.
 	want := map[tables.CompositeMode]raster.BlendMode{
@@ -746,6 +978,13 @@ func colrSolidRecord() []byte {
 	rec := []byte{2}                                 // format
 	rec = binary.BigEndian.AppendUint16(rec, 0xFFFF) // palette index (foreground)
 	return binary.BigEndian.AppendUint16(rec, 1<<14) // alpha 1.0
+}
+
+// colrSolidRecordAt is colrSolidRecord with an explicit palette index. 0xFFFF is the foreground, which resolves against
+// any face; every other index reads CPAL, so any of them is out of range for a face with no palette at all.
+func colrSolidRecordAt(paletteIndex uint16) []byte {
+	rec := binary.BigEndian.AppendUint16([]byte{2}, paletteIndex)
+	return binary.BigEndian.AppendUint16(rec, 1<<14)
 }
 
 // colrLayersRecord is a PaintColrLayers (format 1) naming the LayerList range [first, first+num).

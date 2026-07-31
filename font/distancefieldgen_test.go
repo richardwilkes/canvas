@@ -14,6 +14,7 @@
 package font
 
 import (
+	"math"
 	"testing"
 
 	"github.com/richardwilkes/canvas/geom"
@@ -102,6 +103,77 @@ func TestGenerateDistanceFieldSolidSquare(t *testing.T) {
 	edgeOutside := at(DistanceFieldPad-1, dfW/2)
 	if edgeInside < 128 || edgeOutside > 128 {
 		t.Errorf("threshold not at the boundary: inside=%d outside=%d", edgeInside, edgeOutside)
+	}
+}
+
+// TestSetLengthFastIsExactlyNormalized pins the precision setLengthFast returns at. The name is upstream Skia's, where
+// the scale is a fast inverse-square-root approximation, and the invitation to substitute one back is standing — but a
+// single Newton step carries a relative error around 1.8e-3, and the seeded edge distances that error moves are enough
+// to shift ~1.5% of a generated field's texels and every SDFT golden with them. Requiring the result within a few
+// float32 ulps of the requested length is four orders of magnitude tighter than any such approximation can reach, so
+// the substitution cannot be made without this failing.
+func TestSetLengthFastIsExactlyNormalized(t *testing.T) {
+	const eps = 1.1920929e-7 // float32 epsilon
+	// Gradient-shaped vectors: initDistances only ever asks for length 1, over sums of neighboring alpha differences.
+	for _, p := range []geom.Point{
+		geom.Pt(1, 0), geom.Pt(0, -1), geom.Pt(1, 1), geom.Pt(-3, 4), geom.Pt(0.001, -0.002),
+		geom.Pt(1e-6, 1e-6), geom.Pt(1e6, -1e6), geom.Pt(sqrt2, sqrt2), geom.Pt(0.5, -1.75),
+	} {
+		for _, length := range []float32{1, 0.25, 7} {
+			got := setLengthFast(p, length)
+			// math.Hypot in float64 is exact enough to measure a float32 result against.
+			gotLen := float32(math.Hypot(float64(got.X), float64(got.Y)))
+			if d := absF32(gotLen - length); d > 4*eps*length {
+				t.Errorf("setLengthFast(%v, %v) = %v, |%v| = %v: off by %v (%.1f ulps), want within 4 ulps",
+					p, length, got, got, gotLen, d, float64(d)/float64(eps*length))
+			}
+		}
+	}
+	// The degenerate lanes return the zero vector rather than a NaN or an infinity.
+	for _, p := range []geom.Point{
+		geom.Pt(0, 0),
+		geom.Pt(float32(math.Inf(1)), 0),
+		geom.Pt(float32(math.NaN()), 1),
+		geom.Pt(1e30, 1e30), // the squared magnitude overflows float32
+	} {
+		if got := setLengthFast(p, 1); got != (geom.Point{}) {
+			t.Errorf("setLengthFast(%v, 1) = %v, want the zero point", p, got)
+		}
+	}
+}
+
+// TestDistanceFieldOuterBandIsSaturated pins the margin the backward-in-y start's comment rests on. Upstream Skia's
+// shifted start denies the rightmost interior column of every row its backward propagation, and the texels the two
+// starts disagree about land in the field's outer band — inside the region DistanceFieldInset trims as well as outside
+// it. What keeps that invisible in a rendered glyph is not the trim but this margin: those texels already sit whole
+// texels away from the zero crossing, far outside the smoothstep band the shader reads around DistanceFieldThreshold.
+func TestDistanceFieldOuterBandIsSaturated(t *testing.T) {
+	const size = 8
+	df, dfW := solidSquareField(size)
+	// Invert the packing: zero distance is at 128 and the byte range spans 2*DistanceFieldMagnitude texels.
+	distanceAt := func(x, y int) float32 {
+		return DistanceFieldMagnitude - float32(df[y*dfW+x])*(2*DistanceFieldMagnitude)/256
+	}
+	const wantMargin = 2 // texels; the shader's smoothstep band spans well under one
+	nonClamped := 0
+	for y := range dfW {
+		for x := range dfW {
+			if x >= 2 && x < dfW-2 && y >= 2 && y < dfW-2 {
+				continue // not the outer band
+			}
+			if d := distanceAt(x, y); d < wantMargin {
+				t.Errorf("outer-band texel (%d,%d) is %v texels outside, want at least %v", x, y, d, wantMargin)
+			}
+			if df[y*dfW+x] != 0 {
+				nonClamped++
+			}
+		}
+	}
+	// Non-vacuity: the band must carry real propagated distances, not a uniform clamp. A band that were entirely
+	// clamped would satisfy the margin above — and would make the mirror-invariance test blind exactly where the
+	// backward-pass window matters.
+	if nonClamped == 0 {
+		t.Error("the outer band is entirely clamped; it exercises no propagation at all")
 	}
 }
 

@@ -162,9 +162,13 @@ func edgeDistance(direction geom.Point, alpha float32) float32 {
 func absF32(v float32) float32  { return math.Float32frombits(math.Float32bits(v) &^ (1 << 31)) }
 func sqrtF32(v float32) float32 { return float32(math.Sqrt(float64(v))) }
 
-// setLengthFast scales p to the given length, computed via an ordinary sqrt round trip (the precision this needs is
-// loose enough that the comparisons elsewhere in this file cannot tell the difference from a fast inverse-square-root
-// approximation).
+// setLengthFast scales p to the given length. The name is upstream Skia's, where the scale really is a fast
+// inverse-square-root approximation; here it is an ordinary sqrt round trip, and the two are *not* interchangeable
+// despite how loose the precision downstream looks. One Newton step of the classic approximation carries a relative
+// error around 1.8e-3 — four orders of magnitude past the ~1 ulp this returns — and that is enough to move the seeded
+// edge distance across a packing boundary: substituting it changes ~1.5% of the texels of the generated field, by up to
+// 1/255, over 200 random A8 masks. Every SDFT golden moves with them. TestSetLengthFastIsExactlyNormalized pins the
+// precision so the substitution cannot be made silently.
 func setLengthFast(p geom.Point, length float32) geom.Point {
 	mag2 := p.X*p.X + p.Y*p.Y
 	if !(mag2 > 0) || math.IsInf(float64(mag2), 0) {
@@ -406,10 +410,18 @@ func generateDistanceFieldFromImage(distanceField, paddedImage []uint8, width, h
 	}
 
 	// Backwards in y. The start is the first interior texel of the last interior row — (dataHeight-2, 1) — mirroring
-	// the forward pass's (1, 1). (Upstream Skia starts two texels earlier, at (dataHeight-3, dataWidth-1), which shifts
-	// every row's window two columns left: the two rightmost columns of each row never get backward propagation and
-	// column 0's b1 reads the previous row's last column. That asymmetry is invisible in a rendered glyph only because
-	// DistanceFieldInset trims the affected padding, so it is fixed here rather than ported.)
+	// the forward pass's (1, 1), so the four passes between them cover every direction over the same window and the
+	// field commutes with a mirror of its input (TestGenerateDistanceFieldMirrorInvariance).
+	//
+	// Upstream Skia starts two texels earlier, at (dataHeight-3, dataWidth-1), which shifts every row's window two
+	// columns left: the rightmost interior column of each row never gets backward propagation, and column 0's b1 reads
+	// the previous row's last column. That divergence is not confined to the padding DistanceFieldInset trims, as one
+	// might expect — over 300 masks the two starts also differ *inside* the inset region, by up to 3/255. What makes it
+	// invisible in a rendered glyph is where those texels sit rather than whether they are trimmed: they are ~3.9 texels
+	// from the glyph against a DistanceFieldMagnitude of 4, so they are pinned at the far end of the packed range and
+	// nowhere near the smoothstep band the shader reads around the zero crossing (TestDistanceFieldOuterBandIsSaturated
+	// pins that margin). Mirroring the passes costs nothing and does not need the argument at all, so the start is fixed
+	// here rather than ported.
 	curr = dataWidth*(dataHeight-2) + 1 // skip the outer buffer
 	e = dataWidth*(dataHeight-2) + 1
 	for j := 1; j < dataHeight-1; j++ {

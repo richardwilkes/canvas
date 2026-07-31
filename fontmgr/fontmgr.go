@@ -85,12 +85,24 @@ type faceRec struct {
 	infoOnce sync.Once
 	tfOnce   sync.Once
 
-	// The single-entry memo behind covers: the most recently probed rune and its verdict.
+	// The bounded memo behind covers: the last coverMemoSize distinct runes probed, and their verdicts. coverLen is how
+	// many entries are live (so rune 0 is a value like any other) and coverNext is the slot the next distinct rune
+	// overwrites, round-robin.
 	coverMu    sync.Mutex
-	coverRune  rune
-	coverVal   bool
-	coverKnown bool
+	coverRunes [coverMemoSize]rune
+	coverVals  [coverMemoSize]bool
+	coverLen   int
+	coverNext  int
 }
+
+// coverMemoSize is how many distinct runes one face remembers its cmap verdict for. Each probe is a file open and a
+// cmap parse, and a fallback scan asks every claiming face about the same rune several times over — once per tier, and
+// again per BCP-47 tag — so remembering only the rune in flight, which is what a single-entry memo does, still costs
+// the whole inventory a fresh parse for every *distinct* character a run falls back on. Sixteen covers the interleaving
+// a real run produces (a document mixes a handful of uncovered characters, not hundreds) at a fixed 96 bytes per face,
+// allocated with the record and never grown — which is what rules out a map with an eviction policy here: the memo has
+// to stay negligible beside the footprint data it sits in, and a system inventory holds thousands of these.
+const coverMemoSize = 16
 
 // faceInfo returns the lazily-loaded lightweight description (family/style names + style).
 func (f *faceRec) faceInfo() (font.FaceInfo, bool) {
@@ -145,23 +157,31 @@ func (f *faceRec) claims(r rune) bool {
 // through typeface() made one MatchFamilyStyleCharacter call retain a large fraction of the system inventory. Only the
 // answering candidate is loaded now.
 //
-// The answer is memoized for the most recently probed rune, which is all the scans need: a face reached through the
-// default-family tier is re-probed by the all-visible-families tier, a face in a BCP-47 restricted set is re-probed by
-// the unrestricted scan, and a run of text falls back for the same character repeatedly. Nothing but the one rune and
-// its verdict is retained.
+// The answer is memoized for the last coverMemoSize distinct runes, which is what the scans re-ask: a face reached
+// through the default-family tier is re-probed by the all-visible-families tier, a face in a BCP-47 restricted set is
+// re-probed by the unrestricted scan, and a run of text falls back over the same handful of characters again and again,
+// interleaved. Nothing but those runes and their verdicts is retained (see coverMemoSize).
 func (f *faceRec) covers(r rune) bool {
 	f.coverMu.Lock()
 	defer f.coverMu.Unlock()
-	if !f.coverKnown || f.coverRune != r {
-		f.coverRune = r
-		f.coverKnown = true
-		if f.path != "" {
-			f.coverVal = font.FaceCoversRuneFile(f.path, f.index, r)
-		} else {
-			f.coverVal = font.FaceCoversRuneData(f.data, f.index, r)
+	for i := range f.coverLen {
+		if f.coverRunes[i] == r {
+			return f.coverVals[i]
 		}
 	}
-	return f.coverVal
+	var val bool
+	if f.path != "" {
+		val = font.FaceCoversRuneFile(f.path, f.index, r)
+	} else {
+		val = font.FaceCoversRuneData(f.data, f.index, r)
+	}
+	f.coverRunes[f.coverNext] = r
+	f.coverVals[f.coverNext] = val
+	f.coverNext = (f.coverNext + 1) % coverMemoSize
+	if f.coverLen < coverMemoSize {
+		f.coverLen++
+	}
+	return val
 }
 
 // typeface loads (and caches) the full typeface for this face; nil if the file no longer parses.
@@ -375,9 +395,14 @@ func cacheDirWritable(dir string) bool {
 // face carrying no family name, is skipped; the result is never nil, and is empty when nothing usable was supplied.
 //
 // Two things differ from a scanned face. Rune coverage is read from each face's own cmap here, so it holds exactly the
-// characters the face really maps rather than the scan footprints' over-claim (see matchCovering). Language coverage is
-// left empty — fontscan derives its language sets while indexing, from data this package cannot reach — so a BCP-47
-// hint never restricts a candidate set to these faces, though the unrestricted scan still reaches all of them.
+// code points that cmap maps to a real glyph, where a scan footprint also counts the entries that map to .notdef. That
+// removes the over-claim, not the under-claim: both sets are built by iterating the raw subtable, so neither can see
+// the mappings go-text's remapping wrappers add on top of it, and a symbol-encoded face's set therefore holds
+// U+F020–U+F0FF and nothing below it while the face really does resolve U+0020–U+00FF through that page. The candidate
+// filter widens for exactly that (see faceRec.claims); the set is a filter in front of the cmap probe, never the last
+// word on what a face covers. Language coverage is left empty — fontscan derives its language sets while indexing, from
+// data this package cannot reach — so a BCP-47 hint never restricts a candidate set to these faces, though the
+// unrestricted scan still reaches all of them.
 //
 // The blobs are retained for the life of the manager (each face parses lazily out of its own blob, as a scanned face
 // re-reads its file) and must not be modified afterwards.
@@ -633,18 +658,22 @@ func (m *Manager) defaultFamilyTiers(candidates []*faceRec) [][]*faceRec {
 // style (no I/O — used for the cross-family fallback scans) over the exact table-read style (used within a single
 // family).
 //
-// The footprint rune sets overcount: go-text's scanner counts cmap entries that map to glyph 0 (fontforge-built fonts
-// commonly carry U+0000 and U+FFFF segments mapping to .notdef — ubuntu's DejaVuSans-ExtraLight does), and no host
-// treats a .notdef mapping as coverage: FreeType's charcode iteration skips glyph-0 entries, so fontconfig charsets
-// never contain them, and the CoreText/DirectWrite cmap lookups yield the missing glyph. The face's own cmap is
-// therefore the final word — a ranked candidate only answers when it really maps r. That verdict comes from faceRec's
+// A recorded rune set is approximate in both directions, so it decides nothing on its own.
+//
+// It overcounts: go-text's scanner counts cmap entries that map to glyph 0 (fontforge-built fonts commonly carry
+// U+0000 and U+FFFF segments mapping to .notdef — ubuntu's DejaVuSans-ExtraLight does), and no host treats a .notdef
+// mapping as coverage: FreeType's charcode iteration skips glyph-0 entries, so fontconfig charsets never contain them,
+// and the CoreText/DirectWrite cmap lookups yield the missing glyph. So for a candidate the set does put forward, the
+// face's own cmap is the final word — it only answers when it really maps r. That verdict comes from faceRec's
 // cmap-only probe (covers), so the walk loads a typeface only for the candidate that is about to be returned; a
 // character that many footprints claim and few really map used to load, and permanently cache, one full font per
 // rejection.
 //
-// They also undercount, for the remapped cmaps a set built by raw iteration cannot describe, so the candidate filter is
-// faceRec.claims rather than the set membership itself: the set may only put a face in front of covers, never keep it
-// out of a rescue the resolvers would perform.
+// It also undercounts, for the remapped cmaps a set built by raw iteration cannot describe (a symbol-encoded face maps
+// 'a' through its U+F061 entry, and holds nothing at 'a' at all). A set that only overcounted would make membership a
+// sound filter; one that undercounts too would let it veto faces the resolvers would rescue, before covers is ever
+// asked. So the filter is faceRec.claims rather than membership itself: claims widens the question by the remap, and
+// the set may then only put a face in front of covers, never keep it out.
 func matchCovering(faces []*faceRec, pattern font.Style, r rune, approx bool) *font.Typeface {
 	var covering []*faceRec
 	for _, f := range faces {

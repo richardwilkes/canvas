@@ -14,6 +14,8 @@
 package fontmgr
 
 import (
+	"sort"
+
 	tsfont "github.com/go-text/typesetting/font"
 	"github.com/richardwilkes/canvas/font"
 )
@@ -151,31 +153,44 @@ func pinStyle(s font.Style) font.Style { return font.NewStyle(s.Weight(), s.Widt
 // MatchStyle and matchCovering both walk it, so an unloadable face falls through to the next-best style rather than
 // failing the match.
 //
-// The walk selects partially: the scores are computed once, then each step extracts the maximum of the candidates not
-// yet visited, so the common case — the best-scoring face loads and answers — costs two linear passes instead of a
-// full ordering. That matters on the cross-family fallback path, where the candidate set is every face covering the
-// character rather than one family's faces: matchCoveringTiered calls matchCovering once per tier and
-// MatchFamilyStyleCharacter calls matchCoveringTiered once per BCP-47 tag, over a set that a full Noto install pushes
-// into the thousands. Upstream Skia's matchStyleCSS3 is a single max scan with no fallthrough at all.
+// Ordering is deferred, not skipped: the scores are computed once and only the maximum is extracted, so the common
+// case — the best-scoring face loads and answers — costs two linear passes and no sort at all. The rest is ordered
+// only if that first candidate is turned down, and by a stable sort rather than by repeated max extraction, which is
+// what the walk used to do: that made a fully-rejected walk quadratic, and the fully-rejected walk is not the rare case
+// it sounds like. It is what a character *nothing* covers costs, on every tier of every BCP-47 tag —
+// matchCoveringTiered calls matchCovering once per tier and MatchFamilyStyleCharacter calls matchCoveringTiered once
+// per tag — over a candidate set that a full Noto install pushes into the thousands. Upstream Skia's matchStyleCSS3 is
+// a single max scan with no fallthrough at all.
 func selectStyleCSS3(pattern font.Style, count int, styleAt func(int) font.Style, accept func(int) bool) bool {
 	if count == 0 {
 		return false
 	}
 	pattern = pinStyle(pattern)
 	scores := make([]int, count)
+	best := 0
 	for i := range count {
 		scores[i] = css3Score(pattern, styleAt(i))
-	}
-	visited := make([]bool, count)
-	for range count {
-		best := -1
-		for i := range count {
-			if !visited[i] && (best == -1 || scores[i] > scores[best]) {
-				best = i
-			}
+		if scores[i] > scores[best] { // strictly greater, so the first of a tie stays the best
+			best = i
 		}
-		visited[best] = true
-		if accept(best) {
+	}
+	if accept(best) {
+		return true
+	}
+	if count == 1 {
+		return false
+	}
+	rest := make([]int, 0, count-1)
+	for i := range count {
+		if i != best {
+			rest = append(rest, i)
+		}
+	}
+	// The stable sort over an index-ordered slice reproduces repeated max extraction exactly: descending by score, ties
+	// in index order.
+	sort.SliceStable(rest, func(a, b int) bool { return scores[rest[a]] > scores[rest[b]] })
+	for _, i := range rest {
+		if accept(i) {
 			return true
 		}
 	}

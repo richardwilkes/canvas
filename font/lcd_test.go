@@ -207,11 +207,53 @@ func TestMaskGammaLUT(t *testing.T) {
 	}
 	// preBlend keys on the top 3 bits of each channel.
 	pb := getMaskPreBlend(colorcore.RGB(0xFF, 0x00, 0x91))
-	if !pb.isApplicable() {
-		t.Fatal("preblend not applicable")
-	}
 	if pb.r != &maskGammaTables[7] || pb.g != &maskGammaTables[0] || pb.b != &maskGammaTables[4] {
 		t.Error("preblend selected wrong tables")
+	}
+}
+
+// TestScalerContextPreBlendGate pins the applicability gate, which is NewScalerContext's and not getMaskPreBlend's:
+// getMaskPreBlend returns a row of maskGammaTables for all three channels whatever color it is handed, so its result is
+// applicable by construction and asserting that of it can never fail. The gate that can is the one deciding whether a
+// pre-blend is built at all — an LCD16 rec with no mask filter — and only its *false* halves are worth an assertion,
+// since a context that skipped the pre-blend by mistake would blend LCD text in the sRGB-encoded domain and a context
+// that built one where the lane cannot use it (filtered text, or a non-LCD glyph plane) would apply the correction
+// twice or to the wrong plane.
+func TestScalerContextPreBlendGate(t *testing.T) {
+	maskGammaOnce.Do(maskGammaInit)
+	tf := lcdTestFont(t, 24).Typeface()
+	blur := maskfilter.NewBlur(maskfilter.BlurNormal, 2, true)
+	lcd := ScalerRec{Format: MaskLCD16, LumBits: colorcore.RGB(0xFF, 0x00, 0x91)}
+	for _, c := range []struct {
+		effects ScalerEffects
+		name    string
+		rec     ScalerRec
+		want    bool
+	}{
+		{name: "LCD16, no filter", rec: lcd, want: true},
+		// A mask filter: the pre-blend is not applied to filtered text, so the context must not carry one even though
+		// the rec is still LCD16 (the rec's format is what the filtered lane starts from).
+		{name: "LCD16, mask filter", rec: lcd, effects: ScalerEffects{MaskFilter: blur}},
+		// A non-LCD rec: LumBits is only meaningful for LCD16, and every other format's plane is linear coverage.
+		{name: "A8", rec: ScalerRec{Format: MaskA8, LumBits: lcd.LumBits}},
+		{name: "SDF", rec: ScalerRec{Format: MaskSDF, LumBits: lcd.LumBits}},
+		{name: "ARGB32", rec: ScalerRec{Format: MaskARGB32, LumBits: lcd.LumBits}},
+		{
+			name: "A8 with a mask filter", rec: ScalerRec{Format: MaskA8, LumBits: lcd.LumBits},
+			effects: ScalerEffects{MaskFilter: blur},
+		},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if got := NewScalerContext(tf, c.rec, c.effects).preBlend.isApplicable(); got != c.want {
+				t.Errorf("pre-blend applicable = %v, want %v", got, c.want)
+			}
+		})
+	}
+	// The applicable one really is the table row the luminance color selects, so the gate lets the whole pre-blend
+	// through rather than a zeroed stand-in that merely answers true.
+	pb := NewScalerContext(tf, lcd, ScalerEffects{}).preBlend
+	if want := getMaskPreBlend(lcd.LumBits); pb != want {
+		t.Errorf("pre-blend = %+v, want the rows getMaskPreBlend picks for the rec's luminance color (%+v)", pb, want)
 	}
 }
 
@@ -498,15 +540,19 @@ func TestLCDGlyphImageLane(t *testing.T) {
 	if whiteStrike == lcdStrike {
 		t.Fatal("white and black LCD strikes should differ (LumBits in the key)")
 	}
-	whiteGlyph, _ := whiteStrike.DigestFor(ActionDirectMaskCPU, PackGlyphID(gid))
-	same := true
-	for i := range whiteGlyph.Image16 {
-		if whiteGlyph.Image16[i] != lcdGlyph.Image16[i] {
-			same = false
-			break
-		}
+	whiteGlyph, whiteAction := whiteStrike.DigestFor(ActionDirectMaskCPU, PackGlyphID(gid))
+	if whiteAction != GlyphActionAccept {
+		t.Fatalf("white LCD glyph action = %d, want accept", whiteAction)
 	}
-	if same {
+	// The two strikes differ only in the luminance color the pre-blend keys on, so their masks must have identical
+	// geometry. Checking that first is what keeps a bounds divergence a report: walking one mask while indexing the
+	// other would turn it into an index-out-of-range panic inside the test instead.
+	if whiteGlyph.IRect() != lcdGlyph.IRect() || len(whiteGlyph.Image16) != len(lcdGlyph.Image16) {
+		t.Fatalf("white mask %v (%d words) and black mask %v (%d words) differ in geometry; only the pre-blend "+
+			"separates the two strikes", whiteGlyph.IRect(), len(whiteGlyph.Image16), lcdGlyph.IRect(),
+			len(lcdGlyph.Image16))
+	}
+	if slices.Equal(whiteGlyph.Image16, lcdGlyph.Image16) {
 		t.Error("white and black pre-blends produced identical LCD masks")
 	}
 

@@ -25,7 +25,6 @@ import (
 	"image/jpeg"
 	"image/png"
 	"os"
-	"runtime"
 	"slices"
 	"testing"
 
@@ -53,8 +52,22 @@ func loadColorTypeface(t *testing.T, name string) *Typeface {
 	return tf
 }
 
-// smileyGlyph resolves U+1F600's glyph through a mask strike at the given size, preparing the image.
+// smileyGlyph resolves U+1F600's glyph through a mask strike at the given size, preparing the image. The strike comes
+// from the process-wide cache, so the returned glyph is only good for its contents: see smileyGlyphIn for the cases
+// that compare glyph pointers.
 func smileyGlyph(t *testing.T, tf *Typeface, size float32, paint *ScalerPaint) (*Glyph, GlyphAction) {
+	t.Helper()
+	return smileyGlyphIn(t, GlobalStrikeCache(), tf, size, paint)
+}
+
+// smileyGlyphIn is smileyGlyph against a caller-supplied strike cache. Every case asserting *pointer identity* of two
+// glyphs has to use one of its own: the process-wide cache is shared by the whole package (this file alone leaves a few
+// hundred KB in its 2 MiB budget) and is never purged, so a later mask-heavy test pushing it over budget would let
+// FindOrCreateStrike's purge evict the first of two strikes between the two calls and turn a stable identity check into
+// an intermittent failure of a test that has nothing to do with the eviction.
+func smileyGlyphIn(t *testing.T, cache *StrikeCache, tf *Typeface, size float32,
+	paint *ScalerPaint,
+) (*Glyph, GlyphAction) {
 	t.Helper()
 	gid := tf.UnicharToGlyph(smiley)
 	if gid == 0 {
@@ -63,8 +76,7 @@ func smileyGlyph(t *testing.T, tf *Typeface, size float32, paint *ScalerPaint) (
 	f := NewFont(tf, size, 1, 0)
 	identity := geom.IdentityMatrix()
 	spec := MakeMaskSpec(f, paint, &identity, nil)
-	strike := spec.FindOrCreateStrike()
-	return strike.DigestFor(ActionDirectMaskCPU, PackGlyphID(gid))
+	return cache.FindOrCreateStrike(&spec).DigestFor(ActionDirectMaskCPU, PackGlyphID(gid))
 }
 
 // faceCenterWord is the premultiplied device word for the opaque face color (255, 204, 0).
@@ -441,51 +453,65 @@ func TestCOLRv0ForegroundColor(t *testing.T) {
 	}
 
 	// The foreground color is part of the strike key for COLR faces: black-paint and red-paint strikes must differ, and
-	// their glyphs must differ.
-	gBlack, _ := smileyGlyph(t, tf, 50, nil)
-	if gBlack == g {
+	// their glyphs must differ. Both of these are pointer comparisons, so they run against a cache of their own — see
+	// smileyGlyphIn.
+	cache := NewStrikeCache()
+	gRed, _ := smileyGlyphIn(t, cache, tf, 50, paint)
+	gBlack, _ := smileyGlyphIn(t, cache, tf, 50, nil)
+	if gBlack == gRed {
 		t.Error("different foreground colors must resolve different strikes")
 	}
 
 	// A non-COLR face must not fragment strikes by color.
 	sbix := loadColorTypeface(t, "sbix.ttf")
-	g1, _ := smileyGlyph(t, sbix, 50, paint)
-	g2, _ := smileyGlyph(t, sbix, 50, nil)
+	g1, _ := smileyGlyphIn(t, cache, sbix, 50, paint)
+	g2, _ := smileyGlyphIn(t, cache, sbix, 50, nil)
 	if g1 != g2 {
 		t.Error("sbix strikes must not key on the paint color")
 	}
+	// Non-vacuity: both strikes are still in the cache, so the identity above is the key's doing and not an eviction's.
+	if got := cache.StrikeCount(); got != 3 {
+		t.Errorf("the local cache holds %d strikes, want 3 (two COLR, one sbix); an eviction would decide these "+
+			"comparisons instead of the strike key", got)
+	}
 }
 
+// TestBitmapGlyphMetrics covers the two bitmap strike formats. Each font is its own subtest and everything after the
+// action and format checks reports rather than aborts, so a regression in one format cannot hide a simultaneous one in
+// the other: run as a single loop with t.Fatalf throughout, an sbix bounds regression stopped the loop before cbdt was
+// ever asked, and the CBDT failure only surfaced once the sbix one was fixed.
 func TestBitmapGlyphMetrics(t *testing.T) {
 	for _, name := range []string{"sbix.ttf", "cbdt.ttf"} {
-		tf := loadColorTypeface(t, name)
-		g, action := smileyGlyph(t, tf, 64, nil)
-		if action != GlyphActionAccept {
-			t.Fatalf("%s: action %v", name, action)
-		}
-		if g.Format != MaskARGB32 {
-			t.Fatalf("%s: format %v, want ARGB32", name, g.Format)
-		}
-		// The 64-ppem strike is 52x52 px with extents 812.5 font units square: at size 64 the device bounds are exactly
-		// [0, -52, 52, 0].
-		want := geom.IRectLTRB(0, -52, 52, 0)
-		if g.IRect() != want {
-			t.Errorf("%s: bounds %v, want %v", name, g.IRect(), want)
-		}
-		if g.AdvanceX != 51.2 {
-			t.Errorf("%s: advance %v, want 51.2", name, g.AdvanceX)
-		}
-		if g.Path() != nil {
-			t.Errorf("%s: bitmap glyph must have no path", name)
-		}
-		// Path drawing rejects color glyphs, so huge-text draws fall back to the mask stages.
-		f := NewFont(tf, 64, 1, 0)
-		spec, _ := MakePathSpec(f, nil)
-		strike := spec.FindOrCreateStrike()
-		_, pathAction := strike.DigestFor(ActionPath, PackGlyphID(tf.UnicharToGlyph(smiley)))
-		if pathAction != GlyphActionReject {
-			t.Errorf("%s: path action %v, want reject", name, pathAction)
-		}
+		t.Run(name, func(t *testing.T) {
+			tf := loadColorTypeface(t, name)
+			g, action := smileyGlyph(t, tf, 64, nil)
+			if action != GlyphActionAccept {
+				t.Fatalf("action %v", action)
+			}
+			if g.Format != MaskARGB32 {
+				t.Fatalf("format %v, want ARGB32", g.Format)
+			}
+			// The 64-ppem strike is 52x52 px with extents 812.5 font units square: at size 64 the device bounds are
+			// exactly [0, -52, 52, 0].
+			want := geom.IRectLTRB(0, -52, 52, 0)
+			if g.IRect() != want {
+				t.Errorf("bounds %v, want %v", g.IRect(), want)
+			}
+			if g.AdvanceX != 51.2 {
+				t.Errorf("advance %v, want 51.2", g.AdvanceX)
+			}
+			if g.Path() != nil {
+				t.Error("bitmap glyph must have no path")
+			}
+			// Path drawing rejects color glyphs, so huge-text draws fall back to the mask stages.
+			f := NewFont(tf, 64, 1, 0)
+			spec, _ := MakePathSpec(f, nil)
+			strike := spec.FindOrCreateStrike()
+			_, pathAction := strike.DigestFor(ActionPath, PackGlyphID(tf.UnicharToGlyph(smiley)))
+			if pathAction != GlyphActionReject {
+				t.Errorf("path action %v, want reject", pathAction)
+			}
+		})
 	}
 }
 
@@ -658,6 +684,8 @@ func TestEmbeddedBitmapsFlagDoesNotGateTheBitmapLane(t *testing.T) {
 			if gid == 0 {
 				t.Fatal("U+1F600 not mapped")
 			}
+			// The two lookups are compared by pointer, so they run against a cache of their own (see smileyGlyphIn).
+			cache := NewStrikeCache()
 			glyphs := make([]*Glyph, 2)
 			for i, on := range []bool{false, true} {
 				f := NewFont(tf, 64, 1, 0)
@@ -667,7 +695,7 @@ func TestEmbeddedBitmapsFlagDoesNotGateTheBitmapLane(t *testing.T) {
 				}
 				identity := geom.IdentityMatrix()
 				spec := MakeMaskSpec(f, nil, &identity, nil)
-				g, action := spec.FindOrCreateStrike().DigestFor(ActionDirectMaskCPU, PackGlyphID(gid))
+				g, action := cache.FindOrCreateStrike(&spec).DigestFor(ActionDirectMaskCPU, PackGlyphID(gid))
 				if action != GlyphActionAccept {
 					t.Fatalf("embeddedBitmaps=%v: action %v", on, action)
 				}
@@ -686,6 +714,11 @@ func TestEmbeddedBitmapsFlagDoesNotGateTheBitmapLane(t *testing.T) {
 			// The flag is out of the rec, so both requests land on the same strike and the same glyph.
 			if glyphs[0] != glyphs[1] {
 				t.Error("the embeddedBitmaps request must not fragment strikes")
+			}
+			// Non-vacuity: the one strike is still cached, so the identity above is the rec's doing rather than an
+			// eviction having handed back a freshly built strike that happens to compare equal.
+			if got := cache.StrikeCount(); got != 1 {
+				t.Errorf("the local cache holds %d strikes, want 1", got)
 			}
 		})
 	}
@@ -863,6 +896,10 @@ func TestDecodePremulPNGValidatesStrikeDimensions(t *testing.T) {
 
 	// The allocation guard itself: a few-hundred-byte strike claiming a size at the mask ceiling must cost nothing.
 	// Unguarded, png.Decode reaches for maxGlyphWidth*maxGlyphHeight*4 (256MB) here, and 65535x65535 would be ~17GB.
+	// What makes the refusal free is that it happens in strikeDimensionsUsable, from the metrics alone — no reader, no
+	// header parse, nothing allocated — so that is what is asserted, rather than a runtime.MemStats delta: MemStats
+	// counts every goroutine's allocations over the interval, so a background allocation of a megabyte would fail this
+	// case for reasons that have nothing to do with the strike.
 	huge := craftedPNG(t, maxGlyphWidth, maxGlyphHeight)
 	if len(huge) > 1024 {
 		t.Fatalf("the crafted strike is %d bytes; it is meant to be tiny", len(huge))
@@ -871,14 +908,36 @@ func TestDecodePremulPNGValidatesStrikeDimensions(t *testing.T) {
 	if err != nil || int32(cfg.Width) != int32(maxGlyphWidth) || int32(cfg.Height) != int32(maxGlyphHeight) {
 		t.Fatalf("crafted header did not parse at the mask ceiling: %v %v", cfg, err)
 	}
-	var before, after runtime.MemStats
-	runtime.ReadMemStats(&before)
+	if strikeDimensionsUsable(maxGlyphWidth, maxGlyphHeight) {
+		t.Error("a strike at the mask ceiling passed the dimension guard, so the decode would run before the refusal")
+	}
 	if img := decodePremulPNG(huge, maxGlyphWidth, maxGlyphHeight); img != nil {
 		t.Error("a strike at the mask ceiling must be refused")
 	}
-	runtime.ReadMemStats(&after)
-	if grew := after.TotalAlloc - before.TotalAlloc; grew > 1<<20 {
-		t.Errorf("refusing the oversized strike allocated %d bytes", grew)
+	// Every shape the cases above refuse is refused by that guard rather than further in, so none of them reaches
+	// png.Decode either.
+	for _, c := range []struct {
+		name string
+		w, h int
+	}{
+		{name: "zero", w: 0, h: 0},
+		{name: "negative", w: -4, h: -3},
+		{name: "past the mask ceiling", w: maxGlyphWidth, h: maxGlyphHeight},
+	} {
+		if strikeDimensionsUsable(c.w, c.h) {
+			t.Errorf("%s: strike %dx%d passed the dimension guard", c.name, c.w, c.h)
+		}
+	}
+	// And a strike whose own dimensions are perfectly ordinary is refused by the header comparison instead — the
+	// ordering this lane rests on, and the one the guard above short-circuits past. png.DecodeConfig reads the IHDR and
+	// allocates nothing; without it, png.Decode would allocate the 67 Mpixel image the header claims and hand back a
+	// picture the strike metrics never described.
+	mismatched := craftedPNG(t, maxGlyphWidth-1, maxGlyphHeight-1)
+	if !strikeDimensionsUsable(4, 3) {
+		t.Fatal("a 4x3 strike no longer passes the dimension guard; the header comparison is not under test")
+	}
+	if img := decodePremulPNG(mismatched, 4, 3); img != nil {
+		t.Error("a 4x3 strike decoded a PNG whose header claims 8191x8191")
 	}
 }
 
@@ -899,15 +958,15 @@ func TestDecodePremulPNGCapsTheStrikeArea(t *testing.T) {
 	if cfg.Width >= maxGlyphWidth || cfg.Height >= maxGlyphHeight {
 		t.Fatalf("crafted header is %dx%d, which the per-side ceiling already refuses", cfg.Width, cfg.Height)
 	}
-	// The sbix lane's call, verbatim: the strike dimensions are the header's own.
-	var before, after runtime.MemStats
-	runtime.ReadMemStats(&before)
+	// The sbix lane's call, verbatim: the strike dimensions are the header's own. The refusal has to come from the
+	// area cap in strikeDimensionsUsable, which runs before the data is touched at all; that is what keeps it free,
+	// and it is a fact about the guard rather than about how much the process happened to allocate over an interval.
+	if strikeDimensionsUsable(cfg.Width, cfg.Height) {
+		t.Errorf("a %dx%d strike (%d pixels) passed the dimension guard, so the decode would run before the refusal",
+			cfg.Width, cfg.Height, cfg.Width*cfg.Height)
+	}
 	if img := decodePremulPNG(huge, cfg.Width, cfg.Height); img != nil {
 		t.Error("a strike of 67 Mpixel was decoded")
-	}
-	runtime.ReadMemStats(&after)
-	if grew := after.TotalAlloc - before.TotalAlloc; grew > 1<<20 {
-		t.Errorf("refusing the oversized strike allocated %d bytes", grew)
 	}
 
 	// The cap is on the area, not on either side, so it is the product that decides. A strike sitting exactly on it
@@ -920,7 +979,7 @@ func TestDecodePremulPNGCapsTheStrikeArea(t *testing.T) {
 	if img := decodePremulPNG(atTheCap.Bytes(), capWidth, capHeight); img == nil {
 		t.Errorf("a %dx%d strike, exactly at the %d-pixel cap, was refused", capWidth, capHeight, maxStrikePixels)
 	}
-	// ...and one pixel-row past it does not, whatever shape it takes, without allocating.
+	// ...and one pixel-row past it does not, whatever shape it takes, and again from the guard alone.
 	for _, c := range []struct {
 		name string
 		w, h int
@@ -930,13 +989,11 @@ func TestDecodePremulPNGCapsTheStrikeArea(t *testing.T) {
 		{name: "tall and narrow", w: maxStrikePixels/(maxGlyphHeight-1) + 1, h: maxGlyphHeight - 1},
 	} {
 		crafted := craftedPNG(t, uint32(c.w), uint32(c.h))
-		runtime.ReadMemStats(&before)
+		if strikeDimensionsUsable(c.w, c.h) {
+			t.Errorf("%s: %dx%d (%d pixels) passed the dimension guard", c.name, c.w, c.h, c.w*c.h)
+		}
 		if img := decodePremulPNG(crafted, c.w, c.h); img != nil {
 			t.Errorf("%s: %dx%d (%d pixels) decoded", c.name, c.w, c.h, c.w*c.h)
-		}
-		runtime.ReadMemStats(&after)
-		if grew := after.TotalAlloc - before.TotalAlloc; grew > 1<<20 {
-			t.Errorf("%s: refusing %dx%d allocated %d bytes", c.name, c.w, c.h, grew)
 		}
 	}
 

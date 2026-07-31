@@ -63,25 +63,41 @@ func TestDefaultManagerMatching(t *testing.T) {
 		t.Fatalf("unknown family set has %d faces, want 0", empty.Count())
 	}
 
-	if mgr.CountFamilies() == 0 {
+	count := mgr.CountFamilies()
+	if count == 0 {
 		t.Fatal("the system scan found no font families")
 	}
-	fam := mgr.FamilyName(0)
-	set := mgr.MatchFamily(fam)
-	if set == nil || set.Count() == 0 {
-		t.Fatalf("MatchFamily(%q) yielded no faces", fam)
+	// Every enumerated family has to yield faces and a typeface — that much is the enumeration filter's own promise
+	// and holds for all of them. A non-empty *subfamily* name is not: name IDs 17 and 2 are optional, so whether the
+	// alphabetically-first family on this machine happens to carry one is a property of that machine's fonts rather
+	// than of this package. The style-name assertion therefore runs over whichever family first offers one, and the
+	// failure is "no system family names any of its styles", which really would be this package's doing.
+	named, namedFamily := false, ""
+	for i := range count {
+		fam := mgr.FamilyName(i)
+		set := mgr.MatchFamily(fam)
+		if set == nil || set.Count() == 0 {
+			t.Fatalf("MatchFamily(%q) yielded no faces", fam)
+		}
+		if set.CreateTypeface(0) == nil {
+			t.Errorf("CreateTypeface(0) for %q returned nil", fam)
+		}
+		if set.MatchStyle(font.NormalStyle()) == nil {
+			t.Errorf("MatchStyle(normal) for %q returned nil", fam)
+		}
+		if mgr.MatchFamilyStyle(fam, font.BoldStyle()) == nil {
+			t.Errorf("MatchFamilyStyle(%q, bold) returned nil", fam)
+		}
+		if !named {
+			if _, name := set.Style(0); name != "" {
+				named, namedFamily = true, fam
+			}
+		}
 	}
-	if _, name := set.Style(0); name == "" {
-		t.Errorf("style 0 of %q has an empty style name", fam)
-	}
-	if set.CreateTypeface(0) == nil {
-		t.Errorf("CreateTypeface(0) for %q returned nil", fam)
-	}
-	if set.MatchStyle(font.NormalStyle()) == nil {
-		t.Errorf("MatchStyle(normal) for %q returned nil", fam)
-	}
-	if mgr.MatchFamilyStyle(fam, font.BoldStyle()) == nil {
-		t.Errorf("MatchFamilyStyle(%q, bold) returned nil", fam)
+	if !named {
+		t.Errorf("none of the %d system families names the style of its first face", count)
+	} else {
+		t.Logf("first family naming a style: %q", namedFamily)
 	}
 
 	// A plain ASCII letter must be covered by some system family: this machine has font families (the skip above), so a

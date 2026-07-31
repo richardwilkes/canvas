@@ -93,62 +93,115 @@ func TestMatchStyleCSS3(t *testing.T) {
 	}
 }
 
+// allWidths is the width axis, ascending: the candidate pool every width case scores.
+var allWidths = []int{
+	font.WidthUltraCondensed, font.WidthExtraCondensed, font.WidthCondensed, font.WidthSemiCondensed,
+	font.WidthNormal, font.WidthSemiExpanded, font.WidthExpanded, font.WidthExtraExpanded, font.WidthUltraExpanded,
+}
+
+// allSlants is the slant axis, in declaration order.
+var allSlants = []font.Slant{font.SlantUpright, font.SlantItalic, font.SlantOblique}
+
+// css3WidthRanking returns every width in descending css3Score order against a pattern of the given width, per the CSS3
+// font-stretch rule: the exact width first, then — for a pattern wider than normal — the wider widths ascending
+// followed by the narrower ones descending, and the mirror image for a normal or narrower pattern.
+func css3WidthRanking(patternWidth int) []int {
+	ranked := make([]int, 0, len(allWidths))
+	ranked = append(ranked, patternWidth)
+	narrower := func() {
+		for w := patternWidth - 1; w >= font.WidthUltraCondensed; w-- {
+			ranked = append(ranked, w)
+		}
+	}
+	wider := func() {
+		for w := patternWidth + 1; w <= font.WidthUltraExpanded; w++ {
+			ranked = append(ranked, w)
+		}
+	}
+	if patternWidth <= font.WidthNormal {
+		narrower()
+		wider()
+	} else {
+		wider()
+		narrower()
+	}
+	return ranked
+}
+
+// css3SlantRanking returns every slant in descending css3Score order against a pattern of the given slant, per
+// css3Score's slant table: the exact slant, then oblique as the shared middle ground, then the pattern's opposite —
+// except for an oblique pattern, whose own middle ground is italic.
+func css3SlantRanking(patternSlant font.Slant) []font.Slant {
+	switch patternSlant {
+	case font.SlantItalic:
+		return []font.Slant{font.SlantItalic, font.SlantOblique, font.SlantUpright}
+	case font.SlantOblique:
+		return []font.Slant{font.SlantOblique, font.SlantItalic, font.SlantUpright}
+	default:
+		return []font.Slant{font.SlantUpright, font.SlantOblique, font.SlantItalic}
+	}
+}
+
 // TestCSS3ScoreTierPriority pins the priority css3Score documents — width, then slant, then weight — as a strict tier
 // ordering: no difference in a lower tier may ever outrank a difference in a higher one. Upstream Skia shifts both
 // tiers by 8 bits, which is one bit too few for a weight addend that reaches 1000, so a weight score >= 256 carries
 // into the slant field.
+//
+// Every pattern width and slant is the pattern in turn, not just the normal-width upright one. A pattern wider than
+// normal takes the *other* branch of the width tier — the one whose exact-width comparison diverges from upstream — and
+// its tier floors and ceilings are laid out in the opposite direction, so pinning the separation for a normal-width
+// pattern alone leaves the half of the tier a real expanded request walks entirely unchecked.
 func TestCSS3ScoreTierPriority(t *testing.T) {
-	pattern := font.NewStyle(font.WeightNormal, font.WidthNormal, font.SlantUpright)
 	weights := []int{
 		font.WeightInvisible, font.WeightThin, font.WeightLight, font.WeightNormal,
 		font.WeightMedium, font.WeightBold, font.WeightBlack, font.WeightExtraBlack,
 	}
-	// Both lists run from the pattern's best match to its worst, per the tier's own scoring: the slant table's upright
-	// row is upright > oblique > italic, and the width score for a normal-width pattern falls off toward condensed and
-	// then jumps below every condensed width for the expanded ones.
-	slants := []font.Slant{font.SlantUpright, font.SlantOblique, font.SlantItalic}
-	widths := []int{
-		font.WidthNormal, font.WidthSemiCondensed, font.WidthCondensed, font.WidthExtraCondensed,
-		font.WidthUltraCondensed, font.WidthSemiExpanded, font.WidthExpanded, font.WidthExtraExpanded,
-		font.WidthUltraExpanded,
-	}
+	for _, patternWidth := range allWidths {
+		for _, patternSlant := range allSlants {
+			pattern := font.NewStyle(font.WeightNormal, patternWidth, patternSlant)
+			slants := css3SlantRanking(patternSlant)
 
-	// Within one width, every slant tier must sit entirely above the next: the worst score of the better slant beats
-	// the best score of the worse one, whatever the weights are.
-	for _, width := range widths {
-		prevLow, prevSlant := math.MaxInt, font.SlantUpright
-		for _, slant := range slants {
-			low, high := math.MaxInt, math.MinInt
-			for _, weight := range weights {
-				s := css3Score(pattern, font.NewStyle(weight, width, slant))
-				low, high = min(low, s), max(high, s)
+			// Within one width, every slant tier must sit entirely above the next: the worst score of the better slant
+			// beats the best score of the worse one, whatever the weights are.
+			for _, width := range allWidths {
+				prevLow, prevSlant := math.MaxInt, slants[0]
+				for _, slant := range slants {
+					low, high := math.MaxInt, math.MinInt
+					for _, weight := range weights {
+						s := css3Score(pattern, font.NewStyle(weight, width, slant))
+						low, high = min(low, s), max(high, s)
+					}
+					if high >= prevLow {
+						t.Errorf("pattern (%d,%d) width %d: slant %d scores up to %d, at or above slant %d's floor of "+
+							"%d — the weight tier carries into the slant tier",
+							patternWidth, patternSlant, width, slant, high, prevSlant, prevLow)
+					}
+					prevLow, prevSlant = low, slant
+				}
 			}
-			if high >= prevLow {
-				t.Errorf("width %d: slant %d scores up to %d, at or above slant %d's floor of %d — the weight tier "+
-					"carries into the slant tier", width, slant, high, prevSlant, prevLow)
-			}
-			prevLow, prevSlant = low, slant
-		}
-	}
 
-	// And every width tier must sit entirely above the next, whatever the slants and weights are.
-	prevLow, prevWidth := math.MaxInt, font.WidthNormal
-	for _, width := range widths {
-		low, high := math.MaxInt, math.MinInt
-		for _, slant := range slants {
-			for _, weight := range weights {
-				s := css3Score(pattern, font.NewStyle(weight, width, slant))
-				low, high = min(low, s), max(high, s)
+			// And every width tier must sit entirely above the next, whatever the slants and weights are.
+			ranking := css3WidthRanking(patternWidth)
+			prevLow, prevWidth := math.MaxInt, ranking[0]
+			for _, width := range ranking {
+				low, high := math.MaxInt, math.MinInt
+				for _, slant := range allSlants {
+					for _, weight := range weights {
+						s := css3Score(pattern, font.NewStyle(weight, width, slant))
+						low, high = min(low, s), max(high, s)
+					}
+				}
+				if high >= prevLow {
+					t.Errorf("pattern (%d,%d): width %d scores up to %d, at or above width %d's floor of %d — a lower "+
+						"tier carries into the width tier", patternWidth, patternSlant, width, high, prevWidth, prevLow)
+				}
+				prevLow, prevWidth = low, width
 			}
 		}
-		if high >= prevLow {
-			t.Errorf("width %d scores up to %d, at or above width %d's floor of %d — a lower tier carries into the "+
-				"width tier", width, high, prevWidth, prevLow)
-		}
-		prevLow, prevWidth = low, width
 	}
 
 	// The reported case: for an upright 400 request, an exact-weight italic face must not outrank an upright 900 one.
+	pattern := font.NewStyle(font.WeightNormal, font.WidthNormal, font.SlantUpright)
 	italic400 := font.NewStyle(font.WeightNormal, font.WidthNormal, font.SlantItalic)
 	upright900 := font.NewStyle(font.WeightBlack, font.WidthNormal, font.SlantUpright)
 	set := []font.Style{italic400, upright900}
@@ -156,6 +209,23 @@ func TestCSS3ScoreTierPriority(t *testing.T) {
 	if got := set[order[0]]; got != upright900 {
 		t.Errorf("upright 400 request ranked (%d,%d,%d) first, want the upright 900 face",
 			got.Weight(), got.Width(), got.Slant())
+	}
+	// And the same for a wider-than-normal request, whose width tier takes the other branch: an exact-width italic
+	// face must not outrank the same-width upright one, and no width difference may be recovered by a lower tier.
+	expandedPattern := font.NewStyle(font.WeightNormal, font.WidthExpanded, font.SlantUpright)
+	set = []font.Style{
+		font.NewStyle(font.WeightNormal, font.WidthExpanded, font.SlantItalic),
+		font.NewStyle(font.WeightBlack, font.WidthExpanded, font.SlantUpright),
+		font.NewStyle(font.WeightNormal, font.WidthExtraExpanded, font.SlantUpright),
+	}
+	order = rankStylesCSS3(expandedPattern, len(set), func(i int) font.Style { return set[i] })
+	if got := set[order[0]]; got != set[1] {
+		t.Errorf("expanded 400 request ranked (%d,%d,%d) first, want the exact-width upright 900 face",
+			got.Weight(), got.Width(), got.Slant())
+	}
+	if got := set[order[2]]; got != set[2] {
+		t.Errorf("expanded 400 request ranked (%d,%d,%d) last, want the wider exact-weight upright face — a width "+
+			"difference outranks every slant and weight difference", got.Weight(), got.Width(), got.Slant())
 	}
 }
 
@@ -166,36 +236,14 @@ func TestCSS3ScoreTierPriority(t *testing.T) {
 // `current.width() > pattern.width()` test drops the exact-width candidate into the other branch, where it scores its
 // raw width instead of the full 10, so for a pattern of width 6, 7 or 8 a wider face outranks the exact one.
 func TestCSS3ScoreWidthTierOrder(t *testing.T) {
-	widths := []int{
-		font.WidthUltraCondensed, font.WidthExtraCondensed, font.WidthCondensed, font.WidthSemiCondensed,
-		font.WidthNormal, font.WidthSemiExpanded, font.WidthExpanded, font.WidthExtraExpanded,
-		font.WidthUltraExpanded,
-	}
 	// Every candidate carries the same weight and slant, so only the width tier separates them.
-	set := make([]font.Style, len(widths))
-	for i, w := range widths {
+	set := make([]font.Style, len(allWidths))
+	for i, w := range allWidths {
 		set[i] = font.NewStyle(font.WeightNormal, w, font.SlantUpright)
 	}
 	styleAt := func(i int) font.Style { return set[i] }
-	for _, patternWidth := range widths {
-		want := []int{patternWidth}
-		narrower := func() {
-			for w := patternWidth - 1; w >= font.WidthUltraCondensed; w-- {
-				want = append(want, w)
-			}
-		}
-		wider := func() {
-			for w := patternWidth + 1; w <= font.WidthUltraExpanded; w++ {
-				want = append(want, w)
-			}
-		}
-		if patternWidth <= font.WidthNormal {
-			narrower()
-			wider()
-		} else {
-			wider()
-			narrower()
-		}
+	for _, patternWidth := range allWidths {
+		want := css3WidthRanking(patternWidth)
 		pattern := font.NewStyle(font.WeightNormal, patternWidth, font.SlantUpright)
 		got := make([]int, 0, len(set))
 		for _, i := range rankStylesCSS3(pattern, len(set), styleAt) {

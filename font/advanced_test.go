@@ -22,6 +22,11 @@ import (
 // program and drawing glyphs as filled paths. Both of the flags here mean "these bytes are not a font program": a
 // variable font's program would embed the default instance's outlines under this face's metrics, and a WOFF's tables
 // live inside a wrapper (individually compressible), so the container is not an sfnt at all.
+//
+// What each flag then costs the face is the pdf package's decision and is pinned there, over pdfFontType itself
+// (pdf.TestPDFFontTypeForcesThePathFallback). A copy of that decision here could only restate the flag assertions
+// below — pdf depends on font, so the real one cannot be called — and would stay green while the real one stopped
+// reading one of them.
 func TestAdvancedMetricsFlags(t *testing.T) {
 	base := readTestFont(t, "Roboto-Regular.ttf")
 	plain, err := NewTypefaceFromData(base, 0)
@@ -43,9 +48,6 @@ func TestAdvancedMetricsFlags(t *testing.T) {
 	if m.Type != FontTypeTrueType {
 		t.Errorf("type = %d, want %d (the fvar table must not change the outline format)", m.Type, FontTypeTrueType)
 	}
-	if got := pdfWouldEmbed(m); got {
-		t.Error("a variable font would still be embedded as a font program")
-	}
 
 	woff, err := NewTypefaceFromData(woffWrap(t, base), 0)
 	if err != nil {
@@ -54,21 +56,13 @@ func TestAdvancedMetricsFlags(t *testing.T) {
 	if m = woff.GetAdvancedMetrics(); m.Flags&FontFlagAltDataFormat == 0 {
 		t.Errorf("a WOFF-wrapped font has flags %#x, missing FontFlagAltDataFormat", m.Flags)
 	}
-	if got := pdfWouldEmbed(m); got {
-		t.Error("a WOFF-wrapped font would still be embedded as a font program")
+	if m.Type != FontTypeTrueType {
+		t.Errorf("type = %d, want %d (the wrapper must not change the outline format)", m.Type, FontTypeTrueType)
 	}
 	// The same face's own bytes, unwrapped, stay embeddable — the flag tracks the container, not the tables.
 	if got := plain.GetAdvancedMetrics().Flags & FontFlagAltDataFormat; got != 0 {
 		t.Error("the plain sfnt was reported as an alternate data format")
 	}
-}
-
-// pdfWouldEmbed mirrors the pdf backend's pdfFontType decision for the flags these tests set: a TrueType program is
-// embedded as CIDFontType2 unless one of the "not a font program" flags is present. Duplicated rather than imported
-// because pdf depends on font, not the other way around.
-func pdfWouldEmbed(m *AdvancedMetrics) bool {
-	return m.Type == FontTypeTrueType &&
-		m.Flags&(FontFlagVariable|FontFlagAltDataFormat|FontFlagNotEmbeddable) == 0
 }
 
 // TestAdvancedMetricsPCLT covers the PCLT lane: it is the only source of the serif and script style flags, and the cap

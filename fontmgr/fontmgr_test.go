@@ -146,6 +146,27 @@ func sfntTable(t *testing.T, data []byte, tag string) []byte {
 	return nil
 }
 
+// sfntWithoutTable returns a copy of a single-font sfnt with tag's table directory record removed: the records after it
+// shift down by one 16-byte entry and numTables drops by one. Every table's data is left exactly where it was — only
+// the directory changes — so no offset has to be rewritten and the dropped table's bytes simply become unreferenced,
+// which is what makes this a pure "this face no longer has this table" edit.
+func sfntWithoutTable(t *testing.T, data []byte, tag string) []byte {
+	t.Helper()
+	out := bytes.Clone(data)
+	count := int(binary.BigEndian.Uint16(out[4:]))
+	for i := range count {
+		rec := 12 + i*16
+		if string(out[rec:rec+4]) != tag {
+			continue
+		}
+		copy(out[rec:], out[rec+16:12+count*16])
+		binary.BigEndian.PutUint16(out[4:], uint16(count-1))
+		return out
+	}
+	t.Fatalf("%s table not found", tag)
+	return nil
+}
+
 // renameSfntFamily returns a copy of a single-font sfnt whose family-name records — the name-table IDs the family
 // precedence in font.DescribeFace reads, 21, 16 and 1 — currently reading from are rewritten to to. Both names must be
 // ASCII and the same length, so every name string keeps its byte length in the UTF-16BE and single-byte encodings
@@ -531,6 +552,61 @@ func TestNewFromDataCoverageUnderClaimsRemappedCmaps(t *testing.T) {
 	}
 }
 
+// TestNewFromDataSkipsFacesItCannotName covers NewFromData's per-face skip, which the whole-blob garbage cases cannot
+// reach: a blob opentype.NewLoaders accepts can still hold a face whose lightweight description fails, or one that
+// carries no family name at all. Both have to be dropped rather than grouped, since a face admitted with an empty key
+// becomes an unnamed family that MatchFamily("") — which asks for the platform default — could then resolve to, and
+// whose Family.Name() has nothing but that empty key to answer with.
+func TestNewFromDataSkipsFacesItCannotName(t *testing.T) {
+	roboto := readTestFontData(t, "Roboto-Regular.ttf")
+	for _, c := range []struct {
+		name string
+		data []byte
+	}{
+		// The description itself fails: go-text's parse needs head for the units per em.
+		{name: "no head table", data: sfntWithoutTable(t, roboto, "head")},
+		// The description succeeds and names nothing: every family-name record lives in the name table.
+		{name: "no name table", data: sfntWithoutTable(t, roboto, "name")},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			// The premise: the blob really does parse as a font collection, so the face reaches the per-face skip
+			// rather than the per-blob one.
+			if _, err := opentype.NewLoaders(bytes.NewReader(c.data)); err != nil {
+				t.Fatalf("the blob no longer loads at all (%v); the per-face skip is not under test", err)
+			}
+			m := NewFromData(c.data)
+			if got := len(m.all); got != 0 {
+				t.Errorf("the manager holds %d faces, want 0", got)
+			}
+			if fam := m.byKey[""]; fam != nil {
+				t.Errorf("an unnamed family group was created, holding %d faces", len(fam.faces))
+			}
+			if got := m.CountFamilies(); got != 0 {
+				t.Errorf("CountFamilies = %d, want 0", got)
+			}
+			if set := m.MatchFamily(""); set == nil || set.Count() != 0 {
+				t.Errorf(`MatchFamily("") = %v, want an empty, non-nil set`, set)
+			}
+
+			// Alongside a usable blob, the skip must cost only the unusable face: the good one still groups, and the
+			// empty name must not have become a family the default lookup can reach.
+			m = NewFromData(c.data, roboto)
+			if got := m.CountFamilies(); got != 1 {
+				t.Fatalf("CountFamilies = %d, want 1 (Roboto alone)", got)
+			}
+			if got := m.FamilyName(0); got != "Roboto" {
+				t.Errorf("FamilyName(0) = %q, want Roboto", got)
+			}
+			if m.byKey[""] != nil {
+				t.Error("an unnamed family group was created beside the usable one")
+			}
+			if tf := m.MatchFamilyStyle("", font.NormalStyle()); tf == nil || tf.FamilyName() != "Roboto" {
+				t.Errorf(`MatchFamilyStyle("") = %s, want Roboto`, familyOf(tf))
+			}
+		})
+	}
+}
+
 // TestFaceRecCoversMemoSurvivesInterleavedRunes covers the memo behind covers. Every miss is a file open and a cmap
 // parse, and a fallback scan re-asks the same face about the same rune once per tier and once per BCP-47 tag, so the
 // memo is what keeps a scan from re-parsing the claiming inventory several times over. Remembering only the rune in
@@ -629,6 +705,16 @@ func TestManagerStyleSet(t *testing.T) {
 		if tf := set.CreateTypeface(idx); tf != nil {
 			t.Errorf("CreateTypeface(%d) != nil", idx)
 		}
+		// Style has its own documented out-of-range contract, and it is the one an indexing regression reaches first:
+		// a guard that let the index through would panic here rather than report the normal style and no name. The
+		// empty name is what separates it from the in-range faces, both of which do have one.
+		if style, name := set.Style(idx); style != font.NormalStyle() || name != "" {
+			t.Errorf("Style(%d) = %v %q, want the normal style and no name", idx, style, name)
+		}
+	}
+	// And on the empty set, where every index is out of range.
+	if style, name := (&StyleSet{}).Style(0); style != font.NormalStyle() || name != "" {
+		t.Errorf("empty set Style(0) = %v %q, want the normal style and no name", style, name)
 	}
 	// MatchStyle: exact weights match; thin prefers the lighter face (CSS3 weight rules).
 	for _, c := range []struct {
@@ -827,6 +913,58 @@ func TestManagerMatchCharacterBCP47Fallthrough(t *testing.T) {
 	}
 }
 
+// TestManagerMatchCharacterUnparseableBCP47Tags covers the guard in front of the tag pass. The tags the other cases
+// pass ("ja") are perfectly valid language IDs that simply match no font's language set, so they restrict the candidate
+// set to nothing and fall through further down; a tag language.NewLangID cannot resolve at all is skipped before any
+// candidate set is built, and only a tag that really fails to parse takes that branch. Callers hand these in — a hint
+// list assembled from a locale string, an attribute read out of a document — so a regression that panicked on one, or
+// that returned nil instead of continuing to the next tag, would ship.
+func TestManagerMatchCharacterUnparseableBCP47Tags(t *testing.T) {
+	// The premise, since which strings NewLangID rejects is its business and not this package's: these are the ones
+	// that really do fail to parse, and the empty and punctuation-only tags below do *not* — they resolve to language
+	// ID 0, so they restrict the candidate set rather than being skipped. Both shapes have to fall through.
+	unparseable := []string{"zz", "x-y-z"}
+	for _, tag := range unparseable {
+		if _, ok := language.NewLangID(language.NewLanguage(tag)); ok {
+			t.Fatalf("%q parses as a language after all; the unparseable-tag guard is not under test", tag)
+		}
+	}
+	for _, tag := range []string{"", "@@@"} {
+		if _, ok := language.NewLangID(language.NewLanguage(tag)); !ok {
+			t.Logf("%q no longer parses; it now takes the unparseable-tag guard too", tag)
+		}
+	}
+	m := newManager([]*faceRec{newSansFaceRec(t, "fr"), newTestFaceRec(t, "Roboto-Regular.ttf", 0, "en")})
+	// Nothing but unusable tags: the unrestricted scan answers, where Corpus Sans and Roboto tie on style and the
+	// family-sorted order puts Corpus Sans first.
+	for _, tags := range [][]string{{"zz"}, {"x-y-z"}, {""}, {"@@@"}, {"zz", "x-y-z"}, {"", "zz"}} {
+		if tf := m.MatchFamilyStyleCharacter("", font.NormalStyle(), tags, 'x'); tf == nil ||
+			tf.FamilyName() != corpusSansFamily {
+			t.Errorf("bcp47 %v for 'x' = %s, want Corpus Sans (the unrestricted scan)", tags, familyOf(tf))
+		}
+	}
+	// A usable tag beside them still decides, whichever side of it they sit on: skipping a tag must not consume the
+	// pass, and must not shift which of the remaining tags is the most significant.
+	for _, c := range []struct {
+		want string
+		tags []string
+	}{
+		{tags: []string{"zz", "en"}, want: "Roboto"},
+		{tags: []string{"en", "zz"}, want: "Roboto"},
+		{tags: []string{"fr", "zz", "en"}, want: "Roboto"},
+		{tags: []string{"en", "zz", "fr"}, want: corpusSansFamily},
+	} {
+		if tf := m.MatchFamilyStyleCharacter("", font.NormalStyle(), c.tags, 'x'); tf == nil ||
+			tf.FamilyName() != c.want {
+			t.Errorf("bcp47 %v for 'x' = %s, want %s", c.tags, familyOf(tf), c.want)
+		}
+	}
+	// And they never invent coverage: a character no font maps is still nil.
+	if tf := m.MatchFamilyStyleCharacter("", font.NormalStyle(), unparseable, 0x4E2D); tf != nil {
+		t.Errorf("bcp47 %v for an uncovered character = %s, want nil", unparseable, familyOf(tf))
+	}
+}
+
 func TestManagerCharacterFallbackSymbolCmapRemap(t *testing.T) {
 	// A symbol-encoded face keys its characters in the U+F000 private-use page, and every resolver also answers
 	// U+0000–U+00FF from that page: Windows, HarfBuzz, and go-text's remaperSymbol, which both Typeface.UnicharToGlyph
@@ -934,6 +1072,67 @@ func TestManagerCharacterFallbackLoadsOnlyTheAnswer(t *testing.T) {
 	}
 	if n := loadedTypefaces(m3); n != 0 {
 		t.Errorf("%d typefaces cached rejecting a named family's lying footprints, want 0", n)
+	}
+}
+
+// TestManagerCharacterFallbackVerifiesTheLoadedFace covers matchCovering's post-load re-verification, which is what
+// makes the documented promise ("the returned face always maps character through its own cmap") true of the object
+// handed back rather than only of the file it came from. The cmap probe reads two tables — the cmap and the OS/2 that
+// selects its encoding — while a full parse reads the rest, so a face can pass the probe and still fail to become a
+// typeface. Without the re-check such a face sets the match to nil and *stops the walk*, and
+// MatchFamilyStyleCharacter answers nil even though lower-ranked faces genuinely cover the character.
+//
+// The unloadable candidates the other cases use — a face whose file has vanished — are rejected one step earlier, at
+// covers, so they cannot reach this branch at all.
+func TestManagerCharacterFallbackVerifiesTheLoadedFace(t *testing.T) {
+	// Roboto with its head table dropped: the cmap is untouched, so the probe answers exactly as it does for the
+	// unmodified font, while go-text's parse needs head for the units per em and refuses the face outright.
+	headless := sfntWithoutTable(t, readTestFontData(t, "Roboto-Regular.ttf"), "head")
+	newBroken := func(key string) *faceRec {
+		var runes fontscan.RuneSet
+		for _, r := range font.FaceRunesData(headless, 0) {
+			runes.Add(r)
+		}
+		return &faceRec{key: key, data: headless, runes: runes, approx: font.NormalStyle()}
+	}
+	// The premise, so none of the cases below can go vacuous: the face claims 'x', its cmap really maps it, and it
+	// still cannot be loaded.
+	const brokenKey = "corpusbroken" // sorts before "roboto", so the broken face is the first candidate of every tie
+	broken := newBroken(brokenKey)
+	if !broken.claims('x') || !broken.covers('x') {
+		t.Fatal("the headless face's cmap no longer answers for 'x'; the case cannot reach the re-check")
+	}
+	if broken.typeface() != nil {
+		t.Fatal("the headless face still loads; the case cannot reach the re-check")
+	}
+
+	// The cross-family scan: the broken face is scored first and its rejection is what lets Roboto answer.
+	roboto := newTestFaceRec(t, "Roboto-Regular.ttf", 0, "en")
+	m := newManager([]*faceRec{newBroken(brokenKey), roboto})
+	if tf := m.MatchFamilyStyleCharacter("", font.NormalStyle(), nil, 'x'); tf == nil || tf.FamilyName() != "Roboto" {
+		t.Errorf("cross-family fallback for 'x' = %s, want Roboto: a candidate that passes the probe but fails to "+
+			"load must not stop the walk", familyOf(tf))
+	}
+	// The BCP-47 pass restricts the candidate set and then walks the same function, so it falls through the same way.
+	brokenTagged := newBroken(brokenKey)
+	brokenTagged.langs = langSetOf(t, "en")
+	m = newManager([]*faceRec{brokenTagged, newTestFaceRec(t, "Roboto-Regular.ttf", 0, "en")})
+	if tf := m.MatchFamilyStyleCharacter("", font.NormalStyle(), []string{"en"}, 'x'); tf == nil ||
+		tf.FamilyName() != "Roboto" {
+		t.Errorf("bcp47 [en] for 'x' = %s, want Roboto", familyOf(tf))
+	}
+	// And the named-family pass, which walks matchCovering over one family's faces with the table-read style rather
+	// than the footprint one. The loadable face is the only thing that can answer, so a nil here is the whole failure.
+	loadable := newTestFaceRec(t, "Roboto-Regular.ttf", 0)
+	m = newManager([]*faceRec{newBroken(loadable.key), loadable})
+	tf := m.MatchFamilyStyleCharacter("Roboto", font.NormalStyle(), nil, 'x')
+	if tf == nil || tf != loadable.typeface() {
+		t.Errorf("named-family fallback for 'x' = %s, want the family's loadable face", familyOf(tf))
+	}
+	// Falling through never invents coverage: with the unloadable face the only candidate, the answer is still nil.
+	m = newManager([]*faceRec{newBroken(brokenKey)})
+	if tf = m.MatchFamilyStyleCharacter("", font.NormalStyle(), nil, 'x'); tf != nil {
+		t.Errorf("fallback with only an unloadable candidate = %s, want nil", familyOf(tf))
 	}
 }
 
@@ -1060,26 +1259,87 @@ func TestManagerUnloadableFace(t *testing.T) {
 }
 
 func TestManagerConcurrentAccess(t *testing.T) {
-	// Manager is documented thread-safe; the lazy per-face loads must be too (exercised under -race).
+	// Manager is documented thread-safe; the lazy per-face loads must be too (exercised under -race). Every answer is
+	// checked rather than discarded: the corpus is fixed, so a concurrent walk has to produce exactly what a
+	// single-threaded one does, and each lazy load has to happen once — the same typeface pointer for every goroutine
+	// that asks. Without that, a manager answering nil to all three entry points would still report ok under a plain
+	// `go test`, since only -race and a panic could fail this case.
 	m := newTestManager(t)
+	wantFamilies := []string{corpusSansFamily, "Roboto", "Test"}
+	var mu sync.Mutex
+	firstSeen := make(map[string]*font.Typeface)
+	// once records what a lookup resolved to and reports the disagreement if another goroutine resolved it elsewhere.
+	once := func(key string, tf *font.Typeface) {
+		mu.Lock()
+		defer mu.Unlock()
+		prev, seen := firstSeen[key]
+		if !seen {
+			firstSeen[key] = tf
+			return
+		}
+		if prev != tf {
+			t.Errorf("%s resolved two different typefaces concurrently (%s and %s); the lazy load must happen once",
+				key, familyOf(prev), familyOf(tf))
+		}
+	}
 	var wg sync.WaitGroup
 	for range 8 {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			for i := range m.CountFamilies() {
-				name := m.FamilyName(i)
-				set := m.MatchFamily(name)
-				for j := range set.Count() {
-					set.Style(j)
-					set.CreateTypeface(j)
-				}
-				m.MatchFamilyStyle(name, font.BoldStyle())
-				m.MatchFamilyStyleCharacter("", font.NormalStyle(), []string{"en"}, 'x')
+			if got := m.CountFamilies(); got != len(wantFamilies) {
+				t.Errorf("CountFamilies = %d, want %d", got, len(wantFamilies))
+				return
 			}
+			for i, wantName := range wantFamilies {
+				name := m.FamilyName(i)
+				if name != wantName {
+					t.Errorf("FamilyName(%d) = %q, want %q", i, name, wantName)
+					continue
+				}
+				set := m.MatchFamily(name)
+				if set.Count() == 0 {
+					t.Errorf("MatchFamily(%q) is empty", name)
+					continue
+				}
+				for j := range set.Count() {
+					style, styleName := set.Style(j)
+					if styleName == "" {
+						t.Errorf("%q face %d has no style name", name, j)
+					}
+					tf := set.CreateTypeface(j)
+					if tf == nil {
+						t.Errorf("CreateTypeface(%d) of %q = nil", j, name)
+						continue
+					}
+					// The listed style always equals the created typeface's, both being the same OS/2 read.
+					if tf.Style() != style {
+						t.Errorf("%q face %d: typeface style %v, listed %v", name, j, tf.Style(), style)
+					}
+					once(fmt.Sprintf("%s[%d]", name, j), tf)
+				}
+				bold := m.MatchFamilyStyle(name, font.BoldStyle())
+				if bold == nil || bold.FamilyName() != name {
+					t.Errorf("MatchFamilyStyle(%q, bold) = %s", name, familyOf(bold))
+					continue
+				}
+				once("bold:"+name, bold)
+			}
+			// Character fallback over the same faces: 'x' restricted to the en-tagged font is Roboto.
+			ch := m.MatchFamilyStyleCharacter("", font.NormalStyle(), []string{"en"}, 'x')
+			if ch == nil || ch.FamilyName() != "Roboto" {
+				t.Errorf("fallback for 'x' with bcp47 [en] = %s, want Roboto", familyOf(ch))
+				return
+			}
+			once("fallback:x", ch)
 		}()
 	}
 	wg.Wait()
+	// Non-vacuity: the goroutines really did resolve the whole corpus, so the agreement above is over something.
+	if got, want := len(firstSeen), 4+len(wantFamilies)+1; got != want {
+		t.Errorf("%d distinct lookups recorded, want %d (4 faces + %d family styles + the fallback)",
+			got, want, len(wantFamilies))
+	}
 }
 
 func TestManagerHiddenFamilies(t *testing.T) {
@@ -1122,6 +1382,35 @@ func TestManagerHiddenFamilies(t *testing.T) {
 			t.Errorf("%s = %s, want the first visible family, not the hidden one sorting ahead of it", c.name,
 				familyOf(c.got))
 		}
+	}
+
+	// A manager whose every family is hidden has no visible one for that fallback to pick, so the last resort behind
+	// it — the first family of all — is what answers. macOS's dot-prefixed UI fonts are real families a caller can
+	// still reach, so "something" has to beat nothing here; deleting the branch would make MatchFamilyStyle("") return
+	// nil on such a manager instead.
+	firstHidden := newTestFaceRec(t, "Roboto-Regular.ttf", 0)
+	firstHidden.key = ".ahiddensans"
+	lastHidden := newSansFaceRec(t)
+	lastHidden.key = ".zhiddensans"
+	allHidden := newManager([]*faceRec{lastHidden, firstHidden})
+	if got := allHidden.CountFamilies(); got != 0 {
+		t.Fatalf("CountFamilies = %d, want 0 (every family is hidden, so none is enumerable)", got)
+	}
+	for _, c := range []struct {
+		got  *font.Typeface
+		name string
+	}{
+		{got: allHidden.MatchFamilyStyle("", font.NormalStyle()), name: `MatchFamilyStyle("")`},
+		{got: allHidden.MatchFamily("").MatchStyle(font.NormalStyle()), name: `MatchFamily("").MatchStyle()`},
+	} {
+		if c.got == nil || c.got.FamilyName() != "Roboto" {
+			t.Errorf("all-hidden %s = %s, want the first family of all (the .a-prefixed Roboto)", c.name,
+				familyOf(c.got))
+		}
+	}
+	// Character fallback reaches them too, hidden being the last tier rather than an excluded one.
+	if tf := allHidden.MatchFamilyStyleCharacter("", font.NormalStyle(), nil, 'x'); tf == nil {
+		t.Error("an all-hidden manager covered nothing; hidden families stay reachable through character fallback")
 	}
 }
 

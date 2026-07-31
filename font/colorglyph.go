@@ -156,6 +156,18 @@ type decodedImage struct {
 // ceiling can declare costs about 768 MB across the NRGBA image, the premultiplied buffer, and the imagecore copy.
 const maxStrikePixels = 1 << 22
 
+// strikeDimensionsUsable reports whether a strike's own declared dimensions are ones a PNG will be decoded at: positive,
+// under the glyph-mask ceiling on each side, and under maxStrikePixels in area. It is decodePremulPNG's whole refusal
+// decision, and the only part of it that runs before the data is touched at all — no reader, no header parse, nothing
+// allocated — which is what makes a hostile few-hundred-byte strike cost nothing. Named rather than inlined so that the
+// property can be asserted directly, instead of being inferred from a process-wide allocation measurement.
+func strikeDimensionsUsable(strikeW, strikeH int) bool {
+	if strikeW <= 0 || strikeH <= 0 || strikeW >= maxGlyphWidth || strikeH >= maxGlyphHeight {
+		return false
+	}
+	return strikeW*strikeH <= maxStrikePixels
+}
+
 // decodePremulPNG decodes PNG bytes into an N32-premul imagecore image, premultiplying with round-to-nearest rounding.
 //
 // strikeW/strikeH are the strike's own declared dimensions, and they gate the decode: png.Decode allocates the full
@@ -167,10 +179,7 @@ const maxStrikePixels = 1 << 22
 // leaves with any work to do. FreeType's Load_SBit_Png makes the same equality check against known metrics (CBDT/EBDT)
 // and bounds the dimensions it takes from the header (sbix).
 func decodePremulPNG(data []byte, strikeW, strikeH int) *decodedImage {
-	if strikeW <= 0 || strikeH <= 0 || strikeW >= maxGlyphWidth || strikeH >= maxGlyphHeight {
-		return nil
-	}
-	if strikeW*strikeH > maxStrikePixels {
+	if !strikeDimensionsUsable(strikeW, strikeH) {
 		return nil
 	}
 	cfg, err := png.DecodeConfig(bytes.NewReader(data))

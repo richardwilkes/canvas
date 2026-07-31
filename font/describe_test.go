@@ -21,34 +21,43 @@ import (
 
 func TestFaceCoversRuneMatchesTypeface(t *testing.T) {
 	// A mix of mapped and unmapped code points, the U+FFFF .notdef sentinel three of these faces carry, a surrogate,
-	// and both out-of-range ends.
-	runes := []rune{-1, 0, '\r', ' ', '!', '0', 'A', 'H', 'a', 'x', 0x4E2D, 0xD800, 0x1F600, 0xFFFF, 0x10FFFF, 0x110000}
-	var covered, uncovered int
-	for _, f := range faceCorpus {
-		path := "testdata/" + f.file
-		data, err := os.ReadFile(path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		tf := loadTypeface(t, f.file, f.index)
-		for _, r := range runes {
-			want := tf.UnicharToGlyph(r) != 0
-			if want {
-				covered++
-			} else {
-				uncovered++
-			}
-			if got := FaceCoversRuneFile(path, f.index, r); got != want {
-				t.Errorf("FaceCoversRuneFile(%s[%d], %#x) = %v, want %v", f.file, f.index, r, got, want)
-			}
-			if got := FaceCoversRuneData(data, f.index, r); got != want {
-				t.Errorf("FaceCoversRuneData(%s[%d], %#x) = %v, want %v", f.file, f.index, r, got, want)
-			}
-		}
+	// and both out-of-range ends. U+F0100 is where the COLRv1 test font keys its first glyph — it maps nothing else in
+	// this list — and U+1F600 is the emoji the color and bitmap faces carry.
+	runes := []rune{
+		-1, 0, '\r', ' ', '!', '0', 'A', 'H', 'a', 'x', 0x4E2D, 0xD800, 0x1F600, 0xFFFF, 0xF0100, 0x10FFFF, 0x110000,
 	}
-	// Guard against a vacuous run: the corpus must exercise both answers.
-	if covered == 0 || uncovered == 0 {
-		t.Errorf("corpus produced %d covered / %d uncovered, want both nonzero", covered, uncovered)
+	for _, f := range faceCorpus {
+		t.Run(fmt.Sprintf("%s[%d]", f.file, f.index), func(t *testing.T) {
+			path := "testdata/" + f.file
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			tf := loadTypeface(t, f.file, f.index)
+			var covered, uncovered int
+			for _, r := range runes {
+				want := tf.UnicharToGlyph(r) != 0
+				if want {
+					covered++
+				} else {
+					uncovered++
+				}
+				if got := FaceCoversRuneFile(path, f.index, r); got != want {
+					t.Errorf("FaceCoversRuneFile(%#x) = %v, want %v", r, got, want)
+				}
+				if got := FaceCoversRuneData(data, f.index, r); got != want {
+					t.Errorf("FaceCoversRuneData(%#x) = %v, want %v", r, got, want)
+				}
+			}
+			// Guard against a vacuous run, per face rather than over the corpus: a differential holds just as well
+			// when both sides answer false for every rune, so a face that lost its cmap entirely would contribute
+			// nothing here and an aggregate count would still see Roboto's. The probe list has to keep exercising
+			// both answers for each of these faces — several of them (the collection's bold face, colr.ttf) map
+			// exactly one rune in it.
+			if covered == 0 || uncovered == 0 {
+				t.Errorf("%d covered / %d uncovered of %d probes, want both nonzero", covered, uncovered, len(runes))
+			}
+		})
 	}
 }
 

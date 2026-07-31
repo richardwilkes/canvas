@@ -720,13 +720,34 @@ func TestDrawTextPositionsShortOutput(t *testing.T) {
 		t.Fatalf("positions = %v", full)
 	}
 	// A caller sizing out by capacity alone (or otherwise supplying a short slice) gets the origins that fit rather
-	// than a panic.
-	short := make([]geom.Point, 0, len(glyphs))
+	// than a panic — and nothing at all beyond len(out). Both short cases are cut from a longer backing array stamped
+	// with a value no origin can take, so a write into the spare capacity is visible: the empty slice must leave the
+	// whole array alone, and the length-2 one everything past its second element. Sizing the slices to their own
+	// length instead would leave that write with nowhere to land and no case to fail.
+	untouched := geom.Pt(-1, -1)
+	stamped := func(length int) ([]geom.Point, []geom.Point) {
+		backing := make([]geom.Point, len(glyphs)+1)
+		for i := range backing {
+			backing[i] = untouched
+		}
+		return backing[:length], backing
+	}
+	short, shortBacking := stamped(0)
 	DrawTextPositions(f, glyphs, geom.Pt(3, 7), short)
-	partial := make([]geom.Point, 2)
+	for i, p := range shortBacking {
+		if p != untouched {
+			t.Errorf("the empty out's spare capacity was written at %d: %v", i, p)
+		}
+	}
+	partial, partialBacking := stamped(2)
 	DrawTextPositions(f, glyphs, geom.Pt(3, 7), partial)
 	if partial[0] != full[0] || partial[1] != full[1] {
 		t.Errorf("partial = %v, want the first 2 of %v", partial, full)
+	}
+	for i, p := range partialBacking[len(partial):] {
+		if p != untouched {
+			t.Errorf("the short out's spare capacity was written at %d: %v", len(partial)+i, p)
+		}
 	}
 	// An over-long out is left alone past the glyph count.
 	long := make([]geom.Point, len(glyphs)+2)

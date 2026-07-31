@@ -53,6 +53,61 @@ func dictContaining(data []byte, needles ...string) string {
 	return ""
 }
 
+// TestPDFFontTypeForcesThePathFallback pins pdfFontType, the one decision separating an embedded font program from a
+// run drawn as filled paths. Every input that forces FontTypeOther means "these bytes are not an embeddable TrueType
+// program": a variable font's program would embed the default instance's outlines under this face's metrics, a WOFF's
+// tables live inside a wrapper rather than in an sfnt, a not-embeddable face may not be shipped at all, a CFF program
+// is not a CIDFontType2 one, and a mask-filtered run has no font-program representation at all.
+//
+// The font package builds the faces that carry the first three flags and asserts the flags themselves; this is the
+// only place their consequence is decided, so the mapping is pinned here rather than restated there — a copy of it
+// living beside the flag assertions would stay green while this function stopped reading one of them.
+func TestPDFFontTypeForcesThePathFallback(t *testing.T) {
+	// Only the flags this function reads may change the answer. FontFlagNotSubsettable is the one other flag the field
+	// carries — the whole program is embedded, so it costs the face nothing here — and it rides along on the cases
+	// expected to embed.
+	const ignored = font.FontFlagNotSubsettable
+	for _, c := range []struct {
+		name          string
+		flags         uint32
+		fontType      font.AdvancedFontType
+		want          font.AdvancedFontType
+		hasMaskFilter bool
+	}{
+		{name: "plain TrueType", fontType: font.FontTypeTrueType, want: font.FontTypeTrueType},
+		{
+			name: "TrueType with only ignored flags", fontType: font.FontTypeTrueType, flags: ignored,
+			want: font.FontTypeTrueType,
+		},
+		{name: "variable", fontType: font.FontTypeTrueType, flags: font.FontFlagVariable, want: font.FontTypeOther},
+		{
+			name: "alternate data format (WOFF)", fontType: font.FontTypeTrueType, flags: font.FontFlagAltDataFormat,
+			want: font.FontTypeOther,
+		},
+		{
+			name: "not embeddable", fontType: font.FontTypeTrueType, flags: font.FontFlagNotEmbeddable,
+			want: font.FontTypeOther,
+		},
+		{
+			name: "every flag at once", fontType: font.FontTypeTrueType,
+			flags: font.FontFlagVariable | font.FontFlagAltDataFormat | font.FontFlagNotEmbeddable | ignored,
+			want:  font.FontTypeOther,
+		},
+		{name: "CFF", fontType: font.FontTypeCFF, want: font.FontTypeOther},
+		{name: "mask filter", fontType: font.FontTypeTrueType, hasMaskFilter: true, want: font.FontTypeOther},
+		// A type this function does not branch on is passed through unchanged; the caller decides what to do with it.
+		{name: "Type1", fontType: font.FontTypeType1, want: font.FontTypeType1},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			m := &font.AdvancedMetrics{Type: c.fontType, Flags: c.flags}
+			if got := pdfFontType(c.hasMaskFilter, m); got != c.want {
+				t.Errorf("pdfFontType(maskFilter=%v, type %d flags %#x) = %d, want %d",
+					c.hasMaskFilter, c.fontType, c.flags, got, c.want)
+			}
+		})
+	}
+}
+
 func TestTextEmitsCIDFontType2(t *testing.T) {
 	tf := loadTestTypeface(t)
 	f := font.NewFont(tf, 20, 1, 0)

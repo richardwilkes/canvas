@@ -378,11 +378,58 @@ func TestMatrixMaxScale(t *testing.T) {
 		{name: "overflowing skew", m: MatrixFrom9([9]float32{0, huge, 0, huge, 0, 0, 0, 0, 1}), want: -1},
 		{name: "overflowing affine", m: MatrixFrom9([9]float32{huge, huge, 0, huge, huge, 0, 0, 0, 1}), want: -1},
 		{name: "NaN affine", m: MatrixFrom9([9]float32{float32(math.NaN()), 1, 0, 1, 1, 0, 0, 0, 1}), want: -1},
+		// The scale-only lane skips the quadratic entirely, but it must still honor the -1 sentinel rather than handing
+		// back an infinite or NaN scale for callers to use as a real one.
+		{name: "infinite scale only", m: ScaleMatrix(float32(math.Inf(1)), 2), want: -1},
+		{name: "negative infinite scale only", m: ScaleMatrix(2, float32(math.Inf(-1))), want: -1},
+		{name: "NaN scale only", m: ScaleMatrix(float32(math.NaN()), 2), want: -1},
 	}
 	for _, c := range cases {
 		// NaN has to be rejected explicitly, since every comparison against it is false.
 		if got := c.m.MaxScale(); ScalarIsNaN(got) || ScalarAbs(got-c.want) > 1e-4 {
 			t.Errorf("%s: MaxScale = %v, want %v", c.name, got, c.want)
 		}
+	}
+}
+
+// orthogonalRoundingProne is [3e10 -4; 4e10 3]: its two columns are exactly orthogonal (the dot product's two terms are
+// both 1.2e11, which does not fit in a float32 mantissa), and its determinant is far from zero. Every cross/dot term
+// derived from it is mathematically exact only when each product is rounded to float32 before the add. Contracting any
+// of them into a fused multiply-add — which the Go compiler does on arm64 for unpinned expressions — leaves the
+// rounding error behind, which is enormous at this magnitude and flips the results below.
+var orthogonalRoundingProne = MatrixFrom9([9]float32{3e10, -4, 0, 4e10, 3, 0, 0, 0, 1})
+
+// degeneracyProbeScale is large enough that 6*degeneracyProbeScale does not fit in a float32 mantissa.
+var degeneracyProbeScale = float32(1e10)
+
+func TestMatrixDegeneracyIsUnfused(t *testing.T) {
+	// Both halves of the determinant are the same real number, 6e10, reached through different factor pairs (so the
+	// compiler cannot fold them into one value): the determinant is exactly zero when each product is rounded to
+	// float32 first. Fused, the surviving term keeps the exact product and the difference is the rounding error of
+	// 6e10, which is thousands of times the tolerance, so the matrix reads as non-degenerate.
+	// The operands come from a var so the compiler cannot constant-fold the products and hide the contraction.
+	x := degeneracyProbeScale
+	if !isDegenerate2x2(x, 2*x, 3, 6) {
+		t.Error("isDegenerate2x2 must report an exactly-zero determinant as degenerate on every platform")
+	}
+	if isDegenerate2x2(3e10, -4, 4e10, 3) {
+		t.Error("isDegenerate2x2 must not report a well-conditioned matrix as degenerate")
+	}
+}
+
+func TestMatrixPreservesRightAnglesIsUnfused(t *testing.T) {
+	m := orthogonalRoundingProne
+	if !m.PreservesRightAngles() {
+		t.Error("exactly-orthogonal columns must preserve right angles on every platform")
+	}
+}
+
+func TestMatrixMaxScaleIsUnfused(t *testing.T) {
+	// The columns are (3e10, 4e10) and (-4, 3), so A^T*A is diagonal with entries 25e20 and 25, and the largest
+	// singular value is 5e10. Fusing the b term makes bSqd exceed the orthogonality tolerance, which sends the
+	// computation down the quadratic branch where aminusc*aminusc overflows float32 and MaxScale returns the -1
+	// sentinel instead.
+	if got := orthogonalRoundingProne.MaxScale(); got != 5e10 {
+		t.Errorf("MaxScale = %v, want 5e10", got)
 	}
 }

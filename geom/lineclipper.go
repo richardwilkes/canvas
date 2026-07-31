@@ -95,7 +95,8 @@ func containsNoEmptyCheck(outer, inner Rect) bool {
 }
 
 // IntersectLine intersects the segment src against clip. If a non-empty segment results, it is stored in dst and true
-// is returned; otherwise dst is unspecified.
+// is returned; otherwise dst is unspecified. clip must be sorted (Left <= Right and Top <= Bottom); see the note on
+// ClipLine.
 func IntersectLine(src *[2]Point, clip Rect, dst *[2]Point) bool {
 	// The sorted bounds of the two points.
 	bounds := Rect{
@@ -167,6 +168,11 @@ func IntersectLine(src *[2]Point, clip Rect, dst *[2]Point) bool {
 // left or right become vertical segments aligned to the clip edge (or are culled on the right side when
 // canCullToTheRight). Returns the number of resulting segments, whose endpoints are stored sequentially in lines:
 // segment i runs lines[i]..lines[i+1].
+//
+// clip must be sorted (Left <= Right and Top <= Bottom). The edge tests compare against Left/Top/Right/Bottom
+// directly, so a reversed rect such as RectLTRB(100, 0, 0, 100) silently emits a vertical "left edge" line at X=100 —
+// outside the rect's own right edge — instead of rejecting the segment. Call Rect.Sorted first if the rect may be
+// reversed.
 func ClipLine(pts *[2]Point, clip Rect, lines *[LineClipperMaxPoints]Point, canCullToTheRight bool) int {
 	var index0, index1 int
 	if pts[0].Y < pts[1].Y {

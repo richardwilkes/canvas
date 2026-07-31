@@ -423,3 +423,21 @@ func TestBuildUnitArc(t *testing.T) {
 		t.Errorf("scaled arc radius = %g, want 2", r)
 	}
 }
+
+func TestEvalCubicCurvatureAtScale(t *testing.T) {
+	// EvalCubicCurvatureAt returns one sixth of the second derivative, not the second derivative itself. Compare it
+	// against the analytic second derivative of the Bezier, fpp(t) = 6*(1-t)*(P2-2*P1+P0) + 6*t*(P3-2*P2+P1), so a caller that trusts the documented magnitude has a
+	// test pinning the factor.
+	cubic := []Point{Pt(0, 0), Pt(10, 40), Pt(70, -20), Pt(100, 30)}
+	for _, tv := range []float32{0, 0.25, 0.5, 0.75, 1} {
+		got := EvalCubicCurvatureAt(cubic, tv)
+		u := 1 - tv
+		want := Point{
+			X: 6 * (u*(cubic[2].X-2*cubic[1].X+cubic[0].X) + tv*(cubic[3].X-2*cubic[2].X+cubic[1].X)),
+			Y: 6 * (u*(cubic[2].Y-2*cubic[1].Y+cubic[0].Y) + tv*(cubic[3].Y-2*cubic[2].Y+cubic[1].Y)),
+		}
+		if ScalarAbs(6*got.X-want.X) > 1e-3 || ScalarAbs(6*got.Y-want.Y) > 1e-3 {
+			t.Errorf("t=%v: 6*EvalCubicCurvatureAt = %+v, want fpp(t) = %+v", tv, Pt(6*got.X, 6*got.Y), want)
+		}
+	}
+}

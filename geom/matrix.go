@@ -200,9 +200,12 @@ func (m *Matrix) IsFinite() bool {
 	return IsFinite(m.mat[0], m.mat[1], m.mat[2], m.mat[3], m.mat[4], m.mat[5], m.mat[6], m.mat[7], m.mat[8])
 }
 
-// isDegenerate2x2 reports whether the upper-left 2x2 has a near-zero determinant.
+// isDegenerate2x2 reports whether the upper-left 2x2 has a near-zero determinant. The explicit float32 conversions
+// force both products to round, forbidding the compiler from fusing a multiply into the subtract (Go fuses on arm64);
+// the result is compared against a near-zero tolerance, so fusion would flip the classification per platform. Pinned
+// unfused for the same reason as Point.Cross.
 func isDegenerate2x2(scaleX, skewX, skewY, scaleY float32) bool {
-	perpDot := scaleX*scaleY - skewX*skewY
+	perpDot := float32(scaleX*scaleY) - float32(skewX*skewY)
 	return ScalarNearlyZeroTolerance(perpDot, ScalarNearlyZeroTol*ScalarNearlyZeroTol)
 }
 
@@ -211,7 +214,9 @@ func isDegenerate2x2(scaleX, skewX, skewY, scaleY float32) bool {
 func (m *Matrix) PreservesRightAngles() bool {
 	mask := m.Type()
 	if mask <= TypeTranslate {
-		// Identity, translate and/or scale.
+		// Identity and/or translate. Scale-only matrices (TypeScale is 0x02, so they exceed TypeTranslate)
+		// deliberately fall through to the degeneracy test below: ScaleMatrix(0, 5) must report false. Do not widen
+		// this guard to TypeScale|TypeTranslate.
 		return true
 	}
 	if mask&TypePerspective != 0 {
@@ -227,8 +232,9 @@ func (m *Matrix) PreservesRightAngles() bool {
 		return false
 	}
 
-	// The upper 2x2 is scale + rotation/reflection if the basis vectors are orthogonal.
-	return ScalarNearlyZeroTolerance(mx*sx+sy*my, ScalarNearlyZeroTol*ScalarNearlyZeroTol)
+	// The upper 2x2 is scale + rotation/reflection if the basis vectors are orthogonal. Pinned unfused like
+	// isDegenerate2x2: the dot product is compared against a near-zero tolerance.
+	return ScalarNearlyZeroTolerance(float32(mx*sx)+float32(sy*my), ScalarNearlyZeroTol*ScalarNearlyZeroTol)
 }
 
 // CheapEqual reports element-wise equality of the nine values (Go's struct == also compares the lazily-computed
@@ -851,7 +857,9 @@ func (m *Matrix) AsAffine() ([6]float32, bool) {
 }
 
 // MapRect returns the bounds of src mapped through m. The boolean result reports whether the mapped rect corresponds
-// exactly to the image of src (i.e. rect-stays-rect); it is false for general affine and perspective matrices.
+// exactly to the image of src, i.e. whether the matrix is rect-stays-rect (identity, translate, scale, and the 90/270
+// degree rotations and axis flips built from them). It is false for perspective matrices and for affine matrices that
+// are not rect-stays-rect, where the returned rect is only the bounding box of the mapped quad.
 func (m *Matrix) MapRect(src Rect) (Rect, bool) {
 	if m.Type() <= TypeTranslate {
 		tx := m.mat[MTransX]
@@ -900,13 +908,19 @@ func (m *Matrix) MaxScale() float32 {
 		return 1
 	}
 	if typeMask&TypeAffine == 0 {
-		return max(ScalarAbs(m.mat[MScaleX]), ScalarAbs(m.mat[MScaleY]))
+		result := max(ScalarAbs(m.mat[MScaleX]), ScalarAbs(m.mat[MScaleY]))
+		if !IsFinite(result) {
+			return -1
+		}
+		return result
 	}
 	// Ignore the translation part of the matrix, just look at the 2x2 portion: compute the singular values and take the
-	// largest. [a b; b c] = A^T*A.
-	a := m.mat[MScaleX]*m.mat[MScaleX] + m.mat[MSkewY]*m.mat[MSkewY]
-	b := m.mat[MScaleX]*m.mat[MSkewX] + m.mat[MScaleY]*m.mat[MSkewY]
-	c := m.mat[MSkewX]*m.mat[MSkewX] + m.mat[MScaleY]*m.mat[MScaleY]
+	// largest. [a b; b c] = A^T*A. The dot products and the discriminant are pinned unfused (explicit float32
+	// conversions round each product) like Point.Dot: bSqd is compared against a near-zero tolerance to pick the
+	// orthogonal branch, and the result feeds stroke widths and size bucketing, so fusion would diverge per platform.
+	a := float32(m.mat[MScaleX]*m.mat[MScaleX]) + float32(m.mat[MSkewY]*m.mat[MSkewY])
+	b := float32(m.mat[MScaleX]*m.mat[MSkewX]) + float32(m.mat[MScaleY]*m.mat[MSkewY])
+	c := float32(m.mat[MSkewX]*m.mat[MSkewX]) + float32(m.mat[MScaleY]*m.mat[MScaleY])
 	// The eigenvalues of A^T*A are the squared singular values of A; solve the characteristic equation l^2 - (a+c)l +
 	// (ac - b^2) via the quadratic formula.
 	bSqd := b * b
@@ -917,7 +931,7 @@ func (m *Matrix) MaxScale() float32 {
 	} else {
 		aminusc := a - c
 		apluscdiv2 := 0.5 * (a + c)
-		x := 0.5 * ScalarSqrt(aminusc*aminusc+4*bSqd)
+		x := 0.5 * ScalarSqrt(float32(aminusc*aminusc)+float32(4*bSqd))
 		result = apluscdiv2 + x
 	}
 	if !IsFinite(result) {

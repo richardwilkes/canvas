@@ -7,8 +7,9 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// Mid-tangent finders for lines, quads and conics, sharing a quadratic solver. The GPU stroke tessellator chops flat
-// curves with 180-degree turnarounds at these mid-tangent points.
+// Mid-tangent finders for quads and conics, plus the bisector helper they share. The quad case solves its linear
+// equation inline; only the conic case needs the quadratic solver. The GPU stroke tessellator chops flat curves with
+// 180-degree turnarounds at these mid-tangent points.
 
 package geom
 

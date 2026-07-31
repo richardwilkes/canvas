@@ -10,6 +10,10 @@
 // EdgeClipper clips a single line/quad/cubic segment against a rect, emitting the clipped pieces (with vertical closure
 // lines for the portions chopped away on the left/right) via an iterator. The path-level driver that feeds whole paths
 // through this lives in the path package (ClipPath).
+//
+// Every clip rect passed to the ClipLine/ClipQuad/ClipCubic methods must be sorted (Left <= Right and Top <= Bottom).
+// The edge tests compare against Left/Top/Right/Bottom directly, so an unsorted rect produces geometry outside the
+// rect's own bounds rather than rejecting the segment; call Rect.Sorted first if the rect may be reversed.
 
 package geom
 
@@ -28,7 +32,9 @@ const (
 // extrema); at most 4 chops means at most 5 monotonic pieces reach clipMonoCubic. A piece emits at most 3 verbs and 8
 // points — the left vline (2), the clipped cubic (4), then the right vline (2) — for a worst case of 15 verbs and 40
 // points. Quads bound tighter (at most 1 chop per axis, so 3 pieces of 3 verbs / 7 points) and a clipped line yields at
-// most 3 verbs / 6 points, so the cubic case sets the limits below.
+// most 3 verbs / 6 points, so the cubic case sets the limits. The constants below are one piece larger than that
+// derived worst case (6 pieces rather than 5), preserving the safety margin the port inherits from Skia; do not shrink
+// them to 15/40.
 const (
 	edgeClipperMaxVerbs  = 18
 	edgeClipperMaxPoints = 54

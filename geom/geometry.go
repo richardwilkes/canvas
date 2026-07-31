@@ -228,7 +228,10 @@ func evalCubicDerivative(src []Point, t float32) Point {
 	return q.eval(t)
 }
 
-// EvalCubicCurvatureAt returns the second derivative of the cubic src at t.
+// EvalCubicCurvatureAt returns the second derivative of the cubic src at t, scaled by 1/6: with A = P3-3*P2+3*P1-P0
+// and B = P2-2*P1+P0, it returns A*t + B, which is one sixth of the true second derivative. The scale factor is
+// harmless for the callers, which only use the direction of the returned vector, but callers relying on the magnitude
+// must multiply by 6.
 func EvalCubicCurvatureAt(src []Point, t float32) Point {
 	ax := src[3].X + 3*(src[1].X-src[2].X) - src[0].X
 	ay := src[3].Y + 3*(src[1].Y-src[2].Y) - src[0].Y

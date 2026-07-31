@@ -165,9 +165,12 @@ func IntersectLine(src *[2]Point, clip Rect, dst *[2]Point) bool {
 }
 
 // ClipLine clips the line pts[0]..pts[1] against clip, ignoring portions completely above or below. Portions to the
-// left or right become vertical segments aligned to the clip edge (or are culled on the right side when
-// canCullToTheRight). Returns the number of resulting segments, whose endpoints are stored sequentially in lines:
-// segment i runs lines[i]..lines[i+1].
+// left or right become vertical segments aligned to the clip edge. Returns the number of resulting segments, whose
+// endpoints are stored sequentially in lines: segment i runs lines[i]..lines[i+1].
+//
+// canCullToTheRight suppresses output only for a segment lying *wholly* at or to the right of clip.Right, which is
+// dropped entirely (0 segments). It does not suppress the right-edge vertical segment emitted for a line that merely
+// extends past the right edge while still crossing the clip — that piece is emitted either way.
 //
 // clip must be sorted (Left <= Right and Top <= Bottom). The edge tests compare against Left/Top/Right/Bottom
 // directly, so a reversed rect such as RectLTRB(100, 0, 0, 100) silently emits a vertical "left edge" line at X=100 —

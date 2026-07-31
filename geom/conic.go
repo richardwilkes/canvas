@@ -287,8 +287,11 @@ func subdivideConic(src *Conic, pts []Point, level int) []Point {
 	return subdivideConic(&dst[1], pts, level)
 }
 
-// ChopIntoQuadsPOW2 writes 1 + 2*(1<<pow2) points describing a chain of 1<<pow2 quads into pts, returning the quad
-// count.
+// ChopIntoQuadsPOW2 writes a chain of quads into pts and returns the quad count, which occupies the leading
+// 1 + 2*count points. The count is usually 1<<pow2, but the requested pow2 is lowered in two cases: to 0 for a bad
+// (negative or non-finite) weight, and to 1 when pow2 is MaxConicToQuadPOW2 and the first chop collapses into a pair
+// of lines. Callers must therefore size buffers from pow2 (see MaxConicToQuadPointCount) but read only the
+// 1 + 2*count prefix the return value describes — a reused scratch buffer still holds stale points past it.
 func (c *Conic) ChopIntoQuadsPOW2(pts []Point, pow2 int) int {
 	if badConicW(c.W) {
 		pow2 = 0

@@ -325,7 +325,10 @@ func (r IRect) IsEmpty() bool {
 	return (w|h)&^math.MaxInt32 != 0
 }
 
-// isEmpty64 is a cheaper emptiness test used internally by Join and Intersect.
+// isEmpty64 is a cheaper emptiness test that ignores int32 overflow of the width or height, so it can disagree with
+// IsEmpty for rects spanning more than MaxInt32. Only Join uses it, matching SkIRect::join, which likewise tests the
+// edges directly rather than calling its overflow-aware isEmpty. Intersect and ContainsRect use IsEmpty instead, as
+// their Skia counterparts do; prefer IsEmpty in new code.
 func (r IRect) isEmpty64() bool {
 	return r.Right <= r.Left || r.Bottom <= r.Top
 }
@@ -350,16 +353,20 @@ func (r IRect) Sorted() IRect {
 	}
 }
 
-// Intersect sets r to the intersection and returns true, or returns false leaving r unchanged.
+// Intersect sets r to the intersection and returns true, or returns false leaving r unchanged. An intersection whose
+// width or height overflows int32 is rejected rather than stored, so a successful result is never a rect that IsEmpty
+// would call empty.
 func (r *IRect) Intersect(other IRect) bool {
-	l := maxI32(r.Left, other.Left)
-	rt := minI32(r.Right, other.Right)
-	t := maxI32(r.Top, other.Top)
-	b := minI32(r.Bottom, other.Bottom)
-	if l >= rt || t >= b {
+	result := IRect{
+		Left:   maxI32(r.Left, other.Left),
+		Top:    maxI32(r.Top, other.Top),
+		Right:  minI32(r.Right, other.Right),
+		Bottom: minI32(r.Bottom, other.Bottom),
+	}
+	if result.IsEmpty() {
 		return false
 	}
-	*r = IRect{Left: l, Top: t, Right: rt, Bottom: b}
+	*r = result
 	return true
 }
 
@@ -389,9 +396,10 @@ func (r IRect) ContainsPoint(x, y int32) bool {
 	return x >= r.Left && x < r.Right && y >= r.Top && y < r.Bottom
 }
 
-// ContainsRect reports true only when both rects are non-empty and other is entirely inside r.
+// ContainsRect reports true only when both rects are non-empty and other is entirely inside r. Emptiness is the
+// overflow-aware IsEmpty, so a rect too wide or tall for int32 never counts as containing or contained.
 func (r IRect) ContainsRect(other IRect) bool {
-	return !other.isEmpty64() && !r.isEmpty64() &&
+	return !other.IsEmpty() && !r.IsEmpty() &&
 		r.Left <= other.Left && r.Top <= other.Top &&
 		r.Right >= other.Right && r.Bottom >= other.Bottom
 }

@@ -433,3 +433,104 @@ func TestMatrixMaxScaleIsUnfused(t *testing.T) {
 		t.Errorf("MaxScale = %v, want 5e10", got)
 	}
 }
+
+// referenceMaxScale recomputes MaxScale's affine branch with every intermediate rounded to float32 explicitly. Each
+// step is evaluated in float64 and then rounded once, which reproduces correctly-rounded unfused float32 arithmetic and
+// cannot itself be contracted into an FMA, so it is an independent oracle for the pinning in MaxScale.
+func referenceMaxScale(m *Matrix) float32 {
+	r32 := func(v float64) float32 { return float32(v) }
+	sx, ky := float64(m.mat[MScaleX]), float64(m.mat[MSkewY])
+	kx, sy := float64(m.mat[MSkewX]), float64(m.mat[MScaleY])
+	a := r32(float64(r32(sx*sx)) + float64(r32(ky*ky)))
+	b := r32(float64(r32(sx*kx)) + float64(r32(sy*ky)))
+	c := r32(float64(r32(kx*kx)) + float64(r32(sy*sy)))
+	bSqd := r32(float64(b) * float64(b))
+	var result float32
+	if bSqd <= ScalarNearlyZeroTol*ScalarNearlyZeroTol {
+		result = max(a, c)
+	} else {
+		aminusc := r32(float64(a) - float64(c))
+		apluscdiv2 := r32(0.5 * (float64(a) + float64(c)))
+		disc := r32(float64(r32(float64(aminusc)*float64(aminusc))) + float64(r32(4*float64(bSqd))))
+		x := r32(0.5 * float64(ScalarSqrt(disc)))
+		result = r32(float64(apluscdiv2) + float64(x))
+	}
+	if !IsFinite(result) {
+		return -1
+	}
+	if result < 0 {
+		result = 0
+	}
+	return ScalarSqrt(result)
+}
+
+func TestMaxScaleMatchesUnfusedReference(t *testing.T) {
+	// Pins MaxScale's affine branch against an independent float64 oracle. Note this does NOT distinguish fused from
+	// unfused halving: p + 0.5*s contracts to an FMADDS on arm64, but halving is exact outside the subnormal range and
+	// TestMaxScaleHalvingsStayNormal shows the branch guard keeps it out of that range. The oracle instead guards the
+	// dot products and the discriminant, where fusion would be observable.
+	check := func(m *Matrix) {
+		t.Helper()
+		if !m.HasPerspective() {
+			if got, want := m.MaxScale(), referenceMaxScale(m); got != want {
+				t.Errorf("MaxScale(%v) = %v, want %v (unfused); the discriminant was folded into an FMA",
+					m.mat, got, want)
+			}
+		}
+	}
+	build := func(sx, kx, ky, sy float32) *Matrix {
+		var m Matrix
+		m.SetAll(sx, kx, 0, ky, sy, 0, 0, 0, 1)
+		return &m
+	}
+	for _, v := range [][4]float32{
+		{2, 0, 0, 3},
+		{1, 1e-7, 1e-7, 1},
+		{0.1, 0.2, 0.3, 0.4},
+		{1.0000001, 0.9999999, 1.0000002, 0.9999998},
+		{3, 4, 5, 6},
+		{1e-8, 1, 1, 1e-8},
+	} {
+		check(build(v[0], v[1], v[2], v[3]))
+	}
+	rng := rand.New(rand.NewSource(7))
+	for range 200000 {
+		check(build(rng.Float32()*20-10, rng.Float32()*20-10, rng.Float32()*20-10, rng.Float32()*20-10))
+	}
+}
+
+func TestMaxScaleHalvingsStayNormal(t *testing.T) {
+	// MaxScale's affine branch halves (a + c) and sqrt(disc). Halving is exact in binary floating point unless the
+	// result underflows to subnormal, which is why the FMA contraction on that final add is harmless. The bSqd guard is
+	// what keeps both operands out of the subnormal range: bSqd > (1/4096)^2 forces sqrt(disc) >= 4.8e-4, and
+	// |b| <= (a+c)/2 by Cauchy-Schwarz forces a + c > 4.9e-4. If a rework ever breaks that, the halvings stop being
+	// exact and the contraction starts to matter.
+	const smallestNormal = 1.1754944e-38
+	check := func(sx, kx, ky, sy float32) {
+		t.Helper()
+		a := float32(sx*sx) + float32(ky*ky)
+		b := float32(sx*kx) + float32(sy*ky)
+		c := float32(kx*kx) + float32(sy*sy)
+		bSqd := b * b
+		if bSqd <= ScalarNearlyZeroTol*ScalarNearlyZeroTol {
+			return // the orthogonal branch, which does no halving
+		}
+		if !IsFinite(a, c, bSqd) {
+			return
+		}
+		aminusc := a - c
+		disc := float32(aminusc*aminusc) + float32(4*bSqd)
+		if sum := a + c; sum < smallestNormal*2 {
+			t.Errorf("a+c = %v for [%v %v; %v %v]: halving (a+c) can underflow to subnormal", sum, sx, kx, ky, sy)
+		}
+		if root := ScalarSqrt(disc); root < smallestNormal*2 {
+			t.Errorf("sqrt(disc) = %v for [%v %v; %v %v]: halving it can underflow to subnormal", root, sx, kx, ky, sy)
+		}
+	}
+	rng := rand.New(rand.NewSource(11))
+	for range 300000 {
+		// Include magnitudes small enough to reach subnormal squares if the guard did not exclude them.
+		scale := float32(math.Pow(10, rng.Float64()*40-38))
+		check(rng.Float32()*scale, rng.Float32()*scale, rng.Float32()*scale, rng.Float32()*scale)
+	}
+}

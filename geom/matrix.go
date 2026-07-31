@@ -930,8 +930,14 @@ func (m *Matrix) MaxScale() float32 {
 		result = max(a, c)
 	} else {
 		aminusc := a - c
-		apluscdiv2 := 0.5 * (a + c)
-		x := 0.5 * ScalarSqrt(float32(aminusc*aminusc)+float32(4*bSqd))
+		// Both halvings are wrapped in float32 conversions to keep this branch's pinning uniform with the dot products
+		// above: each is a multiply feeding the final add, which arm64 would otherwise contract into a single FMADDS.
+		// The contraction is provably unobservable here — halving is exact unless the result underflows to subnormal,
+		// and the bSqd guard keeps both operands far above that (bSqd > (1/4096)^2 gives sqrt(disc) >= 4.8e-4, and
+		// |b| <= (a+c)/2 by Cauchy-Schwarz gives a+c > 4.9e-4) — so this is consistency, not a bug fix. Pinned anyway
+		// so the branch cannot start diverging if the guard or the discriminant is ever reworked.
+		apluscdiv2 := float32(0.5 * (a + c))
+		x := float32(0.5 * ScalarSqrt(float32(aminusc*aminusc)+float32(4*bSqd)))
 		result = apluscdiv2 + x
 	}
 	if !IsFinite(result) {

@@ -201,3 +201,72 @@ func TestRRect(t *testing.T) {
 		t.Errorf("sorted rrect = %+v", rr)
 	}
 }
+
+func TestIRectIntersectRejectsInt32Overflow(t *testing.T) {
+	// SkIRect::intersect rejects via the overflow-aware isEmpty(). An intersection wider or taller than int32 must not
+	// be stored, or Intersect would report success for a rect that IsEmpty() calls empty.
+	const lo, hi = math.MinInt32, math.MaxInt32
+	wide := IRect{Left: lo, Top: 0, Right: hi, Bottom: 10}
+	if !wide.IsEmpty() {
+		t.Fatal("test case must be an int32-overflowing rect")
+	}
+	r := wide
+	if r.Intersect(wide) {
+		t.Errorf("Intersect accepted an overflowing rect %+v, but IsEmpty() reports it empty", r)
+	}
+	if r != wide {
+		t.Errorf("a failed Intersect must leave the receiver unchanged, got %+v", r)
+	}
+	tall := IRect{Left: 0, Top: lo, Right: 10, Bottom: hi}
+	r = tall
+	if r.Intersect(tall) {
+		t.Errorf("Intersect accepted a vertically overflowing rect %+v", r)
+	}
+	// Whatever Intersect stores must never be a rect IsEmpty() disagrees about.
+	for _, pair := range [][2]IRect{
+		{wide, tall},
+		{wide, {Left: lo, Top: 0, Right: hi, Bottom: 10}},
+		{{Left: lo, Top: lo, Right: hi, Bottom: hi}, {Left: lo, Top: lo, Right: hi, Bottom: hi}},
+	} {
+		got := pair[0]
+		if got.Intersect(pair[1]) && got.IsEmpty() {
+			t.Errorf("Intersect(%+v, %+v) stored %+v, which IsEmpty() reports empty", pair[0], pair[1], got)
+		}
+	}
+	// A normal intersection still works.
+	ok := IRect{Left: 0, Top: 0, Right: 100, Bottom: 100}
+	if !ok.Intersect(IRect{Left: 50, Top: 50, Right: 200, Bottom: 200}) {
+		t.Fatal("expected a normal intersection to succeed")
+	}
+	if ok != (IRect{Left: 50, Top: 50, Right: 100, Bottom: 100}) {
+		t.Errorf("intersection = %+v", ok)
+	}
+}
+
+func TestIRectContainsRectRejectsInt32Overflow(t *testing.T) {
+	// SkIRect::contains gates on the overflow-aware isEmpty(), so an int32-overflowing rect is neither container nor
+	// containee.
+	const lo, hi = math.MinInt32, math.MaxInt32
+	huge := IRect{Left: lo, Top: lo, Right: hi, Bottom: hi}
+	if !huge.IsEmpty() {
+		t.Fatal("test case must be an int32-overflowing rect")
+	}
+	inner := IRect{Left: 0, Top: 0, Right: 10, Bottom: 10}
+	if huge.ContainsRect(inner) {
+		t.Error("an overflowing rect must not be reported as containing anything, since IsEmpty() calls it empty")
+	}
+	if inner.ContainsRect(huge) {
+		t.Error("an overflowing rect must not be reported as contained")
+	}
+	if huge.ContainsRect(huge) {
+		t.Error("an overflowing rect must not contain itself")
+	}
+	// Normal containment still works.
+	outer := IRect{Left: 0, Top: 0, Right: 100, Bottom: 100}
+	if !outer.ContainsRect(inner) {
+		t.Error("expected normal containment to hold")
+	}
+	if inner.ContainsRect(outer) {
+		t.Error("expected reversed containment to fail")
+	}
+}

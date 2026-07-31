@@ -367,3 +367,40 @@ func TestEdgeClipperBuffersCoverStructuralWorstCase(t *testing.T) {
 		t.Errorf("edgeClipperMaxPoints = %d, want at least %d", edgeClipperMaxPoints, structuralPoints)
 	}
 }
+
+func TestClipLineCullToTheRightOnlyWhollyRight(t *testing.T) {
+	// Documented contract: canCullToTheRight drops only a segment lying wholly at/right of clip.Right. A segment that
+	// merely extends past the right edge while still crossing the clip keeps its right-edge vertical piece either way.
+	clip := RectLTRB(0, 0, 100, 100)
+	var lines [LineClipperMaxPoints]Point
+	wholly := [2]Point{{X: 120, Y: 10}, {X: 150, Y: 90}}
+	if n := ClipLine(&wholly, clip, &lines, true); n != 0 {
+		t.Errorf("wholly-right segment with culling produced %d segments, want 0", n)
+	}
+	if n := ClipLine(&wholly, clip, &lines, false); n != 1 {
+		t.Errorf("wholly-right segment without culling produced %d segments, want 1", n)
+	}
+	// Crosses the clip and exits to the right: the right-edge vertical piece survives regardless of the flag.
+	crossing := [2]Point{{X: 50, Y: 10}, {X: 150, Y: 90}}
+	culled := ClipLine(&crossing, clip, &lines, true)
+	culledPts := make([]Point, 0, culled+1)
+	culledPts = append(culledPts, lines[:culled+1]...)
+	uncut := ClipLine(&crossing, clip, &lines, false)
+	if culled != uncut {
+		t.Errorf("culling changed segment count for a partially-right line: %d vs %d", culled, uncut)
+	}
+	for i := 0; i <= uncut; i++ {
+		if culledPts[i] != lines[i] {
+			t.Errorf("culling changed point %d for a partially-right line: %v vs %v", i, culledPts[i], lines[i])
+		}
+	}
+	rightEdge := false
+	for i := 0; i <= uncut; i++ {
+		if lines[i].X == clip.Right {
+			rightEdge = true
+		}
+	}
+	if !rightEdge {
+		t.Error("expected a point on the right clip edge, which canCullToTheRight does not suppress")
+	}
+}

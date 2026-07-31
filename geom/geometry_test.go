@@ -466,3 +466,37 @@ func TestMaxConicToQuadPointCount(t *testing.T) {
 		t.Error("ChopIntoQuadsPOW2 wrote past MaxConicToQuadPointCount")
 	}
 }
+
+func TestChopIntoQuadsPOW2LowersPow2(t *testing.T) {
+	// Documented contract: the returned count is usually 1<<pow2, but pow2 is lowered to 0 for a bad weight and to 1
+	// when the extreme-weight first chop collapses into a pair of lines. Callers must read only the 1+2*count prefix.
+	var pts [MaxConicToQuadPointCount]Point
+	p0, p1, p2 := Point{X: 0, Y: 0}, Point{X: 100, Y: 0}, Point{X: 100, Y: 100}
+	for _, w := range []float32{float32(math.NaN()), float32(math.Inf(1)), float32(math.Inf(-1)), -1, -0.5} {
+		c := MakeConic(p0, p1, p2, w)
+		if got := c.ChopIntoQuadsPOW2(pts[:], MaxConicToQuadPOW2); got != 1 {
+			t.Errorf("bad weight %v: count = %d, want 1 (pow2 lowered to 0)", w, got)
+		}
+	}
+	// An extreme weight collapses the first chop into two lines, lowering pow2 to 1.
+	c := MakeConic(p0, p1, p2, 1e30)
+	if got := c.ChopIntoQuadsPOW2(pts[:], MaxConicToQuadPOW2); got != 2 {
+		t.Errorf("extreme weight: count = %d, want 2 (pow2 lowered to 1)", got)
+	}
+	// A well-behaved weight honors the requested pow2, and the prefix the count describes is the part that was written.
+	c = MakeConic(p0, p1, p2, 0.7)
+	for pow2 := range MaxConicToQuadPOW2 + 1 {
+		for i := range pts {
+			pts[i] = Point{X: -999, Y: -999}
+		}
+		count := c.ChopIntoQuadsPOW2(pts[:], pow2)
+		if count != 1<<pow2 {
+			t.Fatalf("pow2 %d: count = %d, want %d", pow2, count, 1<<pow2)
+		}
+		for i := range 1 + 2*count {
+			if pts[i] == (Point{X: -999, Y: -999}) {
+				t.Errorf("pow2 %d: point %d within the 1+2*count prefix was never written", pow2, i)
+			}
+		}
+	}
+}

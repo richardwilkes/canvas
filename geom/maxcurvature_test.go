@@ -11,6 +11,7 @@ package geom
 
 import (
 	"math"
+	"math/rand"
 	"testing"
 )
 
@@ -136,6 +137,54 @@ func TestChopCubicAtInflections(t *testing.T) {
 	for i := range 4 {
 		if dst[i] != bulge[i] {
 			t.Fatalf("bulge cubic not copied through: %v", dst[:4])
+		}
+	}
+}
+
+func TestFindQuadMaxCurvatureNaN(t *testing.T) {
+	// Documented contract: the result is in [0, 1] for finite input, but a NaN coordinate makes numer and denom NaN,
+	// which fails every comparison and falls through to return NaN. Matches Skia, whose assert admits NaN.
+	nan := float32(math.NaN())
+	for _, src := range [][]Point{
+		{{X: nan, Y: 0}, {X: 1, Y: 1}, {X: 2, Y: 0}},
+		{{X: 0, Y: 0}, {X: nan, Y: 1}, {X: 2, Y: 0}},
+		{{X: 0, Y: 0}, {X: 1, Y: 1}, {X: 2, Y: nan}},
+	} {
+		if got := FindQuadMaxCurvature(src); !math.IsNaN(float64(got)) {
+			t.Errorf("FindQuadMaxCurvature(%v) = %v, want NaN", src, got)
+		}
+	}
+	// Finite input stays pinned to the unit range.
+	rng := rand.New(rand.NewSource(5))
+	for range 50000 {
+		src := []Point{
+			{X: rng.Float32()*200 - 100, Y: rng.Float32()*200 - 100},
+			{X: rng.Float32()*200 - 100, Y: rng.Float32()*200 - 100},
+			{X: rng.Float32()*200 - 100, Y: rng.Float32()*200 - 100},
+		}
+		if got := FindQuadMaxCurvature(src); got < 0 || got > 1 {
+			t.Fatalf("FindQuadMaxCurvature(%v) = %v, want within [0, 1]", src, got)
+		}
+	}
+}
+
+func TestCalcCubicPrecisionScalesAsSquare(t *testing.T) {
+	// Documented contract: the tolerance is proportional to the *square* of the cubic's dimensions, so scaling the
+	// control polygon by k scales the result by k^2. A caller comparing it against an unsquared magnitude is wrong.
+	src := []Point{{X: 0, Y: 0}, {X: 10, Y: 20}, {X: 30, Y: 5}, {X: 40, Y: 25}}
+	base := calcCubicPrecision(src)
+	if base <= 0 {
+		t.Fatalf("base = %v, want positive", base)
+	}
+	for _, k := range []float32{2, 3, 10} {
+		scaled := make([]Point, len(src))
+		for i, p := range src {
+			scaled[i] = Point{X: p.X * k, Y: p.Y * k}
+		}
+		got := calcCubicPrecision(scaled)
+		want := base * k * k
+		if diff := math.Abs(float64(got - want)); diff > float64(want)*1e-5 {
+			t.Errorf("calcCubicPrecision scaled by %v = %v, want %v (k^2 growth, not k)", k, got, want)
 		}
 	}
 }

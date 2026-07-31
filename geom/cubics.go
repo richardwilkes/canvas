@@ -8,8 +8,14 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // Quadratic and cubic root-finding, evaluation, and subdivision helpers that the mono-cubic choppers and the edge
-// clipper depend on. All of this machinery computes in float64 for numerical stability, so results are bit-exact
-// regardless of the input's float32 precision.
+// clipper depend on. The root-finding and subdivision machinery — everything from doubleNearlyZero through
+// ChopMonoCubicAtX — computes in float64 for numerical stability, so its results do not depend on how the float32
+// inputs happened to round.
+//
+// The two X-extrema choppers at the end of the file (ChopQuadAtXExtrema and ChopCubicAtXExtrema) are the exception:
+// they run entirely in float32 via ValidUnitDivide/FindCubicExtrema/ChopQuadAt, matching Skia, and are *not*
+// precision-hardened. Re-chopping an already-chopped piece can therefore report an extremum the original curve did not
+// have — see the buffer-limit derivation above edgeClipperMaxVerbs, which is sized to tolerate exactly that.
 
 package geom
 

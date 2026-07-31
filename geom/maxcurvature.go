@@ -140,9 +140,14 @@ func ChopCubicAtMaxCurvature(src, dst []Point) int {
 	return count + 1
 }
 
-// FindQuadMaxCurvature returns the t in [0, 1] where the quad's curvature is maximal (t = -(Ax Bx + Ay By) / (Bx^2 +
-// By^2), pinned to the unit range). The dot products are pinned to unfused evaluation: callers branch on numer <= 0 /
-// numer >= denom, and FMA fusion would move mathematically-zero results across those cliffs differently per platform.
+// FindQuadMaxCurvature returns the t where the quad's curvature is maximal (t = -(Ax Bx + Ay By) / (Bx^2 + By^2),
+// pinned to the unit range). The result is in [0, 1] for finite input, but a NaN coordinate makes both numer and denom
+// NaN, which fails every comparison below and falls through to return NaN — matching Skia, whose own assert is
+// (0 <= t && t < 1) || SkScalarIsNaN(t). Callers that feed the result into further geometry must handle that, as
+// gpu/gl/aahairlinepathrenderer.go does.
+//
+// The dot products are pinned to unfused evaluation because this function branches on numer <= 0 / numer >= denom, and
+// FMA fusion would move mathematically-zero results across those cliffs differently per platform.
 func FindQuadMaxCurvature(src []Point) float32 {
 	ax := src[1].X - src[0].X
 	ay := src[1].Y - src[0].Y
@@ -207,7 +212,9 @@ func ChopCubicAtInflections(src, dst []Point) int {
 	return count + 1
 }
 
-// calcCubicPrecision returns a constant proportional to the cubic's dimensions.
+// calcCubicPrecision returns a tolerance proportional to the *square* of the cubic's dimensions: it sums the squared
+// lengths of the control polygon's segments. Compare it against a squared magnitude (LengthSqd/DistanceToSqd), never
+// against an unsquared one.
 func calcCubicPrecision(src []Point) float32 {
 	return (src[1].DistanceToSqd(src[0]) + src[2].DistanceToSqd(src[1]) +
 		src[3].DistanceToSqd(src[2])) * 1e-8

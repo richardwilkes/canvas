@@ -150,6 +150,23 @@ func (scratch *imageDrawScratch) makePaintWithImage(origPaint *Paint, px *imagec
 	return paint
 }
 
+// spriteAlphaType translates an image's alpha type into the sprite blitters' classification of a source's alpha
+// channel. The unpremul case matters: the sprite lane blits onto a premultiplied destination, so a straight-alpha
+// source has to be premultiplied on the way in — without that it would composite as if its color bytes were already
+// scaled by alpha, adding a fully transparent pixel's color to the backdrop instead of leaving it alone. An unknown
+// alpha type (which a valid image info cannot carry) falls in with the premultiplied form, the same reading the shader
+// lane's premul stage gives it.
+func spriteAlphaType(at imagecore.AlphaType) raster.SpriteAlphaType {
+	switch at {
+	case imagecore.AlphaTypeOpaque:
+		return raster.SpriteAlphaOpaque
+	case imagecore.AlphaTypeUnpremul:
+		return raster.SpriteAlphaUnpremul
+	default:
+		return raster.SpriteAlphaPremul
+	}
+}
+
 // clippedOutMatrix maps the bitmap bounds through the matrix and quick-rejects against the clip.
 func clippedOutMatrix(matrix *geom.Matrix, rc *raster.Clip, w, h int32) bool {
 	dstR, _ := path.MapRect(matrix, geom.RectWH(float32(w), float32(h)))
@@ -193,7 +210,7 @@ func (d *draw) drawBitmap(px *imagecore.Pixels, prematrix *geom.Matrix, dstBound
 				// The sprite lane cannot apply mask or color filters.
 				if paint.MaskFilter == nil && paint.ColorFilter == nil {
 					blitter := raster.ChooseSprite(d.dst, &pm, ix, iy, paint.Color.A(),
-						paint.BlendMode, px.Info.IsOpaque())
+						paint.BlendMode, spriteAlphaType(px.Info.AlphaType))
 					raster.FillIRectRasterClip(geom.IRectXYWH(ix, iy, pm.Width, pm.Height), d.rc, blitter)
 					return
 				}

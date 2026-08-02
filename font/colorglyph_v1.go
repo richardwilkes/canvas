@@ -167,7 +167,7 @@ func (cv *colrV1Canvas) restore() {
 		cv.layerBudget += cv.layerBytes()
 		// The layer draws back as a full-coverage image over the clip: every clipped pixel blends, which matters for
 		// modes that act where the source is transparent (Clear, SrcIn, DstIn, ...).
-		blitter := raster.NewImageSpriteBlitter(cv.device(), layer, 0, 0, 0xFF, mode)
+		blitter := raster.NewImageSpriteBlitter(cv.device(), layer, 0, 0, 0xFF, mode, raster.SpriteAlphaPremul)
 		raster.FillIRectRasterClip(geom.IRectWH(cv.w, cv.h), cv.clips.RC(), blitter)
 	}
 	cv.ctm = rec.ctm

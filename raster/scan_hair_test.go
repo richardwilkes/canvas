@@ -250,7 +250,7 @@ func TestSpriteSrcOverOpaqueAlpha(t *testing.T) {
 	src.Pix[1] = 0xFF0000FF // opaque red (RGBA word: R=0xFF... actually R in low byte)
 	dst := newWhitePixmap(4, 2)
 
-	blitter := ChooseSprite(dst, src, 1, 0, 255, BlendSrcOver, false)
+	blitter := ChooseSprite(dst, src, 1, 0, 255, BlendSrcOver, SpriteAlphaPremul)
 	blitter.BlitRect(1, 0, 2, 1)
 
 	for i, s := range []uint32{0x80402010, 0xFF0000FF} {
@@ -276,7 +276,7 @@ func TestSpriteMemcpyForSrc(t *testing.T) {
 		src.Pix[i] = uint32(0x11223344 * (i + 1))
 	}
 	dst := newWhitePixmap(4, 4)
-	blitter := ChooseSprite(dst, src, 1, 1, 255, BlendSrc, false)
+	blitter := ChooseSprite(dst, src, 1, 1, 255, BlendSrc, SpriteAlphaPremul)
 	blitter.BlitRect(1, 1, 2, 2)
 	for y := int32(0); y < 2; y++ {
 		for x := int32(0); x < 2; x++ {
@@ -292,7 +292,7 @@ func TestSpriteGlobalAlphaBlend(t *testing.T) {
 	src := NewPixmap(1, 1)
 	src.Pix[0] = 0xFF204060
 	dst := newWhitePixmap(1, 1)
-	blitter := ChooseSprite(dst, src, 0, 0, 128, BlendSrcOver, false)
+	blitter := ChooseSprite(dst, src, 0, 0, 128, BlendSrcOver, SpriteAlphaPremul)
 	blitter.BlitRect(0, 0, 1, 1)
 
 	s := uint32(0xFF204060)
@@ -323,7 +323,7 @@ func TestImageSpriteBlitterMatchesBlendBlitter(t *testing.T) {
 		viaSprite := newWhitePixmap(w, h)
 		viaSolid := newWhitePixmap(w, h)
 
-		sprite := NewImageSpriteBlitter(viaSprite, src, 0, 0, 255, mode)
+		sprite := NewImageSpriteBlitter(viaSprite, src, 0, 0, 255, mode, SpriteAlphaPremul)
 		solid := NewBlendBlitter(viaSolid, color, mode)
 
 		sprite.BlitRect(0, 0, w, h/2)

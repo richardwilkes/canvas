@@ -10,6 +10,11 @@
 // Sprite blitters: blit a source pixmap positioned at integer device coordinates. This is how layer contents return to
 // their parent device at restore() and how integer-aligned image draws land (the sprite fast path for image draws).
 //
+// The destination is always premultiplied, so a straight-alpha source (SpriteAlphaUnpremul) is premultiplied on the way
+// in — a row at a time for the legacy src-over sprite, per pixel for the raster-pipeline sprite — rather than being
+// composited as if its bytes were already premultiplied. Premultiplying in the blitter keeps such sources on the fast
+// path; the verbatim-copy sprite is the one lane they cannot take.
+//
 // Byte-exactness note: the src-over row kernels reproduce the NEON forms that the darwin/arm64 oracle leg executes for
 // every pixel of a row (including odd-length tails). The x86 SSE2 bodies compute s + ((d*(256-sa))>>8) where NEON
 // computes s + mulDiv255Round(d, 255-sa), and x86 rows shorter than the vector width take scalar tails with a third
@@ -18,6 +23,24 @@
 package raster
 
 import "github.com/richardwilkes/canvas/geom"
+
+// SpriteAlphaType classifies how a sprite source's alpha channel relates to its color channels, which decides both
+// which blitter can consume the source words verbatim and whether they must be premultiplied first. raster cannot name
+// imagecore's AlphaType (imagecore is the layer above), so callers translate into this.
+type SpriteAlphaType uint8
+
+// SpriteAlphaType values.
+const (
+	// SpriteAlphaPremul is a source whose color channels are already multiplied by its alpha — the destination's own
+	// form.
+	SpriteAlphaPremul SpriteAlphaType = iota
+	// SpriteAlphaOpaque is a source with no transparency at all, so its premultiplied and unpremultiplied forms
+	// coincide.
+	SpriteAlphaOpaque
+	// SpriteAlphaUnpremul is a straight-alpha source: its color channels must be premultiplied before compositing onto
+	// the premultiplied destination.
+	SpriteAlphaUnpremul
+)
 
 // spriteBase carries the common sprite state: the source pixmap and its position in destination space. Only BlitRect
 // (and BlitH via BlitRect) is reachable: sprites are drawn through a rect-fill path whose clip wrappers only emit rect
@@ -90,6 +113,29 @@ func pack64(v uint64) uint32 {
 	return uint32(v) | uint32(v>>24)
 }
 
+// premul8888 premultiplies a straight-alpha 8888 word: every color channel is scaled by the pixel's alpha with the
+// round-half-up div255 (mulDiv255Round), the integer form of the shader lane's premul stage, so both lanes agree on the
+// bytes an unpremultiplied source contributes. The channels run in spread64 lanes with the same headroom argument as
+// pmSrcOverRowGeneric (lane max 255*255+128 = 0xFE81, then +254 = 0xFF7F, so nothing carries across lanes); the alpha
+// lane's product is discarded, since premultiplication leaves alpha alone.
+func premul8888(c uint32) uint32 {
+	a := c >> 24
+	if a == 0xFF {
+		return c
+	}
+	const half = uint64(0x0080008000800080)
+	prod := spread64(c)*uint64(a) + half
+	prod += (prod >> 8) & swarMask8
+	return pack64((prod>>8)&swarMask8)&0x00FFFFFF | a<<24
+}
+
+// premulRow premultiplies a row of straight-alpha words into dst, which must be at least as long as src.
+func premulRow(dst, src []uint32) {
+	for i, s := range src {
+		dst[i] = premul8888(s)
+	}
+}
+
 // pmSrcOverRowGeneric is the portable form of pmSrcOverRow: per channel saturating-add(src, mulDiv255Round(dst,
 // 255-srcA)), run four channels per op in spread64 lanes. On arm64 pmSrcOverRow runs the NEON kernel instead and uses
 // this only for the sub-quad tail. Bit-exactness per lane: prod = d*nalpha + 128 <= 255*255+128 = 0xFE81 stays in its
@@ -138,11 +184,15 @@ func satAdd8(a, b uint32) uint32 {
 }
 
 // spriteD32S32 is the legacy N32 src-over sprite, honoring the paint's global alpha. It dispatches to one of four row
-// procs depending on whether the source is opaque and whether the paint alpha is 255.
+// procs depending on whether the source is opaque and whether the paint alpha is 255. A straight-alpha source is
+// premultiplied one row at a time into scratch and then handed to those same row procs, so it yields exactly the bytes
+// a caller that premultiplied its pixels up front would have gotten.
 type spriteD32S32 struct {
 	spriteBase
-	alpha     uint32 // paint alpha, 0..255
-	srcOpaque bool
+	scratch     []uint32 // the premultiplied source row; allocated on first use, only for a straight-alpha source
+	alpha       uint32   // paint alpha, 0..255
+	srcOpaque   bool
+	srcUnpremul bool
 }
 
 // BlitH implements Blitter.
@@ -156,6 +206,14 @@ func (s *spriteD32S32) BlitRect(x, y, width, height int32) {
 		sr := s.src.addr(x-s.left, y+row-s.top)
 		dstRow := s.dst.Pix[d : d+int(width)]
 		srcRow := s.src.Pix[sr : sr+int(width)]
+		if s.srcUnpremul {
+			// Premultiply the row into scratch, so the row procs below see the destination's own form.
+			if len(s.scratch) < int(width) {
+				s.scratch = make([]uint32, width)
+			}
+			premulRow(s.scratch[:width], srcRow)
+			srcRow = s.scratch[:width]
+		}
 		switch {
 		case s.srcOpaque && s.alpha == 255:
 			copy(dstRow, srcRow) // opaque source, full alpha: verbatim copy
@@ -174,39 +232,52 @@ func (s *spriteD32S32) BlitRect(x, y, width, height int32) {
 ///////////////////////////////////////////////////////////////////////////////
 
 // ImageSpriteBlitter is the raster-pipeline-equivalent sprite blitter for an integer-translated N32 source: each
-// destination pixel loads the corresponding source pixel, scales it by the paint alpha (lowp: div255(v*alpha); highp:
-// float multiply), applies the blend mode, and handles coverage the same way the raster-pipeline blitter does
-// (pre-scale vs lerp-after-blend). It supports the full Blitter interface, so it also stands in as the general
-// drawRect-style fallback when an AA clip prevents the sprite fast path.
+// destination pixel loads the corresponding source pixel, premultiplies it if the source is straight-alpha, scales it
+// by the paint alpha (lowp: div255(v*alpha); highp: float multiply), applies the blend mode, and handles coverage the
+// same way the raster-pipeline blitter does (pre-scale vs lerp-after-blend). It supports the full Blitter interface, so
+// it also stands in as the general drawRect-style fallback when an AA clip prevents the sprite fast path.
 type ImageSpriteBlitter struct {
-	dst      *Pixmap
-	src      *Pixmap
-	left     int32
-	top      int32
-	alpha    uint32 // paint alpha, 0..255
-	mode     BlendMode
-	lowp     bool
-	prescale bool
+	dst         *Pixmap
+	src         *Pixmap
+	left        int32
+	top         int32
+	alpha       uint32 // paint alpha, 0..255
+	mode        BlendMode
+	lowp        bool
+	prescale    bool
+	srcUnpremul bool
 }
 
-// NewImageSpriteBlitter returns a raster-pipeline-equivalent sprite blitter.
-func NewImageSpriteBlitter(dst, src *Pixmap, left, top int32, alpha uint8, mode BlendMode) *ImageSpriteBlitter {
+// NewImageSpriteBlitter returns a raster-pipeline-equivalent sprite blitter. srcAlpha classifies the source's alpha
+// channel; a SpriteAlphaUnpremul source is premultiplied as each pixel is loaded.
+func NewImageSpriteBlitter(dst, src *Pixmap, left, top int32, alpha uint8, mode BlendMode, srcAlpha SpriteAlphaType) *ImageSpriteBlitter {
 	return &ImageSpriteBlitter{
-		dst:      dst,
-		src:      src,
-		left:     left,
-		top:      top,
-		mode:     mode,
-		alpha:    uint32(alpha),
-		lowp:     !blendNeedsHighp(mode),
-		prescale: blendShouldPreScaleCoverage(mode),
+		dst:         dst,
+		src:         src,
+		left:        left,
+		top:         top,
+		mode:        mode,
+		alpha:       uint32(alpha),
+		lowp:        !blendNeedsHighp(mode),
+		prescale:    blendShouldPreScaleCoverage(mode),
+		srcUnpremul: srcAlpha == SpriteAlphaUnpremul,
 	}
+}
+
+// srcWord returns the premultiplied source word for destination pixel (x, y), premultiplying in the lowp form
+// (div255(v*a), premul8888) when the source carries straight alpha.
+func (ib *ImageSpriteBlitter) srcWord(x, y int32) uint32 {
+	s := ib.src.Pix[ib.src.addr(x-ib.left, y-ib.top)]
+	if ib.srcUnpremul {
+		s = premul8888(s)
+	}
+	return s
 }
 
 // srcPM8 returns the source pixel for destination pixel (x, y), scaled by the paint alpha in the lowp form: alpha/255
 // converts into the lowp fixed-point form as alpha exactly, so the scale is div255(v*alpha).
 func (ib *ImageSpriteBlitter) srcPM8(x, y int32) pm8 {
-	s := loadPM8(ib.src.Pix[ib.src.addr(x-ib.left, y-ib.top)])
+	s := loadPM8(ib.srcWord(x, y))
 	if ib.alpha != 255 {
 		s = pm8{
 			r: div255(s.r * ib.alpha),
@@ -220,6 +291,13 @@ func (ib *ImageSpriteBlitter) srcPM8(x, y int32) pm8 {
 
 func (ib *ImageSpriteBlitter) srcPM4f(x, y int32) pmColor4f {
 	c := loadPM4f(ib.src.Pix[ib.src.addr(x-ib.left, y-ib.top)])
+	if ib.srcUnpremul {
+		// The highp lane premultiplies in float, matching the raster pipeline's premul stage, rather than rounding
+		// through 8 bits first.
+		c.r *= c.a
+		c.g *= c.a
+		c.b *= c.a
+	}
 	if ib.alpha != 255 {
 		f := float32(ib.alpha) * (1.0 / 255.0)
 		c.r *= f
@@ -234,7 +312,7 @@ func (ib *ImageSpriteBlitter) srcPM4f(x, y int32) pmColor4f {
 func (ib *ImageSpriteBlitter) blendPixel(x, y int32, px uint32) uint32 {
 	if ib.mode == BlendSrc {
 		if ib.alpha == 255 {
-			return ib.src.Pix[ib.src.addr(x-ib.left, y-ib.top)]
+			return ib.srcWord(x, y)
 		}
 		return storePM8(ib.srcPM8(x, y))
 	}
@@ -368,19 +446,23 @@ func (ib *ImageSpriteBlitter) BlitAntiV2(x, y int32, a0, a1 Alpha) {
 // ChooseSprite selects the fastest sprite blitter for the N32 destination/source pair: the memcpy sprite when the paint
 // copies pixels verbatim (BlendSrc, or src-over with an opaque source), the legacy src-over sprite otherwise for
 // src-over, and the raster-pipeline-equivalent sprite for everything else. left/top position the source in destination
-// space; alpha and mode come from the paint; srcOpaque is the source image's alpha-type opacity.
-func ChooseSprite(dst, src *Pixmap, left, top int32, alpha uint8, mode BlendMode, srcOpaque bool) Blitter {
-	// Full alpha and BlendSrc, or src-over with an opaque source: pixels copy verbatim.
-	if alpha == 0xFF && (mode == BlendSrc || (mode == BlendSrcOver && srcOpaque)) {
+// space; alpha and mode come from the paint; srcAlpha classifies the source image's alpha channel. A straight-alpha
+// source is premultiplied inside whichever blitter runs, so the only lane it cannot take is the verbatim copy — its
+// bytes are not yet in the destination's premultiplied form.
+func ChooseSprite(dst, src *Pixmap, left, top int32, alpha uint8, mode BlendMode, srcAlpha SpriteAlphaType) Blitter {
+	// Full alpha and BlendSrc, or src-over with an opaque source: premultiplied pixels copy verbatim.
+	if alpha == 0xFF && srcAlpha != SpriteAlphaUnpremul &&
+		(mode == BlendSrc || (mode == BlendSrcOver && srcAlpha == SpriteAlphaOpaque)) {
 		return &spriteMemcpy{spriteBase: spriteBase{dst: dst, src: src, left: left, top: top}}
 	}
 	// src-over takes the legacy blitter (it handles alpha, but no other blend mode).
 	if mode == BlendSrcOver {
 		return &spriteD32S32{
-			spriteBase: spriteBase{dst: dst, src: src, left: left, top: top},
-			alpha:      uint32(alpha),
-			srcOpaque:  srcOpaque,
+			spriteBase:  spriteBase{dst: dst, src: src, left: left, top: top},
+			alpha:       uint32(alpha),
+			srcOpaque:   srcAlpha == SpriteAlphaOpaque,
+			srcUnpremul: srcAlpha == SpriteAlphaUnpremul,
 		}
 	}
-	return NewImageSpriteBlitter(dst, src, left, top, alpha, mode)
+	return NewImageSpriteBlitter(dst, src, left, top, alpha, mode, srcAlpha)
 }

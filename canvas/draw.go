@@ -762,7 +762,7 @@ func (d *draw) drawSprite(src *raster.Pixmap, x, y int32, origPaint *Paint) {
 
 	if paint.ColorFilter == nil && clipHandlesSprite(d.rc, x, y, src) {
 		// Layer sprites are never opaque (their alpha type is premul).
-		blitter := raster.ChooseSprite(d.dst, src, x, y, paint.Color.A(), paint.BlendMode, false)
+		blitter := raster.ChooseSprite(d.dst, src, x, y, paint.Color.A(), paint.BlendMode, raster.SpriteAlphaPremul)
 		raster.FillIRectRasterClip(bounds, d.rc, blitter)
 		return
 	}

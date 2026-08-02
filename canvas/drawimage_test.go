@@ -269,3 +269,72 @@ func TestDrawImageNineInvalidCenterKeepsCallerPaint(t *testing.T) {
 		t.Error("the lattice patch draws must still be cleaned of AntiAlias")
 	}
 }
+
+// unpremulRowImage builds a 1-row straight-alpha image: one color repeated at each of the given alphas.
+func unpremulRowImage(t *testing.T, alphas []uint8) *imagecore.Image {
+	t.Helper()
+	info, ok := imagecore.MakeInfo(int32(len(alphas)), 1, imagecore.ColorTypeRGBA8888, imagecore.AlphaTypeUnpremul)
+	if !ok || info.AlphaType != imagecore.AlphaTypeUnpremul {
+		t.Fatal("straight-alpha RGBA8888 no longer forms a valid image info")
+	}
+	p := imagecore.NewPixels(info)
+	for i, a := range alphas {
+		p.Words[i] = 16 | 8<<8 | 96<<16 | uint32(a)<<24 // color (16,8,96), straight alpha
+	}
+	return imagecore.FromPixels(p)
+}
+
+// TestDrawImageUnpremulSpriteMatchesShaderLane pins the two image-draw lanes to the same answer for a straight-alpha
+// source. The sprite lane used to blit such a source as if it were already premultiplied, which composited
+// dst = src + (1-a)*dst over the unmultiplied bytes: a fully transparent pixel added its whole color to the backdrop.
+// Which lane runs depends only on whether the transform lands on integer pixel bounds, so the two must agree.
+func TestDrawImageUnpremulSpriteMatchesShaderLane(t *testing.T) {
+	alphas := []uint8{0, 64, 128, 255}
+	img := unpremulRowImage(t, alphas)
+	const bg = 229 | 229<<8 | 127<<16 | 255<<24 // opaque background (229,229,127)
+
+	drawRow := func(scaleX float32) []uint32 {
+		pix := raster.NewPixmap(6, 1)
+		for i := range pix.Pix {
+			pix.Pix[i] = bg
+		}
+		c := NewForPixmap(pix)
+		count := c.Save()
+		var m geom.Matrix
+		m.SetAll(scaleX, 0, 0, 0, 1, 0, 0, 0, 1)
+		c.Concat(&m)
+		c.DrawImageRect(img, geom.RectWH(4, 1), geom.RectWH(4, 1),
+			shaders.SamplingOptions{Filter: shaders.FilterNearest}, NewPaint(), ConstraintFast)
+		c.RestoreToCount(count)
+		return append([]uint32(nil), pix.Pix[:len(alphas)]...)
+	}
+
+	// Scale 1 lands on integer pixel bounds, so the draw takes the sprite lane; scale 1.125 does not, so it takes the
+	// shader lane, while nearest filtering still maps device columns 0..3 to source samples 0..3.
+	sampling := shaders.SamplingOptions{Filter: shaders.FilterNearest}
+	var spriteMatrix, shaderMatrix geom.Matrix
+	spriteMatrix.SetAll(1, 0, 0, 0, 1, 0, 0, 0, 1)
+	shaderMatrix.SetAll(1.125, 0, 0, 0, 1, 0, 0, 0, 1)
+	if !treatAsSprite(&spriteMatrix, int32(len(alphas)), 1, sampling, false) {
+		t.Fatal("the unscaled draw no longer takes the sprite lane; the test compares nothing")
+	}
+	if treatAsSprite(&shaderMatrix, int32(len(alphas)), 1, sampling, false) {
+		t.Fatal("the 1.125-scaled draw now takes the sprite lane; the test compares nothing")
+	}
+
+	sprite := drawRow(1)
+	shader := drawRow(1.125)
+	for i, a := range alphas {
+		if sprite[i] != shader[i] {
+			t.Errorf("alpha %d: sprite lane %08x, shader lane %08x", a, sprite[i], shader[i])
+		}
+	}
+	// The fully transparent pixel must leave the backdrop exactly as it was, and the opaque one must land on the
+	// source color itself.
+	if sprite[0] != bg {
+		t.Errorf("transparent pixel = %08x, want the untouched background %08x", sprite[0], bg)
+	}
+	if want := uint32(16 | 8<<8 | 96<<16 | 255<<24); sprite[3] != want {
+		t.Errorf("opaque pixel = %08x, want %08x", sprite[3], want)
+	}
+}

@@ -499,7 +499,7 @@
 		},
 		{
 			"name": "maskblur-stroked",
-			"sha256": "52c6a18374b559dd6c40b7ead4922c74b1d2879ad718cdb30657c85a5c9b3099",
+			"sha256": "9714a018a0c2ac22cbb0c9b9d785f4afbc21a179aedc06d007c91152e30766ba",
 			"width": 256,
 			"height": 256
 		},
@@ -661,19 +661,19 @@
 		},
 		{
 			"name": "text-clipped-layer",
-			"sha256": "fe7801a2acc64e8d4c9f0041e9641c53b68a4755f958bb47848062c628cd1860",
+			"sha256": "d520f1e4590cf4db5012e90f31d35e647cf480b267edd7a037801f925dc7b18c",
 			"width": 256,
 			"height": 256
 		},
 		{
 			"name": "text-direct-rotated",
-			"sha256": "902ccd63991f1688531b744f6781182b0e30834e928a730db25e2208335c2ddf",
+			"sha256": "47479510db394306e363c6bc36fb7fe1a60f1b18fb3fcc211a52148f4bc5655c",
 			"width": 256,
 			"height": 256
 		},
 		{
 			"name": "text-emoji-colr",
-			"sha256": "d7727587cf9ab68f11c356342b69084de0afda714f728fecee6d902d7d4ca44d",
+			"sha256": "3ebf8d59d86a5cce9b9c443dacd7fe7111a3cc629e326bca325e26484b464715",
 			"width": 256,
 			"height": 256
 		},
@@ -685,31 +685,31 @@
 		},
 		{
 			"name": "text-sdf-rotated",
-			"sha256": "8a845a5cfa29619caa02368093a3eae031040ebc9fe07f519cb36f7ee97b90fa",
+			"sha256": "47201388fece36f62ffc19cd3253ec0a2c13295f02511456f49702a64eba7adb",
 			"width": 256,
 			"height": 256
 		},
 		{
 			"name": "text-sdf-scaled",
-			"sha256": "aef1af0bb1bebd20725c0ab8b3cb32980f3dce8f1d7c90ea4fb69d7f3fdf62b2",
+			"sha256": "1b1093dbe0074f052c7646cad0b26af41ff89707fe3dcde9efbe2b93613ff9f7",
 			"width": 256,
 			"height": 256
 		},
 		{
 			"name": "text-skewed",
-			"sha256": "aee58e199323cb0cd18696969b501aa4466ab5d14cb5868a19aba7f95b5d0762",
+			"sha256": "1b6b1736409b4edf9675a9c768ce5e14d51a3e747534fe0c0016e4ebaeb36ccf",
 			"width": 256,
 			"height": 256
 		},
 		{
 			"name": "text-styled",
-			"sha256": "90e37cf9c33fb0ca5ec8e02175d840759cb2d26d07fd6c652b1abecbfa0c6227",
+			"sha256": "4ddc8c6b0ced5bbf3c593b363a6c69c0f0c161071103984d23183256e585eeaa",
 			"width": 256,
 			"height": 256
 		},
 		{
 			"name": "text-waterfall",
-			"sha256": "df6ef5fec475840715d2a1e1d34114c6e4e03512977a1d380e39053e8219af43",
+			"sha256": "0ba25c8b754b0a612bbac368ec198b2c1ccb1ca4a3d62fc70905a1d23ecf7b2d",
 			"width": 256,
 			"height": 256
 		},

@@ -7,13 +7,13 @@
 	"entries": [
 		{
 			"name": "arcs",
-			"sha256": "01d921d23055eb10cef0103f289d6694983c33ad2bd3c2478ab9f240e6199166",
+			"sha256": "0cfb80e4f4185fb9e3765832058d311a9336989aef7dd1f855731714b32eed49",
 			"width": 256,
 			"height": 256
 		},
 		{
 			"name": "arcs-degenerate",
-			"sha256": "ff8e254d2683321d3d31582976dcc2afec239effaf0a929fffdb6ea09e60117c",
+			"sha256": "aa6b73943cfe26330306985c0f4d1c9b017b47efdb4df3c4ed5253c8ba23febd",
 			"width": 256,
 			"height": 256
 		},
@@ -103,13 +103,13 @@
 		},
 		{
 			"name": "clip-path-evenodd",
-			"sha256": "e4afa07372aed328d31d82ae60f7db16fd727ef2a69fbc4108f412ae9f8c297d",
+			"sha256": "04cdff39112af9d5e25b62c3e8d4a1dd1eb184c413df71016ea9eea0e807d771",
 			"width": 256,
 			"height": 256
 		},
 		{
 			"name": "clip-persp",
-			"sha256": "fe9646aed4789d5287845d97695921bf6f7bc6de12ae8e6563fbb84ae017a762",
+			"sha256": "eadf2466f266ff836d94e8f52ef58066b11762a4601bb75aab8dfe9c11984b56",
 			"width": 256,
 			"height": 256
 		},
@@ -187,25 +187,25 @@
 		},
 		{
 			"name": "dash-caps",
-			"sha256": "10c927f0c2d7b20237afc3bc44cd884d8a854a2fef07c2f0c0a80b97a802774c",
+			"sha256": "5f223176874af119e5a5634efdd91cebd969d7aad39755ccc4fe72c82da1f81c",
 			"width": 256,
 			"height": 256
 		},
 		{
 			"name": "dash-closed-contours",
-			"sha256": "2dd7c2cbfc72acdfff5b6195bbaafa94cc42b8cf713cdf0ccbc8c9f85af4c89e",
+			"sha256": "9a0b2ce3f17d9dfcccf8d244f43b9ea9106a3d1e6e13b78a90119aed2116cb10",
 			"width": 256,
 			"height": 256
 		},
 		{
 			"name": "dash-curves",
-			"sha256": "7ee9a90561591b7f556ee5697ba50c3a047cd8af52eb840d87435996100b901e",
+			"sha256": "edcb2d57a9aa3c34814f70c8526f7ced89303fbcf53ddfef349761519460a8dc",
 			"width": 256,
 			"height": 256
 		},
 		{
 			"name": "dash-joins-zigzag",
-			"sha256": "007d113661076a8cc22c18066359bb67b4d33b20b503385c589241b8b6205085",
+			"sha256": "46ffb033a4740d24eb0fd045d3359e073b1fd9c3b9623feba2503aae7e3663a3",
 			"width": 256,
 			"height": 256
 		},
@@ -229,7 +229,7 @@
 		},
 		{
 			"name": "draw-points",
-			"sha256": "c8afe47cf586be4c2d9ba43107f09a314e59356429f65e26f313c259f17afd3e",
+			"sha256": "6922566c5513baccdcb88ffe2fd1230e559bb82506e2f67eef99c935160129e1",
 			"width": 256,
 			"height": 256
 		},
@@ -301,7 +301,7 @@
 		},
 		{
 			"name": "gradient-on-stroke",
-			"sha256": "fe6e197f507e23d4a1dfff2959e268585dfbf7cb2a749e86b59bd004737e1de1",
+			"sha256": "90ae4f67dce2ed5cc110e530a7a974de1d89aaf2fa7082d8938483f1b82a3765",
 			"width": 256,
 			"height": 256
 		},
@@ -499,7 +499,7 @@
 		},
 		{
 			"name": "maskblur-stroked",
-			"sha256": "62690726a372c2023892a2deae7568cc80f67ae0838dbb85df5b461122f0904d",
+			"sha256": "2bbc701b89338b1fe80e47d19ba0c9319a84da61a35b91e6caca2d0fb2c1de27",
 			"width": 256,
 			"height": 256
 		},
@@ -529,25 +529,25 @@
 		},
 		{
 			"name": "path-conics-weights",
-			"sha256": "6306075d4fca2cf5bae4e07f1ad90685cb75e1572ce93a0dfe195bb5c351469e",
+			"sha256": "5c6faa03a97f9531e631cf095ca7819d1595e9e6450b99e32fce337aa3581c73",
 			"width": 256,
 			"height": 256
 		},
 		{
 			"name": "path-fill-winding-vs-evenodd",
-			"sha256": "592d4906fa416a6ea3358bf403dccc1ed6bc3b53e412a632181db30010ee241f",
+			"sha256": "13911f739feb9400f2e3125774bddab1bbd49bf7860ff797ffcf471a858d19c7",
 			"width": 256,
 			"height": 256
 		},
 		{
 			"name": "path-inverse-clipped",
-			"sha256": "a6e39715d79c42e3482181be504571a98956066a790939de1dab14182e1a6407",
+			"sha256": "400aee0399d9b0bc8f5971ea96ff4c16ddf7a42e5c8f1c9a29396988445d5d8d",
 			"width": 256,
 			"height": 256
 		},
 		{
 			"name": "path-inverse-fill",
-			"sha256": "b472aa3521777648c1fdfe2ce34a3dfc3a9adf449c980203e37e4687809f33f2",
+			"sha256": "f9ddaec47c7ed373832eb288ddf0716841f0364194d1c5ede058c99df9e08823",
 			"width": 256,
 			"height": 256
 		},
@@ -559,37 +559,37 @@
 		},
 		{
 			"name": "patheffect-1d-path",
-			"sha256": "88e3aeb504865d4174ba1bb745777aca0dc1d56501fdbfbacc721a4e596fb1be",
+			"sha256": "a57bec893732e9b3c98c0fac39628ae4275e48c57cc2cee405689acd3e1f6582",
 			"width": 256,
 			"height": 256
 		},
 		{
 			"name": "patheffect-2d",
-			"sha256": "3336158d1b1874e9af395a28ed5be076e704718dd80e7e3707b4e20d762377b1",
+			"sha256": "c1789d56168807590c5d03bdd49df98e9c2d6f2b599948b04a2e7b5961cf9b54",
 			"width": 256,
 			"height": 256
 		},
 		{
 			"name": "patheffect-corner",
-			"sha256": "46fc73af045ccebec460ad0b5b1e5a17cfed5deec501fc4044f511417e64e864",
+			"sha256": "8edc6e37ba81d6aeab8a3bb9890041f8829b9819ba588e3f5a3b58cc537392eb",
 			"width": 256,
 			"height": 256
 		},
 		{
 			"name": "patheffect-discrete",
-			"sha256": "b381ebfcbe0b2013cfbb1464c268dd581e25f784b10b8f63a8fe6ab6583326aa",
+			"sha256": "a6dca06060163640a4b79c8ccf352efb3cbb0961c780793cea91e7199be9ecf0",
 			"width": 256,
 			"height": 256
 		},
 		{
 			"name": "patheffect-sum-compose",
-			"sha256": "14cfc967b9a2bafb31a18ec67e85c7ee8f92273f318436f339762366463c1a0d",
+			"sha256": "ce31cffeef6f7b2ceb80dd6cdb9f050dddc9b2eae2067fe694d466451394acb3",
 			"width": 256,
 			"height": 256
 		},
 		{
 			"name": "patheffect-trim",
-			"sha256": "b83ad3e4da58845f5437fab545d32e66981820942a4afbd038ecbade1f96f2c2",
+			"sha256": "50cfc7aef8abdeeff22e672b2124db3cb11ae12cb9faeb30b8105835cf2f3b6d",
 			"width": 256,
 			"height": 256
 		},
@@ -607,7 +607,7 @@
 		},
 		{
 			"name": "rrects-varied",
-			"sha256": "c53aaab4bb1c0856c0e65988d551ea6e42ce4584af87171fa97d320107684cc5",
+			"sha256": "d651abfeb52d67efe1bc689cb129241f78f693b7700721bf03bf9a3f08cddb4a",
 			"width": 256,
 			"height": 256
 		},
@@ -637,43 +637,43 @@
 		},
 		{
 			"name": "stroke-curves",
-			"sha256": "db60e130665433d588f158b8ded5f4ab8afe08de3faa84c7f616313b08d18c98",
+			"sha256": "72f59ee8e6937a971d676bd1703f17a930716d35342d92e95a4c6e197ec1e475",
 			"width": 256,
 			"height": 256
 		},
 		{
 			"name": "stroke-degenerate",
-			"sha256": "16cffb6629852f589f260385100cad7e1a9382dddeb7cbd32c23b0c8e570f8a7",
+			"sha256": "659e8d2fb5ffdbf67977800f0cfc6c28f978b51fd702f08344d0b612922528da",
 			"width": 256,
 			"height": 256
 		},
 		{
 			"name": "stroke-joins",
-			"sha256": "805a2346a42fbf72321954dc89b198f0c1f4be85544c84e87a0600f3ffc882a1",
+			"sha256": "f82faecff9c7c534777c5c56a3218a04c5628240d14a5ebe630bc464a8233d08",
 			"width": 256,
 			"height": 256
 		},
 		{
 			"name": "stroke-under-scale",
-			"sha256": "4a6fee3424bbc31e9649585b73d3c99a173e5c03cce22d8b45a764c1d252ff01",
+			"sha256": "737dfc570eea5843d1398832acd5eaf644d5fc03369356f21b2ba97bc2712dd1",
 			"width": 256,
 			"height": 256
 		},
 		{
 			"name": "text-clipped-layer",
-			"sha256": "aa241fce9fd02cb67ee788d3f6e7b0c4cf7e3bf52ef7c43528cbf9b3410c0382",
+			"sha256": "3c419430627d367cf2711cabba72f340389ba99eebaa9452e205980750045b0d",
 			"width": 256,
 			"height": 256
 		},
 		{
 			"name": "text-direct-rotated",
-			"sha256": "902ccd63991f1688531b744f6781182b0e30834e928a730db25e2208335c2ddf",
+			"sha256": "47479510db394306e363c6bc36fb7fe1a60f1b18fb3fcc211a52148f4bc5655c",
 			"width": 256,
 			"height": 256
 		},
 		{
 			"name": "text-emoji-colr",
-			"sha256": "d7727587cf9ab68f11c356342b69084de0afda714f728fecee6d902d7d4ca44d",
+			"sha256": "3ebf8d59d86a5cce9b9c443dacd7fe7111a3cc629e326bca325e26484b464715",
 			"width": 256,
 			"height": 256
 		},
@@ -685,31 +685,31 @@
 		},
 		{
 			"name": "text-sdf-rotated",
-			"sha256": "d56d7f5cb498ae870a007f4f290d5bfa5cc79eb1bfa3391ff408c99fbd843aea",
+			"sha256": "3a07c45c8aa2232cf1a2d53b8685694f122ad0ac5b3db2bafcb3f531ef6c65f8",
 			"width": 256,
 			"height": 256
 		},
 		{
 			"name": "text-sdf-scaled",
-			"sha256": "7f65521ed9f5e601d220b1b96c60edd8849473ad4cb4e7bdfd474b90628c66de",
+			"sha256": "7f8896a4b514d6bcda4d7a594ccffd443647f19dd5ac0c4547f9537e3a629001",
 			"width": 256,
 			"height": 256
 		},
 		{
 			"name": "text-skewed",
-			"sha256": "aee58e199323cb0cd18696969b501aa4466ab5d14cb5868a19aba7f95b5d0762",
+			"sha256": "1b6b1736409b4edf9675a9c768ce5e14d51a3e747534fe0c0016e4ebaeb36ccf",
 			"width": 256,
 			"height": 256
 		},
 		{
 			"name": "text-styled",
-			"sha256": "7c63b3bf8b06ae587c28836b764507c35976f3adf13582c168ff1b79be59e986",
+			"sha256": "9be2278b668b13b653422cd52eb3fc1dbecd0746764f8ffba45c7b20efc9ce9e",
 			"width": 256,
 			"height": 256
 		},
 		{
 			"name": "text-waterfall",
-			"sha256": "df6ef5fec475840715d2a1e1d34114c6e4e03512977a1d380e39053e8219af43",
+			"sha256": "0ba25c8b754b0a612bbac368ec198b2c1ccb1ca4a3d62fc70905a1d23ecf7b2d",
 			"width": 256,
 			"height": 256
 		},

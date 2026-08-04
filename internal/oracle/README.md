@@ -110,6 +110,13 @@ What capture-time failures mean:
   is the diagnostic tool (raster compares strict hashes; the GPU lanes compare per-pixel under the ±1 envelope, so a
   MISMATCH there is already beyond the known driver wobble). A `bimodal` line is *not* a MISMATCH: that is a
   `gorender.DriverBimodal` scenario on its listed stack, reported and counted but not failed.
+- **A lane that failed with no MISMATCH at all**: not a determinism failure, and the workflow says so — it titles this
+  case *"failed … with no pass-to-pass mismatch"* and prints the tool's own `oracle:` diagnosis line under it. The
+  commonest cause is a GL context that comes up for the first pass and vanishes later (`XOpenDisplay(NULL) returned
+  NULL` on a Linux leg whose Xvfb died mid-run, say). Both `soak` and `bless` deliberately strip the no-GL-context
+  signal from that case so it cannot masquerade as the expected "this leg has no GL stack" skip — it is a real failure
+  of a leg that *should* have captured. The fix is to re-dispatch, not to touch the renderer. Two corroborating tells:
+  the lane's soak log holds no `MISMATCH` line, and the other GL lanes on the same leg usually captured fine.
 - **A lane missing from a leg's artifact**: the leg skipped it (no GL context) or failed it. The artifact's
   `CAPTURED.txt` and `capture.sh`'s per-leg summary line both say which; the lane's committed set is left untouched,
   so its gates keep running against the old goldens until a later capture succeeds.

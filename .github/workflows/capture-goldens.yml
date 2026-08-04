@@ -14,7 +14,10 @@
 # does not need to be in the darwin env — on the macOS runners it selects the stack they already render on). A leg
 # whose GL context fails to come up logs a loud warning and skips that lane's artifact content (oracle exits 3 for
 # exactly this case); a lane that soaks or blesses *nondeterministically* marks the leg failed — nondeterminism is a
-# rendering bug that would make exact golden comparison meaningless, and must be fixed, never papered over.
+# rendering bug that would make exact golden comparison meaningless, and must be fixed, never papered over. A lane that
+# fails any other way also marks the leg failed, but is reported as what it is rather than as nondeterminism: the
+# commonest such failure is a GL context that comes up for the first pass and vanishes later, which is runner
+# infrastructure and is fixed by re-dispatching, not by touching the renderer.
 name: Capture goldens
 
 on:
@@ -131,6 +134,14 @@ jobs:
           # fresh-session passes each; cross-process determinism via comparing their corpus digests), then bless.
           # oracle exit 3 = no GL context = loud skip; any other failure marks the lane (and the leg) failed.
           #
+          # A failed lane is reported as the kind of failure it actually was. Both soak and bless exit non-zero for
+          # two very different reasons, and only one of them is a rendering bug: they deliberately strip the
+          # no-GL-context signal from a session that came up for the first pass and died later (see the comments on
+          # soak's and bless's session-creation error paths), so a runner losing its X server mid-run arrives here
+          # looking exactly like a determinism failure. Announcing the wrong one sends the next reader hunting a
+          # renderer bug that is not there — which is precisely what happened on linux_amd64 in capture run
+          # 30953645849, where `XOpenDisplay(NULL) returned NULL` on soak pass 3 was titled "found nondeterminism".
+          #
           # The cross-process digest comparison is strict only for raster. The GPU lanes' cold renders differ within
           # the ±1 LSB driver envelope across processes on software-GL stacks (see the oracle soak command's doc
           # comment), so digest equality there is expected to fail sometimes and a mismatch is reported but not fatal:
@@ -151,8 +162,16 @@ jobs:
                 skipped="$skipped $lane"
                 return 0
               elif [ "$rc" -ne 0 ]; then
-                echo "::error title=Lane $lane FAILED on $PLATFORM::soak process $attempt found nondeterminism (see the soak log group above)"
-                grep MISMATCH "soak-$lane-$attempt.log" || true
+                # soak's per-scenario MISMATCH lines are its determinism marker: it prints one for every pass-to-pass
+                # divergence beyond the lane's tolerance, and prints none for any other failure. Classify on them
+                # rather than on the exit status, which is a bare 1 for both.
+                if grep -q '^MISMATCH' "soak-$lane-$attempt.log"; then
+                  echo "::error title=Lane $lane FAILED on $PLATFORM::soak process $attempt found nondeterminism — a rendering bug; fix it, do not re-dispatch (see the soak log group above)"
+                  grep '^MISMATCH' "soak-$lane-$attempt.log"
+                else
+                  echo "::error title=Lane $lane FAILED on $PLATFORM::soak process $attempt failed (exit $rc) with no pass-to-pass mismatch — NOT a determinism failure; see the diagnosis below"
+                  grep '^oracle:' "soak-$lane-$attempt.log" || tail -5 "soak-$lane-$attempt.log"
+                fi
                 failed="$failed $lane"
                 return 0
               fi
@@ -175,14 +194,20 @@ jobs:
               echo "lane $lane: cross-process corpus digest confirmed: $d1"
             fi
             echo "::group::lane $lane: bless"
-            wrap "$ORACLE" bless -lane "$lane"
-            rc=$?
+            # tee rather than a plain redirect: bless streams a line per scenario, and that live progress is worth
+            # keeping in the log group. pipefail is off here (see the top of this step), so $? would be tee's status.
+            wrap "$ORACLE" bless -lane "$lane" 2>&1 | tee "bless-$lane.log"
+            rc=${PIPESTATUS[0]}
             echo "::endgroup::"
             if [ "$rc" -eq 3 ]; then
               echo "::warning title=Lane $lane SKIPPED on $PLATFORM::GL context vanished between soak and bless; this leg uploads no $lane set"
               skipped="$skipped $lane"
             elif [ "$rc" -ne 0 ]; then
-              echo "::error title=Lane $lane FAILED on $PLATFORM::bless refused (see its output above)"
+              # "refused" is only one of bless's failure modes (a manifest schema it does not write). It also fails on
+              # a verify pass that diverged, on the GL stack moving between its two passes, and on losing its context
+              # mid-run — so surface its own diagnosis instead of naming a cause.
+              echo "::error title=Lane $lane FAILED on $PLATFORM::bless wrote no $lane set (exit $rc); see the diagnosis below"
+              grep '^oracle:' "bless-$lane.log" || tail -5 "bless-$lane.log"
               failed="$failed $lane"
             else
               captured="$captured $lane"

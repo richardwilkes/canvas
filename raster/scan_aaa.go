@@ -558,8 +558,19 @@ func getPartialAlphaFixed(alpha Alpha, partialHeight Fixed) Alpha {
 }
 
 // getPartialAlphaMul scales alpha by fullAlpha (both 0..255).
+//
+// The rounding term matters far more here than the shift suggests. A pixel row's coverage is accumulated one
+// sub-scanline at a time — the walker stops at every distinct edge y — and each sub-row's contribution passes through
+// this function with fullAlpha set to that sub-row's height. Truncating (Skia's `(alpha * fullAlpha) >> 8`) throws away
+// half a level per call on average, and that loss is one-directional, so it sums over however many sub-rows the row was
+// cut into: -(subRows-1)/2 levels. Skia can afford it because its edges snap to a quarter scanline, capping a row at
+// four sub-rows and the drift at 1.5 levels; this port snaps to 1/64 (see analyticSnapAccuracy), which allows
+// sixty-four and would bleed away 31.5 of a pixel's 255. Rounding to nearest makes the per-sub-row error zero-mean
+// instead, so it stays at half a level however finely the row was cut, canceling across the row rather than
+// accumulating — which is what keeps several contours appended into one path (their edge y values interleave, cutting
+// every row much finer) totalling the same ink as the same contours filled one at a time.
 func getPartialAlphaMul(alpha, fullAlpha Alpha) Alpha {
-	return Alpha((uint32(alpha) * uint32(fullAlpha)) >> 8)
+	return Alpha((uint32(alpha)*uint32(fullAlpha) + 128) >> 8)
 }
 
 // fixedToAlpha converts f to an Alpha; for Fixed close to FixedOne we can't just shift right (that would map FixedOne

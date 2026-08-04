@@ -22,6 +22,13 @@ import (
 
 // TestAnalyticEdgeSegmentsProbe compares the raw analytic quad/cubic edge segment streams against Skia's,
 // bit-exactly (all the math past the float->FDot6 conversion is integer).
+//
+// The streams are dumped at raster.SkiaSnapAccuracy, Skia's quarter-scanline endpoint snap. The port deliberately
+// snaps endpoints finer by default — Skia's grid drops a partial row thinner than 1/8 of a scanline outright, which is
+// GitHub issue #2 — so holding that one constant at Skia's value is what keeps this a differential test of the ported
+// curve math (polynomial setup, subdivision heuristic, forward differences, slope derivation) rather than a test that
+// fails wholesale on a difference already known and intended. The shipping grid is covered by the raster package's own
+// tests and by the self-captured goldens; nothing here can validate it, because Skia has no answer to compare against.
 func TestAnalyticEdgeSegmentsProbe(t *testing.T) {
 	rng := rand.New(rand.NewSource(0xedbe))
 	// The float32() forces the multiply to round before the subtract. Without it the compiler is free to fuse the two
@@ -47,7 +54,7 @@ func TestAnalyticEdgeSegmentsProbe(t *testing.T) {
 				pts[1].Y = pts[2].Y
 			}
 			want := refAnalyticQuadSegments(pts)
-			got := raster.AnalyticQuadSegments(pts[:])
+			got := raster.AnalyticQuadSegments(pts[:], raster.SkiaSnapAccuracy)
 			compareSegs(t, iter, "quad", got, want)
 		} else {
 			var pts [4]geom.Point
@@ -55,7 +62,7 @@ func TestAnalyticEdgeSegmentsProbe(t *testing.T) {
 				pts[i] = geom.Pt(coord(), coord())
 			}
 			want := refAnalyticCubicSegments(pts)
-			got := raster.AnalyticCubicSegments(pts[:])
+			got := raster.AnalyticCubicSegments(pts[:], raster.SkiaSnapAccuracy)
 			compareSegs(t, iter, "cubic", got, want)
 		}
 	}

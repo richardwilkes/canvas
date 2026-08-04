@@ -91,6 +91,21 @@ func snapCurveY(y Fixed) Fixed {
 	return Fixed(int32((uint32(y) + uint32(FixedOne>>(accuracy+1))) >> (16 - accuracy) << (16 - accuracy)))
 }
 
+// SkiaSnapAccuracy is the edge-endpoint snap grid Skia's SkAnalyticEdge uses: its kDefaultAccuracy of 2, a quarter of
+// a scanline. This port snaps endpoints finer — see analyticSnapAccuracy for why — so the differential probe hands
+// this to the segment dumps below and keeps comparing the rest of the ported curve math against Skia's frozen answers
+// bit-for-bit, with the one deliberate difference held constant. It is deliberately a literal rather than an alias of
+// analyticCurveSnapAccuracy, which happens to share the value: the probe also depends on the *interior* snapping
+// staying on Skia's grid, and aliasing the two would let a change there slip through silently instead of failing.
+const SkiaSnapAccuracy = 2
+
+// snapYTo rounds an edge endpoint to the nearest 1/(1<<accuracy) grid line, exactly as snapY does but with the grid
+// supplied rather than fixed. Only the curve setup paths take it — twice per curve, not per segment — so the variable
+// shift never lands on the walker's hot path.
+func snapYTo(y Fixed, accuracy int) Fixed {
+	return Fixed(int32((uint32(y) + uint32(FixedOne>>(accuracy+1))) >> (16 - accuracy) << (16 - accuracy)))
+}
+
 // analyticCurve is implemented by the quad/cubic analytic edges; it lets the walker advance an edge's current segment
 // without knowing the concrete type.
 type analyticCurve interface {
@@ -335,6 +350,12 @@ func (q *AnalyticQuadraticEdge) setQuadraticWithoutUpdate(pts []geom.Point, shif
 
 // SetQuadratic sets up the line segments for a Y-monotonic quad, computing the first segment.
 func (q *AnalyticQuadraticEdge) SetQuadratic(pts []geom.Point) bool {
+	return q.setQuadratic(pts, analyticSnapAccuracy)
+}
+
+// setQuadratic is SetQuadratic with the grid the piece's own endpoints snap to supplied; only the differential probe
+// passes anything but analyticSnapAccuracy (see SkiaSnapAccuracy).
+func (q *AnalyticQuadraticEdge) setQuadratic(pts []geom.Point, snapAccuracy int) bool {
 	if !q.setQuadraticWithoutUpdate(pts, analyticAccuracy) {
 		return false
 	}
@@ -346,8 +367,8 @@ func (q *AnalyticQuadraticEdge) SetQuadratic(pts []geom.Point) bool {
 	q.qDDy >>= analyticAccuracy
 	q.qLastX >>= analyticAccuracy
 	q.qLastY >>= analyticAccuracy
-	q.qy = snapY(q.qy)
-	q.qLastY = snapY(q.qLastY)
+	q.qy = snapYTo(q.qy, snapAccuracy)
+	q.qLastY = snapYTo(q.qLastY, snapAccuracy)
 
 	q.EdgeType = EdgeTypeQuad
 
@@ -532,6 +553,12 @@ func (c *AnalyticCubicEdge) setCubicWithoutUpdate(pts []geom.Point, shift int) b
 
 // SetCubic sets up the line segments for a Y-monotonic cubic, computing the first segment.
 func (c *AnalyticCubicEdge) SetCubic(pts []geom.Point) bool {
+	return c.setCubic(pts, analyticSnapAccuracy)
+}
+
+// setCubic is SetCubic with the grid the piece's own endpoints snap to supplied; only the differential probe passes
+// anything but analyticSnapAccuracy (see SkiaSnapAccuracy).
+func (c *AnalyticCubicEdge) setCubic(pts []geom.Point, snapAccuracy int) bool {
 	if !c.setCubicWithoutUpdate(pts, analyticAccuracy) {
 		return false
 	}
@@ -546,9 +573,9 @@ func (c *AnalyticCubicEdge) SetCubic(pts []geom.Point) bool {
 	c.cDDDy >>= analyticAccuracy
 	c.cLastX >>= analyticAccuracy
 	c.cLastY >>= analyticAccuracy
-	c.cy = snapY(c.cy)
+	c.cy = snapYTo(c.cy, snapAccuracy)
 	c.snappedY = c.cy
-	c.cLastY = snapY(c.cLastY)
+	c.cLastY = snapYTo(c.cLastY, snapAccuracy)
 
 	c.EdgeType = EdgeTypeCubic
 

@@ -23,11 +23,12 @@ func recordAnalyticEdge(e *AnalyticEdge) AnalyticEdgeSegment {
 }
 
 // AnalyticQuadSegments returns the raw line-segment stream an AnalyticQuadraticEdge produces for the given control
-// points (no walker interleaving). Differential-test instrumentation, matching the oracle shim's
-// oracle_analytic_quad_segments.
-func AnalyticQuadSegments(pts []geom.Point) []AnalyticEdgeSegment {
+// points (no walker interleaving), with the piece's endpoints snapped to a 1/(1<<snapAccuracy) grid.
+// Differential-test instrumentation, matching the oracle shim's oracle_analytic_quad_segments; pass SkiaSnapAccuracy to
+// replay the stream Skia produces, or analyticSnapAccuracy's value for the port's own.
+func AnalyticQuadSegments(pts []geom.Point, snapAccuracy int) []AnalyticEdgeSegment {
 	var edge AnalyticQuadraticEdge
-	if !edge.SetQuadratic(pts) {
+	if !edge.setQuadratic(pts, snapAccuracy) {
 		return nil
 	}
 	var out []AnalyticEdgeSegment
@@ -40,9 +41,9 @@ func AnalyticQuadSegments(pts []geom.Point) []AnalyticEdgeSegment {
 }
 
 // AnalyticCubicSegments is AnalyticQuadSegments for cubics.
-func AnalyticCubicSegments(pts []geom.Point) []AnalyticEdgeSegment {
+func AnalyticCubicSegments(pts []geom.Point, snapAccuracy int) []AnalyticEdgeSegment {
 	var edge AnalyticCubicEdge
-	if !edge.SetCubic(pts) {
+	if !edge.setCubic(pts, snapAccuracy) {
 		return nil
 	}
 	var out []AnalyticEdgeSegment

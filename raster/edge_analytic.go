@@ -106,6 +106,24 @@ func snapYTo(y Fixed, accuracy int) Fixed {
 	return Fixed(int32((uint32(y) + uint32(FixedOne>>(accuracy+1))) >> (16 - accuracy) << (16 - accuracy)))
 }
 
+// snappedCurveEndY converts a curve piece's endpoint from the (1<<shift)-scaled FDot6 space the curve setup works in to
+// the snapped Fixed y that piece will actually start or end at. The setup paths decide with it whether a piece has any
+// height left after snapping, so it has to stay the same expression they assign to qy/qLastY (and cy/cLastY) below.
+func snappedCurveEndY(y FDot6, shift, snapAccuracy int) Fixed {
+	return snapYTo(FDot6ToFixed(y)>>shift, snapAccuracy)
+}
+
+// clampCurveBoundary holds a snapped boundary within a curve inside the span still to be walked, from the current
+// segment start through the piece's end. The grids do not nest: boundaries within a curve snap to
+// analyticCurveSnapAccuracy while the piece's own endpoints snap to the finer analyticSnapAccuracy, so a rounded
+// interior boundary can land outside a short piece entirely. Past the end it would cut the tail off; before the start
+// it is worse — updateLine takes a descending segment as a reversed one and flips its winding, so the piece contributes
+// a backwards sliver instead of its own area. On Skia's grid the endpoints sit on the interior grid too and nothing
+// ever lands outside, which is why the reference has no such clamp.
+func clampCurveBoundary(y, start, end Fixed) Fixed {
+	return min(max(y, start), end)
+}
+
 // analyticCurve is implemented by the quad/cubic analytic edges; it lets the walker advance an edge's current segment
 // without knowing the concrete type.
 type analyticCurve interface {
@@ -284,7 +302,7 @@ func (q *AnalyticQuadraticEdge) keepContinuous() {
 
 // setQuadraticWithoutUpdate sets up the polynomial coefficients for a Y-monotonic quad, without computing the first
 // line segment.
-func (q *AnalyticQuadraticEdge) setQuadraticWithoutUpdate(pts []geom.Point, shift int) bool {
+func (q *AnalyticQuadraticEdge) setQuadraticWithoutUpdate(pts []geom.Point, shift, snapAccuracy int) bool {
 	scale := float32(int32(1) << (shift + 6))
 	x0 := FDot6(pts[0].X * scale)
 	y0 := FDot6(pts[0].Y * scale)
@@ -300,11 +318,12 @@ func (q *AnalyticQuadraticEdge) setQuadraticWithoutUpdate(pts []geom.Point, shif
 		winding = WindingCCW
 	}
 
-	top := FDot6Round(y0)
-	bot := FDot6Round(y2)
-
-	// are we a zero-height quad (line)?
-	if top == bot {
+	// Are we a zero-height quad (line)? The test has to be made on the grid the endpoints snap to, not on a fixed
+	// rounding of its own: dropping a piece is only safe when its neighbors' endpoints snap to the very same grid line
+	// it collapsed onto, so that the contour closes back up over it. Rounding to a quarter of a scanline while
+	// analyticSnapAccuracy snaps to 1/64 drops pieces the neighbors do *not* close over, leaving the contour open
+	// across that band — which is where glyph-scale fills lost their coverage.
+	if snappedCurveEndY(y0, shift, snapAccuracy) == snappedCurveEndY(y2, shift, snapAccuracy) {
 		return false
 	}
 
@@ -356,7 +375,7 @@ func (q *AnalyticQuadraticEdge) SetQuadratic(pts []geom.Point) bool {
 // setQuadratic is SetQuadratic with the grid the piece's own endpoints snap to supplied; only the differential probe
 // passes anything but analyticSnapAccuracy (see SkiaSnapAccuracy).
 func (q *AnalyticQuadraticEdge) setQuadratic(pts []geom.Point, snapAccuracy int) bool {
-	if !q.setQuadraticWithoutUpdate(pts, analyticAccuracy) {
+	if !q.setQuadraticWithoutUpdate(pts, analyticAccuracy, snapAccuracy) {
 		return false
 	}
 	q.qx >>= analyticAccuracy
@@ -404,10 +423,10 @@ func (q *AnalyticQuadraticEdge) updateCurve() bool {
 				} else {
 					slope = math.MaxInt32
 				}
-				newSnappedY = min(q.qLastY, FixedRoundToFixed(newy))
+				newSnappedY = clampCurveBoundary(FixedRoundToFixed(newy), q.snappedY, q.qLastY)
 				newSnappedX = newx - FixedMul(slope, newy-newSnappedY)
 			} else {
-				newSnappedY = min(q.qLastY, snapCurveY(newy))
+				newSnappedY = clampCurveBoundary(snapCurveY(newy), q.snappedY, q.qLastY)
 				newSnappedX = newx
 				diffY := FixedToFDot6(newSnappedY - q.snappedY)
 				if diffY != 0 {
@@ -475,7 +494,7 @@ func (c *AnalyticCubicEdge) keepContinuous() {
 
 // setCubicWithoutUpdate sets up the polynomial coefficients for a Y-monotonic cubic, without computing the first line
 // segment.
-func (c *AnalyticCubicEdge) setCubicWithoutUpdate(pts []geom.Point, shift int) bool {
+func (c *AnalyticCubicEdge) setCubicWithoutUpdate(pts []geom.Point, shift, snapAccuracy int) bool {
 	scale := float32(int32(1) << (shift + 6))
 	x0 := FDot6(pts[0].X * scale)
 	y0 := FDot6(pts[0].Y * scale)
@@ -495,11 +514,9 @@ func (c *AnalyticCubicEdge) setCubicWithoutUpdate(pts []geom.Point, shift int) b
 		winding = WindingCCW
 	}
 
-	top := FDot6Round(y0)
-	bot := FDot6Round(y3)
-
-	// are we a zero-height cubic (line)?
-	if top == bot {
+	// Are we a zero-height cubic (line)? Same reasoning as the quad above: the drop test lives on the endpoint snap
+	// grid so a dropped piece leaves no gap behind.
+	if snappedCurveEndY(y0, shift, snapAccuracy) == snappedCurveEndY(y3, shift, snapAccuracy) {
 		return false
 	}
 
@@ -559,7 +576,7 @@ func (c *AnalyticCubicEdge) SetCubic(pts []geom.Point) bool {
 // setCubic is SetCubic with the grid the piece's own endpoints snap to supplied; only the differential probe passes
 // anything but analyticSnapAccuracy (see SkiaSnapAccuracy).
 func (c *AnalyticCubicEdge) setCubic(pts []geom.Point, snapAccuracy int) bool {
-	if !c.setCubicWithoutUpdate(pts, analyticAccuracy) {
+	if !c.setCubicWithoutUpdate(pts, analyticAccuracy, snapAccuracy) {
 		return false
 	}
 
@@ -614,11 +631,18 @@ func (c *AnalyticCubicEdge) updateCurve() bool {
 			newy = oldy
 		}
 
-		newSnappedY := snapCurveY(newy)
-		// likewise pin newSnappedY to cLastY.
-		if c.cLastY < newSnappedY {
-			newSnappedY = c.cLastY
-			count = 0
+		// Only the boundaries *within* the curve take the coarse interior grid; the last segment has to land exactly
+		// on cLastY, which was snapped to the finer endpoint grid. Rounding the end onto the interior grid instead
+		// pulls it back short of the true end — and for a piece shorter than an interior grid step, back onto the
+		// previous boundary, which leaves the segment zero-height and discards the whole piece. The quad walker
+		// takes its last segment's y straight from qLastY for the same reason.
+		newSnappedY := c.cLastY
+		if count < 0 {
+			// likewise pin newSnappedY to cLastY (and, at the other end, to where this segment starts).
+			newSnappedY = clampCurveBoundary(snapCurveY(newy), c.snappedY, c.cLastY)
+			if newSnappedY == c.cLastY {
+				count = 0
+			}
 		}
 
 		var slope Fixed

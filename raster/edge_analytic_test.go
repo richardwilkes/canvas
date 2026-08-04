@@ -152,6 +152,141 @@ func TestSnapYGridSurvivesTheEdgeHeightFloor(t *testing.T) {
 	}
 }
 
+// snappedEndpointY reproduces the y a curve piece's endpoint ends up at once the setup paths have quantized and snapped
+// it, so a test can say what "the piece has no height left" means without restating the arithmetic.
+func snappedEndpointY(y float32) Fixed {
+	const multiplier = 1 << analyticAccuracy
+	return snapY(FDot6ToFixed(FloatToFDot6(y*multiplier)) >> analyticAccuracy)
+}
+
+// quarterPixelRound is the quarter-pixel rounding the curve setup paths used to decide a piece had no height, and the
+// one Skia still uses: the endpoint taken to the analyticAccuracy-scaled FDot6 space and rounded to a whole unit there.
+func quarterPixelRound(y float32) int32 {
+	return FDot6Round(FDot6(y * (1 << (analyticAccuracy + 6))))
+}
+
+// TestCurvePieceDropTestFollowsTheEndpointSnapGrid pins the safety condition on dropping a zero-height curve piece: a
+// piece may only be discarded when its two endpoints snap onto the same grid line, because that is exactly when the
+// neighboring pieces — whose shared vertices snap the same way — close the contour back up over it. The guard used to
+// round to a quarter of a scanline while analyticSnapAccuracy snapped endpoints to 1/64, so it discarded pieces the
+// neighbors left a gap across, and a glyph-scale contour bled coverage through the hole (issue #3).
+//
+// Stated as agreement with SetLine: a straight edge between the same two endpoints is dropped on precisely the same
+// condition, so "the curve piece survives" and "a line across it survives" can never disagree.
+func TestCurvePieceDropTestFollowsTheEndpointSnapGrid(t *testing.T) {
+	// Sub-quarter-scanline heights, straddling the old quarter-pixel rounding, from starts at assorted sub-pixel
+	// offsets. 0 and one whole grid step are the boundaries of the condition itself.
+	const grid = 1 / float32(int32(1)<<analyticSnapAccuracy)
+	for _, y0 := range []float32{20, 20.1, 20.376, 20.5, 20.62, 20.9} {
+		for _, h := range []float32{0, grid / 4, grid / 2, grid, 0.02, 0.05, 0.13, 0.24, 0.246, 0.3} {
+			y1 := y0 + h
+			var line AnalyticEdge
+			wantKept := line.SetLine(geom.Pt(4, y0), geom.Pt(5, y1))
+			if got := snappedEndpointY(y0) != snappedEndpointY(y1); got != wantKept {
+				t.Fatalf("bad test setup: SetLine kept=%v for y %v..%v but snapped endpoints differ=%v",
+					wantKept, y0, y1, got)
+			}
+
+			var quad AnalyticQuadraticEdge
+			if got := quad.SetQuadratic([]geom.Point{
+				geom.Pt(4, y0), geom.Pt(4.5, (y0+y1)/2), geom.Pt(5, y1),
+			}); got != wantKept {
+				t.Errorf("SetQuadratic kept=%v for y %v..%v, want %v (as SetLine does)", got, y0, y1, wantKept)
+			}
+
+			var cubic AnalyticCubicEdge
+			if got := cubic.SetCubic([]geom.Point{
+				geom.Pt(4, y0), geom.Pt(4.3, y0+h/3), geom.Pt(4.7, y1-h/3), geom.Pt(5, y1),
+			}); got != wantKept {
+				t.Errorf("SetCubic kept=%v for y %v..%v, want %v (as SetLine does)", got, y0, y1, wantKept)
+			}
+		}
+	}
+}
+
+// checkCurvePieceSpan asserts that the segment stream a curve piece walks out covers exactly the span between its two
+// snapped endpoints: it starts on the snapped start, ends on the snapped end, and hands off from one segment to the
+// next without a gap. Anything less is a hole in the contour, the same defect as dropping the piece outright — and
+// short pieces are where it hides, because the boundaries within a curve snap to a coarser grid
+// (analyticCurveSnapAccuracy) than the piece's own endpoints do.
+func checkCurvePieceSpan(t *testing.T, kind string, segs []AnalyticEdgeSegment, y0, yLast float32) {
+	t.Helper()
+	const upperY, lowerY = 3, 4
+	if len(segs) == 0 {
+		t.Errorf("%s spanning y %v..%v was dropped, but its endpoints snap to distinct grid lines", kind, y0, yLast)
+		return
+	}
+	if got, want := Fixed(segs[0][upperY]), snappedEndpointY(y0); got != want {
+		t.Errorf("%s spanning y %v..%v starts at %d, want the snapped start %d", kind, y0, yLast, got, want)
+	}
+	if got, want := Fixed(segs[len(segs)-1][lowerY]), snappedEndpointY(yLast); got != want {
+		t.Errorf("%s spanning y %v..%v ends at %d, want the snapped end %d", kind, y0, yLast, got, want)
+	}
+	for i := 1; i < len(segs); i++ {
+		if segs[i][upperY] != segs[i-1][lowerY] {
+			t.Errorf("%s spanning y %v..%v: gap between segment %d (ends %d) and %d (starts %d)",
+				kind, y0, yLast, i-1, segs[i-1][lowerY], i, segs[i][upperY])
+		}
+	}
+}
+
+// TestShortCurvePieceSpansItsSnappedEndpoints sweeps the heights that used to fall through the cracks — everything from
+// half a snap-grid step up to past a quarter of a scanline, from starts at assorted sub-pixel offsets — and holds every
+// piece to covering its own span. It is the structural half of issue #3: the quad case is a piece the drop guard threw
+// away for rounding onto one quarter-pixel, and the cubic case is a piece that survived the guard only to have its last
+// segment rounded back onto the interior grid, leaving it zero-height and discarded anyway.
+func TestShortCurvePieceSpansItsSnappedEndpoints(t *testing.T) {
+	const grid = 1 / float32(int32(1)<<analyticSnapAccuracy)
+	var sawQuarterPixelCollision bool
+	for _, y0 := range []float32{5.38, 20, 20.1, 20.5, 20.62, 20.9} {
+		for _, h := range []float32{grid / 2, grid, 0.02, 0.05, 0.13, 0.24, 0.246, 0.3, 0.7} {
+			yLast := y0 + h
+			if snappedEndpointY(y0) == snappedEndpointY(yLast) {
+				continue // legitimately zero-height once snapped; the neighbors close over it
+			}
+			if quarterPixelRound(y0) == quarterPixelRound(yLast) {
+				sawQuarterPixelCollision = true
+			}
+			checkCurvePieceSpan(t, "quad", AnalyticQuadSegments([]geom.Point{
+				geom.Pt(4.84, y0), geom.Pt(4.95, (y0+yLast)/2), geom.Pt(5.09, yLast),
+			}, analyticSnapAccuracy), y0, yLast)
+			checkCurvePieceSpan(t, "cubic", AnalyticCubicSegments([]geom.Point{
+				geom.Pt(4.84, y0), geom.Pt(4.9, y0+h/3), geom.Pt(5.0, yLast-h/3), geom.Pt(5.09, yLast),
+			}, analyticSnapAccuracy), y0, yLast)
+		}
+	}
+	if !sawQuarterPixelCollision {
+		t.Error("bad test setup: no case left where the endpoints collide on the quarter-pixel grid the old guard " +
+			"rounded to, so the sweep no longer covers the regression")
+	}
+}
+
+// TestCurvePieceDropTestUnchangedOnSkiasGrid: the drop test is derived from the snap grid it is handed, so on Skia's own
+// grid it has to reduce to the quarter-pixel rounding Skia does. The differential probe replays Skia's frozen segment
+// streams through setQuadratic/setCubic at SkiaSnapAccuracy, and a piece the port kept where Skia dropped it (or the
+// reverse) would silently invalidate every one of those references rather than fail a comparison.
+func TestCurvePieceDropTestUnchangedOnSkiasGrid(t *testing.T) {
+	for _, y0 := range []float32{20, 20.1, 20.376, 20.5, 20.62, 20.9} {
+		for _, h := range []float32{0, 0.02, 0.05, 0.13, 0.24, 0.246, 0.3, 0.5} {
+			y1 := y0 + h
+			skiaDrops := quarterPixelRound(y0) == quarterPixelRound(y1)
+			var quad AnalyticQuadraticEdge
+			if got := quad.setQuadratic([]geom.Point{
+				geom.Pt(4, y0), geom.Pt(4.5, (y0+y1)/2), geom.Pt(5, y1),
+			}, SkiaSnapAccuracy); got == skiaDrops {
+				t.Errorf("setQuadratic kept=%v for y %v..%v at SkiaSnapAccuracy, want %v", got, y0, y1,
+					!skiaDrops)
+			}
+			var cubic AnalyticCubicEdge
+			if got := cubic.setCubic([]geom.Point{
+				geom.Pt(4, y0), geom.Pt(4.3, y0+h/3), geom.Pt(4.7, y1-h/3), geom.Pt(5, y1),
+			}, SkiaSnapAccuracy); got == skiaDrops {
+				t.Errorf("setCubic kept=%v for y %v..%v at SkiaSnapAccuracy, want %v", got, y0, y1, !skiaDrops)
+			}
+		}
+	}
+}
+
 // TestAnalyticSetLineDYIsReciprocalSlope checks the contract itself, not just agreement: for a slope the inverse table
 // covers, DY is abs(1/DX) in Fixed. 0.5 of x over 8 of y has reciprocal slope 16.
 func TestAnalyticSetLineDYIsReciprocalSlope(t *testing.T) {

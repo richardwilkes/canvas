@@ -416,13 +416,17 @@ func TestRasterClipBWToAAPromotion(t *testing.T) {
 	}
 }
 
+// TestRasterClipOpRectNearlyIntegral: the B&W shortcut for an AA rect clip is bounded by what the analytic converter
+// could have resolved anyway — an offset under half a snap-grid step, not a hard-coded eighth of a pixel.
 func TestRasterClipOpRectNearlyIntegral(t *testing.T) {
 	im := geom.IdentityMatrix()
 	m := &im
 
-	// Nearly-integral AA rect stays BW.
+	// Below half a grid step from an integer, the converter would snap to that integer regardless, so the clip stays
+	// BW.
+	const grid = 1.0 / (1 << analyticSnapAccuracy)
 	rc := NewRasterClipRect(geom.IRectLTRB(0, 0, 100, 100))
-	rc.OpRect(geom.RectLTRB(10.05, 10, 50, 49.96), m, ClipIntersect, true)
+	rc.OpRect(geom.RectLTRB(10+grid/4, 10, 50, 50-grid/4), m, ClipIntersect, true)
 	if !rc.IsBW() {
 		t.Fatal("nearly-integral AA rect should stay BW")
 	}
@@ -430,11 +434,39 @@ func TestRasterClipOpRectNearlyIntegral(t *testing.T) {
 		t.Fatalf("bounds got %v", rc.Bounds())
 	}
 
-	// A genuinely fractional AA rect goes AA.
+	// A fraction the converter can resolve must not be rounded away, however small. 0.05 px was treated as integral
+	// while the shortcut assumed a quarter-pixel converter.
 	rc2 := NewRasterClipRect(geom.IRectLTRB(0, 0, 100, 100))
-	rc2.OpRect(geom.RectLTRB(10.5, 10, 50, 50), m, ClipIntersect, true)
+	rc2.OpRect(geom.RectLTRB(10.05, 10, 50, 49.96), m, ClipIntersect, true)
 	if rc2.IsBW() {
+		t.Fatal("AA rect with resolvable fractional edges should become AA")
+	}
+
+	// A genuinely fractional AA rect goes AA.
+	rc3 := NewRasterClipRect(geom.IRectLTRB(0, 0, 100, 100))
+	rc3.OpRect(geom.RectLTRB(10.5, 10, 50, 50), m, ClipIntersect, true)
+	if rc3.IsBW() {
 		t.Fatal("fractional AA rect should become AA")
+	}
+}
+
+// TestRasterClipOpRectFractionalEdgeKeepsCoverage: an AA rect clip whose bottom edge sits a sliver past a scanline
+// boundary has to keep that sliver's coverage. The B&W shortcut used to swallow any edge within 1/8 px of an integer,
+// so this clip rounded to a hard rect and the sliver row clipped everything drawn through it to nothing.
+func TestRasterClipOpRectFractionalEdgeKeepsCoverage(t *testing.T) {
+	im := geom.IdentityMatrix()
+	rc := NewRasterClipRect(geom.IRectLTRB(0, 0, 144, 162))
+	rc.OpRect(geom.RectLTRB(0, 0, 144, 161.11), &im, ClipIntersect, true)
+	if !rc.IsAA() {
+		t.Fatalf("clip to a 0.11 px sliver should stay AA; bounds %v", rc.Bounds())
+	}
+	if got := rc.Bounds(); got != geom.IRectLTRB(0, 0, 144, 162) {
+		t.Fatalf("clip bounds %v, want the sliver row included", got)
+	}
+	mask := rc.AARgn().CopyToMask()
+	got := mask.Image[int(161-mask.Bounds.Top)*int(mask.RowBytes)+72-int(mask.Bounds.Left)]
+	if got != 28 {
+		t.Fatalf("sliver row coverage %d, want 28 (0.11 px of a scanline)", got)
 	}
 }
 

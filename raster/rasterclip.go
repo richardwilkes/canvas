@@ -196,11 +196,13 @@ func (rc *Clip) OpRegion(rgn *Region, op ClipOp) bool {
 	return rc.updateCacheAndReturnNonEmpty(true)
 }
 
-// nearlyIntegral reports whether x is close enough to an integer to treat as one: antialiasing currently has a
-// granularity of 1/4 of a pixel along each axis, so we can treat an axis coordinate as an integer if it differs from
-// its nearest int by < half of that value (1/8 in this case).
+// nearlyIntegral reports whether x is close enough to an integer to treat as one: an AA rect clip is rasterized by the
+// analytic scan converter, which snaps edge coordinates to its own grid (analyticSnapAccuracy), so a coordinate within
+// half a grid step of its nearest int lands on that int anyway and the cheaper B&W clip is equivalent. The threshold
+// has to be derived rather than restated — a hard-coded one silently discards real coverage the moment the converter
+// gets finer.
 func nearlyIntegral(x float32) bool {
-	const domain = 1.0 / 4
+	const domain = 1.0 / (1 << analyticSnapAccuracy)
 	const halfDomain = domain / 2
 
 	x += halfDomain

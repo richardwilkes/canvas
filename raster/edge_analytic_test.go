@@ -113,6 +113,45 @@ func TestAnalyticSetLineDYMatchesUpdateLine(t *testing.T) {
 	}
 }
 
+// TestSnapYRoundsToTheGrid: snapY leaves grid lines alone and rounds everything else to the nearest one, in both
+// directions and on both sides of zero (it does the arithmetic unsigned so negative y wraps instead of shifting in sign
+// bits).
+func TestSnapYRoundsToTheGrid(t *testing.T) {
+	const step = FixedOne >> analyticSnapAccuracy
+	for _, base := range []Fixed{-3 * FixedOne, -step, 0, step, 161 * FixedOne} {
+		for _, off := range []Fixed{0, 1, step/2 - 1, step / 2, step/2 + 1, step - 1} {
+			want := base
+			if off >= step/2 {
+				want = base + step
+			}
+			if got := snapY(base + off); got != want {
+				t.Fatalf("snapY(%d + %d) = %d, want %d", base, off, got, want)
+			}
+		}
+	}
+}
+
+// TestSnapYGridSurvivesTheEdgeHeightFloor pins the reasoning behind analyticSnapAccuracy's value. SetLine and
+// updateLine drop an edge whose height rounds to zero in FDot6 (1/64 of a pixel), so the snap grid must be no finer
+// than that: a finer grid could snap two path vertices onto distinct grid lines less than 1/64 apart, the resulting
+// edge would then be discarded, and the contour would carry a winding gap where that edge no longer meets its
+// neighbors. A shorter grid step must therefore survive SetLine intact.
+func TestSnapYGridSurvivesTheEdgeHeightFloor(t *testing.T) {
+	const step = FixedOne >> analyticSnapAccuracy
+	if FixedToFDot6(step) == 0 {
+		t.Fatalf("snap grid step %d rounds to zero in FDot6; edges one grid step tall would be dropped", step)
+	}
+	var e AnalyticEdge
+	p0 := geom.Pt(10, 20)
+	p1 := geom.Pt(11, 20+1/float32(int32(1)<<analyticSnapAccuracy))
+	if !e.SetLine(p0, p1) {
+		t.Fatalf("SetLine dropped an edge one grid step (%v to %v) tall", p0.Y, p1.Y)
+	}
+	if got := e.LowerY - e.UpperY; got != step {
+		t.Fatalf("edge height %d, want one grid step (%d)", got, step)
+	}
+}
+
 // TestAnalyticSetLineDYIsReciprocalSlope checks the contract itself, not just agreement: for a slope the inverse table
 // covers, DY is abs(1/DX) in Fixed. 0.5 of x over 8 of y has reciprocal slope 16.
 func TestAnalyticSetLineDYIsReciprocalSlope(t *testing.T) {

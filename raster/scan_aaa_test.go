@@ -100,6 +100,67 @@ func TestAAFillSmallVsLargeConsistency(t *testing.T) {
 	}
 }
 
+// TestAAFillFractionalHorizontalEdge: a horizontal edge that lands a fraction of a scanline past a pixel boundary must
+// cover that row in proportion to the fraction, in every lane. The analytic converter snaps edge y coordinates to a
+// grid; while that grid was a quarter of a scanline, a sliver thinner than 1/8 px snapped onto the boundary and its row
+// rendered empty — and everything else resolved in steps of 64 alpha — so a path fill disagreed with the FDot8 rect
+// lane on identical geometry.
+func TestAAFillFractionalHorizontalEdge(t *testing.T) {
+	const (
+		w = 144
+		h = 162
+		// A column the geometry covers edge to edge, so only the vertical fraction is under test.
+		col = w / 2
+	)
+	clip := geom.IRectLTRB(0, 0, w, h)
+	for _, tc := range []struct {
+		name   string
+		bottom float32
+		want   uint32
+	}{
+		{name: "sliver", bottom: 161.11, want: 28}, // the reported case: 0.11 px of coverage, lost entirely
+		{name: "under-half", bottom: 161.3, want: 76},
+		{name: "half", bottom: 161.5, want: 128},
+		{name: "over-half", bottom: 161.75, want: 191},
+		{name: "near-whole", bottom: 161.9, want: 231},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := geom.RectLTRB(0, 0, w, tc.bottom)
+
+			// The FDot8 rect lane has always resolved the fraction at 1/256 px; it is the reference the path lanes
+			// have to agree with.
+			ref := NewPixmap(w, h)
+			AntiFillRectRegion(r, NewRegionRect(clip), NewSolidBlitter(ref, colorcore.Color(0xFF000000)))
+			refAlpha := alphaAt(ref, col, h-1)
+
+			// A non-rect polygon carrying the same bottom edge, to reach the general walker rather than the convex
+			// one. Its left edge is slanted off the top of the surface so col stays fully covered in every row.
+			poly := path.New()
+			poly.MoveTo(-40, -10).LineTo(w, -10).LineTo(w, tc.bottom).LineTo(0, tc.bottom).Close()
+
+			for _, lane := range []struct {
+				p    *path.Path
+				name string
+			}{
+				{p: path.New().AddRect(r, geom.DirectionCW), name: "rect path"},
+				{p: poly, name: "polygon"},
+			} {
+				dev := aaFill(t, lane.p, w, h)
+				if got := alphaAt(dev, col, h-1); got != tc.want {
+					t.Errorf("%s: partial row alpha %d, want %d", lane.name, got, tc.want)
+				} else if d := int(got) - int(refAlpha); d < -1 || d > 1 {
+					// The 1/64 snap grid puts the path lanes within one step of the rect lane's 1/256.
+					t.Errorf("%s: partial row alpha %d, rect lane %d", lane.name, got, refAlpha)
+				}
+				// The last whole row stays whole, so an over-eager sliver cannot pass as a correct one.
+				if got := alphaAt(dev, col, h-2); got != 255 {
+					t.Errorf("%s: last whole row alpha %d, want 255", lane.name, got)
+				}
+			}
+		})
+	}
+}
+
 // TestAAFillEvenOddDonut: even-odd fill of two nested rects — the hole must be empty, the ring full.
 func TestAAFillEvenOddDonut(t *testing.T) {
 	p := path.New()
@@ -154,7 +215,11 @@ func TestAAFillInverse(t *testing.T) {
 	}
 }
 
-// TestAAFillClip: AA fills honor a rect clip exactly (nothing outside, byte-identical inside).
+// TestAAFillClip: AA fills honor a rect clip — nothing at all outside it, and inside it the same coverage the unclipped
+// fill produces. Inside agreement is close rather than exact: the edge builder clips edges against the clip rect, so the
+// clipped fill walks a different edge set, and where the path runs tangent to the clip boundary the trapezoid math can
+// land a step apart. Here that costs 3 alpha on the single pixel whose corner the circle passes exactly through; other
+// circle/clip pairs have always differed by more, so exactness is not the invariant to assert.
 func TestAAFillClip(t *testing.T) {
 	p := path.New()
 	p.AddCircle(30, 30, 25, geom.DirectionCW)
@@ -169,8 +234,11 @@ func TestAAFillClip(t *testing.T) {
 			switch {
 			case !in && alphaAt(clipped, x, y) != 0:
 				t.Fatalf("(%d,%d): outside clip alpha %d", x, y, alphaAt(clipped, x, y))
-			case in && alphaAt(clipped, x, y) != alphaAt(full, x, y):
-				t.Fatalf("(%d,%d): clipped %d, full %d", x, y, alphaAt(clipped, x, y), alphaAt(full, x, y))
+			case in:
+				if d := int(alphaAt(clipped, x, y)) - int(alphaAt(full, x, y)); d < -4 || d > 4 {
+					t.Fatalf("(%d,%d): clipped %d, full %d", x, y, alphaAt(clipped, x, y),
+						alphaAt(full, x, y))
+				}
 			}
 		}
 	}

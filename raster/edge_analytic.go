@@ -18,8 +18,28 @@ import (
 	"github.com/richardwilkes/canvas/geom"
 )
 
-// analyticAccuracy is the default accuracy: y is snapped to multiples of 1/(1<<accuracy) of a pixel.
+// analyticAccuracy is the scale-up (1<<analyticAccuracy) applied to path coordinates before they are converted to fixed
+// point, so lines and curve segments quantize identically. It also fixes the converter's usable coordinate range, which
+// superSampleShift guards with the matching shift.
 const analyticAccuracy = 2
+
+// analyticSnapAccuracy is the vertical resolution of an edge's endpoints: they are snapped to multiples of
+// 1/(1<<analyticSnapAccuracy) of a scanline, so a shape's first and last partial row resolve their coverage in steps of
+// that size. 1/64 is as fine as the edge representation can carry: SetLine and updateLine reject an edge whose height
+// rounds to zero in FDot6 (1/64 of a pixel), so a finer grid could snap two path vertices onto distinct grid lines
+// closer than that, the edge between them would be dropped, and the contour would carry a winding gap where it no
+// longer meets its neighbors. Skia's SkAnalyticEdge snaps endpoints to 1/4 (its kDefaultAccuracy is 2, doubling as the
+// scale-up above): that drops any partial row thinner than 1/8 of a scanline outright and quantizes the rest to steps
+// of 64 alpha, so a path fill disagrees with the FDot8 rect lane on identical geometry.
+const analyticSnapAccuracy = 6
+
+// analyticCurveSnapAccuracy is the coarser grid the boundaries *within* a curve are snapped to. Coalescing them keeps
+// the walker's step count down — the walker stops at every distinct edge y, so snapping a heavily subdivided curve's
+// interior onto a quarter-scanline grid is what keeps a curve-dense fill from splintering into a trapezoid row per
+// forward-difference step. Only interior boundaries are involved: a curve piece's own endpoints take the fine grid
+// above, and the builder chops quads at their y extrema, so the silhouette a fill actually shows is still resolved at
+// 1/64. (Cubics are not chopped at y extrema, so a cubic's turning point remains a coarse interior boundary.)
+const analyticCurveSnapAccuracy = 2
 
 // kInverseTableSize is FDot6One * 16.
 const kInverseTableSize = 1024
@@ -57,10 +77,17 @@ func quickDiv(a, b FDot6) Fixed {
 	return FDot6Div(a, b)
 }
 
-// snapY rounds y to the nearest analyticAccuracy grid line. It computes in unsigned so negative y wraps rather than
-// shifting in sign bits.
+// snapY rounds an edge endpoint to the nearest analyticSnapAccuracy grid line. It computes in unsigned so negative y
+// wraps rather than shifting in sign bits. The shift amounts stay constant expressions so this compiles to a handful of
+// instructions on the walker's hot path.
 func snapY(y Fixed) Fixed {
-	const accuracy = analyticAccuracy
+	const accuracy = analyticSnapAccuracy
+	return Fixed(int32((uint32(y) + uint32(FixedOne>>(accuracy+1))) >> (16 - accuracy) << (16 - accuracy)))
+}
+
+// snapCurveY rounds a boundary within a curve to the nearest analyticCurveSnapAccuracy grid line, the same way.
+func snapCurveY(y Fixed) Fixed {
+	const accuracy = analyticCurveSnapAccuracy
 	return Fixed(int32((uint32(y) + uint32(FixedOne>>(accuracy+1))) >> (16 - accuracy) << (16 - accuracy)))
 }
 
@@ -359,7 +386,7 @@ func (q *AnalyticQuadraticEdge) updateCurve() bool {
 				newSnappedY = min(q.qLastY, FixedRoundToFixed(newy))
 				newSnappedX = newx - FixedMul(slope, newy-newSnappedY)
 			} else {
-				newSnappedY = min(q.qLastY, snapY(newy))
+				newSnappedY = min(q.qLastY, snapCurveY(newy))
 				newSnappedX = newx
 				diffY := FixedToFDot6(newSnappedY - q.snappedY)
 				if diffY != 0 {
@@ -560,7 +587,7 @@ func (c *AnalyticCubicEdge) updateCurve() bool {
 			newy = oldy
 		}
 
-		newSnappedY := snapY(newy)
+		newSnappedY := snapCurveY(newy)
 		// likewise pin newSnappedY to cLastY.
 		if c.cLastY < newSnappedY {
 			newSnappedY = c.cLastY

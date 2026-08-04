@@ -16,6 +16,7 @@ package raster
 import (
 	"cmp"
 	"math"
+	"math/bits"
 	"slices"
 	"sync"
 
@@ -1160,15 +1161,21 @@ func updateNextNextY(y, nextY Fixed, nextNextY *Fixed) {
 	}
 }
 
+// analyticIntersectStep is how far past nextY the walker probes when two edges are converging fast enough to cross
+// inside the row. It is a heuristic refinement step rather than a quantum of the snap grid, so it stays at a quarter of
+// a scanline (a multiple of the grid, so the stepping below still decomposes exactly) instead of following
+// analyticSnapAccuracy down to 1/64, where one crossing would splinter the row into 64 trapezoid rows.
+const analyticIntersectStep = FixedOne >> 2
+
 func checkIntersection(edge *AnalyticEdge, nextY Fixed, nextNextY *Fixed) {
 	if edge.Prev.Prev != nil && edge.Prev.X+edge.Prev.DX > edge.X+edge.DX {
-		*nextNextY = nextY + (FixedOne >> analyticAccuracy)
+		*nextNextY = nextY + analyticIntersectStep
 	}
 }
 
 func checkIntersectionFwd(edge *AnalyticEdge, nextY Fixed, nextNextY *Fixed) {
 	if edge.Next.Next != nil && edge.X+edge.DX > edge.Next.X+edge.Next.DX {
-		*nextNextY = nextY + (FixedOne >> analyticAccuracy)
+		*nextNextY = nextY + analyticIntersectStep
 	}
 }
 
@@ -1293,13 +1300,14 @@ func aaaWalkEdges(prevHead, nextTail *AnalyticEdge, fillType path.FillType, blit
 
 		nextNextY = math.MaxInt32
 
-		yShift := 0
-		if (nextY-y)&(FixedOne>>2) != 0 {
-			yShift = 2
-			nextY = y + (FixedOne >> 2)
-		} else if (nextY-y)&(FixedOne>>1) != 0 {
-			yShift = 1
-		}
+		// Cut the step down to the largest power-of-two fraction of a scanline that divides it, so goYShift can
+		// advance every edge with a shift; a step spanning several such fractions comes back around this loop for
+		// each. nextY - y is always positive, at most a whole scanline, and a multiple of analyticSnapAccuracy's
+		// grid (its sources — snapped edge bounds, whole rows, the intersection probe, and the coarser grid a
+		// curve's interior boundaries land on — all are), so its lowest set bit is never finer than that grid. The
+		// clamp keeps a stray finer value from splintering the row rather than trusting that invariant blindly.
+		yShift := min(16-bits.TrailingZeros32(uint32(nextY-y)), analyticSnapAccuracy)
+		nextY = y + (FixedOne >> yShift)
 
 		fullAlpha := fixedToAlpha(nextY - y)
 

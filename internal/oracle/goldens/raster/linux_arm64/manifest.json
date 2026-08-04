@@ -107,7 +107,7 @@
 		},
 		{
 			"name": "clip-persp",
-			"sha256": "f0e9566a4a67d20a893bf5e090c05c4addc78f55f9e4f4a4f63e3fc5e6f07e3d",
+			"sha256": "efaaf6e9e75165ef8ffeacf769171e8c978704442e327f80a0b020d776ef5e76",
 			"width": 256,
 			"height": 256
 		},
@@ -191,13 +191,13 @@
 		},
 		{
 			"name": "dash-closed-contours",
-			"sha256": "d627d17e7859a8d64fb898feb3b1ab463d5961851c4c1cb41945b87ac4fa27a2",
+			"sha256": "6edbf8d63649912395bad7ddb0be34681ac36632f2682c016e5c6e452f50beef",
 			"width": 256,
 			"height": 256
 		},
 		{
 			"name": "dash-curves",
-			"sha256": "990e9530abaee6679b7dd1a4a17f65c7379889be946e9c913fb47360690d5dd9",
+			"sha256": "fcc1006961d21070ed81094c23722f0afbb752e3c44d293bc53af3b86e6c5368",
 			"width": 256,
 			"height": 256
 		},
@@ -299,7 +299,7 @@
 		},
 		{
 			"name": "gradient-on-stroke",
-			"sha256": "9de8371d85a26044e3d26c08010365e3eb8fe9eb77e2d9283c8e7d1e64f94ba6",
+			"sha256": "244814b1ee636085fee0571b54eb5b0481f32d1278cca8ac5fee4b2ccb6aad06",
 			"width": 256,
 			"height": 256
 		},
@@ -473,7 +473,7 @@
 		},
 		{
 			"name": "layer-under-transform",
-			"sha256": "431110834e6a0415f120ce1a3c6bafe854ca101c7c4501dda9b15a5b63e7d450",
+			"sha256": "10ecb24bbf94ab1509075d3926127ca8cedae677ff2ca55f5bab113723614c74",
 			"width": 256,
 			"height": 256
 		},
@@ -515,7 +515,7 @@
 		},
 		{
 			"name": "ovals-rotated",
-			"sha256": "24824660c721350e654e76d88d324f110ea375ccbb76369945c0ad750b664115",
+			"sha256": "f4bfefab0c91d786b6251ae378a87c5e6a9299d682e5854e8d23d1cecd0eafa5",
 			"width": 256,
 			"height": 256
 		},
@@ -557,7 +557,7 @@
 		},
 		{
 			"name": "patheffect-1d-path",
-			"sha256": "9404e48ff9f3aa73676e130b3329d114f40cac15934010eb4d203a52eeb5431a",
+			"sha256": "fa50d678689612c146184921b40947b72328f5bb489eeb6fd4d84a863832bbc8",
 			"width": 256,
 			"height": 256
 		},
@@ -581,19 +581,19 @@
 		},
 		{
 			"name": "patheffect-sum-compose",
-			"sha256": "731f2d6582f18822830f998a383c54791b351299e167b12eae62edb96f913c6f",
+			"sha256": "56f44e0c9d0f9145b4db2b7f4d3d9f0ef8b0c85f11c6cfc8c10e6188efeaeb03",
 			"width": 256,
 			"height": 256
 		},
 		{
 			"name": "patheffect-trim",
-			"sha256": "c47912ffafad354d76c7209378d9cfa6fde5607a6fe0e370bf10fa947c1eb72e",
+			"sha256": "0cd2445d31e980d29ef4dda3a5efce489ee94eb3887615978c39c15cb967fb05",
 			"width": 256,
 			"height": 256
 		},
 		{
 			"name": "points-modes-caps",
-			"sha256": "716d3e5c66b24456f7d053504eac2f1e0eb8e6ddc20af8328066796cf843941b",
+			"sha256": "2d8f0d055d18d44f0657501c998adff7da76ebc45ff3e1a05682416284358832",
 			"width": 256,
 			"height": 256
 		},
@@ -647,7 +647,7 @@
 		},
 		{
 			"name": "stroke-joins",
-			"sha256": "0399a324c5facc092fa6ac21855edc1a790f29a40dfb7f46a92fc8d4ee206d64",
+			"sha256": "f16850ecddce26ca6f2c8ee26fb552555bc8049b570273f30ef300c22c68cd45",
 			"width": 256,
 			"height": 256
 		},
@@ -665,13 +665,13 @@
 		},
 		{
 			"name": "text-direct-rotated",
-			"sha256": "1d4623328b51d960aa2053a4d1e45203d0f7d5c63269d2ced7503d9d5677590d",
+			"sha256": "902ccd63991f1688531b744f6781182b0e30834e928a730db25e2208335c2ddf",
 			"width": 256,
 			"height": 256
 		},
 		{
 			"name": "text-emoji-colr",
-			"sha256": "adbbf0e6689019b41d9396f808053b9e0a0f18b381b53f25a41a80e31da404ab",
+			"sha256": "d7727587cf9ab68f11c356342b69084de0afda714f728fecee6d902d7d4ca44d",
 			"width": 256,
 			"height": 256
 		},
@@ -683,7 +683,7 @@
 		},
 		{
 			"name": "text-sdf-rotated",
-			"sha256": "42b3b584f3279d2602798a343d4ace915fe9b6a7ec448419647245b902d107f8",
+			"sha256": "917ca90e2c69d46b8c5cf65899aaecbf4ec57cea24ea6fe54acd0a4d2eeb6406",
 			"width": 256,
 			"height": 256
 		},
@@ -695,7 +695,7 @@
 		},
 		{
 			"name": "text-skewed",
-			"sha256": "316fe176d55bc965f4851fa463257172dba3f0a4b87a5031c8592722c17b1ad6",
+			"sha256": "6900f07b16a6659072dbd5928c804056bed48c06b4033ae4fe5413fbc8b7e3a4",
 			"width": 256,
 			"height": 256
 		},
@@ -707,13 +707,13 @@
 		},
 		{
 			"name": "text-waterfall",
-			"sha256": "37a1d314c66a2e24c32a4bf0f8fa2e4c4767b4075afc0fb4f077f93b9598fa4d",
+			"sha256": "df6ef5fec475840715d2a1e1d34114c6e4e03512977a1d380e39053e8219af43",
 			"width": 256,
 			"height": 256
 		},
 		{
 			"name": "transform-perspective",
-			"sha256": "d464495a2ecce4466249849b169ec647f60679016566cf922dada719a648fd44",
+			"sha256": "f3df2a3d97aa71cdf99ba4f3aaea80d278992bba11e86566215fe9e260fab08a",
 			"width": 256,
 			"height": 256
 		},

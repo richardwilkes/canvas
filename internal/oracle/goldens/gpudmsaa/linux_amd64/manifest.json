@@ -667,13 +667,13 @@
 		},
 		{
 			"name": "text-direct-rotated",
-			"sha256": "a80eaea6a14d995793024cf7988fd5dea22732f4a25b7adedc2b34a376fb0ff7",
+			"sha256": "902ccd63991f1688531b744f6781182b0e30834e928a730db25e2208335c2ddf",
 			"width": 256,
 			"height": 256
 		},
 		{
 			"name": "text-emoji-colr",
-			"sha256": "adbbf0e6689019b41d9396f808053b9e0a0f18b381b53f25a41a80e31da404ab",
+			"sha256": "d7727587cf9ab68f11c356342b69084de0afda714f728fecee6d902d7d4ca44d",
 			"width": 256,
 			"height": 256
 		},
@@ -697,7 +697,7 @@
 		},
 		{
 			"name": "text-skewed",
-			"sha256": "ded4cfcd9175268e0df0037e681265756e8707466fd4ea1ae1448222d6215ce9",
+			"sha256": "aee58e199323cb0cd18696969b501aa4466ab5d14cb5868a19aba7f95b5d0762",
 			"width": 256,
 			"height": 256
 		},
@@ -709,7 +709,7 @@
 		},
 		{
 			"name": "text-waterfall",
-			"sha256": "37a1d314c66a2e24c32a4bf0f8fa2e4c4767b4075afc0fb4f077f93b9598fa4d",
+			"sha256": "df6ef5fec475840715d2a1e1d34114c6e4e03512977a1d380e39053e8219af43",
 			"width": 256,
 			"height": 256
 		},

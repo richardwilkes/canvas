@@ -3,7 +3,7 @@
 	"lane": "gpudmsaa",
 	"gl_renderer": "Apple Software Renderer",
 	"gl_version": "4.1 APPLE-23.1.1",
-	"captured_at": "2026-08-04",
+	"captured_at": "2026-08-05",
 	"entries": [
 		{
 			"name": "arcs",
@@ -499,7 +499,7 @@
 		},
 		{
 			"name": "maskblur-stroked",
-			"sha256": "2bbc701b89338b1fe80e47d19ba0c9319a84da61a35b91e6caca2d0fb2c1de27",
+			"sha256": "fd1f2bf2f9c8c462a62c97794a2df81c636982c895d08131a9a4a847d7bc928a",
 			"width": 256,
 			"height": 256
 		},
@@ -661,19 +661,19 @@
 		},
 		{
 			"name": "text-clipped-layer",
-			"sha256": "bb273d6485d0c3032cf1244d78e12754927f873369f4ecd46327bc537dde4111",
+			"sha256": "7bb9efecaee7d3920afbaec4b68770fdf645f0c37020cccd3087306500b6fabe",
 			"width": 256,
 			"height": 256
 		},
 		{
 			"name": "text-direct-rotated",
-			"sha256": "47479510db394306e363c6bc36fb7fe1a60f1b18fb3fcc211a52148f4bc5655c",
+			"sha256": "0f6d5e43290666a1bd49121b57f916670a0c4a7c56a674ad60b4d19c6716542a",
 			"width": 256,
 			"height": 256
 		},
 		{
 			"name": "text-emoji-colr",
-			"sha256": "3ebf8d59d86a5cce9b9c443dacd7fe7111a3cc629e326bca325e26484b464715",
+			"sha256": "2adf7bbd95b95a8ac220d9b07f5cec6f4b91fb5141a4cf615bbc09aa4b9bb144",
 			"width": 256,
 			"height": 256
 		},
@@ -685,31 +685,31 @@
 		},
 		{
 			"name": "text-sdf-rotated",
-			"sha256": "3a07c45c8aa2232cf1a2d53b8685694f122ad0ac5b3db2bafcb3f531ef6c65f8",
+			"sha256": "7e399d2bb3eeed94a5a455d7f93d9a520f7b880de5d3b51c016246897cf60fa6",
 			"width": 256,
 			"height": 256
 		},
 		{
 			"name": "text-sdf-scaled",
-			"sha256": "7f8896a4b514d6bcda4d7a594ccffd443647f19dd5ac0c4547f9537e3a629001",
+			"sha256": "c32023ca250fcd1bc70c3a40f190e4dd59a4b89d60172d12ab6bd45c8b6a2713",
 			"width": 256,
 			"height": 256
 		},
 		{
 			"name": "text-skewed",
-			"sha256": "1b6b1736409b4edf9675a9c768ce5e14d51a3e747534fe0c0016e4ebaeb36ccf",
+			"sha256": "b19f8e782f49cd48976972965bed9978d8d16054289f2c4de398206c9f1b60b5",
 			"width": 256,
 			"height": 256
 		},
 		{
 			"name": "text-styled",
-			"sha256": "9be2278b668b13b653422cd52eb3fc1dbecd0746764f8ffba45c7b20efc9ce9e",
+			"sha256": "828394e70bcd4e3628b07e3f8cb99f0da3fbcba3f4b0cd3add9077d4dfa36f8f",
 			"width": 256,
 			"height": 256
 		},
 		{
 			"name": "text-waterfall",
-			"sha256": "0ba25c8b754b0a612bbac368ec198b2c1ccb1ca4a3d62fc70905a1d23ecf7b2d",
+			"sha256": "627d7584561fa38b8e47f4a66cb0ae339d4024e814ff9737e55ecb055c583b59",
 			"width": 256,
 			"height": 256
 		},

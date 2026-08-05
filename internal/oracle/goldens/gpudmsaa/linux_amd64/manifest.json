@@ -3,7 +3,7 @@
 	"lane": "gpudmsaa",
 	"gl_renderer": "llvmpipe (LLVM 15.0.7, 256 bits)",
 	"gl_version": "4.5 (Core Profile) Mesa 23.2.1-1ubuntu3.1~22.04.4",
-	"captured_at": "2026-08-04",
+	"captured_at": "2026-08-05",
 	"entries": [
 		{
 			"name": "arcs",
@@ -499,7 +499,7 @@
 		},
 		{
 			"name": "maskblur-stroked",
-			"sha256": "0d1e2d5385f55669d3056f8712a85c70897cd4cabf7cc709090874c3c2b074b9",
+			"sha256": "38636b72c93dac65c13aa86cbf7332f45165e9e8a69176b44a4e8228a6eb1c39",
 			"width": 256,
 			"height": 256
 		},
@@ -661,19 +661,19 @@
 		},
 		{
 			"name": "text-clipped-layer",
-			"sha256": "d520f1e4590cf4db5012e90f31d35e647cf480b267edd7a037801f925dc7b18c",
+			"sha256": "0ca77632fc2605e094bd13f38607aacbfd89aa0f7b0b7952969f55eab93ea4e1",
 			"width": 256,
 			"height": 256
 		},
 		{
 			"name": "text-direct-rotated",
-			"sha256": "47479510db394306e363c6bc36fb7fe1a60f1b18fb3fcc211a52148f4bc5655c",
+			"sha256": "0f6d5e43290666a1bd49121b57f916670a0c4a7c56a674ad60b4d19c6716542a",
 			"width": 256,
 			"height": 256
 		},
 		{
 			"name": "text-emoji-colr",
-			"sha256": "3ebf8d59d86a5cce9b9c443dacd7fe7111a3cc629e326bca325e26484b464715",
+			"sha256": "2adf7bbd95b95a8ac220d9b07f5cec6f4b91fb5141a4cf615bbc09aa4b9bb144",
 			"width": 256,
 			"height": 256
 		},
@@ -685,31 +685,31 @@
 		},
 		{
 			"name": "text-sdf-rotated",
-			"sha256": "21cf675540ffc2035a6b0f55218aee645d8f44e1d93a28bca9f51dbd4cb60afd",
+			"sha256": "207689d857a1e9027f00737fb91de8e663206caa969ad46d0ed98b5f99c95ed4",
 			"width": 256,
 			"height": 256
 		},
 		{
 			"name": "text-sdf-scaled",
-			"sha256": "48d41cdeab3ef8eabe753f2450e12f98c537f8b89c9c373761647b8d21fe6f62",
+			"sha256": "0ecfff42ab7838f45cfa9522401ce11b462aaee6178f045ed57b335b3eca570f",
 			"width": 256,
 			"height": 256
 		},
 		{
 			"name": "text-skewed",
-			"sha256": "1b6b1736409b4edf9675a9c768ce5e14d51a3e747534fe0c0016e4ebaeb36ccf",
+			"sha256": "b19f8e782f49cd48976972965bed9978d8d16054289f2c4de398206c9f1b60b5",
 			"width": 256,
 			"height": 256
 		},
 		{
 			"name": "text-styled",
-			"sha256": "4ddc8c6b0ced5bbf3c593b363a6c69c0f0c161071103984d23183256e585eeaa",
+			"sha256": "210b39d0cfac2de17f7ffad37f42d06d2ecc283a19e8a51c9e080ef79f353f6b",
 			"width": 256,
 			"height": 256
 		},
 		{
 			"name": "text-waterfall",
-			"sha256": "0ba25c8b754b0a612bbac368ec198b2c1ccb1ca4a3d62fc70905a1d23ecf7b2d",
+			"sha256": "627d7584561fa38b8e47f4a66cb0ae339d4024e814ff9737e55ecb055c583b59",
 			"width": 256,
 			"height": 256
 		},

@@ -1180,13 +1180,13 @@ const analyticIntersectStep = FixedOne >> 2
 
 func checkIntersection(edge *AnalyticEdge, nextY Fixed, nextNextY *Fixed) {
 	if edge.Prev.Prev != nil && edge.Prev.X+edge.Prev.DX > edge.X+edge.DX {
-		*nextNextY = nextY + analyticIntersectStep
+		*nextNextY = min(*nextNextY, nextY+analyticIntersectStep)
 	}
 }
 
 func checkIntersectionFwd(edge *AnalyticEdge, nextY Fixed, nextNextY *Fixed) {
 	if edge.Next.Next != nil && edge.X+edge.DX > edge.Next.X+edge.Next.DX {
-		*nextNextY = nextY + analyticIntersectStep
+		*nextNextY = min(*nextNextY, nextY+analyticIntersectStep)
 	}
 }
 

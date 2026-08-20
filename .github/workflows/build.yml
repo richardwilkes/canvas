@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 # Build and test with cgo disabled everywhere, so every step defaults to CGO_ENABLED=0 rather than repeating it. A step
 # needing cgo must override this explicitly — only "Test (race)" does, and only on the non-darwin legs (see the comment

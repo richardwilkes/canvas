@@ -20,6 +20,20 @@ func simdKernelsSupported() bool {
 	return archsimd.X86.AVX2() && archsimd.X86.FMA()
 }
 
+// Per-kernel dispatch preference: whether the simd kernel is at least as fast as this build's default lane. On amd64
+// the only alternative is the portable scalar code, which every kernel beats, so all 8 are preferred (on arm64 the
+// NEON assembly wins three of them back — see stage_simd_arm64.go).
+const (
+	preferSIMDSeed                 = true
+	preferSIMDClampX1              = true
+	preferSIMDMatrixTranslate      = true
+	preferSIMDMatrixScaleTranslate = true
+	preferSIMDMatrixAffine         = true
+	preferSIMDGradient2Stop        = true
+	preferSIMDGradientEvenly       = true
+	preferSIMDMatrix4x5            = true
+)
+
 // madfCoef is a loop-invariant madf multiplicand, pre-widened to double once so the chunk loop pays no per-iteration
 // widen for it. On amd64 a 4-lane madf works in one 256-bit Float64x4.
 type madfCoef = archsimd.Float64x4
@@ -33,4 +47,11 @@ func broadcastCoef(c float32) madfCoef { return archsimd.BroadcastFloat64x4(floa
 // (VCVTPD2PS) — the identical two-rounding sequence the scalar code performs. Locked by TestStageSIMDMatchesScalar.
 func madf4(f archsimd.Float32x4, m64 madfCoef, a archsimd.Float32x4) archsimd.Float32x4 {
 	return f.ConvertToFloat64().MulAdd(m64, a.ConvertToFloat64()).ConvertToFloat32()
+}
+
+// madf4v is madf4 for a multiplicand that varies per lane (the evenly-spaced gradient's gathered stop factors), so it
+// cannot be hoisted and pre-widened. It is the identical widen / one fused double FMA / round-to-single sequence, with
+// the multiplicand widened per call by the same exact VCVTPS2PD.
+func madf4v(f, m, a archsimd.Float32x4) archsimd.Float32x4 {
+	return f.ConvertToFloat64().MulAdd(m.ConvertToFloat64(), a.ConvertToFloat64()).ConvertToFloat32()
 }

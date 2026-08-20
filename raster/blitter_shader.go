@@ -76,7 +76,7 @@ func RecycleShaderBlitter(sb *ShaderBlitter) {
 // (appendClampIfNormalized).
 func (sb *ShaderBlitter) shadeRow(x, y, width int32) []colorcore.PMColor4f {
 	buf := sb.shadeRowRaw(x, y, width)
-	clampSpan01(buf)
+	clampSpan01Fn(buf)
 	return buf
 }
 
@@ -108,7 +108,7 @@ func (sb *ShaderBlitter) row(x, y, width int32) []uint32 {
 func (sb *ShaderBlitter) blendSpan(x, y int32, span []uint32) {
 	if sb.mode == BlendSrc {
 		// Store-only lane: toUnorm clamps identically to the shadeRow pass (see shadeRowRaw), so skip it.
-		storeSpanSrc(sb.shadeRowRaw(x, y, int32(len(span))), span)
+		storeSpanSrcFn(sb.shadeRowRaw(x, y, int32(len(span))), span)
 		return
 	}
 	buf := sb.shadeRow(x, y, int32(len(span)))

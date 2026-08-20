@@ -17,8 +17,8 @@ import (
 	"testing"
 )
 
-// refPMSrcOverRow is the pre-SWAR pmSrcOverRow: the per-channel scalar form over satAdd8 and mulDiv255Round32, retained
-// as the differential reference.
+// refPMSrcOverRow is the pre-SWAR pmSrcOverRowGeneric: the per-channel scalar form over satAdd8 and mulDiv255Round32,
+// retained as the differential reference.
 func refPMSrcOverRow(dst, src []uint32) {
 	for i, s := range src {
 		d := dst[i]
@@ -31,8 +31,9 @@ func refPMSrcOverRow(dst, src []uint32) {
 	}
 }
 
-// TestPMSrcOverRowMatchesReference compares the SWAR pmSrcOverRow with the scalar reference over random pixels plus
-// structured extremes (transparent/opaque source, saturating channel sums), bit for bit.
+// TestPMSrcOverRowMatchesReference compares whichever pmSrcOverRow kernel the build wired (the SWAR form, the NEON
+// kernel, or the simd kernel) with the scalar reference over random pixels plus structured extremes
+// (transparent/opaque source, saturating channel sums), bit for bit.
 func TestPMSrcOverRowMatchesReference(t *testing.T) {
 	rng := rand.New(rand.NewPCG(5, 6))
 	const n = 1 << 16
@@ -59,7 +60,7 @@ func TestPMSrcOverRowMatchesReference(t *testing.T) {
 		dstGot[i] = sd.d
 	}
 	copy(dstWant, dstGot)
-	pmSrcOverRow(dstGot, src)
+	pmSrcOverRowFn(dstGot, src)
 	refPMSrcOverRow(dstWant, src)
 	for i := range dstGot {
 		if dstGot[i] != dstWant[i] {

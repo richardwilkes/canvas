@@ -136,12 +136,13 @@ func premulRow(dst, src []uint32) {
 	}
 }
 
-// pmSrcOverRowGeneric is the portable form of pmSrcOverRow: per channel saturating-add(src, mulDiv255Round(dst,
-// 255-srcA)), run four channels per op in spread64 lanes. On arm64 pmSrcOverRow runs the NEON kernel instead and uses
-// this only for the sub-quad tail. Bit-exactness per lane: prod = d*nalpha + 128 <= 255*255+128 = 0xFE81 stays in its
-// 16-bit lane; (prod>>8)&0xFF is exactly the per-channel prod>>8 (prod < 2^16), and their sum <= 0xFF7F still carries
-// nowhere, so the lane holds mulDiv255Round32's value. The saturating add's lanes reach at most 510, so bit 8 of a lane
-// is the overflow flag; OR-ing 0xFF into overflowed lanes reproduces satAdd8's clamp on the low byte.
+// pmSrcOverRowGeneric is the portable src-over-opaque-dst row blend: per channel saturating-add(src,
+// mulDiv255Round(dst, 255-srcA)), run four channels per op in spread64 lanes. It is the default pmSrcOverRowFn; where a
+// vector kernel is wired instead (NEON on arm64, archsimd under goexperiment.simd) this remains the sub-quad tail those
+// kernels call. Bit-exactness per lane: prod = d*nalpha + 128 <= 255*255+128 = 0xFE81 stays in its 16-bit lane;
+// (prod>>8)&0xFF is exactly the per-channel prod>>8 (prod < 2^16), and their sum <= 0xFF7F still carries nowhere, so
+// the lane holds mulDiv255Round32's value. The saturating add's lanes reach at most 510, so bit 8 of a lane is the
+// overflow flag; OR-ing 0xFF into overflowed lanes reproduces satAdd8's clamp on the low byte.
 func pmSrcOverRowGeneric(dst, src []uint32) {
 	const half = uint64(0x0080008000800080)
 	const laneLSB = uint64(0x0001000100010001)
@@ -222,7 +223,7 @@ func (s *spriteD32S32) BlitRect(x, y, width, height int32) {
 				dstRow[i] = fastFourByteInterp256(sp, dstRow[i], alpha256)
 			}
 		case s.alpha == 255:
-			pmSrcOverRow(dstRow, srcRow)
+			pmSrcOverRowFn(dstRow, srcRow)
 		default:
 			pmBlendRow(dstRow, srcRow, alpha256)
 		}

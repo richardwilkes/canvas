@@ -17,6 +17,17 @@ import (
 	"github.com/richardwilkes/canvas/colorcore"
 )
 
+// On arm64 the span dispatch starts on thin wrappers over the NEON kernels in span_arm64.s. They are bit-identical to
+// the portable forms (see the .s file's equivalence notes and TestSpanNEONMatchesScalar), so this substitution changes
+// throughput only, never rendered bytes. A goexperiment.simd build's init (span_simd.go) repoints these variables at
+// the archsimd kernels, which are locked against the same portable forms.
+var (
+	clampSpan01Fn       spanClampFn = clampSpan01NEON
+	storeSpanSrcFn      spanStoreFn = storeSpanSrcNEON
+	pmSrcOverRowFn      spanRowFn   = pmSrcOverRowNEON
+	blitMaskOpaqueRowFn spanMaskFn  = blitMaskOpaqueRowNEON
+)
+
 // The NEON span kernels treat a PMColor4f as a 16-byte {R,G,B,A} float quad.
 var (
 	_ [16 - unsafe.Sizeof(colorcore.PMColor4f{})]byte
@@ -29,32 +40,32 @@ func storeSpanQuads(buf *float32, span *uint32, quads int)
 func pmSrcOverQuads(dst, src *uint32, quads int)
 func blitMaskOpaqueQuads(dev *uint32, aa *uint8, pm uint32, quads int)
 
-// clampSpan01 clamps every channel of buf to [0, 1] (the 8888 normalization clamp). Each pixel is one float quad, so
-// the whole span runs in the NEON kernel with no tail.
-func clampSpan01(buf []colorcore.PMColor4f) {
+// clampSpan01NEON clamps every channel of buf to [0, 1] (the 8888 normalization clamp). Each pixel is one float quad,
+// so the whole span runs in the NEON kernel with no tail.
+func clampSpan01NEON(buf []colorcore.PMColor4f) {
 	if len(buf) == 0 {
 		return
 	}
 	clampQuads(&buf[0].R, len(buf))
 }
 
-// storeSpanSrc stores shaded premultiplied floats as 8888 words (the BlendSrc full-coverage lane; toUnorm performs the
-// clamp). Four pixels per NEON iteration; the sub-quad tail takes the scalar storeWord path, which computes the
+// storeSpanSrcNEON stores shaded premultiplied floats as 8888 words (the BlendSrc full-coverage lane; toUnorm performs
+// the clamp). Four pixels per NEON iteration; the sub-quad tail takes the scalar storeWord path, which computes the
 // identical bytes.
-func storeSpanSrc(buf []colorcore.PMColor4f, span []uint32) {
+func storeSpanSrcNEON(buf []colorcore.PMColor4f, span []uint32) {
 	n := len(span)
 	if q := n / 4; q > 0 {
 		storeSpanQuads(&buf[0].R, &span[0], q)
 	}
-	for i := n &^ 3; i < n; i++ {
-		span[i] = storeWord(pmColor4f{r: buf[i].R, g: buf[i].G, b: buf[i].B, a: buf[i].A})
+	if t := n &^ 3; t < n {
+		storeSpanSrcGeneric(buf[t:], span[t:])
 	}
 }
 
-// pmSrcOverRow blends a row of premultiplied src pixels over dst with src-over-opaque-dst semantics: dst = satAdd8(src,
-// mulDiv255Round(dst, 255-srcA)). Four pixels per NEON iteration; the sub-quad tail takes the portable SWAR path, which
-// computes the identical bytes.
-func pmSrcOverRow(dst, src []uint32) {
+// pmSrcOverRowNEON blends a row of premultiplied src pixels over dst with src-over-opaque-dst semantics: dst =
+// satAdd8(src, mulDiv255Round(dst, 255-srcA)). Four pixels per NEON iteration; the sub-quad tail takes the portable
+// SWAR path, which computes the identical bytes.
+func pmSrcOverRowNEON(dst, src []uint32) {
 	n := len(src)
 	if q := n / 4; q > 0 {
 		pmSrcOverQuads(&dst[0], &src[0], q)
@@ -64,9 +75,9 @@ func pmSrcOverRow(dst, src []uint32) {
 	}
 }
 
-// blitMaskOpaqueRow blends an opaque solid color through an A8 coverage row (the glyph-mask kernel). Four pixels per
-// NEON iteration; the sub-quad tail takes the portable path, which computes the identical bytes.
-func blitMaskOpaqueRow(dev []uint32, aa []uint8, pm uint32) {
+// blitMaskOpaqueRowNEON blends an opaque solid color through an A8 coverage row (the glyph-mask kernel). Four pixels
+// per NEON iteration; the sub-quad tail takes the portable path, which computes the identical bytes.
+func blitMaskOpaqueRowNEON(dev []uint32, aa []uint8, pm uint32) {
 	n := len(aa)
 	if q := n / 4; q > 0 {
 		blitMaskOpaqueQuads(&dev[0], &aa[0], pm, q)

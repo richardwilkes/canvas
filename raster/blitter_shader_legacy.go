@@ -81,7 +81,7 @@ func (lb *LegacyShaderBlitter) proc32(dst, src []uint32) {
 		copy(dst, src)
 		return
 	}
-	pmSrcOverRow(dst, src)
+	pmSrcOverRowFn(dst, src)
 }
 
 // proc32Blend does a partial-coverage row blend.

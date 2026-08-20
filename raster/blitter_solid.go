@@ -291,7 +291,8 @@ func (s *SolidBlitter) BlitAntiV2(x, y int32, a0, a1 Alpha) {
 }
 
 // blitMaskOpaqueRowGeneric is the portable opaque-color A8 mask blend: dev = alphaMulQ(pm, m+1) + alphaMulQ(dev, 256-m)
-// per pixel. On arm64 blitMaskOpaqueRow runs the NEON kernel instead and uses this only for the sub-quad tail.
+// per pixel. It is the default blitMaskOpaqueRowFn; where a vector kernel is wired instead (NEON on arm64, archsimd
+// under goexperiment.simd) this remains the sub-quad tail those kernels call.
 func blitMaskOpaqueRowGeneric(dev []uint32, aa []uint8, pm uint32) {
 	for i, m := range aa {
 		dev[i] = alphaMulQ(pm, alpha255To256(uint32(m))) + alphaMulQ(dev[i], 256-uint32(m))
@@ -318,9 +319,9 @@ func (s *SolidBlitter) BlitMask(mask *Mask, clip geom.IRect) {
 		switch {
 		case s.isBlack, s.srcA == 0xFF:
 			// The black lane's uint32(m)<<24 equals alphaMulQ(0xFF000000, m+1) for every m ((255*(m+1))>>8 == m
-			// exactly), so both opaque lanes run the same row kernel — NEON on arm64 (span_arm64.s), the portable loop
-			// elsewhere.
-			blitMaskOpaqueRow(dev, aa, s.pmColor)
+			// exactly), so both opaque lanes run the same row kernel — whichever one the build wired into
+			// blitMaskOpaqueRowFn (see span.go); they are all bit-identical.
+			blitMaskOpaqueRowFn(dev, aa, s.pmColor)
 		default:
 			for i, m := range aa {
 				m256 := alpha255To256(uint32(m))

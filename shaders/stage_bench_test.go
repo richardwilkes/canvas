@@ -410,6 +410,58 @@ func BenchmarkMorphReturnStage(b *testing.B) {
 	}
 }
 
+// BenchmarkDisplacementStage drives the displacement kernel with a premultiplied displacement-map output in the color
+// registers and device-ish saved coordinates. The selects are the blue and alpha channels on purpose: the stage writes
+// the r and g registers, so selecting either of those would feed each iteration's displaced coordinate back in as the
+// next one's displacement channel and run the lanes away to infinity within a few dozen iterations. Reading only
+// registers the stage never writes makes the loop's feedback an exact no-op, and the pair still covers both selection
+// paths — blue unpremultiplies, alpha is taken straight from the register.
+func BenchmarkDisplacementStage(b *testing.B) {
+	c := &displacementCtx{sx: 24, sy: -18, xSel: 2, ySel: 3}
+	z := benchLanes()
+	for i := range stride {
+		c.coords[0][i] = float32(i) + 0.25
+		c.coords[1][i] = 12 - float32(i)*0.5
+		a := 0.25 + float32(i&7)*0.1
+		z.a[i] = a
+		z.b[i] = a * float32(i&3) * 0.3
+	}
+	z.ctx = c
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		displacementStageFn(&z)
+	}
+}
+
+// BenchmarkMagnifierStage drives the magnifier kernel over a lens with a 9-pixel inset, the lanes spread across it and
+// its inset bands. The stage's output feeds back in as the next iteration's coordinates, and the mix is a contraction
+// toward the zoom transform's fixed point (Tx/(1-Sx), here 33) — placed one inset in from the lens corner on purpose,
+// so the settled lanes sit where both edge insets are 1 and the circular weight lands at 2-sqrt(2) instead of
+// saturating at the clamp. The two lanes that start beyond that weight's support clamp to 0 and stay pinned where they
+// began; every lane takes the circular arm, which is the one worth measuring since the linear one skips the square
+// root.
+func BenchmarkMagnifierStage(b *testing.B) {
+	const invZoom = 0.25
+	const fixedPoint = 33 // one inset in from the lens origin
+	sh := &MagnifierShader{
+		lensBounds: geom.RectLTRB(24, 24, 104, 104),
+		zoomXform: [4]float32{
+			fixedPoint * (1 - invZoom), fixedPoint * (1 - invZoom), invZoom, invZoom,
+		},
+		invInset: [2]float32{1.0 / 9, 1.0 / 9},
+	}
+	z := benchLanes()
+	for i := range stride {
+		z.r[i] = 26 + float32(i)*5
+		z.g[i] = 30 + float32(i)*4.5
+	}
+	z.ctx = sh
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		magnifierStageFn(&z)
+	}
+}
+
 // benchNormalCtx returns a Sobel-normal context with the nine tap alphas spread over [0,1], an edge rect that contains
 // the saved coordinates, and an ordinary negated surface depth. Both normal stages write only the registers and read
 // only the context, so nothing feeds back.

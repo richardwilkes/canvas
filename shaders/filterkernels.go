@@ -27,9 +27,8 @@ import (
 // every other build keeps the portable forms. Each substitution is bit-identical (locked by
 // TestStageSIMDMatchesScalar), so it changes throughput only, never rendered bytes. The stages left off this list are
 // the ones the triage declined: the whole-register copies (store-coords, save-alpha, the arithmetic store/load pair,
-// the convolution's accumulator zeroing), which the compiler already moves 128 bits at a time, and the kernels whose
-// per-lane math is a channel selection (displacement), a second contraction shape (magnifier), or an approximate power
-// (lighting).
+// the convolution's accumulator zeroing), which the compiler already moves 128 bits at a time, and lighting, whose
+// per-lane math runs through an approximate power function.
 var (
 	morphAggInitStageFn        stageFn = morphAggInitStage
 	morphPlusCoordsStageFn     stageFn = morphPlusCoordsStage
@@ -38,8 +37,10 @@ var (
 	morphSparseAggMinusStageFn stageFn = morphSparseAggMinusStage
 	morphSparseMaxAggStageFn   stageFn = morphSparseMaxAggStage
 	morphReturnStageFn         stageFn = morphReturnStage
+	displacementStageFn        stageFn = displacementStage
 	normalSetCoordsStageFn     stageFn = normalSetCoordsStage
 	normalFilterStageFn        stageFn = normalFilterStage
+	magnifierStageFn           stageFn = magnifierStage
 	matrixConvCoordsStageFn    stageFn = matrixConvCoordsStage
 	matrixConvAccumStageFn     stageFn = matrixConvAccumStage
 	matrixConvFinalizeStageFn  stageFn = matrixConvFinalizeStage
@@ -405,10 +406,18 @@ func (s *DisplacementShader) appendStages(p *Pipeline, m MatrixRec) bool { //nol
 	if !p.appendChildOrTransparent(s.displMap, &seeded) {
 		return false
 	}
-	p.appendCtx(displacementStage, c)
+	p.appendCtx(displacementStageFn, c)
 	return s.colorMap.appendStages(p, seeded.markTotalMatrixInvalid())
 }
 
+// displacementStage displaces the saved coordinates by the displacement map's selected channels. The channel selects
+// are stage uniforms, so the per-lane work is an unpremultiply, a subtract and a scale; the vector twin hoists the
+// selection out of its loop.
+//
+// "coords + scale*(sel - 0.5)" is written as a plain expression, which the Go compiler is free to contract into a
+// single-precision fused multiply-add — and does on arm64 (FMADDS), while amd64 at this module's GOAMD64=v1 baseline
+// emits a separate MULSS and ADDSS. The simd twin mirrors whichever form the arch's compiler chose (exprMulAdd4), as
+// the convolution and arithmetic kernels do.
 func displacementStage(z *lanes) {
 	c := z.ctx.(*displacementCtx)
 	ch := [4]*[stride]float32{&z.r, &z.g, &z.b, &z.a}
@@ -790,11 +799,19 @@ func (s *MagnifierShader) appendStages(p *Pipeline, m MatrixRec) bool { //nolint
 	}
 	// The kernel reads only the immutable shader uniforms (no per-eval scratch), so the shader itself is the stage
 	// context — a pointer in z.ctx allocates nothing, and RecyclePipeline's clear(stages) drops the reference.
-	p.appendCtx(magnifierStage, s)
+	p.appendCtx(magnifierStageFn, s)
 	// The src's SampleUsage is explicit (mixed coordinates), invalidating the total matrix.
 	return s.src.appendStages(p, seeded.markTotalMatrixInvalid())
 }
 
+// magnifierStage mixes each coordinate toward its zoomed twin by the squared rounded-inset weight.
+//
+// Two of its plain expressions are contraction sites, and they are *different shapes*. "zoomXform.xy +
+// zoomXform.zw*coord" is the familiar "a + f*m", which arm64 contracts into FMADDS and amd64 (GOAMD64=v1) does not.
+// "2 - edgeInset", with edgeInset itself a product, is "a - f*m": arm64 contracts it into FMSUBS, re-deriving the
+// product *fused* even though the separately rounded edgeInset is still computed for the comparison and for the
+// non-circular branch, so the two differ by up to an ulp; amd64 simply subtracts the rounded product. The simd twin
+// mirrors each arch through exprMulAdd4 and exprMulSub4. Both madf sites are explicit and stay madf.
 func magnifierStage(z *lanes) {
 	sh := z.ctx.(*MagnifierShader)
 	l, t, r, b := sh.lensBounds.Left, sh.lensBounds.Top, sh.lensBounds.Right, sh.lensBounds.Bottom

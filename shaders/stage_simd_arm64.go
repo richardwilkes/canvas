@@ -61,7 +61,11 @@ const (
 // comparison p=0.002): arith_blend -78%, morph_sparse_max_agg -74%, morph_max_agg -73%, matrix_conv_accum -71%
 // (unpremul form) / -63% (convolve-alpha form), matrix_conv_coords -70%, normal_set_coords -69%, morph_plus_coords
 // -67%, morph_take_plus and morph_sparse_agg_minus -66%, morph_return -62%, normal_filter -62%,
-// matrix_conv_finalize -60%, morph_agg_init -52%; geomean -67%.
+// matrix_conv_finalize -60%, morph_agg_init -52%; geomean -67%. The displacement and magnifier stages were measured
+// afterwards, in their own pair of runs (n=6, p=0.002 both): displacement -73%, magnifier -44%. The magnifier is the
+// weakest of the set because its per-lane branch is not hoistable, so the vector form always evaluates both the
+// circular arm (a square root) and the linear one where the scalar takes just the arm each lane needs; it still wins
+// by a wide margin.
 //
 // The morphology and convolution stages run many times per chunk — one plus-coords/take-plus/max-agg triple per
 // morphology radius step (up to 14) and one coords/accum pair per convolution tap (25 for a 5x5 kernel) — so those
@@ -74,8 +78,10 @@ const (
 	preferSIMDMorphSparseAggMinus = true
 	preferSIMDMorphSparseMaxAgg   = true
 	preferSIMDMorphReturn         = true
+	preferSIMDDisplacement        = true
 	preferSIMDNormalSetCoords     = true
 	preferSIMDNormalFilter        = true
+	preferSIMDMagnifier           = true
 	preferSIMDMatrixConvCoords    = true
 	preferSIMDMatrixConvAccum     = true
 	preferSIMDMatrixConvFinalize  = true
@@ -133,3 +139,13 @@ func madf4v(f, m, a archsimd.Float32x4) archsimd.Float32x4 {
 // (measured), and spelling it as madf4 diverges the other way — madf's two-rounding widen/FMA/narrow sequence is what
 // float32(math.FMA(float64...)) means, and an explicit conversion is precisely what the compiler may not contract away.
 func exprMulAdd4(f, m, a archsimd.Float32x4) archsimd.Float32x4 { return f.MulAdd(m, a) }
+
+// exprMulSub4 is exprMulAdd4's subtractive shape: the plain Go expression "a - f*m" as this build's compiler lowers
+// it. arm64 contracts that one too, into FMSUBS — verified by disassembling the magnifier stage, where "2 - edgeInset"
+// re-derives the edgeInset product fused even though the separately rounded product is still computed for the
+// neighboring comparison. archsimd exposes no fused multiply-subtract on Float32x4, so it is spelled as a negated
+// multiplicand into MulAdd: FMSUB(f, m, a) is defined as a - f*m under one rounding, which is exactly FMA(-f, m, a)
+// because negation is an exact sign flip and -(f*m) == (-f)*m for every float class (NaN payloads aside, and those are
+// unobservable downstream). Spelling it as a separate Mul and Sub instead diverges from the scalar stage on hostile
+// inputs — a negative control the magnifier subtest catches immediately.
+func exprMulSub4(f, m, a archsimd.Float32x4) archsimd.Float32x4 { return f.Neg().MulAdd(m, a) }

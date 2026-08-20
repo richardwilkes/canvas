@@ -18,14 +18,18 @@ import "simd/archsimd"
 // it says about madf4/madf4v, the comparison-based minf4/maxf4/clamp014, Div, and the scratch tail applies here
 // unchanged. Two things are specific to this file:
 //
-//   - The convolution accumulator, the convolution finalize, and the arithmetic blend accumulate through *plain Go
-//     expressions* ("sum += c*k", "sum*gain + bias", "k0*s*d + k1*s + k2*d + k3") rather than through madf, and Go
-//     permits the compiler to contract such an expression into a fused multiply-add. arm64 does so and amd64 (at the
-//     module's GOAMD64=v1 baseline) does not, so those sites go through the per-arch exprMulAdd4, which reproduces the
-//     arch's choice. Every explicit madf site still goes through madf4/madf4v as everywhere else.
-//   - Several of these stages carry a loop-invariant branch (convolve-alpha, origin tap). The kernels hoist it out of
-//     the quad loop rather than re-testing it per lane, which is legal precisely because it is loop-invariant: it is a
-//     property of the compiled stage instance, not of the data.
+//   - Many of these stages compute through *plain Go expressions* rather than through madf — the convolution
+//     accumulator's "sum += c*k", the convolution finalize's "sum*gain + bias", the arithmetic chain
+//     "k0*s*d + k1*s + k2*d + k3", displacement's "coords + scale*(sel - 0.5)", the magnifier's zoom — and Go permits
+//     the compiler to contract such an expression into a fused multiply-add. arm64 does so and amd64 (at the module's
+//     GOAMD64=v1 baseline) does not, so those sites go through the per-arch exprMulAdd4, which reproduces the arch's
+//     choice. The magnifier carries the one *subtractive* shape, "2 - edgeInset" with edgeInset a product, which arm64
+//     contracts into FMSUBS: exprMulSub4 is its per-arch twin. Every explicit madf site still goes through
+//     madf4/madf4v as everywhere else.
+//   - Several of these stages carry a loop-invariant branch (convolve-alpha, origin tap, displacement's channel
+//     selects). The kernels hoist it out of the quad loop rather than re-testing it per lane, which is legal precisely
+//     because it is loop-invariant: it is a property of the compiled stage instance, not of the data. The magnifier's
+//     branch is the exception — it pivots on a per-lane value, so that kernel evaluates both arms and selects.
 //
 // Every one of these kernels processes all stride lanes. Their ctx scratch tolerates that: the coordinate buffers
 // (storeCoordsStage), the tap alphas (saveAlphaStage) and the arithmetic dst hold (arithStoreRes0Stage) are all
@@ -139,6 +143,50 @@ func morphReturnStageSIMD(z *lanes) {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// displacement kernel
+
+// displacementSelect resolves one of the displacement kernel's two channel selects into the register it reads and
+// whether that register needs the unpremultiplying divide. Both are stage uniforms — the shader's one-hot channel
+// indices — so the whole selection hoists out of the quad loop, leaving the lane work a divide, a subtract and a
+// scale. sel == 3 is the alpha channel, which the scalar takes straight from the register: the unpremultiply divides
+// only rgb. DisplacementMap rejects any index outside 0..3, and an out-of-range one would panic on the same channel
+// table the scalar stage indexes.
+func displacementSelect(z *lanes, sel int32) (reg *[stride]float32, unpremul bool) {
+	ch := [4]*[stride]float32{&z.r, &z.g, &z.b, &z.a}
+	return ch[sel], sel != 3
+}
+
+// displacementStageSIMD is the vector displacement kernel: coord + scale * (selected channel - 0.5). maxf4 supplies the
+// comparison-based maxf(a, 0.0001) unpremultiply guard and Div is the same IEEE single-precision divide as the scalar
+// "/"; the trailing "coords + scale*t" goes through exprMulAdd4 because that is what the scalar stage's plain
+// expression compiles to on this arch. Both selected channels are loaded before either coordinate register is stored,
+// which matters because the selects can name the very registers this writes.
+func displacementStageSIMD(z *lanes) {
+	c := z.ctx.(*displacementCtx)
+	xReg, xUnpremul := displacementSelect(z, c.xSel)
+	yReg, yUnpremul := displacementSelect(z, c.ySel)
+	sx := archsimd.BroadcastFloat32x4(c.sx)
+	sy := archsimd.BroadcastFloat32x4(c.sy)
+	half := archsimd.BroadcastFloat32x4(0.5)
+	eps := archsimd.BroadcastFloat32x4(0.0001)
+	for o := 0; o < stride; o += 4 {
+		inv := maxf4(archsimd.LoadFloat32x4(z.a[o:]), eps)
+		xv := archsimd.LoadFloat32x4(xReg[o:])
+		if xUnpremul {
+			xv = xv.Div(inv)
+		}
+		yv := archsimd.LoadFloat32x4(yReg[o:])
+		if yUnpremul {
+			yv = yv.Div(inv)
+		}
+		nr := exprMulAdd4(sx, xv.Sub(half), archsimd.LoadFloat32x4(c.coords[0][o:]))
+		ng := exprMulAdd4(sy, yv.Sub(half), archsimd.LoadFloat32x4(c.coords[1][o:]))
+		nr.Store(z.r[o:])
+		ng.Store(z.g[o:])
+	}
+}
+
+///////////////////////////////////////////////////////////////////////////////
 // normal-map kernels
 
 // normalSetCoordsStageSIMD is the vector normal_set_coords kernel, run once per Sobel tap: coord + tap offset clamped
@@ -206,6 +254,70 @@ func normalFilterStageSIMD(z *lanes) {
 		vy.Div(length).Store(z.g[o:])
 		one.Div(length).Store(z.b[o:])
 		c11.Store(z.a[o:])
+	}
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// magnifier kernel
+
+// magnifierStageSIMD is the vector magnifier kernel: mix(coord, zoomCoord, weight*weight) with the rounded-inset
+// weight.
+//
+// Its branch — the circular corner falloff versus the plain linear inset — pivots on the per-lane edge insets, not on
+// a uniform, so unlike the convolution's hoisted branches this one evaluates both arms and selects. That is safe
+// because neither arm can trap: the circular arm's square root of a negative sum is a NaN the select then discards.
+// Less compares false for a NaN lane, so a NaN inset takes the linear arm exactly as the scalar's "eiX < 2 && eiY < 2"
+// does.
+//
+// The two separately rounded edge insets are computed for the comparison and the linear arm, while the circular arm's
+// "2 - edgeInset" goes through exprMulSub4 — which on arm64 re-derives that product *fused*, as the scalar's FMSUBS
+// does, and so is not the same value the comparison saw. minf4/maxf4 (through clamp014) supply the comparison-based
+// clamps, Sqrt is the same correctly rounded square root as sqrtf, and both explicit madf sites go through madf4v
+// since every multiplicand varies per lane.
+//
+// Negative controls: unfusing either contraction site fails the magnifier subtest on the first few draws. The madf
+// sites are the weak ones, as in the Sobel filter — the corner-distance madf's multiplicands are squares, where a
+// plain single-precision FMA agrees anyway, and the mix madf is a general one that does differ but only around once
+// per two million in-domain lane samples (bracketed by probe: clean at 65536 draws, caught at 131072). madf4v belongs
+// at both regardless: it is what the scalar source says.
+func magnifierStageSIMD(z *lanes) {
+	sh := z.ctx.(*MagnifierShader)
+	left := archsimd.BroadcastFloat32x4(sh.lensBounds.Left)
+	top := archsimd.BroadcastFloat32x4(sh.lensBounds.Top)
+	right := archsimd.BroadcastFloat32x4(sh.lensBounds.Right)
+	bottom := archsimd.BroadcastFloat32x4(sh.lensBounds.Bottom)
+	tx := archsimd.BroadcastFloat32x4(sh.zoomXform[0])
+	ty := archsimd.BroadcastFloat32x4(sh.zoomXform[1])
+	sx := archsimd.BroadcastFloat32x4(sh.zoomXform[2])
+	sy := archsimd.BroadcastFloat32x4(sh.zoomXform[3])
+	invX := archsimd.BroadcastFloat32x4(sh.invInset[0])
+	invY := archsimd.BroadcastFloat32x4(sh.invInset[1])
+	two := archsimd.BroadcastFloat32x4(2)
+	zero := archsimd.BroadcastFloat32x4(0)
+	one := archsimd.BroadcastFloat32x4(1)
+	for o := 0; o < stride; o += 4 {
+		x := archsimd.LoadFloat32x4(z.r[o:])
+		y := archsimd.LoadFloat32x4(z.g[o:])
+		zoomX := exprMulAdd4(sx, x, tx)
+		zoomY := exprMulAdd4(sy, y, ty)
+		// edgeInset = min(coord - lensBounds.xy, lensBounds.zw - coord) * invInset
+		nearX := minf4(x.Sub(left), right.Sub(x))
+		nearY := minf4(y.Sub(top), bottom.Sub(y))
+		eiX := nearX.Mul(invX)
+		eiY := nearY.Mul(invY)
+		// Circular distortion weighted by distance to the inset corner: 2 - length(2 - edgeInset), with length(v2) =
+		// sqrt(mad(x,x, y*y)).
+		dx := exprMulSub4(nearX, invX, two)
+		dy := exprMulSub4(nearY, invY, two)
+		circular := two.Sub(madf4v(dx, dx, dy.Mul(dy)).Sqrt())
+		weight := circular.IfElse(eiX.Less(two).And(eiY.Less(two)), minf4(eiX, eiY))
+		weight = clamp014(weight, zero, one)
+		w2 := weight.Mul(weight)
+		// mix(coord, zoomCoord, w2) lowers to lerp: mad(to - from, t, from).
+		nr := madf4v(zoomX.Sub(x), w2, x)
+		ng := madf4v(zoomY.Sub(y), w2, y)
+		nr.Store(z.r[o:])
+		ng.Store(z.g[o:])
 	}
 }
 

@@ -136,11 +136,17 @@ func initFilterKernelDispatch() {
 	if preferSIMDMorphReturn {
 		morphReturnStageFn = morphReturnStageSIMD
 	}
+	if preferSIMDDisplacement {
+		displacementStageFn = displacementStageSIMD
+	}
 	if preferSIMDNormalSetCoords {
 		normalSetCoordsStageFn = normalSetCoordsStageSIMD
 	}
 	if preferSIMDNormalFilter {
 		normalFilterStageFn = normalFilterStageSIMD
+	}
+	if preferSIMDMagnifier {
+		magnifierStageFn = magnifierStageSIMD
 	}
 	if preferSIMDMatrixConvCoords {
 		matrixConvCoordsStageFn = matrixConvCoordsStageSIMD

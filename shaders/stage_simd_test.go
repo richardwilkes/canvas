@@ -19,6 +19,7 @@ import (
 	"testing"
 
 	"github.com/richardwilkes/canvas/colorcore"
+	"github.com/richardwilkes/canvas/geom"
 )
 
 // TestStageSIMDMatchesScalar drives every simd stage kernel and its portable Go twin over identical randomized register
@@ -445,6 +446,31 @@ func TestStageSIMDMatchesScalar(t *testing.T) {
 		}
 	})
 
+	t.Run("displacement", func(t *testing.T) {
+		for range 1024 {
+			c, inDomain := randDisplacementCtx(rng)
+			z1 := randLanes(rng)
+			if inDomain {
+				// A displacement map's output is a premultiplied color, and the kernel's unpremultiply then lands the
+				// selected channel in [0,1]. That is the domain where the scaled displacement and the coordinate share
+				// an exponent range, which is what makes the contraction's rounding tail observable at all.
+				for i := range stride {
+					a := rng.Float32()
+					z1.a[i] = a
+					z1.r[i], z1.g[i], z1.b[i] = rng.Float32()*a, rng.Float32()*a, rng.Float32()*a
+				}
+			} else {
+				// Otherwise the alpha register gets the classes the unpremultiply guard pivots on.
+				randAlphas(rng, &z1.a)
+			}
+			z1.ctx = c
+			z2 := z1
+			displacementStage(&z1)
+			displacementStageSIMD(&z2)
+			eqLanes(t, "displacement", &z2, &z1)
+		}
+	})
+
 	t.Run("normalSetCoords", func(t *testing.T) {
 		for range 1024 {
 			c := randNormalCtx(rng)
@@ -466,6 +492,24 @@ func TestStageSIMDMatchesScalar(t *testing.T) {
 			normalFilterStage(&z1)
 			normalFilterStageSIMD(&z2)
 			eqLanes(t, "normalFilter", &z2, &z1)
+		}
+	})
+
+	t.Run("magnifier", func(t *testing.T) {
+		for range 1024 {
+			sh, inLens := randMagnifierShader(rng)
+			z1 := randLanes(rng)
+			if inLens {
+				// The lens interior is where the kernel's interesting arithmetic lives: the circular arm runs, the
+				// weight lands strictly inside [0,1] instead of saturating, and the fused "2 - edgeInset" is not
+				// washed out by a clamp. The hostile half of the draws covers everything else.
+				randLensCoords(rng, sh, &z1.r, &z1.g)
+			}
+			z1.ctx = sh
+			z2 := z1
+			magnifierStage(&z1)
+			magnifierStageSIMD(&z2)
+			eqLanes(t, "magnifier", &z2, &z1)
 		}
 	})
 
@@ -562,6 +606,78 @@ func randMorphologyCtx(rng *rand.Rand) *morphologyCtx {
 // deliberately not copied: each side hands itself its own morphStep, whose back-pointer must reach its own context.
 func cloneMorphologyCtx(c *morphologyCtx) *morphologyCtx {
 	return &morphologyCtx{flip: c.flip, agg: c.agg, plus: c.plus, coords: c.coords}
+}
+
+// randDisplacementCtx returns a displacement context shaped like the ones DisplacementShader.appendStages builds — a
+// layer-space scale vector (whose negations the filter preserves) and the two channel selects over their full 0..3
+// range, alpha included, since that is the one select the kernel reads without unpremultiplying — and reports whether
+// this draw is the in-domain one. Half the contexts are hostile and half carry the domain the pipeline actually
+// produces: device-ish saved coordinates and a scale of a few dozen layer pixels. The in-domain half is what exercises
+// the contraction, because with arbitrary bit patterns the coordinate and the scaled displacement rarely share an
+// exponent range, and then the product's rounding tail cannot tip the add either way.
+func randDisplacementCtx(rng *rand.Rand) (*displacementCtx, bool) {
+	c := &displacementCtx{xSel: int32(rng.IntN(4)), ySel: int32(rng.IntN(4))}
+	if rng.IntN(2) == 0 {
+		c.sx, c.sy = rng.Float32()*128-64, rng.Float32()*128-64
+		for i := range stride {
+			c.coords[0][i] = rng.Float32() * 1024
+			c.coords[1][i] = rng.Float32() * 1024
+		}
+		return c, true
+	}
+	c.sx, c.sy = randCoefFloat(rng), randCoefFloat(rng)
+	randFloats(rng, &c.coords[0])
+	randFloats(rng, &c.coords[1])
+	return c, false
+}
+
+// randMagnifierShader returns a magnifier shader shaped like the ones magnifierFilter.OnFilterImage packs, and reports
+// whether this draw is the in-domain one: a finite ordered lens rect, a zoom transform whose scale is the reciprocal
+// of a zoom above 1 about the lens center, and reciprocal insets of a few pixels. Those insets are deliberately not
+// powers of two — an exactly representable edge-inset product would make the fused and the unfused "2 - edgeInset"
+// agree, hiding the contraction shape the kernel is built around. The other half is hostile: every uniform from the
+// hostile/random mix, which is where the kernel's NaN and infinity handling is decided.
+func randMagnifierShader(rng *rand.Rand) (*MagnifierShader, bool) {
+	if rng.IntN(2) != 0 {
+		return &MagnifierShader{
+			lensBounds: geom.RectLTRB(randCoefFloat(rng), randCoefFloat(rng), randCoefFloat(rng), randCoefFloat(rng)),
+			zoomXform: [4]float32{
+				randCoefFloat(rng), randCoefFloat(rng), randCoefFloat(rng), randCoefFloat(rng),
+			},
+			invInset: [2]float32{randCoefFloat(rng), randCoefFloat(rng)},
+		}, false
+	}
+	left, top := rng.Float32()*256, rng.Float32()*256
+	width, height := 16+rng.Float32()*256, 16+rng.Float32()*256
+	invZoom := 1 / (1.25 + rng.Float32()*8)
+	return &MagnifierShader{
+		lensBounds: geom.RectLTRB(left, top, left+width, top+height),
+		zoomXform: [4]float32{
+			(left + width/2) * (1 - invZoom), (top + height/2) * (1 - invZoom), invZoom, invZoom,
+		},
+		invInset: [2]float32{1 / (0.75 + rng.Float32()*12), 1 / (0.75 + rng.Float32()*12)},
+	}, true
+}
+
+// randLensCoords fills the coordinate registers with points around an in-domain magnifier's lens. A third of the lanes
+// land anywhere inside it and the rest straddle one of the two inset bands, which is where both edge insets fall below
+// 2 and the circular arm actually runs — and where the weight settles strictly inside [0,1] instead of saturating at
+// the clamp, so every rounding in the weighting reaches the output.
+func randLensCoords(rng *rand.Rand, sh *MagnifierShader, x, y *[stride]float32) {
+	insetX, insetY := 2/sh.invInset[0], 2/sh.invInset[1]
+	for i := range stride {
+		switch rng.IntN(3) {
+		case 0: // the left/top band
+			x[i] = sh.lensBounds.Left + rng.Float32()*insetX*1.5 - insetX*0.25
+			y[i] = sh.lensBounds.Top + rng.Float32()*insetY*1.5 - insetY*0.25
+		case 1: // the right/bottom band
+			x[i] = sh.lensBounds.Right - rng.Float32()*insetX*1.5 + insetX*0.25
+			y[i] = sh.lensBounds.Bottom - rng.Float32()*insetY*1.5 + insetY*0.25
+		default: // anywhere in the lens
+			x[i] = sh.lensBounds.Left + rng.Float32()*sh.lensBounds.Width()
+			y[i] = sh.lensBounds.Top + rng.Float32()*sh.lensBounds.Height()
+		}
+	}
 }
 
 // randNormalCtx returns a Sobel-normal context with its nine fixed taps wired in the column-major order
@@ -753,8 +869,10 @@ func TestStageSIMDWiring(t *testing.T) {
 		"morphSparseAggMinus":  {morphSparseAggMinusStageFn, morphSparseAggMinusStageSIMD, preferSIMDMorphSparseAggMinus},
 		"morphSparseMaxAgg":    {morphSparseMaxAggStageFn, morphSparseMaxAggStageSIMD, preferSIMDMorphSparseMaxAgg},
 		"morphReturn":          {morphReturnStageFn, morphReturnStageSIMD, preferSIMDMorphReturn},
+		"displacement":         {displacementStageFn, displacementStageSIMD, preferSIMDDisplacement},
 		"normalSetCoords":      {normalSetCoordsStageFn, normalSetCoordsStageSIMD, preferSIMDNormalSetCoords},
 		"normalFilter":         {normalFilterStageFn, normalFilterStageSIMD, preferSIMDNormalFilter},
+		"magnifier":            {magnifierStageFn, magnifierStageSIMD, preferSIMDMagnifier},
 		"matrixConvCoords":     {matrixConvCoordsStageFn, matrixConvCoordsStageSIMD, preferSIMDMatrixConvCoords},
 		"matrixConvAccum":      {matrixConvAccumStageFn, matrixConvAccumStageSIMD, preferSIMDMatrixConvAccum},
 		"matrixConvFinalize":   {matrixConvFinalizeStageFn, matrixConvFinalizeStageSIMD, preferSIMDMatrixConvFinalize},

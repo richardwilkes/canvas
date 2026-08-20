@@ -61,8 +61,10 @@ const (
 	preferSIMDMorphSparseAggMinus = true
 	preferSIMDMorphSparseMaxAgg   = true
 	preferSIMDMorphReturn         = true
+	preferSIMDDisplacement        = true
 	preferSIMDNormalSetCoords     = true
 	preferSIMDNormalFilter        = true
+	preferSIMDMagnifier           = true
 	preferSIMDMatrixConvCoords    = true
 	preferSIMDMatrixConvAccum     = true
 	preferSIMDMatrixConvFinalize  = true
@@ -104,3 +106,10 @@ func madf4v(f, m, a archsimd.Float32x4) archsimd.Float32x4 {
 // module; should it become one, this helper and the scalar stages have to be revisited together.
 // TestStageSIMDMatchesScalar is the tripwire — it compares against whatever the scalar twin in the same binary does.
 func exprMulAdd4(f, m, a archsimd.Float32x4) archsimd.Float32x4 { return f.Mul(m).Add(a) }
+
+// exprMulSub4 is exprMulAdd4's subtractive shape: the plain Go expression "a - f*m" as this build's compiler lowers
+// it. At GOAMD64=v1 amd64 does not contract that one either — the magnifier's "2 - edgeInset" disassembles to a MULSS
+// producing the rounded edge inset and a SUBSS against it — so the vector twin multiplies and subtracts separately,
+// reusing the same rounded product the neighboring comparison sees. (arm64 contracts this into FMSUBS, which does not
+// reuse it; see stage_simd_arm64.go.) Raising GOAMD64 would change this the same way it changes exprMulAdd4.
+func exprMulSub4(f, m, a archsimd.Float32x4) archsimd.Float32x4 { return a.Sub(f.Mul(m)) }

@@ -24,35 +24,15 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: Lint gate
-        if: runner.os != 'Windows'
-        run: |
-          if git ls-files '*.go' | grep -v '^internal/oracle/' | xargs grep -l 'import "C"' 2>/dev/null; then
-            echo 'import "C" found in shipped module' >&2
-            exit 1
-          fi
-      - name: gofmt
-        if: runner.os != 'Windows'
-        run: |
-          files=$(git ls-files '*.go' | xargs gofmt -l)
-          if [ -n "$files" ]; then
-            echo "gofmt needed on:" >&2
-            echo "$files" >&2
-            exit 1
-          fi
       - name: Build
         run: go build ./...
-      - name: Vet
-        run: go vet ./...
       - name: Test
         run: go test ./...
-      # The goexperiment.simd leg: vet and test the module again with the simd kernels wired in (shaders/stage_simd.go
-      # and friends), so the vector dispatch and its bit-exactness gates run on every OS/arch pair. The default-build
-      # steps above stay authoritative for what ships; this leg guards the opt-in build.
-      - name: Vet (GOEXPERIMENT=simd)
-        run: go vet ./...
-        env:
-          GOEXPERIMENT: simd
+      # The goexperiment.simd leg: test the module again with the simd kernels wired in (shaders/stage_simd.go and
+      # friends), so the vector dispatch and its bit-exactness gates run on every OS/arch pair. The default-build
+      # steps above stay authoritative for what ships; this leg guards the opt-in build. Formatting and linting
+      # (including go vet, which golangci-lint runs) live in the format and lint jobs, which cover every platform
+      # from one runner each — no need to repeat them per OS here.
       - name: Test (GOEXPERIMENT=simd)
         run: go test ./...
         env:
@@ -106,9 +86,6 @@ jobs:
       - name: Install GL stack
         if: matrix.install != ''
         run: ${{ matrix.install }}
-      - name: Oracle vet
-        working-directory: internal/oracle
-        run: go vet ./...
       # Log the headless GL stack (llvmpipe under Xvfb) so a GPU-context failure is diagnosable. Non-fatal.
       - name: Report GL stack (Linux)
         if: runner.os == 'Linux'
@@ -188,9 +165,6 @@ jobs:
         run: |
           curl -sSL -o mesa.7z https://github.com/pal1000/mesa-dist-win/releases/download/26.1.3/mesa3d-26.1.3-release-msvc.7z
           7z e -y -omesa mesa.7z x64/opengl32.dll x64/libgallium_wgl.dll x64/dxil.dll
-      - name: Oracle vet
-        working-directory: internal/oracle
-        run: go vet ./...
       # Compile the test binaries to a known dir and drop the Mesa DLLs beside them (the app-directory copy of
       # opengl32.dll wins over System32). The probe binary needs no GL at all, but is built the same way.
       - name: Build GPU test binaries and stage DLLs
@@ -247,9 +221,6 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: Oracle vet
-        working-directory: internal/oracle
-        run: go vet ./...
       - name: Raster gate (exact, per-platform)
         working-directory: internal/oracle
         run: |
@@ -266,3 +237,73 @@ jobs:
           name: oracle-diff-windows-11-arm
           path: ${{ runner.temp }}/diff-artifacts
           if-no-files-found: ignore
+  # Formatting is neither OS- nor architecture-specific and the formatters do not evaluate build constraints, so one
+  # runner covers every source file, including the per-platform ones. The cgo-free gate lives here too: it is a
+  # file-content check, equally platform-free. golangci-lint is installed through the action rather than build.sh
+  # because the upstream install.sh that build.sh drives fails its checksum verification for unauthenticated release
+  # downloads in CI.
+  format:
+    name: Format
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Verify the module is cgo-free
+        run: |
+          if git ls-files '*.go' | grep -v '^internal/oracle/' | xargs grep -l 'import "C"' 2>/dev/null; then
+            echo 'import "C" found in shipped module' >&2
+            exit 1
+          fi
+      - name: Install golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: latest
+          install-only: true
+      # `golangci-lint run` does not apply the `formatters` section of .golangci.yml the way `fmt` does, so this pass
+      # is what enforces the gofumpt extra rules and goimports.
+      - name: Check formatting
+        run: golangci-lint fmt --diff
+  # The module carries per-GOOS sources (gpu/gl), per-GOARCH kernel sources (the NEON and archsimd files), and
+  # goexperiment.simd-tagged sources, so a host-shaped lint pass leaves files unanalyzed. Each supported GOOS/GOARCH
+  # pair gets its own leg, linting the main module in both experiment modes plus internal/oracle (which typechecks
+  # against the per-platform main module); internal/tools is fully portable, so one leg covers it. Everything
+  # cross-typechecks from Linux runners — the module is cgo-free — which keeps this off the expensive runners, and
+  # golangci-lint runs go vet, so the test job needs no vet steps of its own.
+  lint:
+    name: Lint (${{ matrix.goos }}/${{ matrix.goarch }})
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        goos: [linux, darwin, windows]
+        goarch: [amd64, arm64]
+    env:
+      GOOS: ${{ matrix.goos }}
+      GOARCH: ${{ matrix.goarch }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Install golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: latest
+          install-only: true
+      - name: Lint
+        run: golangci-lint run ./...
+      - name: Lint (GOEXPERIMENT=simd)
+        run: golangci-lint run ./...
+        env:
+          GOEXPERIMENT: simd
+      - name: Lint internal/oracle
+        working-directory: internal/oracle
+        run: golangci-lint run -c ../../.golangci.yml ./...
+      - name: Lint internal/tools
+        if: matrix.goos == 'linux' && matrix.goarch == 'amd64'
+        working-directory: internal/tools
+        run: golangci-lint run -c ../../.golangci.yml ./...

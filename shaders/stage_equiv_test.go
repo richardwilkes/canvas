@@ -7,6 +7,10 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
+// Built exactly when a consumer exists: the NEON equivalence suite (arm64) and the simd equivalence suite
+// (goexperiment.simd). On any other build shape every helper here would be dead code.
+//go:build arm64 || goexperiment.simd
+
 package shaders
 
 import (

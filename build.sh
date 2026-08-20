@@ -7,9 +7,13 @@ trap 'echo -e "\033[33;5mBuild failed on build.sh:$LINENO\033[0m"' ERR
 for arg in "$@"; do
 	case "$arg" in
 	--all | -a)
+		FMT=1
 		LINT=1
 		TEST=1
 		RACE=-race
+		;;
+	--fmt | -f)
+		FMT=1
 		;;
 	--lint | -l)
 		LINT=1
@@ -23,8 +27,9 @@ for arg in "$@"; do
 		;;
 	--help | -h)
 		echo "$0 [options]"
-		echo "  -a, --all  Equivalent to --lint --race"
-		echo "  -l, --lint Run the linters"
+		echo "  -a, --all  Equivalent to --fmt --lint --race"
+		echo "  -f, --fmt  Verify the source formatting (gofumpt and goimports)"
+		echo "  -l, --lint Run the linters for every supported platform"
 		echo "  -r, --race Run the tests with race-checking enabled"
 		echo "  -t, --test Run the tests"
 		echo "  -h, --help This help text"
@@ -83,8 +88,11 @@ if [ "$TEST"x == "1x" ]; then
 	CGO_ENABLED=$TEST_CGO go test $RACE ./... | grep -v "no test files"
 fi
 
-# Run the linters
-if [ "$LINT"x == "1x" ]; then
+# Both the formatting check and the linters come out of golangci-lint, so whichever of them runs first installs it.
+ensure_golangci_lint() {
+	if [ -n "$GOLANGCI_LINT" ]; then
+		return
+	fi
 	GOLANGCI_LINT_VERSION=$(curl --head -s https://github.com/golangci/golangci-lint/releases/latest | grep -i location: | sed 's/^.*v//' | tr -d '\r\n')
 	TOOLS_DIR=$(go env GOPATH)/bin
 	if [ ! -e "$TOOLS_DIR/golangci-lint" ] || [ "$("$TOOLS_DIR/golangci-lint" version 2>&1 | awk '{ print $4 }' || true)x" != "${GOLANGCI_LINT_VERSION}x" ]; then
@@ -92,11 +100,40 @@ if [ "$LINT"x == "1x" ]; then
 		mkdir -p "$TOOLS_DIR"
 		curl -sfL https://raw.githubusercontent.com/golangci/golangci-lint/main/install.sh | sh -s -- -b "$TOOLS_DIR" v$GOLANGCI_LINT_VERSION
 	fi
+	GOLANGCI_LINT="$TOOLS_DIR/golangci-lint"
+}
+
+# Verify formatting. Formatting is neither OS- nor architecture-specific and the formatters do not evaluate build
+# constraints, so a single pass covers every source file, including the per-platform ones.
+if [ "$FMT"x == "1x" ]; then
+	ensure_golangci_lint
+	echo -e "\033[33mChecking the formatting of the Go code...\033[0m"
+	if ! "$GOLANGCI_LINT" fmt --diff; then
+		echo -e "\033[31mRun 'golangci-lint fmt' to apply the formatting shown above.\033[0m" >&2
+		exit 1
+	fi
+	echo "0 issues."
+fi
+
+# Run the linters for every supported platform. The module carries per-GOOS sources (gpu/gl), per-GOARCH kernel
+# sources (the NEON and archsimd files), and goexperiment.simd-tagged sources, so a host-shaped lint pass leaves
+# files unanalyzed; each supported GOOS/GOARCH pair gets its own pass, in both experiment modes. internal/oracle
+# typechecks against the per-platform main module, so it joins the platform loop (no experiment dimension — it has no
+# simd-tagged files); internal/tools is fully portable, so the host pass covers it.
+LINT_PLATFORMS="linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64"
+if [ "$LINT"x == "1x" ]; then
+	ensure_golangci_lint
 	echo -e "\033[33mLinting...\033[0m"
-	"$TOOLS_DIR/golangci-lint" run ./...
-	# Lint again with the simd experiment on, so the goexperiment.simd-tagged kernel files are covered too. The
-	# oracle/tools sub-lints below stay default-only: neither module contains experiment-tagged files.
-	GOEXPERIMENT=simd "$TOOLS_DIR/golangci-lint" run ./...
-	(cd internal/oracle; "$TOOLS_DIR/golangci-lint" run -c ../../.golangci.yml ./...)
-	(cd internal/tools; "$TOOLS_DIR/golangci-lint" run -c ../../.golangci.yml ./...)
+	for platform in $LINT_PLATFORMS; do
+		for exp in "" simd; do
+			echo -e "\033[33m  $platform${exp:+ (GOEXPERIMENT=$exp)}\033[0m"
+			GOOS=${platform%/*} GOARCH=${platform#*/} GOEXPERIMENT=$exp "$GOLANGCI_LINT" run ./...
+		done
+	done
+	for platform in $LINT_PLATFORMS; do
+		echo -e "\033[33m  internal/oracle $platform\033[0m"
+		(cd internal/oracle && GOOS=${platform%/*} GOARCH=${platform#*/} "$GOLANGCI_LINT" run -c ../../.golangci.yml ./...)
+	done
+	echo -e "\033[33m  internal/tools\033[0m"
+	(cd internal/tools && "$GOLANGCI_LINT" run -c ../../.golangci.yml ./...)
 fi

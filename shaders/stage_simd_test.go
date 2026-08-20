@@ -15,6 +15,7 @@ import (
 	"math"
 	"math/rand/v2"
 	"reflect"
+	"strconv"
 	"testing"
 
 	"github.com/richardwilkes/canvas/colorcore"
@@ -342,6 +343,332 @@ func TestStageSIMDMatchesScalar(t *testing.T) {
 			eqLanesDst(t, "accumulate", &z2, &z1)
 		}
 	})
+
+	t.Run("morphAggInit", func(t *testing.T) {
+		for range 1024 {
+			c1 := randMorphologyCtx(rng)
+			c2 := cloneMorphologyCtx(c1)
+			z1 := randLanes(rng)
+			z1.ctx = c1
+			z2 := z1
+			z2.ctx = c2
+			morphAggInitStage(&z1)
+			morphAggInitStageSIMD(&z2)
+			eqLanes(t, "morphAggInit", &z2, &z1)
+			eqScratch4(t, "morphAggInit", "agg", &c2.agg, &c1.agg)
+		}
+	})
+
+	t.Run("morphPlusCoords", func(t *testing.T) {
+		for range 1024 {
+			c := randMorphologyCtx(rng)
+			z1 := randLanes(rng)
+			z1.ctx = c.nextStep(randCoefFloat(rng), randCoefFloat(rng))
+			z2 := z1
+			morphPlusCoordsStage(&z1)
+			morphPlusCoordsStageSIMD(&z2)
+			eqLanes(t, "morphPlusCoords", &z2, &z1)
+		}
+	})
+
+	t.Run("morphTakePlus", func(t *testing.T) {
+		for range 1024 {
+			c1 := randMorphologyCtx(rng)
+			c2 := cloneMorphologyCtx(c1)
+			dx, dy := randCoefFloat(rng), randCoefFloat(rng)
+			z1 := randLanes(rng)
+			z1.ctx = c1.nextStep(dx, dy)
+			z2 := z1
+			z2.ctx = c2.nextStep(dx, dy)
+			morphTakePlusStage(&z1)
+			morphTakePlusStageSIMD(&z2)
+			eqLanes(t, "morphTakePlus", &z2, &z1)
+			eqScratch4(t, "morphTakePlus", "plus", &c2.plus, &c1.plus)
+		}
+	})
+
+	t.Run("morphMaxAgg", func(t *testing.T) {
+		for range 1024 {
+			c1 := randMorphologyCtx(rng)
+			c2 := cloneMorphologyCtx(c1)
+			z1 := randLanes(rng)
+			z1.ctx = c1
+			z2 := z1
+			z2.ctx = c2
+			morphMaxAggStage(&z1)
+			morphMaxAggStageSIMD(&z2)
+			eqLanes(t, "morphMaxAgg", &z2, &z1)
+			eqScratch4(t, "morphMaxAgg", "agg", &c2.agg, &c1.agg)
+		}
+	})
+
+	t.Run("morphSparseAggMinus", func(t *testing.T) {
+		for range 1024 {
+			c1 := randMorphologyCtx(rng)
+			c2 := cloneMorphologyCtx(c1)
+			dx, dy := randCoefFloat(rng), randCoefFloat(rng)
+			z1 := randLanes(rng)
+			z1.ctx = c1.nextStep(dx, dy)
+			z2 := z1
+			z2.ctx = c2.nextStep(dx, dy)
+			morphSparseAggMinusStage(&z1)
+			morphSparseAggMinusStageSIMD(&z2)
+			eqLanes(t, "morphSparseAggMinus", &z2, &z1)
+			eqScratch4(t, "morphSparseAggMinus", "agg", &c2.agg, &c1.agg)
+		}
+	})
+
+	t.Run("morphSparseMaxAgg", func(t *testing.T) {
+		for range 1024 {
+			c1 := randMorphologyCtx(rng)
+			c2 := cloneMorphologyCtx(c1)
+			z1 := randLanes(rng)
+			z1.ctx = c1
+			z2 := z1
+			z2.ctx = c2
+			morphSparseMaxAggStage(&z1)
+			morphSparseMaxAggStageSIMD(&z2)
+			eqLanes(t, "morphSparseMaxAgg", &z2, &z1)
+			eqScratch4(t, "morphSparseMaxAgg", "agg", &c2.agg, &c1.agg)
+		}
+	})
+
+	t.Run("morphReturn", func(t *testing.T) {
+		for range 1024 {
+			c := randMorphologyCtx(rng)
+			z1 := randLanes(rng)
+			z1.ctx = c
+			z2 := z1
+			morphReturnStage(&z1)
+			morphReturnStageSIMD(&z2)
+			eqLanes(t, "morphReturn", &z2, &z1)
+		}
+	})
+
+	t.Run("normalSetCoords", func(t *testing.T) {
+		for range 1024 {
+			c := randNormalCtx(rng)
+			z1 := randLanes(rng)
+			z1.ctx = &c.taps[rng.IntN(len(c.taps))]
+			z2 := z1
+			normalSetCoordsStage(&z1)
+			normalSetCoordsStageSIMD(&z2)
+			eqLanes(t, "normalSetCoords", &z2, &z1)
+		}
+	})
+
+	t.Run("normalFilter", func(t *testing.T) {
+		for range 1024 {
+			c := randNormalCtx(rng)
+			z1 := randLanes(rng)
+			z1.ctx = c
+			z2 := z1
+			normalFilterStage(&z1)
+			normalFilterStageSIMD(&z2)
+			eqLanes(t, "normalFilter", &z2, &z1)
+		}
+	})
+
+	t.Run("matrixConvCoords", func(t *testing.T) {
+		for range 1024 {
+			c := randMatrixConvCtx(rng)
+			z1 := randLanes(rng)
+			z1.ctx = randMatrixConvTap(rng, c)
+			z2 := z1
+			matrixConvCoordsStage(&z1)
+			matrixConvCoordsStageSIMD(&z2)
+			eqLanes(t, "matrixConvCoords", &z2, &z1)
+		}
+	})
+
+	t.Run("matrixConvAccum", func(t *testing.T) {
+		for range 1024 {
+			c1 := randMatrixConvCtx(rng)
+			c2 := cloneMatrixConvCtx(c1)
+			t1 := randMatrixConvTap(rng, c1)
+			t2 := c2.nextTap()
+			t2.fkx, t2.fky, t2.k, t2.isOrigin = t1.fkx, t1.fky, t1.k, t1.isOrigin
+			z1 := randLanes(rng)
+			z1.ctx = t1
+			z2 := z1
+			z2.ctx = t2
+			matrixConvAccumStage(&z1)
+			matrixConvAccumStageSIMD(&z2)
+			eqLanes(t, "matrixConvAccum", &z2, &z1)
+			eqScratch4(t, "matrixConvAccum", "sum", &c2.sum, &c1.sum)
+			eqReg(t, "matrixConvAccum", "origAlpha", &c2.origAlpha, &c1.origAlpha)
+		}
+	})
+
+	t.Run("matrixConvFinalize", func(t *testing.T) {
+		for range 1024 {
+			c := randMatrixConvCtx(rng)
+			z1 := randLanes(rng)
+			z1.ctx = c
+			z2 := z1
+			matrixConvFinalizeStage(&z1)
+			matrixConvFinalizeStageSIMD(&z2)
+			eqLanes(t, "matrixConvFinalize", &z2, &z1)
+		}
+	})
+
+	t.Run("arithBlend", func(t *testing.T) {
+		for range 1024 {
+			c := randArithmeticCtx(rng)
+			z1 := randLanes(rng)
+			z1.ctx = c
+			z2 := z1
+			arithBlendStage(&z1)
+			arithBlendStageSIMD(&z2)
+			eqLanes(t, "arithBlend", &z2, &z1)
+		}
+	})
+}
+
+// randCoefFloat returns one stage-uniform scalar for the image-filter kernels: usually a plausible coefficient (a
+// convolution weight, a gain or bias, an edge bound, a morphology tap delta), sometimes an arbitrary bit pattern or a
+// hostile float class. The plausible draw is what the imagefilter callers actually produce; the other two cover the
+// corners the kernels' comparisons, divides and NaN handling pivot on.
+func randCoefFloat(rng *rand.Rand) float32 {
+	switch rng.IntN(8) {
+	case 0:
+		return hostileFloats[rng.IntN(len(hostileFloats))]
+	case 1:
+		return quietFloat(rng.Uint32())
+	default:
+		return rng.Float32()*8 - 4
+	}
+}
+
+// randMorphologyCtx returns a morphology context whose aggregate, +delta hold and saved coordinates carry the
+// hostile/random mix, with the exactly ±1 flip NewLinearMorphology/NewSparseMorphology set (dilate/erode) — the sign
+// decides which operand each maxf yields, so both are drawn.
+func randMorphologyCtx(rng *rand.Rand) *morphologyCtx {
+	c := &morphologyCtx{flip: 1}
+	if rng.IntN(2) == 0 {
+		c.flip = -1
+	}
+	for ch := range 4 {
+		randFloats(rng, &c.agg[ch])
+		randFloats(rng, &c.plus[ch])
+	}
+	randFloats(rng, &c.coords[0])
+	randFloats(rng, &c.coords[1])
+	return c
+}
+
+// cloneMorphologyCtx returns an independent copy of a morphology context (its scratch is all arrays, so a field-wise
+// copy suffices) for the kernels that write agg or plus and so need one context per side. The steps slice is
+// deliberately not copied: each side hands itself its own morphStep, whose back-pointer must reach its own context.
+func cloneMorphologyCtx(c *morphologyCtx) *morphologyCtx {
+	return &morphologyCtx{flip: c.flip, agg: c.agg, plus: c.plus, coords: c.coords}
+}
+
+// randNormalCtx returns a Sobel-normal context with its nine fixed taps wired in the column-major order
+// NormalShader.appendStages builds them. Half the contexts are hostile — every scalar and every tap alpha drawn from
+// the hostile/random mix — and half carry the domain the pipeline actually produces: alphas in [0,1], an ordered
+// finite edge rect, and a negative surface depth. The in-domain half matters because the hostile half saturates the
+// Sobel dot products into infinities and NaNs, where the normalize divide washes out the ~1-ULP differences that
+// separate a correct madf from a plain single-precision FMA.
+func randNormalCtx(rng *rand.Rand) *normalCtx {
+	c := &normalCtx{}
+	if rng.IntN(2) == 0 {
+		c.l, c.t = -rng.Float32()*64, -rng.Float32()*64
+		c.r, c.b = 64+rng.Float32()*64, 64+rng.Float32()*64
+		c.negSurfaceDepth = -(0.5 + rng.Float32()*8)
+		for i := range c.alpha {
+			for j := range c.alpha[i] {
+				c.alpha[i][j] = rng.Float32()
+			}
+		}
+	} else {
+		c.l, c.t = randCoefFloat(rng), randCoefFloat(rng)
+		c.r, c.b = randCoefFloat(rng), randCoefFloat(rng)
+		c.negSurfaceDepth = randCoefFloat(rng)
+		for i := range c.alpha {
+			randFloats(rng, &c.alpha[i])
+		}
+	}
+	randFloats(rng, &c.coords[0])
+	randFloats(rng, &c.coords[1])
+	for i := range c.taps {
+		c.taps[i].c = c
+		c.taps[i].ddx = float32(i/3) - 1
+		c.taps[i].ddy = float32(i%3) - 1
+	}
+	return c
+}
+
+// randMatrixConvCtx returns a matrix-convolution context shaped like the ones MatrixConvShader.appendStages builds: an
+// offset inside a 1x1..5x5 kernel, a gain and a pre-scaled bias, both settings of convolveAlpha, and an accumulator,
+// origin-alpha slot and saved coordinates carrying the hostile/random mix.
+func randMatrixConvCtx(rng *rand.Rand) *matrixConvCtx {
+	size := 1 + rng.IntN(5)
+	c := &matrixConvCtx{
+		ox:            float32(rng.IntN(size)),
+		oy:            float32(rng.IntN(size)),
+		gain:          randCoefFloat(rng),
+		bias:          randCoefFloat(rng) / 255,
+		convolveAlpha: rng.IntN(2) == 0,
+	}
+	for ch := range 4 {
+		randFloats(rng, &c.sum[ch])
+	}
+	randFloats(rng, &c.origAlpha)
+	randFloats(rng, &c.coords[0])
+	randFloats(rng, &c.coords[1])
+	return c
+}
+
+// cloneMatrixConvCtx returns an independent copy of a convolution context for the accumulator subtest, which writes
+// sum and origAlpha and so needs one per side. As with the morphology clone the taps slice is left empty so each side
+// hands itself a tap pointing back at its own context.
+func cloneMatrixConvCtx(c *matrixConvCtx) *matrixConvCtx {
+	return &matrixConvCtx{
+		sum: c.sum, coords: c.coords, origAlpha: c.origAlpha, ox: c.ox, oy: c.oy,
+		gain: c.gain, bias: c.bias, convolveAlpha: c.convolveAlpha,
+	}
+}
+
+// randMatrixConvTap hands c one kernel tap: a position within the kernel and its coefficient. One draw in four forces
+// the tap onto the kernel origin, which is where the non-convolving form records the alpha it later restores — far
+// more often than random positions would hit it.
+func randMatrixConvTap(rng *rand.Rand, c *matrixConvCtx) *matrixConvTap {
+	t := c.nextTap()
+	t.fkx, t.fky = float32(rng.IntN(5)), float32(rng.IntN(5))
+	if rng.IntN(4) == 0 {
+		t.fkx, t.fky = c.ox, c.oy
+	}
+	t.k = randCoefFloat(rng)
+	t.isOrigin = t.fkx == c.ox && t.fky == c.oy
+	return t
+}
+
+// randArithmeticCtx returns an arithmetic-blend context: the four coefficients, both settings of the premul clamp (1
+// when the blend does not enforce premul, 0 when it does), and a dst hold carrying the hostile/random mix.
+func randArithmeticCtx(rng *rand.Rand) *arithmeticCtx {
+	c := &arithmeticCtx{pmClamp: 1}
+	if rng.IntN(2) == 0 {
+		c.pmClamp = 0
+	}
+	for i := range c.k {
+		c.k[i] = randCoefFloat(rng)
+	}
+	for ch := range 4 {
+		randFloats(rng, &c.res0[ch])
+	}
+	randFloats(rng, &c.coords[0])
+	randFloats(rng, &c.coords[1])
+	return c
+}
+
+// eqScratch4 is eqReg for a four-channel context scratch buffer — the morphology aggregate and +delta hold, and the
+// convolution accumulator.
+func eqScratch4(t *testing.T, name, which string, got, want *[4][stride]float32) {
+	t.Helper()
+	for ch := range 4 {
+		eqReg(t, name, which+strconv.Itoa(ch), &got[ch], &want[ch])
+	}
 }
 
 // randAlphas overwrites an alpha register with the classes the premul/unpremul/clamp_gamut kernels actually meet: the
@@ -419,6 +746,19 @@ func TestStageSIMDWiring(t *testing.T) {
 		"bilinearNY":           {bilinearNYStageFn, bilinearNYStageSIMD, preferSIMDBilinear},
 		"bilinearPY":           {bilinearPYStageFn, bilinearPYStageSIMD, preferSIMDBilinear},
 		"accumulate":           {accumulateStageFn, accumulateStageSIMD, preferSIMDAccumulate},
+		"morphAggInit":         {morphAggInitStageFn, morphAggInitStageSIMD, preferSIMDMorphAggInit},
+		"morphPlusCoords":      {morphPlusCoordsStageFn, morphPlusCoordsStageSIMD, preferSIMDMorphPlusCoords},
+		"morphTakePlus":        {morphTakePlusStageFn, morphTakePlusStageSIMD, preferSIMDMorphTakePlus},
+		"morphMaxAgg":          {morphMaxAggStageFn, morphMaxAggStageSIMD, preferSIMDMorphMaxAgg},
+		"morphSparseAggMinus":  {morphSparseAggMinusStageFn, morphSparseAggMinusStageSIMD, preferSIMDMorphSparseAggMinus},
+		"morphSparseMaxAgg":    {morphSparseMaxAggStageFn, morphSparseMaxAggStageSIMD, preferSIMDMorphSparseMaxAgg},
+		"morphReturn":          {morphReturnStageFn, morphReturnStageSIMD, preferSIMDMorphReturn},
+		"normalSetCoords":      {normalSetCoordsStageFn, normalSetCoordsStageSIMD, preferSIMDNormalSetCoords},
+		"normalFilter":         {normalFilterStageFn, normalFilterStageSIMD, preferSIMDNormalFilter},
+		"matrixConvCoords":     {matrixConvCoordsStageFn, matrixConvCoordsStageSIMD, preferSIMDMatrixConvCoords},
+		"matrixConvAccum":      {matrixConvAccumStageFn, matrixConvAccumStageSIMD, preferSIMDMatrixConvAccum},
+		"matrixConvFinalize":   {matrixConvFinalizeStageFn, matrixConvFinalizeStageSIMD, preferSIMDMatrixConvFinalize},
+		"arithBlend":           {arithBlendStageFn, arithBlendStageSIMD, preferSIMDArithBlend},
 	} {
 		wired := reflect.ValueOf(c.got).Pointer() == reflect.ValueOf(c.simd).Pointer()
 		if c.preferred && !wired {

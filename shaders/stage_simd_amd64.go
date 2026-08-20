@@ -51,6 +51,24 @@ const (
 	preferSIMDAccumulate           = true
 )
 
+// The image-filter kernel stages (filterkernels.go) ported afterwards. Their default lane is the same portable scalar
+// code, so they are all preferred here for the same reason; the arm64 table records the measurements.
+const (
+	preferSIMDMorphAggInit        = true
+	preferSIMDMorphPlusCoords     = true
+	preferSIMDMorphTakePlus       = true
+	preferSIMDMorphMaxAgg         = true
+	preferSIMDMorphSparseAggMinus = true
+	preferSIMDMorphSparseMaxAgg   = true
+	preferSIMDMorphReturn         = true
+	preferSIMDNormalSetCoords     = true
+	preferSIMDNormalFilter        = true
+	preferSIMDMatrixConvCoords    = true
+	preferSIMDMatrixConvAccum     = true
+	preferSIMDMatrixConvFinalize  = true
+	preferSIMDArithBlend          = true
+)
+
 // madfCoef is a loop-invariant madf multiplicand, pre-widened to double once so the chunk loop pays no per-iteration
 // widen for it. On amd64 a 4-lane madf works in one 256-bit Float64x4.
 type madfCoef = archsimd.Float64x4
@@ -72,3 +90,17 @@ func madf4(f archsimd.Float32x4, m64 madfCoef, a archsimd.Float32x4) archsimd.Fl
 func madf4v(f, m, a archsimd.Float32x4) archsimd.Float32x4 {
 	return f.ConvertToFloat64().MulAdd(m.ConvertToFloat64(), a.ConvertToFloat64()).ConvertToFloat32()
 }
+
+// exprMulAdd4 is the lanewise form of the *plain Go expression* "f*m + a" as this build's compiler lowers it — not the
+// explicit madf, which is a different operation. Go permits an implementation to contract such an expression into a
+// single fused operation; at this module's GOAMD64=v1 baseline the amd64 compiler does not, emitting MULSS then ADDSS
+// for the image-filter kernels' "sum += c*k", "sum*gain + bias" and arithmetic-blend chain, so the vector twin
+// multiplies and adds separately too — VMULPS and VADDPS are the same IEEE single-precision operations, lane for lane.
+// (arm64 contracts these same expressions into FMADDS, which is why its exprMulAdd4 fuses and why the goldens are
+// captured per platform.)
+//
+// Raising GOAMD64 changes this: at v3+ the compiler contracts "sum*gain + bias" into VFMADD231SS. That already moves
+// the *default* build's rendered output off the captured goldens, so v3 is not a supported configuration for this
+// module; should it become one, this helper and the scalar stages have to be revisited together.
+// TestStageSIMDMatchesScalar is the tripwire — it compares against whatever the scalar twin in the same binary does.
+func exprMulAdd4(f, m, a archsimd.Float32x4) archsimd.Float32x4 { return f.Mul(m).Add(a) }

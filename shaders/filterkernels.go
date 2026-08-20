@@ -22,6 +22,30 @@ import (
 	"github.com/richardwilkes/canvas/geom"
 )
 
+// The lane-wise filter-kernel stages this file defines dispatch through these fn variables. The goexperiment.simd build
+// substitutes the vector kernels (filterkernels_simd.go) at init for the ones its per-arch preference table prefers;
+// every other build keeps the portable forms. Each substitution is bit-identical (locked by
+// TestStageSIMDMatchesScalar), so it changes throughput only, never rendered bytes. The stages left off this list are
+// the ones the triage declined: the whole-register copies (store-coords, save-alpha, the arithmetic store/load pair,
+// the convolution's accumulator zeroing), which the compiler already moves 128 bits at a time, and the kernels whose
+// per-lane math is a channel selection (displacement), a second contraction shape (magnifier), or an approximate power
+// (lighting).
+var (
+	morphAggInitStageFn        stageFn = morphAggInitStage
+	morphPlusCoordsStageFn     stageFn = morphPlusCoordsStage
+	morphTakePlusStageFn       stageFn = morphTakePlusStage
+	morphMaxAggStageFn         stageFn = morphMaxAggStage
+	morphSparseAggMinusStageFn stageFn = morphSparseAggMinusStage
+	morphSparseMaxAggStageFn   stageFn = morphSparseMaxAggStage
+	morphReturnStageFn         stageFn = morphReturnStage
+	normalSetCoordsStageFn     stageFn = normalSetCoordsStage
+	normalFilterStageFn        stageFn = normalFilterStage
+	matrixConvCoordsStageFn    stageFn = matrixConvCoordsStage
+	matrixConvAccumStageFn     stageFn = matrixConvAccumStage
+	matrixConvFinalizeStageFn  stageFn = matrixConvFinalizeStage
+	arithBlendStageFn          stageFn = arithBlendStage
+)
+
 // storeCoordsStage saves the current (r,g) local coordinates into the caller-provided buffer (the context), so a filter
 // kernel that re-derives child sample coordinates can restore the originals. The buffer is written in full before it is
 // read within each ShadeSpan chunk, so pooled reuse needs no zeroing.
@@ -178,41 +202,41 @@ func (s *MorphologyShader) appendStages(p *Pipeline, m MatrixRec) bool { //nolin
 		if !p.appendChildOrTransparent(s.child, &seeded) {
 			return false
 		}
-		p.appendCtx(morphAggInitStage, c)
+		p.appendCtx(morphAggInitStageFn, c)
 		delta := s.offset
 		for step := int32(1); step <= maxLinearMorphologyRadius; step++ {
 			if step > s.radius {
 				break
 			}
 			st := c.nextStep(delta.X, delta.Y)
-			p.appendCtx(morphPlusCoordsStage, st)
+			p.appendCtx(morphPlusCoordsStageFn, st)
 			if !p.appendChildOrTransparent(s.child, &seeded) {
 				return false
 			}
-			p.appendCtx(morphTakePlusStage, st)
+			p.appendCtx(morphTakePlusStageFn, st)
 			if !p.appendChildOrTransparent(s.child, &seeded) {
 				return false
 			}
-			p.appendCtx(morphMaxAggStage, c)
+			p.appendCtx(morphMaxAggStageFn, c)
 			delta.X += s.offset.X
 			delta.Y += s.offset.Y
 		}
 	} else {
 		// Sparse form: aggregate = max(flip*eval(coord+offset), flip*eval(coord-offset)).
 		st := c.nextStep(s.offset.X, s.offset.Y)
-		p.appendCtx(morphPlusCoordsStage, st)
+		p.appendCtx(morphPlusCoordsStageFn, st)
 		if !p.appendChildOrTransparent(s.child, &seeded) {
 			return false
 		}
-		p.appendCtx(morphSparseAggMinusStage, st)
+		p.appendCtx(morphSparseAggMinusStageFn, st)
 		if !p.appendChildOrTransparent(s.child, &seeded) {
 			return false
 		}
-		p.appendCtx(morphSparseMaxAggStage, c)
+		p.appendCtx(morphSparseMaxAggStageFn, c)
 	}
 
 	// return flip * aggregate
-	p.appendCtx(morphReturnStage, c)
+	p.appendCtx(morphReturnStageFn, c)
 	return true
 }
 
@@ -491,7 +515,7 @@ func (s *NormalShader) appendStages(p *Pipeline, m MatrixRec) bool { //nolint:go
 			tp.c = c
 			tp.ddx = dx
 			tp.ddy = dy
-			p.appendCtx(normalSetCoordsStage, tp)
+			p.appendCtx(normalSetCoordsStageFn, tp)
 			if !p.appendChildOrTransparent(s.alphaMap, &seeded) {
 				return false
 			}
@@ -500,7 +524,7 @@ func (s *NormalShader) appendStages(p *Pipeline, m MatrixRec) bool { //nolint:go
 		}
 	}
 
-	p.appendCtx(normalFilterStage, c)
+	p.appendCtx(normalFilterStageFn, c)
 	return true
 }
 
@@ -926,15 +950,15 @@ func (s *MatrixConvShader) appendStages(p *Pipeline, m MatrixRec) bool { //nolin
 			t.k = s.kernel[tapIdx]
 			t.isOrigin = kx == s.offset.X && ky == s.offset.Y
 			tapIdx++
-			p.appendCtx(matrixConvCoordsStage, t)
+			p.appendCtx(matrixConvCoordsStageFn, t)
 			if !p.appendChildOrTransparent(s.child, &seeded) {
 				return false
 			}
-			p.appendCtx(matrixConvAccumStage, t)
+			p.appendCtx(matrixConvAccumStageFn, t)
 		}
 	}
 
-	p.appendCtx(matrixConvFinalizeStage, c)
+	p.appendCtx(matrixConvFinalizeStageFn, c)
 	return true
 }
 
@@ -958,6 +982,11 @@ func matrixConvCoordsStage(z *lanes) {
 
 // matrixConvAccumStage folds one tap into the accumulator (unpremultiplying first when not convolving alpha, and
 // recording the origin tap's alpha).
+//
+// The accumulation is written as the plain expression "sum += c*k", which the Go compiler is free to contract into a
+// single-precision fused multiply-add — and does on arm64 (FMADDS), while amd64 at this module's GOAMD64=v1 baseline
+// emits a separate MULSS and ADDSS. That is a per-arch difference in the *default* build, which is why the goldens are
+// captured per platform; the simd twin mirrors whichever form the arch's compiler chose (exprMulAdd4).
 func matrixConvAccumStage(z *lanes) {
 	t := z.ctx.(*matrixConvTap)
 	c := t.c
@@ -980,7 +1009,8 @@ func matrixConvAccumStage(z *lanes) {
 	}
 }
 
-// matrixConvFinalizeStage applies gain/bias and reconstructs a valid premultiplied color.
+// matrixConvFinalizeStage applies gain/bias and reconstructs a valid premultiplied color. Like the accumulator, the
+// "sum*gain + bias" expression contracts to one FMADDS on arm64 and stays a separate MULSS/ADDSS pair on amd64.
 func matrixConvFinalizeStage(z *lanes) {
 	c := z.ctx.(*matrixConvCtx)
 	gain, bias := c.gain, c.bias
@@ -1083,7 +1113,7 @@ func (s *ArithmeticShader) appendStages(p *Pipeline, m MatrixRec) bool { //nolin
 	if !s.src.appendStages(p, m) {
 		return false
 	}
-	p.appendCtx(arithBlendStage, c)
+	p.appendCtx(arithBlendStageFn, c)
 	return true
 }
 
@@ -1110,7 +1140,9 @@ func arithStoreRes0Stage(z *lanes) {
 	c.res0[3] = z.a
 }
 
-// arithBlendStage applies k1*src*dst + k2*src + k3*dst + k4 and re-establishes a valid premul color.
+// arithBlendStage applies k1*src*dst + k2*src + k3*dst + k4 and re-establishes a valid premul color. As in the
+// convolution accumulator, the two interior additions of that left-associative chain contract to FMADDS on arm64 and
+// stay separate MULSS/ADDSS pairs on amd64; the simd twin mirrors the arch's choice through exprMulAdd4.
 func arithBlendStage(z *lanes) {
 	c := z.ctx.(*arithmeticCtx)
 	k := c.k

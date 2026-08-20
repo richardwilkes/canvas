@@ -322,3 +322,219 @@ func BenchmarkAccumulateStage(b *testing.B) {
 		accumulateStageFn(&z)
 	}
 }
+
+///////////////////////////////////////////////////////////////////////////////
+// image-filter kernel stages (filterkernels.go)
+
+// benchMorphologyCtx returns a morphology context holding one tap's worth of plausible state: the dilate sign, saved
+// coordinates, and an aggregate and +delta hold seeded with ordinary [0,1] color values. The aggregate stages are
+// max-folds, so the loop's feedback settles after the first iteration instead of running away; the coordinate stages
+// read only the saved coordinates, which nothing writes.
+func benchMorphologyCtx() *morphologyCtx {
+	c := &morphologyCtx{flip: 1}
+	for i := range stride {
+		c.coords[0][i] = float32(i) + 0.25
+		c.coords[1][i] = 12 - float32(i)*0.5
+		for ch := range 4 {
+			c.agg[ch][i] = float32((i+ch)&7) * 0.125
+			c.plus[ch][i] = float32((i+2*ch)&7) * 0.125
+		}
+	}
+	return c
+}
+
+// benchMorphStep returns one linear tap of the context, offset a pixel along x — the axis-aligned step the imagefilter
+// morphology passes take (a typical pass runs radius 1..14 of them, each re-running these three stages).
+func benchMorphStep(c *morphologyCtx) *morphStep { return c.nextStep(1, 0) }
+
+func BenchmarkMorphAggInitStage(b *testing.B) {
+	z := benchLanes()
+	z.ctx = benchMorphologyCtx()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		morphAggInitStageFn(&z)
+	}
+}
+
+func BenchmarkMorphPlusCoordsStage(b *testing.B) {
+	z := benchLanes()
+	z.ctx = benchMorphStep(benchMorphologyCtx())
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		morphPlusCoordsStageFn(&z)
+	}
+}
+
+func BenchmarkMorphTakePlusStage(b *testing.B) {
+	z := benchLanes()
+	z.ctx = benchMorphStep(benchMorphologyCtx())
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		morphTakePlusStageFn(&z)
+	}
+}
+
+func BenchmarkMorphMaxAggStage(b *testing.B) {
+	z := benchLanes()
+	z.ctx = benchMorphologyCtx()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		morphMaxAggStageFn(&z)
+	}
+}
+
+func BenchmarkMorphSparseAggMinusStage(b *testing.B) {
+	z := benchLanes()
+	z.ctx = benchMorphStep(benchMorphologyCtx())
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		morphSparseAggMinusStageFn(&z)
+	}
+}
+
+func BenchmarkMorphSparseMaxAggStage(b *testing.B) {
+	z := benchLanes()
+	z.ctx = benchMorphologyCtx()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		morphSparseMaxAggStageFn(&z)
+	}
+}
+
+func BenchmarkMorphReturnStage(b *testing.B) {
+	z := benchLanes()
+	z.ctx = benchMorphologyCtx()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		morphReturnStageFn(&z)
+	}
+}
+
+// benchNormalCtx returns a Sobel-normal context with the nine tap alphas spread over [0,1], an edge rect that contains
+// the saved coordinates, and an ordinary negated surface depth. Both normal stages write only the registers and read
+// only the context, so nothing feeds back.
+func benchNormalCtx() *normalCtx {
+	c := &normalCtx{l: -4, t: -4, r: 40, b: 40, negSurfaceDepth: -2}
+	for i := range stride {
+		c.coords[0][i] = float32(i) + 0.25
+		c.coords[1][i] = 12 - float32(i)*0.5
+		for tap := range c.alpha {
+			c.alpha[tap][i] = float32((i+tap)&7) * 0.125
+		}
+	}
+	for tap := range c.taps {
+		c.taps[tap].c = c
+		c.taps[tap].ddx = float32(tap/3) - 1
+		c.taps[tap].ddy = float32(tap%3) - 1
+	}
+	return c
+}
+
+func BenchmarkNormalSetCoordsStage(b *testing.B) {
+	z := benchLanes()
+	c := benchNormalCtx()
+	z.ctx = &c.taps[0]
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		normalSetCoordsStageFn(&z)
+	}
+}
+
+func BenchmarkNormalFilterStage(b *testing.B) {
+	z := benchLanes()
+	z.ctx = benchNormalCtx()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		normalFilterStageFn(&z)
+	}
+}
+
+// benchMatrixConvCtx returns a 3x3 matrix-convolution context centered on its middle tap, with a plausible gain and
+// bias, ordinary saved coordinates, an accumulator starting at zero and an origin alpha of 1. convolveAlpha selects
+// between the accumulator's two forms — the plain one and the one that unpremultiplies first (three divides per lane).
+func benchMatrixConvCtx(convolveAlpha bool) *matrixConvCtx {
+	c := &matrixConvCtx{ox: 1, oy: 1, gain: 0.75, bias: 4.0 / 255, convolveAlpha: convolveAlpha}
+	for i := range stride {
+		c.coords[0][i] = float32(i) + 0.25
+		c.coords[1][i] = 12 - float32(i)*0.5
+		c.origAlpha[i] = 1
+		for ch := range 4 {
+			c.sum[ch][i] = float32((i+ch)&7) * 0.125
+		}
+	}
+	return c
+}
+
+// benchMatrixConvTap returns one off-center tap of a 3x3 kernel. A 3x3 runs the coords/accum pair nine times per
+// chunk and a 5x5 twenty-five times, which is what makes the accumulator the file's hottest stage.
+func benchMatrixConvTap(c *matrixConvCtx) *matrixConvTap {
+	t := c.nextTap()
+	t.fkx, t.fky, t.k = 2, 0, 0.0625
+	return t
+}
+
+func BenchmarkMatrixConvCoordsStage(b *testing.B) {
+	z := benchLanes()
+	z.ctx = benchMatrixConvTap(benchMatrixConvCtx(true))
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		matrixConvCoordsStageFn(&z)
+	}
+}
+
+func BenchmarkMatrixConvAccumStage(b *testing.B) {
+	for _, convolveAlpha := range []bool{true, false} {
+		name := "unpremul"
+		if convolveAlpha {
+			name = "convolveAlpha"
+		}
+		b.Run(name, func(b *testing.B) {
+			z := benchLanes()
+			// The taps are ordinary [0,1] values and the coefficient is positive, so the accumulator climbs until the
+			// per-iteration increment falls below its ulp and then holds there, as the sampler's accumulate benchmark
+			// does: no lane reaches an infinity or a denormal.
+			z.ctx = benchMatrixConvTap(benchMatrixConvCtx(convolveAlpha))
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				matrixConvAccumStageFn(&z)
+			}
+		})
+	}
+}
+
+func BenchmarkMatrixConvFinalizeStage(b *testing.B) {
+	for _, convolveAlpha := range []bool{true, false} {
+		name := "unpremul"
+		if convolveAlpha {
+			name = "convolveAlpha"
+		}
+		b.Run(name, func(b *testing.B) {
+			z := benchLanes()
+			// The stage reads only the accumulator and writes only the registers, so every iteration measures the same
+			// work on the same values.
+			z.ctx = benchMatrixConvCtx(convolveAlpha)
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				matrixConvFinalizeStageFn(&z)
+			}
+		})
+	}
+}
+
+func BenchmarkArithBlendStage(b *testing.B) {
+	c := &arithmeticCtx{k: [4]float32{0.5, 0.25, 0.25, 0.1}, pmClamp: 1}
+	for i := range stride {
+		for ch := range 4 {
+			c.res0[ch][i] = float32((i+ch)&7) * 0.125
+		}
+	}
+	z := benchLanes()
+	z.ctx = c
+	// The stage's output feeds back in as the next iteration's src. These coefficients make that a contraction with an
+	// interior fixed point (out = 0.5*s*d + 0.25*s + 0.25*d + 0.1 has |d(out)/ds| < 1 for d in [0,1]), so the lanes
+	// settle on ordinary mid-range normals rather than pinning at the saturate's 0 or 1.
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		arithBlendStageFn(&z)
+	}
+}

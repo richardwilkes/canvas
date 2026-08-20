@@ -109,6 +109,51 @@ func init() {
 	if preferSIMDAccumulate {
 		accumulateStageFn = accumulateStageSIMD
 	}
+	initFilterKernelDispatch()
+}
+
+// initFilterKernelDispatch is init's second half, covering the image-filter runtime-effect kernels
+// (filterkernels_simd.go). It follows the same rule: wire only what the per-arch preference table prefers.
+func initFilterKernelDispatch() {
+	if preferSIMDMorphAggInit {
+		morphAggInitStageFn = morphAggInitStageSIMD
+	}
+	if preferSIMDMorphPlusCoords {
+		morphPlusCoordsStageFn = morphPlusCoordsStageSIMD
+	}
+	if preferSIMDMorphTakePlus {
+		morphTakePlusStageFn = morphTakePlusStageSIMD
+	}
+	if preferSIMDMorphMaxAgg {
+		morphMaxAggStageFn = morphMaxAggStageSIMD
+	}
+	if preferSIMDMorphSparseAggMinus {
+		morphSparseAggMinusStageFn = morphSparseAggMinusStageSIMD
+	}
+	if preferSIMDMorphSparseMaxAgg {
+		morphSparseMaxAggStageFn = morphSparseMaxAggStageSIMD
+	}
+	if preferSIMDMorphReturn {
+		morphReturnStageFn = morphReturnStageSIMD
+	}
+	if preferSIMDNormalSetCoords {
+		normalSetCoordsStageFn = normalSetCoordsStageSIMD
+	}
+	if preferSIMDNormalFilter {
+		normalFilterStageFn = normalFilterStageSIMD
+	}
+	if preferSIMDMatrixConvCoords {
+		matrixConvCoordsStageFn = matrixConvCoordsStageSIMD
+	}
+	if preferSIMDMatrixConvAccum {
+		matrixConvAccumStageFn = matrixConvAccumStageSIMD
+	}
+	if preferSIMDMatrixConvFinalize {
+		matrixConvFinalizeStageFn = matrixConvFinalizeStageSIMD
+	}
+	if preferSIMDArithBlend {
+		arithBlendStageFn = arithBlendStageSIMD
+	}
 }
 
 ///////////////////////////////////////////////////////////////////////////////

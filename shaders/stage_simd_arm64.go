@@ -55,6 +55,33 @@ const (
 	preferSIMDAccumulate           = true
 )
 
+// The image-filter kernel stages (filterkernels.go) ported afterwards, all of which likewise have no NEON twin, so
+// their default lane is the portable scalar loop and the vector kernel wins outright — there is no measurement here
+// that argues for the default lane. Benchstat on an M4 Max (stage_bench_test.go, both build modes, n=6, every
+// comparison p=0.002): arith_blend -78%, morph_sparse_max_agg -74%, morph_max_agg -73%, matrix_conv_accum -71%
+// (unpremul form) / -63% (convolve-alpha form), matrix_conv_coords -70%, normal_set_coords -69%, morph_plus_coords
+// -67%, morph_take_plus and morph_sparse_agg_minus -66%, morph_return -62%, normal_filter -62%,
+// matrix_conv_finalize -60%, morph_agg_init -52%; geomean -67%.
+//
+// The morphology and convolution stages run many times per chunk — one plus-coords/take-plus/max-agg triple per
+// morphology radius step (up to 14) and one coords/accum pair per convolution tap (25 for a 5x5 kernel) — so those
+// percentages multiply through an image-filter draw rather than being paid once.
+const (
+	preferSIMDMorphAggInit        = true
+	preferSIMDMorphPlusCoords     = true
+	preferSIMDMorphTakePlus       = true
+	preferSIMDMorphMaxAgg         = true
+	preferSIMDMorphSparseAggMinus = true
+	preferSIMDMorphSparseMaxAgg   = true
+	preferSIMDMorphReturn         = true
+	preferSIMDNormalSetCoords     = true
+	preferSIMDNormalFilter        = true
+	preferSIMDMatrixConvCoords    = true
+	preferSIMDMatrixConvAccum     = true
+	preferSIMDMatrixConvFinalize  = true
+	preferSIMDArithBlend          = true
+)
+
 // madfCoef is a loop-invariant madf multiplicand, pre-widened to double once so the chunk loop pays no per-iteration
 // widen for it — the same hoist the NEON kernels perform (stage_arm64.s widens each coefficient with one FCVTL up
 // front). On arm64 a 4-lane madf works in two Float64x2 halves.
@@ -97,3 +124,12 @@ func madf4v(f, m, a archsimd.Float32x4) archsimd.Float32x4 {
 	aLo, aHi := widen4(a)
 	return narrow4(fLo.MulAdd(mLo, aLo), fHi.MulAdd(mHi, aHi))
 }
+
+// exprMulAdd4 is the lanewise form of the *plain Go expression* "f*m + a" as this build's compiler lowers it — not the
+// explicit madf, which is a different operation. Go permits an implementation to contract such an expression into a
+// single fused operation, and the arm64 compiler does: the image-filter kernels' "sum += c*k", "sum*gain + bias" and
+// arithmetic-blend chain all become FMADDS, a *single-precision* fused multiply-add. So the vector twin must fuse too.
+// Spelling it as a separate Mul and Add instead diverges from the scalar stage on ~1.5% of hostile-float inputs
+// (measured), and spelling it as madf4 diverges the other way — madf's two-rounding widen/FMA/narrow sequence is what
+// float32(math.FMA(float64...)) means, and an explicit conversion is precisely what the compiler may not contract away.
+func exprMulAdd4(f, m, a archsimd.Float32x4) archsimd.Float32x4 { return f.MulAdd(m, a) }

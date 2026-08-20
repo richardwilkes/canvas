@@ -144,7 +144,8 @@ func soak(cfg *soakConfig) error {
 	if mismatches > 0 {
 		return fmt.Errorf(
 			"soak: %d pass-to-pass mismatch(es) across %d passes — the corpus does not render deterministically on this stack",
-			mismatches, cfg.n)
+			mismatches, cfg.n,
+		)
 	}
 	if envelope {
 		fmt.Fprintf(cfg.out,

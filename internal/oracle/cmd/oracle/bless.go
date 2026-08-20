@@ -154,7 +154,8 @@ func bless(cfg *blessConfig) error {
 		verify.dispose()
 		return fmt.Errorf(
 			"bless: the GL stack changed between the capture and verify passes (%q %q -> %q %q) — refusing to write goldens",
-			m.GLRenderer, m.GLVersion, verify.glRenderer, verify.glVersion)
+			m.GLRenderer, m.GLVersion, verify.glRenderer, verify.glVersion,
+		)
 	}
 	wobbles := 0
 	bimodals := 0
@@ -165,7 +166,8 @@ func bless(cfg *blessConfig) error {
 				verify.dispose()
 				return fmt.Errorf(
 					"bless: %s rendered nondeterministically across fresh-session corpus passes (%s then %s) — refusing to write goldens",
-					s.Name, m.Entries[i].SHA256, rehash)
+					s.Name, m.Entries[i].SHA256, rehash,
+				)
 			}
 			continue
 		}
@@ -186,7 +188,8 @@ func bless(cfg *blessConfig) error {
 			verify.dispose()
 			return fmt.Errorf(
 				"bless: %s diverged beyond the ±1 envelope across fresh-session corpus passes (max channel delta %d, %d px beyond) — refusing to write goldens",
-				s.Name, res.MaxDelta, res.DiffPixels)
+				s.Name, res.MaxDelta, res.DiffPixels,
+			)
 		case res.AnyDiffPixels > 0:
 			fmt.Fprintf(cfg.out, "wobble   %-32s verify pass: max channel delta %d on %d px (within the ±1 envelope; capture pass is canonical)\n",
 				s.Name, res.MaxDelta, res.AnyDiffPixels)
@@ -302,7 +305,8 @@ func priorManifest(dir string) (m golden.Manifest, hasPrior bool, err error) {
 			dir, err)
 	case m.Schema != blessSchema:
 		return golden.Manifest{}, false, fmt.Errorf(
-			"bless: %s holds an unexpected schema-%d manifest (refusing to overwrite it)", dir, m.Schema)
+			"bless: %s holds an unexpected schema-%d manifest (refusing to overwrite it)", dir, m.Schema,
+		)
 	default:
 		return m, true, nil
 	}

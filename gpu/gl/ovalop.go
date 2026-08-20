@@ -512,7 +512,7 @@ func (o *circleOp) Name() string { return "CircleOp" }
 // recycle implements Op: returns this dead op to its free list.
 func (o *circleOp) recycle() {
 	recycleProgramInfo(o.programInfo)
-	recycleKeepingBacking(&circleOpPool, o,
+	circleOpPool.recycleKeepingBacking(o,
 		func(o *circleOp) []circleGeom { return o.circles },
 		func(o *circleOp, s []circleGeom) { o.circles = s })
 }
@@ -876,7 +876,7 @@ func (o *ellipseOp) Name() string { return "EllipseOp" }
 // recycle implements Op: returns this dead op to its free list.
 func (o *ellipseOp) recycle() {
 	recycleProgramInfo(o.programInfo)
-	recycleKeepingBacking(&ellipseOpPool, o,
+	ellipseOpPool.recycleKeepingBacking(o,
 		func(o *ellipseOp) []ellipseGeom { return o.ellipses },
 		func(o *ellipseOp, s []ellipseGeom) { o.ellipses = s })
 }
@@ -1179,7 +1179,7 @@ func (o *diEllipseOp) Name() string { return "DIEllipseOp" }
 // recycle implements Op: returns this dead op to its free list.
 func (o *diEllipseOp) recycle() {
 	recycleProgramInfo(o.programInfo)
-	recycleKeepingBacking(&diEllipseOpPool, o,
+	diEllipseOpPool.recycleKeepingBacking(o,
 		func(o *diEllipseOp) []diEllipseGeom { return o.ellipses },
 		func(o *diEllipseOp, s []diEllipseGeom) { o.ellipses = s })
 }
@@ -1564,7 +1564,7 @@ func (o *circularRRectOp) Name() string { return "CircularRRectOp" }
 // recycle implements Op: returns this dead op to its free list.
 func (o *circularRRectOp) recycle() {
 	recycleProgramInfo(o.programInfo)
-	recycleKeepingBacking(&circularRRectOpPool, o,
+	circularRRectOpPool.recycleKeepingBacking(o,
 		func(o *circularRRectOp) []circularRRectGeom { return o.rrects },
 		func(o *circularRRectOp, s []circularRRectGeom) { o.rrects = s })
 }
@@ -1884,7 +1884,7 @@ func (o *ellipticalRRectOp) Name() string { return "EllipticalRRectOp" }
 // recycle implements Op: returns this dead op to its free list.
 func (o *ellipticalRRectOp) recycle() {
 	recycleProgramInfo(o.programInfo)
-	recycleKeepingBacking(&ellipticalRRectOpPool, o,
+	ellipticalRRectOpPool.recycleKeepingBacking(o,
 		func(o *ellipticalRRectOp) []ellipticalRRectGeom { return o.rrects },
 		func(o *ellipticalRRectOp, s []ellipticalRRectGeom) { o.rrects = s })
 }

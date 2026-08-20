@@ -34,7 +34,7 @@ type blendFP struct {
 }
 
 // BlendFP builds a fragment processor that blends src's and dst's outputs with the given mode. Either child may be nil,
-// in which case the input color is used.
+// in which case the input color is used. The result is never nil.
 func BlendFP(src, dst FragmentProcessor, mode raster.BlendMode) FragmentProcessor {
 	// Clear, Src, and Dst simplify dramatically in the shader, but only if we bypass the shared logic.
 	shareBlendLogic := mode != raster.BlendClear && mode != raster.BlendSrc && mode != raster.BlendDst

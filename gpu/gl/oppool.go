@@ -67,14 +67,13 @@ func (p *opPool[T]) recycle(o *T) {
 	p.pool.Put(o)
 }
 
-// recycleKeepingBacking returns dead value o to pool p after a full-zero reset that *preserves* its heap-grown slice
-// backing, so a later user reuses the backing instead of re-growing it. Two callers: the batchable geometry ops (this
-// file's op pools) bootstrap their instance slice from an inline [1] array and grow past it into the heap when
+// recycleKeepingBacking returns dead value o to the pool after a full-zero reset that *preserves* its heap-grown
+// slice backing, so a later user reuses the backing instead of re-growing it. Two callers: the batchable geometry ops
+// (this file's op pools) bootstrap their instance slice from an inline [1] array and grow past it into the heap when
 // OnCombineIfPossible merges instances in — a plain recycle would drop that grown backing, making a merge-heavy op
-// re-grow it every frame; and the
-// pipeline pool (programinfopool.go) preserves a Pipeline's fragmentProcessors backing the same way. getBacking reads
-// the slice before the zero and setBacking re-installs the preserved backing on the freshly zeroed value; both are
-// non-capturing (static funcs), so this allocates nothing.
+// re-grow it every frame; and the pipeline pool (programinfopool.go) preserves a Pipeline's fragmentProcessors backing
+// the same way. getBacking reads the slice before the zero and setBacking re-installs the preserved backing on the
+// freshly zeroed value; both are non-capturing (static funcs), so this allocates nothing.
 //
 // Safety — this is the sole exception to the file comment's "full zero" rule, and it keeps that rule's guarantee intact
 // for everything that matters:
@@ -92,7 +91,7 @@ func (p *opPool[T]) recycle(o *T) {
 //     next borrow, and NewPipeline re-grows the pipeline's from nil.
 //
 // It must be called only on a dead value, exactly like recycle.
-func recycleKeepingBacking[T, E any](p *opPool[T], o *T, getBacking func(*T) []E, setBacking func(*T, []E)) {
+func (p *opPool[T]) recycleKeepingBacking[E any](o *T, getBacking func(*T) []E, setBacking func(*T, []E)) {
 	backing := getBacking(o)
 	if cap(backing) > 1 {
 		backing = backing[:cap(backing)]

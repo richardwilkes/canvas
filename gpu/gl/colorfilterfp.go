@@ -109,7 +109,7 @@ func (f *colorMatrixFP) constantOutputForConstantInput(input colorcore.PMColor4f
 		v[2] /= a
 	}
 	var out [4]float32
-	for row := 0; row < 4; row++ {
+	for row := range 4 {
 		out[row] = f.m[row*4]*v[0] + f.m[row*4+1]*v[1] + f.m[row*4+2]*v[2] + f.m[row*4+3]*v[3] +
 			f.v[row]
 	}
@@ -162,8 +162,8 @@ func (i *colorMatrixImpl) onSetData(pdman *ProgramDataManager, fp FragmentProces
 	f := fp.(*colorMatrixFP)
 	// Row-major → the column-major mat4 GL expects.
 	var cm [16]float32
-	for r := 0; r < 4; r++ {
-		for c := 0; c < 4; c++ {
+	for r := range 4 {
+		for c := range 4 {
 			cm[c*4+r] = f.m[r*4+c]
 		}
 	}
@@ -399,10 +399,5 @@ func makeBlendColorFilterFP(color colorcore.Color4f, mode raster.BlendMode, inpu
 		R: color.R * color.A, G: color.G * color.A, B: color.B * color.A,
 		A: color.A,
 	}
-	xferFP := BlendFP(MakeColorFP(pm), inputFP, mode)
-	if xferFP == nil {
-		// Only expected for "dest" with a nil input FP, which the early-out above covers.
-		return nil, false
-	}
-	return xferFP, true
+	return BlendFP(MakeColorFP(pm), inputFP, mode), true
 }

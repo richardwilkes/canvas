@@ -144,7 +144,8 @@ func main() {
 		// root as the working directory rather than silently creating a goldens tree somewhere else.
 		if data, err := os.ReadFile("go.mod"); err != nil || !bytes.Contains(data, []byte("internal/oracle")) {
 			fatal(errors.New(
-				"bless must run from the internal/oracle module root (its output path is derived, not user-supplied)"))
+				"bless must run from the internal/oracle module root (its output path is derived, not user-supplied)",
+			))
 		}
 		cfg := blessConfig{
 			out:        os.Stdout,

@@ -51,7 +51,7 @@ func borrowPipeline() *Pipeline { return pipelinePool.borrow() }
 // only on a pipeline whose owning op is dead. The element type is the FragmentProcessor interface (pointer-carrying),
 // so the clear() in recycleKeepingBacking is load-bearing here, not just defensive.
 func recyclePipeline(p *Pipeline) {
-	recycleKeepingBacking(&pipelinePool, p,
+	pipelinePool.recycleKeepingBacking(p,
 		func(p *Pipeline) []FragmentProcessor { return p.fragmentProcessors },
 		func(p *Pipeline, s []FragmentProcessor) { p.fragmentProcessors = s })
 }

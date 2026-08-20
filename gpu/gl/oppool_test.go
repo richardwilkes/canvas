@@ -142,7 +142,7 @@ func TestRecycleKeepingBackingPreservesGrownBacking(t *testing.T) {
 	}
 
 	get, set := aaStrokeRectGetSet()
-	recycleKeepingBacking(&p, o, get, set)
+	p.recycleKeepingBacking(o, get, set)
 
 	// Every field except the preserved backing must be zeroed (the pool's safety property).
 	if o.wideColor || o.miterStroke || o.self != nil || o.ClassID() != 0 || o.uniqueID != 0 {
@@ -189,7 +189,7 @@ func TestRecycleKeepingBackingDropsInlineBacking(t *testing.T) {
 	o.InitOp(aaStrokeRectOpClassID, o)
 
 	get, set := aaStrokeRectGetSet()
-	recycleKeepingBacking(&p, o, get, set)
+	p.recycleKeepingBacking(o, get, set)
 
 	if o.rects != nil {
 		t.Fatalf("inline-backed op should recycle to a nil field (clean full zero); got len=%d cap=%d",

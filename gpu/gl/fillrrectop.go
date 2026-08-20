@@ -174,7 +174,7 @@ func (o *fillRRectOp) Name() string { return "FillRRectOp" }
 // recycle implements Op: returns this dead op to its free list.
 func (o *fillRRectOp) recycle() {
 	recycleProgramInfo(o.programInfo)
-	recycleKeepingBacking(&fillRRectOpPool, o,
+	fillRRectOpPool.recycleKeepingBacking(o,
 		func(o *fillRRectOp) []fillRRectInstance { return o.instances },
 		func(o *fillRRectOp, s []fillRRectInstance) { o.instances = s })
 }

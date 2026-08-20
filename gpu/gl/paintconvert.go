@@ -363,10 +363,6 @@ func makePaintImpl(sdc *SurfaceDrawContext, pp *PaintParams, ctm geom.Matrix, sh
 		shaderInput := colorcore.PMColor4f{R: origColor.R, G: origColor.G, B: origColor.B, A: 1}
 		paintFP = OverrideInputFP(paintFP, shaderInput)
 		paintFP = BlendFP(paintFP, nil, primColorMode)
-		if paintFP == nil {
-			recyclePaint(gpuPaint)
-			return nil, false
-		}
 		if origColor.A != 1 {
 			a := origColor.A
 			paintFP = ModulateRGBAFP(paintFP, colorcore.PMColor4f{R: a, G: a, B: a, A: a})
@@ -393,10 +389,6 @@ func makePaintImpl(sdc *SurfaceDrawContext, pp *PaintParams, ctm geom.Matrix, sh
 				R: origColor.R, G: origColor.G, B: origColor.B, A: 1,
 			})
 			paintFP = BlendFP(paintFP, nil, primColorMode)
-			if paintFP == nil {
-				recyclePaint(gpuPaint)
-				return nil, false
-			}
 		}
 		if origColor.A != 1 {
 			a := origColor.A

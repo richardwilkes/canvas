@@ -2,4 +2,4 @@
 // imported by the library, and the tools deliberately depend on nothing but the standard library.
 module github.com/richardwilkes/canvas/internal/tools
 
-go 1.26
+go 1.27

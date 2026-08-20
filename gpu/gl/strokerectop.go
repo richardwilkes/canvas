@@ -568,7 +568,7 @@ func (o *aaStrokeRectOp) Name() string { return "AAStrokeRect" }
 // recycle implements Op: returns this dead op to its free list.
 func (o *aaStrokeRectOp) recycle() {
 	recycleProgramInfo(o.programInfo)
-	recycleKeepingBacking(&aaStrokeRectOpPool, o,
+	aaStrokeRectOpPool.recycleKeepingBacking(o,
 		func(o *aaStrokeRectOp) []aaStrokeRectInfo { return o.rects },
 		func(o *aaStrokeRectOp, s []aaStrokeRectInfo) { o.rects = s })
 }

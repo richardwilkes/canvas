@@ -144,8 +144,7 @@ func BenchmarkFFIProbeGLCallVertexAttribPointer(b *testing.B) {
 	f := probeFunctions(b)
 	probeSetupGeometry(b, f)
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		f.VertexAttribPointer(0, 2, FLOAT, false, 0, 0)
 	}
 }
@@ -154,8 +153,7 @@ func BenchmarkFFIProbeSyscallNVertexAttribPointer(b *testing.B) {
 	f := probeFunctions(b)
 	probeSetupGeometry(b, f)
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		purego.SyscallN(f.vertexAttribPointer, 0, 2, FLOAT, 0, 0, 0)
 	}
 }
@@ -166,8 +164,7 @@ func BenchmarkFFIProbeRegisterFuncVertexAttribPointer(b *testing.B) {
 	var rfVAP func(uint32, int32, uint32, uint8, int32, uintptr)
 	purego.RegisterFunc(&rfVAP, f.vertexAttribPointer)
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		rfVAP(0, 2, FLOAT, 0, 0, 0)
 	}
 }
@@ -176,8 +173,7 @@ func BenchmarkFFIProbeGLCallDrawElements(b *testing.B) {
 	f := probeFunctions(b)
 	probeSetupGeometry(b, f)
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		f.DrawElements(TRIANGLES, 3, UNSIGNED_SHORT, 0)
 	}
 }
@@ -186,8 +182,7 @@ func BenchmarkFFIProbeSyscallNDrawElements(b *testing.B) {
 	f := probeFunctions(b)
 	probeSetupGeometry(b, f)
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		purego.SyscallN(f.drawElements, TRIANGLES, 3, UNSIGNED_SHORT, 0)
 	}
 }
@@ -198,8 +193,7 @@ func BenchmarkFFIProbeRegisterFuncDrawElements(b *testing.B) {
 	var rfDraw func(uint32, int32, uint32, uintptr)
 	purego.RegisterFunc(&rfDraw, f.drawElements)
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		rfDraw(TRIANGLES, 3, UNSIGNED_SHORT, 0)
 	}
 }

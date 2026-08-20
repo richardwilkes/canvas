@@ -39,7 +39,7 @@ cat "$OUT/sysinfo.txt"
 # The wiring tests show which kernels this CPU supports and which ones init actually dispatched: a PASS means the
 # preference table matched the hardware, a SKIP names the gate that declined.
 echo "== gates"
-GOEXPERIMENT=simd go test ./shaders/ ./raster/ ./maskfilter/ -run 'SIMDWiring' -v -count=1 >"$OUT/gates.txt" 2>&1 || {
+GOEXPERIMENT=simd go test ./shaders/ ./raster/ ./maskfilter/ ./imagecore/ -run 'SIMDWiring' -v -count=1 >"$OUT/gates.txt" 2>&1 || {
 	echo "wiring tests failed; see $OUT/gates.txt" >&2
 	exit 1
 }
@@ -47,7 +47,7 @@ grep -E -- '--- (PASS|SKIP|FAIL)' "$OUT/gates.txt" || true
 
 # Bit-exactness on this hardware before any timing.
 echo "== correctness (GOEXPERIMENT=simd)"
-GOEXPERIMENT=simd go test ./shaders/ ./raster/ ./maskfilter/ -count=1 >"$OUT/correctness.txt" 2>&1 || {
+GOEXPERIMENT=simd go test ./shaders/ ./raster/ ./maskfilter/ ./imagecore/ -count=1 >"$OUT/correctness.txt" 2>&1 || {
 	echo "correctness failed; see $OUT/correctness.txt" >&2
 	exit 1
 }
@@ -66,6 +66,7 @@ bench stages ./shaders/ 'Stage$' 10 100000x
 bench spans ./raster/ 'BenchmarkClampSpan01$|BenchmarkStoreSpanSrc$|BenchmarkPMSrcOverRow$|BenchmarkBlitMaskOpaqueRow$' 10 100000x
 bench blits ./raster/ 'BenchmarkFillWords$|BenchmarkFillBytes$|BenchmarkColor32Row$|BenchmarkBlitMaskTranslucentRow$|BenchmarkInterp256Row$|BenchmarkPremulRow$|BenchmarkPMBlendRow$|BenchmarkBlitRowLCD16$|BenchmarkBlitRowLCD16Opaque$|BenchmarkBlendRowLCD16Opaque$' 10 100000x
 bench maskblur ./maskfilter/ 'DirectBlur' 10 20000x
+bench imagecore ./imagecore/ 'Row$|RowSwap$' 10 100000x
 bench fillpath ./raster/ 'FillPath' 6 300x
 bench canvas ./canvas/ 'BenchmarkDrawRectFillAA$|BenchmarkGradientRectFill$|BenchmarkBlurRect$|BenchmarkTextRun$|BenchmarkImagePaintFill$|BenchmarkImageScale$' 6 200x
 
@@ -78,7 +79,7 @@ else
 	BS=""
 fi
 if [ -n "$BS" ]; then
-	for name in stages spans blits maskblur fillpath canvas; do
+	for name in stages spans blits maskblur imagecore fillpath canvas; do
 		"$BS" "$OUT/${name}_default.txt" "$OUT/${name}_simd.txt" >"$OUT/${name}_benchstat.txt" 2>&1 || true
 	done
 	echo "== benchstat summaries written"

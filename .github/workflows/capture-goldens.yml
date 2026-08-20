@@ -55,6 +55,7 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
+          cache: true
       - name: Install GL stack (Linux)
         if: runner.os == 'Linux'
         run: |

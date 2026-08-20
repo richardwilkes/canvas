@@ -23,6 +23,7 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
+          cache: true
       - name: Lint gate
         if: runner.os != 'Windows'
         run: |
@@ -90,6 +91,7 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
+          cache: true
       - name: Install GL stack
         if: matrix.install != ''
         run: ${{ matrix.install }}
@@ -166,6 +168,7 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
+          cache: true
       # Mesa3D llvmpipe: the pal1000/mesa-dist-win release-msvc archive's x64 opengl32.dll + libgallium_wgl.dll +
       # dxil.dll (7-Zip is preinstalled on the runner). Pinned to a version confirmed to render the corpus under
       # llvmpipe. GALLIUM_DRIVER=llvmpipe (set on the run steps) forces the software driver — mesa-dist-win otherwise
@@ -232,6 +235,7 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
+          cache: true
       - name: Oracle vet
         working-directory: internal/oracle
         run: go vet ./...

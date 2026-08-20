@@ -87,13 +87,10 @@ func (lb *LegacyShaderBlitter) proc32(dst, src []uint32) {
 // proc32Blend does a partial-coverage row blend.
 func (lb *LegacyShaderBlitter) proc32Blend(dst, src []uint32, alpha uint32) {
 	if lb.opaque {
-		scale := alpha255To256(alpha)
-		for i, s := range src {
-			dst[i] = fastFourByteInterp256(s, dst[i], scale)
-		}
+		interp256RowFn(dst, src, alpha255To256(alpha))
 		return
 	}
-	pmBlendRow(dst, src, alpha255To256(alpha))
+	pmBlendRowFn(dst, src, alpha255To256(alpha))
 }
 
 // BlitH implements Blitter.
@@ -230,7 +227,7 @@ func (lb *LegacyShaderBlitter) BlitMask(mask *Mask, clip geom.IRect) {
 			span := lb.buffer[:width]
 			lb.shade.ShadeSpan32(x, y, span)
 			if lb.opaque {
-				blendRowLCD16Opaque(device, maskRow, span)
+				blendRowLCD16OpaqueFn(device, maskRow, span)
 			} else {
 				blendRowLCD16(device, maskRow, span)
 			}

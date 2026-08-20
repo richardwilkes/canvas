@@ -29,13 +29,18 @@ func NewA8CoverageBlitter(mask *Mask) *A8CoverageBlitter {
 	return &A8CoverageBlitter{mask: mask}
 }
 
+// fillBytesGeneric fills an A8 coverage row with one byte. It is the default fillBytesFn; where a vector kernel is
+// wired instead this remains the sub-chunk tail that kernel calls.
+func fillBytesGeneric(dst []uint8, v uint8) {
+	for i := range dst {
+		dst[i] = v
+	}
+}
+
 // BlitH implements Blitter.
 func (a *A8CoverageBlitter) BlitH(x, y, width int32) {
 	i := a.mask.addr8(x, y)
-	row := a.mask.Image[i : i+int(width)]
-	for j := range row {
-		row[j] = 0xFF
-	}
+	fillBytesFn(a.mask.Image[i:i+int(width)], 0xFF)
 }
 
 // BlitAntiH implements Blitter.
@@ -48,10 +53,7 @@ func (a *A8CoverageBlitter) BlitAntiH(x, y int32, antialias []Alpha, runs []int1
 			return
 		}
 		if aa := antialias[off]; aa != 0 {
-			span := a.mask.Image[base+off : base+off+count]
-			for j := range span {
-				span[j] = aa
-			}
+			fillBytesFn(a.mask.Image[base+off:base+off+count], aa)
 		}
 		off += count
 	}
@@ -73,10 +75,7 @@ func (a *A8CoverageBlitter) BlitV(x, y, height int32, alpha Alpha) {
 func (a *A8CoverageBlitter) BlitRect(x, y, width, height int32) {
 	i := a.mask.addr8(x, y)
 	for h := int32(0); h < height; h++ {
-		row := a.mask.Image[i : i+int(width)]
-		for j := range row {
-			row[j] = 0xFF
-		}
+		fillBytesFn(a.mask.Image[i:i+int(width)], 0xFF)
 		i += int(a.mask.RowBytes)
 	}
 }

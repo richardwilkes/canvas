@@ -57,21 +57,37 @@ func RecycleSolidBlitter(s *SolidBlitter) {
 	solidBlitterPool.Put(s)
 }
 
-// color32 computes dst = color + dst*(256 - srcA)>>8 per channel, with the 0 and 255 alpha cases specialized.
+// color32 computes dst = color + dst*(256 - srcA)>>8 per channel, with the 0 and 255 alpha cases specialized. Both
+// non-trivial lanes run through the dispatch variables, so a vector build blits the whole span in its kernel.
 func color32(dst []uint32, color uint32) {
 	switch deviceAlpha(color) {
 	case 0: // nothing to do
 		return
 	case 255:
-		for i := range dst {
-			dst[i] = color
-		}
+		fillWordsFn(dst, color)
 		return
 	}
-	invA := alpha255To256(255 - deviceAlpha(color))
+	color32RowFn(dst, color, alpha255To256(255-deviceAlpha(color)))
+}
+
+// fillWordsGeneric fills a device span with one word. It is the default fillWordsFn; where a vector kernel is wired
+// instead this remains the sub-chunk tail that kernel calls.
+func fillWordsGeneric(dst []uint32, v uint32) {
+	for i := range dst {
+		dst[i] = v
+	}
+}
+
+// color32RowGeneric is the portable general lane of color32: every channel of dst is scaled by invA (a 0..256 scale,
+// here 256 minus the color's alpha) with the +1/256 trick, then the premultiplied color — whose channels are already
+// scaled by that alpha — is added to the packed result. It is the default color32RowFn; where a vector kernel is wired
+// instead this remains the sub-chunk tail that kernel calls.
+//
+// The scale-and-pack half is alphaMulQ(d, invA) written out: (d>>8 & mask) * invA >> 8 & mask, shifted back up by 8, is
+// the same bit field alphaMulQ keeps with &^mask. The final add is a plain 32-bit add, as in the reference; for a
+// premultiplied color no channel sum can reach 256, so nothing carries across channels.
+func color32RowGeneric(dst []uint32, color, invA uint32) {
 	for i, d := range dst {
-		// color is premul, so the channels have already been scaled by alpha. We just need to scale dst by (255 - a)
-		// using the +1/256 trick and add.
 		const mask = 0x00FF00FF
 		rb := ((d & mask) * invA) >> 8 & mask
 		ag := ((d >> 8 & mask) * invA) >> 8 & mask
@@ -97,10 +113,7 @@ func (s *SolidBlitter) BlitRect(x, y, width, height int32) {
 	}
 	if deviceAlpha(s.pmColor) == 0xFF {
 		for row := y; row < y+height; row++ {
-			span := s.row(x, row, width)
-			for i := range span {
-				span[i] = s.pmColor
-			}
+			fillWordsFn(s.row(x, row, width), s.pmColor)
 		}
 		return
 	}
@@ -138,7 +151,6 @@ func (s *SolidBlitter) BlitAntiH(x, y int32, antialias []Alpha, runs []int16) {
 }
 
 func (s *SolidBlitter) blitAntiHBlack(x, y int32, antialias []Alpha, runs []int16) {
-	const black = uint32(0xFF) << deviceAlphaShift
 	off := 0
 	dev := s.dev.Pix[s.dev.addr(x, y):]
 	for {
@@ -146,20 +158,10 @@ func (s *SolidBlitter) blitAntiHBlack(x, y int32, antialias []Alpha, runs []int1
 		if count <= 0 {
 			return
 		}
-		aa := uint32(antialias[off])
-		if aa != 0 {
-			if aa == 255 {
-				for i := off; i < off+count; i++ {
-					dev[i] = black
-				}
-			} else {
-				src := aa << deviceAlphaShift
-				dstScale := alpha255To256(255 - aa)
-				for i := off; i < off+count; i++ {
-					dev[i] = src + alphaMulQ(dev[i], dstScale)
-				}
-			}
-		}
+		// Black premultiplied by coverage is aa<<24, and color32's three lanes are exactly this run's three cases:
+		// coverage 0 skips the run, coverage 255 fills it with opaque black, and the general lane's
+		// (rb | ag<<8) + color is alphaMulQ(dev[i], 256-aa) + aa<<24 term for term (see color32RowGeneric).
+		color32(dev[off:off+count], uint32(antialias[off])<<deviceAlphaShift)
 		off += count
 	}
 }
@@ -174,9 +176,7 @@ func (s *SolidBlitter) blitAntiHOpaque(x, y int32, antialias []Alpha, runs []int
 		}
 		aa := antialias[off]
 		if aa == 255 {
-			for i := off; i < off+count; i++ {
-				dev[i] = s.pmColor
-			}
+			fillWordsFn(dev[off:off+count], s.pmColor)
 		} else if aa > 0 {
 			sc := alphaMulQ(s.pmColor, alpha255To256(uint32(aa)))
 			color32(dev[off:off+count], sc)
@@ -249,6 +249,16 @@ func fastFourByteInterp256(src, dst, scale uint32) uint32 {
 	return uint32((agrb&outMask)>>8) | uint32(agrb>>32)&outMask
 }
 
+// interp256RowGeneric is the portable row form of fastFourByteInterp256: per channel (src*scale + dst*(256-scale)) >> 8
+// for a loop-invariant scale in [0, 256]. It is the default interp256RowFn; where a vector kernel is wired instead this
+// remains the sub-chunk tail that kernel calls. Every channel result is a convex combination of two bytes, so it stays
+// inside a byte and the packed OR carries nowhere.
+func interp256RowGeneric(dst, src []uint32, scale uint32) {
+	for i, s := range src {
+		dst[i] = fastFourByteInterp256(s, dst[i], scale)
+	}
+}
+
 // fastFourByteInterp blends src and dst by srcWeight; scale = srcWeight + (srcWeight >> 7) is more accurate than
 // srcWeight + 1.
 func fastFourByteInterp(src, dst, srcWeight uint32) uint32 {
@@ -299,6 +309,19 @@ func blitMaskOpaqueRowGeneric(dev []uint32, aa []uint8, pm uint32) {
 	}
 }
 
+// blitMaskTranslucentRowGeneric is the portable non-opaque solid-color A8 mask blend: per pixel dev = alphaMulQ(pm,
+// m+1) + alphaMulQ(dev, 256 - ((srcA*(m+1))>>8)), the general lane of SolidBlitter.BlitMask. It is the default
+// blitMaskTranslucentRowFn; where a vector kernel is wired instead this remains the sub-chunk tail that kernel calls.
+// srcA must be pm's alpha in [0, 255], which is what makes both alphaMulQ scales land in [1, 256] and every channel sum
+// stay inside a byte.
+func blitMaskTranslucentRowGeneric(dev []uint32, aa []uint8, pm, srcA uint32) {
+	for i, m := range aa {
+		m256 := alpha255To256(uint32(m))
+		scale := 256 - alphaMul(srcA, m256)
+		dev[i] = alphaMulQ(pm, m256) + alphaMulQ(dev[i], scale)
+	}
+}
+
 // BlitMask implements Blitter. The per-pixel math below matches both the NEON and the SSE lanes of the equivalent SIMD
 // kernels (their scalar tails and vector lanes compute the same integer expressions), so this is byte-exact against
 // both oracle unix legs. The general (translucent) case returns early when srcA == 0.
@@ -323,11 +346,7 @@ func (s *SolidBlitter) BlitMask(mask *Mask, clip geom.IRect) {
 			// blitMaskOpaqueRowFn (see span.go); they are all bit-identical.
 			blitMaskOpaqueRowFn(dev, aa, s.pmColor)
 		default:
-			for i, m := range aa {
-				m256 := alpha255To256(uint32(m))
-				scale := 256 - alphaMul(s.srcA, m256)
-				dev[i] = alphaMulQ(s.pmColor, m256) + alphaMulQ(dev[i], scale)
-			}
+			blitMaskTranslucentRowFn(dev, aa, s.pmColor, s.srcA)
 		}
 	}
 }

@@ -49,8 +49,8 @@ var (
 	_ [unsafe.Sizeof(colorcore.PMColor4f{}) - 16]byte
 )
 
-// init swaps the dispatch variables to the simd kernels where they are the fastest lane: on amd64 with AVX2+FMA. On
-// arm64 simdKernelsPreferred declines — the NEON kernels in span_arm64.s are faster (see span_simd_arm64.go) — so the
+// init swaps the dispatch variables to the simd kernels where they are the fastest lane: on amd64 with AVX2. On arm64
+// simdKernelsPreferred declines — the NEON kernels in span_arm64.s are faster (see span_simd_arm64.go) — so the
 // default dispatch stands there, while the equivalence tests still run these kernels (they gate on
 // simdKernelsSupported, not preference).
 func init() {

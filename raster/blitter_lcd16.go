@@ -7,11 +7,11 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// The LCD16-over-8888 mask lanes: the D32 row procs blitRowLCD16 / blitRowLCD16Opaque that SolidBlitter.BlitMask routes
-// solid src-over color through (portable scalar lanes; SIMD kernels reproduce the same results), the legacy
-// shader-blitter's blendRowLCD16 / blendRowLCD16Opaque procs for shader spans, and the float per-channel
-// scale_565/lerp_565 raster-pipeline stages the pipeline blitters lower LCD16 masks through. LCD blitting assumes an
-// opaque destination throughout.
+// The LCD16-over-8888 mask lanes: the D32 row procs behind blitRowLCD16Fn / blitRowLCD16OpaqueFn that
+// SolidBlitter.BlitMask routes solid src-over color through (portable scalar lanes here; the simd kernels in
+// blit_simd.go reproduce the same results), the legacy shader-blitter's blendRowLCD16 / blendRowLCD16OpaqueFn procs for
+// shader spans, and the float per-channel scale_565/lerp_565 raster-pipeline stages the pipeline blitters lower LCD16
+// masks through. LCD blitting assumes an opaque destination throughout.
 
 package raster
 
@@ -94,17 +94,19 @@ func blendLCD16Opaque(srcR, srcG, srcB, dst uint32, mask uint16, opaqueDst uint3
 		blend32(0xFF, dstA, maskA)<<24
 }
 
-// blitRowLCD16 is the general solid-color row proc. srcR/G/B are the unpremultiplied color channels, srcA its [0, 255]
-// alpha.
-func blitRowLCD16(dst []uint32, mask []uint16, srcA, srcR, srcG, srcB uint32) {
+// blitRowLCD16Generic is the general solid-color row proc. srcR/G/B are the unpremultiplied color channels, srcA its
+// [0, 255] alpha. It is the default blitRowLCD16Fn; where a vector kernel is wired instead this remains the sub-chunk
+// tail that kernel calls.
+func blitRowLCD16Generic(dst []uint32, mask []uint16, srcA, srcR, srcG, srcB uint32) {
 	srcA256 := alpha255To256(srcA)
 	for i, m := range mask {
 		dst[i] = blendLCD16(srcA256, srcR, srcG, srcB, dst[i], m)
 	}
 }
 
-// blitRowLCD16Opaque is the opaque-source specialization of blitRowLCD16.
-func blitRowLCD16Opaque(dst []uint32, mask []uint16, srcR, srcG, srcB, opaqueDst uint32) {
+// blitRowLCD16OpaqueGeneric is the opaque-source specialization of blitRowLCD16Generic. It is the default
+// blitRowLCD16OpaqueFn; where a vector kernel is wired instead this remains the sub-chunk tail that kernel calls.
+func blitRowLCD16OpaqueGeneric(dst []uint32, mask []uint16, srcR, srcG, srcB, opaqueDst uint32) {
 	for i, m := range mask {
 		dst[i] = blendLCD16Opaque(srcR, srcG, srcB, dst[i], m, opaqueDst)
 	}
@@ -126,9 +128,9 @@ func (s *SolidBlitter) blitMaskLCD16(mask *Mask, clip geom.IRect) {
 		dev := s.dev.Pix[di : di+w]
 		mrow := mask.Image16[mi : mi+w]
 		if opaque {
-			blitRowLCD16Opaque(dev, mrow, srcR, srcG, srcB, s.pmColor)
+			blitRowLCD16OpaqueFn(dev, mrow, srcR, srcG, srcB, s.pmColor)
 		} else {
-			blitRowLCD16(dev, mrow, s.srcA, srcR, srcG, srcB)
+			blitRowLCD16Fn(dev, mrow, s.srcA, srcR, srcG, srcB)
 		}
 	}
 }
@@ -138,6 +140,13 @@ func (s *SolidBlitter) blitMaskLCD16(mask *Mask, clip geom.IRect) {
 
 // blendRowLCD16 is the non-opaque shader-span variant. srcAlphaBlend(s, d, sa, m) = d + alphaMul(s - alphaMul(sa, d),
 // m) with 8-bit coverages; only works on an opaque destination.
+//
+// This is the one LCD16 row with no vector lane. Its coverages are 8-bit rather than the 5-bit ones the other three
+// rows scale by, so the (s - alphaMul(sa, d)) * m product needs 17 signed bits and cannot ride in the 16-bit lanes
+// blend32v uses; and unlike blend32, srcAlphaBlend has no bound proving its result lands inside a byte, so a kernel
+// could only be exact over the opaque-destination domain the portable form already restricts itself to. A vector form
+// would therefore be a separate 32-bit-lane kernel with a weaker guarantee, for the rarest of these paths (subpixel
+// text under a translucent shader paint).
 func blendRowLCD16(dst []uint32, mask []uint16, src []uint32) {
 	srcAlphaBlend := func(s, d, sa, m int32) int32 {
 		return d + (s-sa*d>>8)*m>>8
@@ -162,8 +171,10 @@ func blendRowLCD16(dst []uint32, mask []uint16, src []uint32) {
 	}
 }
 
-// blendRowLCD16Opaque is the opaque shader-span variant (blend32 per channel, destination assumed opaque).
-func blendRowLCD16Opaque(dst []uint32, mask []uint16, src []uint32) {
+// blendRowLCD16OpaqueGeneric is the opaque shader-span variant (blend32 per channel, destination assumed opaque). It is
+// the default blendRowLCD16OpaqueFn; where a vector kernel is wired instead this remains the sub-chunk tail that kernel
+// calls.
+func blendRowLCD16OpaqueGeneric(dst []uint32, mask []uint16, src []uint32) {
 	for i, m := range mask {
 		if m == 0 {
 			continue

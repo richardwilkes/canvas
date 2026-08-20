@@ -93,3 +93,33 @@ func TestToUnormSubsumesClamp(t *testing.T) {
 		}
 	}
 }
+
+// TestColor32SubsumesBlackAntiHair locks the identity blitAntiHBlack was folded onto: for a black source premultiplied
+// by coverage, color32's three lanes reproduce that run's three cases exactly. The skip case is checked by requiring
+// the destination to be untouched at coverage 0, the fill case and the general lane by the reference expression the
+// loop used to compute. Every (coverage, device byte) pair is enumerated, so this is a proof, not a sample.
+func TestColor32SubsumesBlackAntiHair(t *testing.T) {
+	const black = uint32(0xFF) << deviceAlphaShift
+	got := make([]uint32, 256)
+	want := make([]uint32, 256)
+	for aa := range uint32(256) {
+		for i := range got {
+			d := uint32(i) * 0x01010101
+			got[i] = d
+			switch aa {
+			case 0:
+				want[i] = d
+			case 255:
+				want[i] = black
+			default:
+				want[i] = aa<<deviceAlphaShift + alphaMulQ(d, alpha255To256(255-aa))
+			}
+		}
+		color32(got, aa<<deviceAlphaShift)
+		for i := range got {
+			if got[i] != want[i] {
+				t.Fatalf("color32(coverage %d, dev byte %d) = %08x, want %08x", aa, i, got[i], want[i])
+			}
+		}
+	}
+}

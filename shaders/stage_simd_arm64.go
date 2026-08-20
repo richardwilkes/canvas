@@ -26,6 +26,13 @@ func simdKernelsSupported() bool { return true }
 // (+23%), matrixAffine (+6%), and gradient2Stop (+38%) lose to the assembly — the archsimd spelling of their madf
 // chains assembles FCVTL2/FCVTN2 idioms from several instructions where the assembly has one — so those three keep
 // NEON. Revisit when the codegen improves.
+//
+// The stages ported after the assembly (everything from preferSIMDMaskApply down) have no NEON twin, so their default
+// lane is the portable scalar loop and the vector kernel wins outright: on the same M4 Max, clamp_01 -80%, clamp_gamut
+// -80%, apply_vector_mask -71%, bilinear_nx/ny -67% and px/py -53%, move_dst_src -64%, set_rgb -62%, premul -59%,
+// unpremul -57%, accumulate -50%, scale_1_float -36%. move_src_dst is the lone exception at ±0% (p=0.31): its scalar
+// form is four whole-array assignments the compiler already turns into 128-bit copies, so the vector spelling only adds
+// a bounds-checked slice per quad — it stays on the default lane.
 const (
 	preferSIMDSeed                 = true
 	preferSIMDClampX1              = true
@@ -35,6 +42,17 @@ const (
 	preferSIMDGradient2Stop        = false
 	preferSIMDGradientEvenly       = true
 	preferSIMDMatrix4x5            = true
+	preferSIMDMaskApply            = true
+	preferSIMDClamp01              = true
+	preferSIMDClampGamut           = true
+	preferSIMDPremul               = true
+	preferSIMDUnpremul             = true
+	preferSIMDScale1Float          = true
+	preferSIMDSetRGB               = true
+	preferSIMDMoveSrcDst           = false
+	preferSIMDMoveDstSrc           = true
+	preferSIMDBilinear             = true
+	preferSIMDAccumulate           = true
 )
 
 // madfCoef is a loop-invariant madf multiplicand, pre-widened to double once so the chunk loop pays no per-iteration

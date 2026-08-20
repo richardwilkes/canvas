@@ -131,6 +131,22 @@ func BenchmarkGradientEvenlyStage(b *testing.B) {
 	}
 }
 
+// benchSamplerCtx returns a sampler context holding one bilinear tap's worth of plausible state: device-ish saved
+// coordinates, fractional offsets spread across the unit interval, and the matching weight lanes (which the accumulate
+// benchmark reads without running an axis stage first).
+func benchSamplerCtx() *samplerCtx {
+	c := &samplerCtx{}
+	for i := range stride {
+		c.x[i] = float32(i) + 0.25
+		c.y[i] = 12 - float32(i)*0.5
+		c.fx[i] = float32(i&7) * 0.125
+		c.fy[i] = float32((i+5)&7) * 0.125
+		c.scalex[i] = 1 - c.fx[i]
+		c.scaley[i] = c.fy[i]
+	}
+	return c
+}
+
 func BenchmarkMatrix4x5Stage(b *testing.B) {
 	var m [20]float32
 	for i := range m {
@@ -141,5 +157,168 @@ func BenchmarkMatrix4x5Stage(b *testing.B) {
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
 		matrix4x5StageFn(&z)
+	}
+}
+
+func BenchmarkClamp01Stage(b *testing.B) {
+	z := benchLanes()
+	// Straddle the clamp on every channel: some lanes below 0, some above 1, most inside. Like the clamp_x_1
+	// benchmark, the first iteration pulls the lanes in and the rest measure the in-range cost.
+	for i := range stride {
+		z.r[i] = float32(i)*0.1 - 0.3
+		z.g[i] = 0.9 - float32(i)*0.1
+		z.b[i] = float32(i&3)*0.5 - 0.25
+		z.a[i] = float32(i) * 0.08
+	}
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		clamp01StageFn(&z)
+	}
+}
+
+func BenchmarkClampGamutStage(b *testing.B) {
+	z := benchLanes()
+	// Alpha straddles [0,1] and the color channels straddle [0,a], so both clamps bite on the first iteration; the
+	// stage is idempotent afterward, which keeps the loop's feedback stable.
+	for i := range stride {
+		z.a[i] = float32(i)*0.1 - 0.2
+		z.r[i] = float32(i)*0.09 - 0.1
+		z.g[i] = 0.8 - float32(i)*0.07
+		z.b[i] = float32(i&3) * 0.4
+	}
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		clampGamutStageFn(&z)
+	}
+}
+
+func BenchmarkPremulStage(b *testing.B) {
+	// benchLanes' alpha is 1, which is what keeps the loop's feedback stable: the multiplies all run, but the color
+	// lanes stay put instead of decaying toward denormals over the benchmark's iterations.
+	z := benchLanes()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		premulStageFn(&z)
+	}
+}
+
+func BenchmarkUnpremulStage(b *testing.B) {
+	z := benchLanes()
+	// Zero color lanes make the stage idempotent (0*scale is 0 for every finite scale), so the loop's feedback stays
+	// put while the reciprocal and its finiteness guard still run over a realistic alpha spread — including the fully
+	// transparent lane whose 1/0 the guard must reject.
+	for i := range stride {
+		z.r[i], z.g[i], z.b[i] = 0, 0, 0
+		z.a[i] = float32(i) / float32(stride-1)
+	}
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		unpremulStageFn(&z)
+	}
+}
+
+func BenchmarkScale1FloatStage(b *testing.B) {
+	// The scale is 1 for the same reason premul's alpha is: any other factor drives the lanes to denormals (or to
+	// infinity) within the benchmark's iteration count, measuring the hardware's slow paths instead of the stage.
+	c := float32(1)
+	z := benchLanes()
+	z.ctx = &c
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		scale1FloatStageFn(&z)
+	}
+}
+
+func BenchmarkMaskApplyStage(b *testing.B) {
+	var mask laneMask
+	for i := range mask {
+		if i&3 != 3 {
+			mask[i] = 0xFFFFFFFF
+		}
+	}
+	z := benchLanes()
+	z.ctx = &mask
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		maskApplyStageFn(&z)
+	}
+}
+
+func BenchmarkSetRGBStage(b *testing.B) {
+	z := benchLanes()
+	z.ctx = &gatherCtx{setRGB: [3]float32{0.25, 0.5, 0.75}}
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		setRGBStageFn(&z)
+	}
+}
+
+func BenchmarkMoveSrcDstStage(b *testing.B) {
+	z := benchLanes()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		moveSrcDstStageFn(&z)
+	}
+}
+
+func BenchmarkMoveDstSrcStage(b *testing.B) {
+	z := benchLanes()
+	for i := range stride {
+		z.dr[i], z.dg[i], z.db[i], z.da[i] = z.r[i], z.g[i], z.b[i], z.a[i]
+	}
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		moveDstSrcStageFn(&z)
+	}
+}
+
+// The four bilinear axis stages read the sampler context and write one coordinate register plus one weight lane, so
+// nothing they write feeds back into anything they read: every iteration measures the same work.
+
+func BenchmarkBilinearNXStage(b *testing.B) {
+	z := benchLanes()
+	z.ctx = benchSamplerCtx()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		bilinearNXStageFn(&z)
+	}
+}
+
+func BenchmarkBilinearPXStage(b *testing.B) {
+	z := benchLanes()
+	z.ctx = benchSamplerCtx()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		bilinearPXStageFn(&z)
+	}
+}
+
+func BenchmarkBilinearNYStage(b *testing.B) {
+	z := benchLanes()
+	z.ctx = benchSamplerCtx()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		bilinearNYStageFn(&z)
+	}
+}
+
+func BenchmarkBilinearPYStage(b *testing.B) {
+	z := benchLanes()
+	z.ctx = benchSamplerCtx()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		bilinearPYStageFn(&z)
+	}
+}
+
+func BenchmarkAccumulateStage(b *testing.B) {
+	z := benchLanes()
+	z.ctx = benchSamplerCtx()
+	// The accumulators start at zero and the taps are ordinary [0,1] values, so the dst registers climb until the
+	// per-iteration increment falls below their ulp (~2^24 increments in) and then hold there: no reset is needed and
+	// no lane ever reaches an infinity or a denormal.
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		accumulateStageFn(&z)
 	}
 }

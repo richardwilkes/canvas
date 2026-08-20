@@ -20,6 +20,21 @@ import (
 	"github.com/richardwilkes/canvas/imagecore"
 )
 
+// The lane-wise image-shader stages this file defines dispatch through these fn variables. The goexperiment.simd build
+// substitutes the vector kernels (stage_simd.go) at init for the ones its per-arch preference table prefers; every
+// other build keeps the portable forms. Each substitution is bit-identical (locked by TestStageSIMDMatchesScalar), so
+// it changes throughput only, never rendered bytes.
+var (
+	bilinearNXStageFn stageFn = bilinearNXStage
+	bilinearPXStageFn stageFn = bilinearPXStage
+	bilinearNYStageFn stageFn = bilinearNYStage
+	bilinearPYStageFn stageFn = bilinearPYStage
+	accumulateStageFn stageFn = accumulateStage
+	moveDstSrcStageFn stageFn = moveDstSrcStage
+	clampGamutStageFn stageFn = clampGamutStage
+	setRGBStageFn     stageFn = setRGBStage
+)
+
 // gatherCtx is the gather stage's context over an imagecore pixel container. tileX/tileY hold the pixel-space
 // repeat/mirror limits (one tileCtx per axis) the tile stages read: they are constant across every gather stage in a
 // compile (derived from width/height/ roundDownAtInteger), so homing them here lets the shared static tile stages read
@@ -428,13 +443,13 @@ func bicubicWts(t, a, b, c, d float32) float32 {
 func (p *Pipeline) appendBilinearAxis(c *samplerCtx, isX bool, kScale float32) {
 	switch {
 	case isX && kScale > 0:
-		p.appendCtx(bilinearPXStage, c)
+		p.appendCtx(bilinearPXStageFn, c)
 	case isX:
-		p.appendCtx(bilinearNXStage, c)
+		p.appendCtx(bilinearNXStageFn, c)
 	case kScale > 0:
-		p.appendCtx(bilinearPYStage, c)
+		p.appendCtx(bilinearPYStageFn, c)
 	default:
-		p.appendCtx(bilinearNYStage, c)
+		p.appendCtx(bilinearNYStageFn, c)
 	}
 }
 
@@ -527,7 +542,7 @@ func bicubicP3YStage(z *lanes) { bicubicY(z, 3, +3) }
 
 // appendAccumulate appends the accumulate stage reading the samplerCtx.
 func (p *Pipeline) appendAccumulate(c *samplerCtx) {
-	p.appendCtx(accumulateStage, c)
+	p.appendCtx(accumulateStageFn, c)
 }
 
 func accumulateStage(z *lanes) {
@@ -543,24 +558,28 @@ func accumulateStage(z *lanes) {
 
 // appendMoveDstSrc appends move_dst_src.
 func (p *Pipeline) appendMoveDstSrc() {
-	p.append(func(z *lanes) {
-		for i := range z.n {
-			z.r[i], z.g[i], z.b[i], z.a[i] = z.dr[i], z.dg[i], z.db[i], z.da[i]
-		}
-	})
+	p.append(moveDstSrcStageFn)
+}
+
+func moveDstSrcStage(z *lanes) {
+	for i := range z.n {
+		z.r[i], z.g[i], z.b[i], z.a[i] = z.dr[i], z.dg[i], z.db[i], z.da[i]
+	}
 }
 
 // AppendClampGamut appends the clamp_gamut stage: alpha to [0,1], rgb to [0,a].
 func (p *Pipeline) AppendClampGamut() {
-	p.append(func(z *lanes) {
-		for i := range z.n {
-			a := minf(maxf(z.a[i], 0), 1)
-			z.a[i] = a
-			z.r[i] = minf(maxf(z.r[i], 0), a)
-			z.g[i] = minf(maxf(z.g[i], 0), a)
-			z.b[i] = minf(maxf(z.b[i], 0), a)
-		}
-	})
+	p.append(clampGamutStageFn)
+}
+
+func clampGamutStage(z *lanes) {
+	for i := range z.n {
+		a := minf(maxf(z.a[i], 0), 1)
+		z.a[i] = a
+		z.r[i] = minf(maxf(z.r[i], 0), a)
+		z.g[i] = minf(maxf(z.g[i], 0), a)
+		z.b[i] = minf(maxf(z.b[i], 0), a)
+	}
 }
 
 // appendSetRGB appends the set_rgb stage (alpha-only image tinting by the paint color). The three tint channels are
@@ -568,7 +587,7 @@ func (p *Pipeline) AppendClampGamut() {
 // context, so the stage need not capture them.
 func (p *Pipeline) appendSetRGB(g *gatherCtx, r, gg, b float32) {
 	g.setRGB = [3]float32{r, gg, b}
-	p.appendCtx(setRGBStage, g)
+	p.appendCtx(setRGBStageFn, g)
 }
 
 func setRGBStage(z *lanes) {

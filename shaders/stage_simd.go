@@ -12,6 +12,7 @@
 package shaders
 
 import (
+	"math"
 	"simd/archsimd"
 	"unsafe"
 
@@ -27,20 +28,23 @@ import (
 //     header, and the anchors in TestStageSIMDMatchesScalar's history).
 //   - minf/maxf are comparison-based ("comparison false -> second operand"); vector Min/Max propagate NaN (FMIN), so
 //     clamps must be built from compare+select instead.
-//   - Add/Mul are the same IEEE single ops the scalar stages perform, applied in the same operand order.
+//   - Add/Sub/Mul are the same IEEE single ops the scalar stages perform, applied in the same operand order.
 //   - Float32x4.ConvertToInt32 is the same truncate-toward-zero conversion the compiler emits for Go's int32(float32)
 //     (FCVTZS on arm64, VCVTTPS2DQ on amd64), including each arch's implementation-defined out-of-range result, so the
 //     evenly-spaced gradient's stop index matches the scalar one lane for lane.
+//   - Div is the same IEEE single-precision divide as the scalar "/" (FDIV on arm64, VDIVPS on amd64), verified
+//     bit-for-bit against it over the hostile float mix before unpremul was built on it.
+//   - ToBits/And/BitsToFloat32 only reinterpret and mask bits, so the lane-mask stage's AND is exact by construction.
 //
-// Like the NEON kernels, these process all stride lanes unconditionally; lanes at or beyond z.n are scratch no
-// consumer reads. The substitution changes throughput only, never rendered bytes — locked by
-// TestStageSIMDMatchesScalar.
+// Like the NEON kernels, these process all stride lanes unconditionally; lanes at or beyond z.n — in the register file
+// and in the sampler scratch the image kernels write — are scratch no consumer reads. The substitution changes
+// throughput only, never rendered bytes — locked by TestStageSIMDMatchesScalar.
 
 // init swaps the dispatch variables to the simd kernels where they are the fastest lane. simdKernelsSupported is the
 // hardware floor (arm64: baseline NEON; amd64: AVX2+FMA — unqualified CPUs keep the default dispatch entirely), and
 // the per-arch preferSIMD* constants then decline any kernel the build's default lane beats: on arm64 the NEON
-// assembly keeps three (see stage_simd_arm64.go), on amd64 the scalar default loses everywhere so all 8 wire in. The
-// equivalence tests gate on simdKernelsSupported alone, so declined kernels stay locked bit-for-bit.
+// assembly and the compiler's own array copies keep a few (see stage_simd_arm64.go). The equivalence tests gate on
+// simdKernelsSupported alone, so declined kernels stay locked bit-for-bit.
 func init() {
 	if !simdKernelsSupported() {
 		return
@@ -68,6 +72,42 @@ func init() {
 	}
 	if preferSIMDMatrix4x5 {
 		matrix4x5StageFn = matrix4x5StageSIMD
+	}
+	if preferSIMDMaskApply {
+		maskApplyStageFn = maskApplyStageSIMD
+	}
+	if preferSIMDClamp01 {
+		clamp01StageFn = clamp01StageSIMD
+	}
+	if preferSIMDClampGamut {
+		clampGamutStageFn = clampGamutStageSIMD
+	}
+	if preferSIMDPremul {
+		premulStageFn = premulStageSIMD
+	}
+	if preferSIMDUnpremul {
+		unpremulStageFn = unpremulStageSIMD
+	}
+	if preferSIMDScale1Float {
+		scale1FloatStageFn = scale1FloatStageSIMD
+	}
+	if preferSIMDSetRGB {
+		setRGBStageFn = setRGBStageSIMD
+	}
+	if preferSIMDMoveSrcDst {
+		moveSrcDstStageFn = moveSrcDstStageSIMD
+	}
+	if preferSIMDMoveDstSrc {
+		moveDstSrcStageFn = moveDstSrcStageSIMD
+	}
+	if preferSIMDBilinear {
+		bilinearNXStageFn = bilinearNXStageSIMD
+		bilinearPXStageFn = bilinearPXStageSIMD
+		bilinearNYStageFn = bilinearNYStageSIMD
+		bilinearPYStageFn = bilinearPYStageSIMD
+	}
+	if preferSIMDAccumulate {
+		accumulateStageFn = accumulateStageSIMD
 	}
 }
 
@@ -258,7 +298,192 @@ func gradientEvenlyStageSIMD(z *lanes) {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// color stage
+// image sampler stages
+
+// The four bilinear coordinate kernels are the vector bilinear_nx/px/ny/py stages: one axis coordinate offset by ±0.5
+// and one weight lane, both plain single-precision adds/subtracts of the same operands in the same order the scalar
+// stages use. They read the saved coordinate and fractional-offset scratch (written by bilinear_setup) and write the
+// axis register plus the matching weight lane; like every kernel here they cover all stride lanes, and the samplerCtx
+// tail beyond z.n is scratch whose only consumer — the accumulate stage — writes it into the dst registers' own
+// scratch tail.
+
+func bilinearNXStageSIMD(z *lanes) { // bilinear_nx: kScale = -1
+	c := z.ctx.(*samplerCtx)
+	half := archsimd.BroadcastFloat32x4(0.5)
+	one := archsimd.BroadcastFloat32x4(1)
+	for o := 0; o < stride; o += 4 {
+		archsimd.LoadFloat32x4(c.x[o:]).Sub(half).Store(z.r[o:])
+		one.Sub(archsimd.LoadFloat32x4(c.fx[o:])).Store(c.scalex[o:])
+	}
+}
+
+func bilinearPXStageSIMD(z *lanes) { // bilinear_px: kScale = +1
+	c := z.ctx.(*samplerCtx)
+	half := archsimd.BroadcastFloat32x4(0.5)
+	for o := 0; o < stride; o += 4 {
+		archsimd.LoadFloat32x4(c.x[o:]).Add(half).Store(z.r[o:])
+		archsimd.LoadFloat32x4(c.fx[o:]).Store(c.scalex[o:])
+	}
+}
+
+func bilinearNYStageSIMD(z *lanes) { // bilinear_ny: kScale = -1
+	c := z.ctx.(*samplerCtx)
+	half := archsimd.BroadcastFloat32x4(0.5)
+	one := archsimd.BroadcastFloat32x4(1)
+	for o := 0; o < stride; o += 4 {
+		archsimd.LoadFloat32x4(c.y[o:]).Sub(half).Store(z.g[o:])
+		one.Sub(archsimd.LoadFloat32x4(c.fy[o:])).Store(c.scaley[o:])
+	}
+}
+
+func bilinearPYStageSIMD(z *lanes) { // bilinear_py: kScale = +1
+	c := z.ctx.(*samplerCtx)
+	half := archsimd.BroadcastFloat32x4(0.5)
+	for o := 0; o < stride; o += 4 {
+		archsimd.LoadFloat32x4(c.y[o:]).Add(half).Store(z.g[o:])
+		archsimd.LoadFloat32x4(c.fy[o:]).Store(c.scaley[o:])
+	}
+}
+
+// accumulateStageSIMD is the vector accumulate kernel — the bilinear/bicubic inner loop, run once per tap (4 taps per
+// pixel bilinear, 16 bicubic). The per-lane area weight is the same single-precision multiply the scalar performs, and
+// each channel is then madf(scale, src, dst) with both multiplicands varying per lane, so madf4v supplies the identical
+// widen / one fused double FMA / round-to-single sequence.
+func accumulateStageSIMD(z *lanes) {
+	c := z.ctx.(*samplerCtx)
+	for o := 0; o < stride; o += 4 {
+		scale := archsimd.LoadFloat32x4(c.scalex[o:]).Mul(archsimd.LoadFloat32x4(c.scaley[o:]))
+		madf4v(scale, archsimd.LoadFloat32x4(z.r[o:]), archsimd.LoadFloat32x4(z.dr[o:])).Store(z.dr[o:])
+		madf4v(scale, archsimd.LoadFloat32x4(z.g[o:]), archsimd.LoadFloat32x4(z.dg[o:])).Store(z.dg[o:])
+		madf4v(scale, archsimd.LoadFloat32x4(z.b[o:]), archsimd.LoadFloat32x4(z.db[o:])).Store(z.db[o:])
+		madf4v(scale, archsimd.LoadFloat32x4(z.a[o:]), archsimd.LoadFloat32x4(z.da[o:])).Store(z.da[o:])
+	}
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// mask stage
+
+// maskApplyStageSIMD is the vector apply_vector_mask / check_decal_mask kernel: each channel's bits ANDed with the
+// lane's 32-bit mask. ToBits and BitsToFloat32 only reinterpret the register, so the result is the scalar's
+// Float32frombits(Float32bits(v) & mask) by construction, for every float class including NaN and the signed zeros.
+func maskApplyStageSIMD(z *lanes) {
+	mask := z.ctx.(*laneMask)
+	for o := 0; o < stride; o += 4 {
+		m := archsimd.LoadUint32x4(mask[o:])
+		archsimd.LoadFloat32x4(z.r[o:]).ToBits().And(m).BitsToFloat32().Store(z.r[o:])
+		archsimd.LoadFloat32x4(z.g[o:]).ToBits().And(m).BitsToFloat32().Store(z.g[o:])
+		archsimd.LoadFloat32x4(z.b[o:]).ToBits().And(m).BitsToFloat32().Store(z.b[o:])
+		archsimd.LoadFloat32x4(z.a[o:]).ToBits().And(m).BitsToFloat32().Store(z.a[o:])
+	}
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// color stages
+
+// clamp01StageSIMD is the vector clamp_01 kernel: clamp014 on all four channels, which is clamp01's comparison-based
+// minf(maxf(v, 0), 1) nesting — a NaN lane becomes +0 at the maxf and survives the minf, as the scalar does.
+func clamp01StageSIMD(z *lanes) {
+	zero := archsimd.BroadcastFloat32x4(0)
+	one := archsimd.BroadcastFloat32x4(1)
+	for o := 0; o < stride; o += 4 {
+		clamp014(archsimd.LoadFloat32x4(z.r[o:]), zero, one).Store(z.r[o:])
+		clamp014(archsimd.LoadFloat32x4(z.g[o:]), zero, one).Store(z.g[o:])
+		clamp014(archsimd.LoadFloat32x4(z.b[o:]), zero, one).Store(z.b[o:])
+		clamp014(archsimd.LoadFloat32x4(z.a[o:]), zero, one).Store(z.a[o:])
+	}
+}
+
+// clampGamutStageSIMD is the vector clamp_gamut kernel: alpha clamped to [0,1] and stored, then rgb clamped to [0,a]
+// against that already-clamped alpha — the same order and the same comparison-based minf/maxf pair as the scalar, so a
+// NaN alpha clamps to +0 and then pins rgb to +0 too.
+func clampGamutStageSIMD(z *lanes) {
+	zero := archsimd.BroadcastFloat32x4(0)
+	one := archsimd.BroadcastFloat32x4(1)
+	for o := 0; o < stride; o += 4 {
+		a := clamp014(archsimd.LoadFloat32x4(z.a[o:]), zero, one)
+		a.Store(z.a[o:])
+		minf4(maxf4(archsimd.LoadFloat32x4(z.r[o:]), zero), a).Store(z.r[o:])
+		minf4(maxf4(archsimd.LoadFloat32x4(z.g[o:]), zero), a).Store(z.g[o:])
+		minf4(maxf4(archsimd.LoadFloat32x4(z.b[o:]), zero), a).Store(z.b[o:])
+	}
+}
+
+// premulStageSIMD is the vector premul kernel: rgb multiplied by the alpha register, the same single-precision multiply
+// with the channel on the left and alpha on the right (matching "z.r[i] *= z.a[i]").
+func premulStageSIMD(z *lanes) {
+	for o := 0; o < stride; o += 4 {
+		a := archsimd.LoadFloat32x4(z.a[o:])
+		archsimd.LoadFloat32x4(z.r[o:]).Mul(a).Store(z.r[o:])
+		archsimd.LoadFloat32x4(z.g[o:]).Mul(a).Store(z.g[o:])
+		archsimd.LoadFloat32x4(z.b[o:]).Mul(a).Store(z.b[o:])
+	}
+}
+
+// unpremulStageSIMD is the vector unpremul kernel: scale = 1/a where that reciprocal is finite, else +0. The scalar's
+// guard is "s < inf", which is false for both NaN and +Inf and true for -Inf, so it is spelled here as the same
+// comparison feeding a select (IfElse keeps s where the comparison holds and takes +0 where it does not) rather than
+// as any NaN-aware min/max. a = +0 therefore yields scale +0 (the reciprocal overflows to +Inf and is rejected), a = -0
+// yields -Inf, and a = NaN yields +0 — matching the scalar lane for lane, including the NaN the +0/±Inf multiply then
+// produces for an infinite channel.
+func unpremulStageSIMD(z *lanes) {
+	one := archsimd.BroadcastFloat32x4(1)
+	zero := archsimd.BroadcastFloat32x4(0)
+	inf := archsimd.BroadcastFloat32x4(math.Float32frombits(0x7f800000))
+	for o := 0; o < stride; o += 4 {
+		s := one.Div(archsimd.LoadFloat32x4(z.a[o:]))
+		scale := s.IfElse(s.Less(inf), zero)
+		archsimd.LoadFloat32x4(z.r[o:]).Mul(scale).Store(z.r[o:])
+		archsimd.LoadFloat32x4(z.g[o:]).Mul(scale).Store(z.g[o:])
+		archsimd.LoadFloat32x4(z.b[o:]).Mul(scale).Store(z.b[o:])
+	}
+}
+
+// scale1FloatStageSIMD is the vector scale_1_float kernel: all four channels multiplied by the broadcast constant, with
+// the channel on the left as the scalar's "z.r[i] *= c" has it.
+func scale1FloatStageSIMD(z *lanes) {
+	c := archsimd.BroadcastFloat32x4(*z.ctx.(*float32))
+	for o := 0; o < stride; o += 4 {
+		archsimd.LoadFloat32x4(z.r[o:]).Mul(c).Store(z.r[o:])
+		archsimd.LoadFloat32x4(z.g[o:]).Mul(c).Store(z.g[o:])
+		archsimd.LoadFloat32x4(z.b[o:]).Mul(c).Store(z.b[o:])
+		archsimd.LoadFloat32x4(z.a[o:]).Mul(c).Store(z.a[o:])
+	}
+}
+
+// setRGBStageSIMD is the vector set_rgb kernel: three broadcast stores, no arithmetic at all.
+func setRGBStageSIMD(z *lanes) {
+	g := z.ctx.(*gatherCtx)
+	r := archsimd.BroadcastFloat32x4(g.setRGB[0])
+	gg := archsimd.BroadcastFloat32x4(g.setRGB[1])
+	b := archsimd.BroadcastFloat32x4(g.setRGB[2])
+	for o := 0; o < stride; o += 4 {
+		r.Store(z.r[o:])
+		gg.Store(z.g[o:])
+		b.Store(z.b[o:])
+	}
+}
+
+// moveSrcDstStageSIMD is the vector move_src_dst kernel and moveDstSrcStageSIMD the vector move_dst_src kernel: pure
+// register copies, moving whole quads instead of the compiler's array copy (move_src_dst) or per-lane loads and stores
+// (move_dst_src). No value is inspected, so every float class copies verbatim.
+
+func moveSrcDstStageSIMD(z *lanes) {
+	for o := 0; o < stride; o += 4 {
+		archsimd.LoadFloat32x4(z.r[o:]).Store(z.dr[o:])
+		archsimd.LoadFloat32x4(z.g[o:]).Store(z.dg[o:])
+		archsimd.LoadFloat32x4(z.b[o:]).Store(z.db[o:])
+		archsimd.LoadFloat32x4(z.a[o:]).Store(z.da[o:])
+	}
+}
+
+func moveDstSrcStageSIMD(z *lanes) {
+	for o := 0; o < stride; o += 4 {
+		archsimd.LoadFloat32x4(z.dr[o:]).Store(z.r[o:])
+		archsimd.LoadFloat32x4(z.dg[o:]).Store(z.g[o:])
+		archsimd.LoadFloat32x4(z.db[o:]).Store(z.b[o:])
+		archsimd.LoadFloat32x4(z.da[o:]).Store(z.a[o:])
+	}
+}
 
 // matrix4x5StageSIMD is the vector matrix_4x5 kernel. The 16 multiplicand coefficients are pre-widened once
 // (broadcastCoef) and the 4 translate-column addends broadcast as singles; each output row is then the same nested

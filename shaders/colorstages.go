@@ -21,26 +21,34 @@ import (
 	"github.com/richardwilkes/canvas/raster"
 )
 
+// The color-filter stages this file defines dispatch through these fn variables. The goexperiment.simd build
+// substitutes the vector kernels (stage_simd.go) at init for the ones its per-arch preference table prefers; every
+// other build keeps the portable forms. Each substitution is bit-identical (locked by TestStageSIMDMatchesScalar), so
+// it changes throughput only, never rendered bytes.
+var (
+	unpremulStageFn   stageFn = unpremulStage
+	matrix4x5StageFn  stageFn = matrix4x5Stage
+	clamp01StageFn    stageFn = clamp01Stage
+	moveSrcDstStageFn stageFn = moveSrcDstStage
+)
+
 // AppendUnpremul appends the unpremul stage: scale rgb by 1/a when finite, else by 0.
 func (p *Pipeline) AppendUnpremul() {
-	p.append(func(z *lanes) {
-		inf := math.Float32frombits(0x7f800000)
-		for i := range z.n {
-			var scale float32
-			if s := 1.0 / z.a[i]; s < inf {
-				scale = s
-			}
-			z.r[i] *= scale
-			z.g[i] *= scale
-			z.b[i] *= scale
-		}
-	})
+	p.append(unpremulStageFn)
 }
 
-// matrix4x5StageFn dispatches the matrix_4x5 stage. The goexperiment.simd build substitutes the vector kernel
-// (stage_simd.go) at init when the hardware qualifies; every other build keeps the portable form. The substitution is
-// bit-identical (locked by TestStageSIMDMatchesScalar), so it changes throughput only, never rendered bytes.
-var matrix4x5StageFn stageFn = matrix4x5Stage
+func unpremulStage(z *lanes) {
+	inf := math.Float32frombits(0x7f800000)
+	for i := range z.n {
+		var scale float32
+		if s := 1.0 / z.a[i]; s < inf {
+			scale = s
+		}
+		z.r[i] *= scale
+		z.g[i] *= scale
+		z.b[i] *= scale
+	}
+}
 
 // AppendMatrix4x5 appends the matrix_4x5 stage (row-major 4x5, translate column last). m is stored by reference as the
 // stage context — the pipeline's convention that the caller keeps it valid and unmutated for the pipeline's lifetime
@@ -63,24 +71,30 @@ func matrix4x5Stage(z *lanes) {
 
 // AppendClamp01 appends the clamp_01 stage.
 func (p *Pipeline) AppendClamp01() {
-	p.append(func(z *lanes) {
-		for i := range z.n {
-			z.r[i] = clamp01(z.r[i])
-			z.g[i] = clamp01(z.g[i])
-			z.b[i] = clamp01(z.b[i])
-			z.a[i] = clamp01(z.a[i])
-		}
-	})
+	p.append(clamp01StageFn)
+}
+
+func clamp01Stage(z *lanes) {
+	for i := range z.n {
+		z.r[i] = clamp01(z.r[i])
+		z.g[i] = clamp01(z.g[i])
+		z.b[i] = clamp01(z.b[i])
+		z.a[i] = clamp01(z.a[i])
+	}
 }
 
 // AppendMoveSrcDst appends the move_src_dst stage.
 func (p *Pipeline) AppendMoveSrcDst() {
-	p.append(func(z *lanes) {
-		z.dr = z.r
-		z.dg = z.g
-		z.db = z.b
-		z.da = z.a
-	})
+	p.append(moveSrcDstStageFn)
+}
+
+// moveSrcDstStage copies the whole src register file into the dst registers, scratch tail included — the array
+// assignments the stage has always performed, which are lane-count-independent.
+func moveSrcDstStage(z *lanes) {
+	z.dr = z.r
+	z.dg = z.g
+	z.db = z.b
+	z.da = z.a
 }
 
 // blendCtx carries a blend stage's mode in reused pipeline storage so the stage function need not capture it.

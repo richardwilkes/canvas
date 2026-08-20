@@ -41,24 +41,27 @@ func quietFloat(bits uint32) float32 {
 	return math.Float32frombits(bits)
 }
 
-// randLanes fills a lanes register file with a mix of hostile and random values for all 16 lanes.
+// randLanes fills a lanes register file with a mix of hostile and random values for all 16 lanes. The dst registers are
+// seeded too: the image-sampler kernels (accumulate, move_dst_src) read them, and for the kernels that do not they are
+// simply carried through both sides of the comparison unchanged.
 func randLanes(rng *rand.Rand) lanes {
 	var z lanes
-	fill := func(dst *[stride]float32) {
-		for i := range dst {
-			if rng.IntN(3) == 0 {
-				dst[i] = hostileFloats[rng.IntN(len(hostileFloats))]
-			} else {
-				dst[i] = quietFloat(rng.Uint32())
-			}
-		}
+	for _, reg := range []*[stride]float32{&z.r, &z.g, &z.b, &z.a, &z.dr, &z.dg, &z.db, &z.da} {
+		randFloats(rng, reg)
 	}
-	fill(&z.r)
-	fill(&z.g)
-	fill(&z.b)
-	fill(&z.a)
 	z.n = stride
 	return z
+}
+
+// randFloats fills one 16-lane register or scratch array with the same hostile/random mix randLanes uses.
+func randFloats(rng *rand.Rand, dst *[stride]float32) {
+	for i := range dst {
+		if rng.IntN(3) == 0 {
+			dst[i] = hostileFloats[rng.IntN(len(hostileFloats))]
+		} else {
+			dst[i] = quietFloat(rng.Uint32())
+		}
+	}
 }
 
 // eqBits requires bit equality except between NaNs: FMLA and math.FMA may propagate a different operand's NaN *payload*
@@ -71,20 +74,23 @@ func eqBits(g, w float32) bool {
 	return math.IsNaN(float64(g)) && math.IsNaN(float64(w))
 }
 
-// eqLanes requires per-lane equality (per eqBits) of the full register file — all 16 lanes, since the vector kernels
+// eqLanes requires per-lane equality (per eqBits) of the src register file — all 16 lanes, since the vector kernels
 // write the scratch tail too and it must match the scalar loop run at n=16.
 func eqLanes(t *testing.T, name string, got, want *lanes) {
 	t.Helper()
-	cmp := func(ch string, g, w *[stride]float32) {
-		for i := range g {
-			if !eqBits(g[i], w[i]) {
-				t.Fatalf("%s: lane %s[%d] = %08x (%g), want %08x (%g)", name, ch, i,
-					math.Float32bits(g[i]), g[i], math.Float32bits(w[i]), w[i])
-			}
+	eqReg(t, name, "r", &got.r, &want.r)
+	eqReg(t, name, "g", &got.g, &want.g)
+	eqReg(t, name, "b", &got.b, &want.b)
+	eqReg(t, name, "a", &got.a, &want.a)
+}
+
+// eqReg requires per-lane equality (per eqBits) of one 16-lane register or scratch array.
+func eqReg(t *testing.T, name, ch string, got, want *[stride]float32) {
+	t.Helper()
+	for i := range got {
+		if !eqBits(got[i], want[i]) {
+			t.Fatalf("%s: lane %s[%d] = %08x (%g), want %08x (%g)", name, ch, i,
+				math.Float32bits(got[i]), got[i], math.Float32bits(want[i]), want[i])
 		}
 	}
-	cmp("r", &got.r, &want.r)
-	cmp("g", &got.g, &want.g)
-	cmp("b", &got.b, &want.b)
-	cmp("a", &got.a, &want.a)
 }

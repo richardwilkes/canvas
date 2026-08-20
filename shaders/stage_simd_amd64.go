@@ -21,8 +21,11 @@ func simdKernelsSupported() bool {
 }
 
 // Per-kernel dispatch preference: whether the simd kernel is at least as fast as this build's default lane. On amd64
-// the only alternative is the portable scalar code, which every kernel beats, so all 8 are preferred (on arm64 the
-// NEON assembly wins three of them back — see stage_simd_arm64.go).
+// the only alternative is the portable scalar code, which every arithmetic kernel beats, so they are all preferred (on
+// arm64 the NEON assembly wins three of them back — see stage_simd_arm64.go, where the stages ported after the assembly
+// are measured against this same portable code and win by 36-80%). move_src_dst is the one exception on both arches:
+// its scalar form is four whole-array assignments the compiler already copies 128 bits at a time, so the vector
+// spelling only adds a bounds-checked slice per quad and measures as a tie.
 const (
 	preferSIMDSeed                 = true
 	preferSIMDClampX1              = true
@@ -32,6 +35,17 @@ const (
 	preferSIMDGradient2Stop        = true
 	preferSIMDGradientEvenly       = true
 	preferSIMDMatrix4x5            = true
+	preferSIMDMaskApply            = true
+	preferSIMDClamp01              = true
+	preferSIMDClampGamut           = true
+	preferSIMDPremul               = true
+	preferSIMDUnpremul             = true
+	preferSIMDScale1Float          = true
+	preferSIMDSetRGB               = true
+	preferSIMDMoveSrcDst           = false
+	preferSIMDMoveDstSrc           = true
+	preferSIMDBilinear             = true
+	preferSIMDAccumulate           = true
 )
 
 // madfCoef is a loop-invariant madf multiplicand, pre-widened to double once so the chunk loop pays no per-iteration

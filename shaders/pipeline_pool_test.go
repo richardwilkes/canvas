@@ -341,6 +341,7 @@ func TestRecyclePipelineResetsNewCounters(t *testing.T) {
 	p := borrowPipeline()
 	p.nextLaneMask()
 	p.nextBlendCtx()
+	p.nextScale1Ctx()
 	p.nextColorFuncCtx()
 	p.nextBlendShaderCtx()
 	p.nextGatherCtx()
@@ -352,25 +353,25 @@ func TestRecyclePipelineResetsNewCounters(t *testing.T) {
 	p.nextLightingCtx()
 	p.nextMatrixConvCtx()
 	p.nextArithmeticCtx()
-	if p.laneMaskN == 0 || p.blendCtxN == 0 || p.colorFuncCtxN == 0 || p.blendShaderCtxN == 0 ||
+	if p.laneMaskN == 0 || p.blendCtxN == 0 || p.scale1CtxN == 0 || p.colorFuncCtxN == 0 || p.blendShaderCtxN == 0 ||
 		p.gatherCtxN == 0 || p.samplerCtxN == 0 || p.decalCtxN == 0 || p.morphCtxN == 0 || p.dispCtxN == 0 ||
 		p.normalCtxN == 0 || p.lightingCtxN == 0 || p.matConvCtxN == 0 || p.arithCtxN == 0 {
 		t.Fatal("expected the new free-list counters to be bumped")
 	}
 	RecyclePipeline(p)
-	if p.laneMaskN != 0 || p.blendCtxN != 0 || p.colorFuncCtxN != 0 || p.blendShaderCtxN != 0 ||
+	if p.laneMaskN != 0 || p.blendCtxN != 0 || p.scale1CtxN != 0 || p.colorFuncCtxN != 0 || p.blendShaderCtxN != 0 ||
 		p.gatherCtxN != 0 || p.samplerCtxN != 0 || p.decalCtxN != 0 || p.morphCtxN != 0 || p.dispCtxN != 0 ||
 		p.normalCtxN != 0 || p.lightingCtxN != 0 || p.matConvCtxN != 0 || p.arithCtxN != 0 {
-		t.Fatalf("recycle left counters laneMaskN=%d blendCtxN=%d colorFuncCtxN=%d blendShaderCtxN=%d "+
+		t.Fatalf("recycle left counters laneMaskN=%d blendCtxN=%d scale1CtxN=%d colorFuncCtxN=%d blendShaderCtxN=%d "+
 			"gatherCtxN=%d samplerCtxN=%d decalCtxN=%d morphCtxN=%d dispCtxN=%d normalCtxN=%d lightingCtxN=%d "+
-			"matConvCtxN=%d arithCtxN=%d", p.laneMaskN, p.blendCtxN, p.colorFuncCtxN, p.blendShaderCtxN,
+			"matConvCtxN=%d arithCtxN=%d", p.laneMaskN, p.blendCtxN, p.scale1CtxN, p.colorFuncCtxN, p.blendShaderCtxN,
 			p.gatherCtxN, p.samplerCtxN, p.decalCtxN, p.morphCtxN, p.dispCtxN, p.normalCtxN, p.lightingCtxN,
 			p.matConvCtxN, p.arithCtxN)
 	}
-	if len(p.laneMasks) == 0 || len(p.blendCtxs) == 0 || len(p.colorFuncCtxs) == 0 || len(p.blendShaderCtxs) == 0 ||
-		len(p.gatherCtxs) == 0 || len(p.samplerCtxs) == 0 || len(p.decalCtxs) == 0 || len(p.morphCtxs) == 0 ||
-		len(p.dispCtxs) == 0 || len(p.normalCtxs) == 0 || len(p.lightingCtxs) == 0 || len(p.matConvCtxs) == 0 ||
-		len(p.arithCtxs) == 0 {
+	if len(p.laneMasks) == 0 || len(p.blendCtxs) == 0 || len(p.scale1Ctxs) == 0 || len(p.colorFuncCtxs) == 0 ||
+		len(p.blendShaderCtxs) == 0 || len(p.gatherCtxs) == 0 || len(p.samplerCtxs) == 0 || len(p.decalCtxs) == 0 ||
+		len(p.morphCtxs) == 0 || len(p.dispCtxs) == 0 || len(p.normalCtxs) == 0 || len(p.lightingCtxs) == 0 ||
+		len(p.matConvCtxs) == 0 || len(p.arithCtxs) == 0 {
 		t.Fatal("recycle dropped retained free-list storage")
 	}
 }

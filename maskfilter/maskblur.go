@@ -482,26 +482,47 @@ func blurRow(radius int, g *[5]fp88, src []uint8, srcW int, dst []uint8, dstW in
 		di += 8
 	}
 
+	blurRowTail(radius, g, src[si:], srcW-x, dst[di:], dstW-x, d0, d8)
+}
+
+// blurRowTail finishes a row the 8-wide main loop has taken as far as it can. src starts at the first unconsumed
+// source byte and srcTail (0 through 7) of them are still to be read; dst starts at the first destination byte not yet
+// written and dstRemaining of them are still owed; d0 and d8 are the accumulator pair the main loop left behind, d0
+// covering the next 8 destination positions and d8 the 8 after those.
+//
+// This is a straight lift of what used to be blurRow's tail, kept separate because the simd kernel runs the same main
+// loop in vector registers and then hands its accumulator pair back here rather than duplicating the edge phases.
+func blurRowTail(radius int, g *[5]fp88, src []uint8, srcTail int, dst []uint8, dstRemaining int, d0, d8 fp88) {
+	di := 0
+
 	// There are src values left, but the remainder of src values is not a multiple of 8.
-	srcTail := srcW - x
 	if srcTail > 0 {
-		blurXRadius(radius, loadA8(src[si:], srcTail), g, &d0, &d8)
-		dstTail := dstW - x
+		blurXRadius(radius, loadA8(src, srcTail), g, &d0, &d8)
+		dstTail := dstRemaining
 		if dstTail > 8 {
 			dstTail = 8
 		}
-		store(dst[di:], d0, dstTail)
+		store(dst, d0, dstTail)
 		d0 = d8
 		di += dstTail
-		x += dstTail
+		dstRemaining -= dstTail
 	}
 
 	// There are dst mask values to complete.
-	dstTail := dstW - x
-	if dstTail > 0 {
-		store(dst[di:], d0, dstTail)
+	if dstRemaining > 0 {
+		store(dst[di:], d0, dstRemaining)
 	}
 }
+
+// directBlurXFn and directBlurYFn are the dispatch points for the two hot small-sigma drivers. The default build runs
+// the portable 8-lane fp88 forms; a goexperiment.simd build on qualifying hardware repoints them at the archsimd
+// kernels in maskblur_simd.go, which reproduce the same integer arithmetic lane for lane (locked by
+// TestMaskBlurSIMDMatchesScalar). The cut is at the whole-rect drivers so the gauss factor splats are built once per
+// rect and no per-row or per-column loop pays an indirect call.
+var (
+	directBlurXFn = directBlurX
+	directBlurYFn = directBlurY
+)
 
 // directBlurX runs the direct-convolution box blur horizontally over a rect.
 func directBlurX(radius int, gauss *[5]uint16, src []uint8, srcStride, srcW int, dst []uint8, dstStride, dstW, dstH int) {
@@ -613,11 +634,11 @@ func smallBlur(sigmaX, sigmaY float64, src, dst *raster.Mask) geom.IPoint {
 	dstH := int(dst.Bounds.Height())
 
 	// Blur vertically and copy to destination.
-	directBlurY(radiusY, &gaussFactorsY, src.Image, int(src.RowBytes), srcW, srcH,
+	directBlurYFn(radiusY, &gaussFactorsY, src.Image, int(src.RowBytes), srcW, srcH,
 		dst.Image[radiusX:], int(dst.RowBytes))
 
 	// Blur horizontally in place.
-	directBlurX(radiusX, &gaussFactorsX, dst.Image[radiusX:], int(dst.RowBytes), srcW,
+	directBlurXFn(radiusX, &gaussFactorsX, dst.Image[radiusX:], int(dst.RowBytes), srcW,
 		dst.Image, int(dst.RowBytes), dstW, dstH)
 
 	return geom.IPoint{X: int32(radiusX), Y: int32(radiusY)}

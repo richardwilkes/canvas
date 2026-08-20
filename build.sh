@@ -94,6 +94,9 @@ if [ "$LINT"x == "1x" ]; then
 	fi
 	echo -e "\033[33mLinting...\033[0m"
 	"$TOOLS_DIR/golangci-lint" run ./...
+	# Lint again with the simd experiment on, so the goexperiment.simd-tagged kernel files are covered too. The
+	# oracle/tools sub-lints below stay default-only: neither module contains experiment-tagged files.
+	GOEXPERIMENT=simd "$TOOLS_DIR/golangci-lint" run ./...
 	(cd internal/oracle; "$TOOLS_DIR/golangci-lint" run -c ../../.golangci.yml ./...)
 	(cd internal/tools; "$TOOLS_DIR/golangci-lint" run -c ../../.golangci.yml ./...)
 fi

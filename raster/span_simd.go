@@ -141,7 +141,8 @@ func storeSpanSrcSIMD(buf []colorcore.PMColor4f, span []uint32) {
 			archsimd.LoadFloat32x4(f[i*4:]),
 			archsimd.LoadFloat32x4(f[i*4+4:]),
 			archsimd.LoadFloat32x4(f[i*4+8:]),
-			archsimd.LoadFloat32x4(f[i*4+12:]))
+			archsimd.LoadFloat32x4(f[i*4+12:]),
+		)
 		toUnorm4(r, zero, c255).
 			Or(shift32(toUnorm4(g, zero, c255), l8)).
 			Or(shift32(toUnorm4(b, zero, c255), l16)).

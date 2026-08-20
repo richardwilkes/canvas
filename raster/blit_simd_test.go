@@ -492,25 +492,29 @@ func TestBlitSIMDWiring(t *testing.T) {
 		t.Skip("CPU lacks the features the simd blit rows require; dispatch stays on the portable forms")
 	}
 	for _, tc := range []struct {
-		name   string
-		prefer bool
 		wired  any
 		simd   any
+		name   string
+		prefer bool
 	}{
-		{"fillWords", preferSIMDFillWords, fillWordsFn, blitFillWordsFn(fillWordsSIMD)},
-		{"fillBytes", preferSIMDFillBytes, fillBytesFn, blitFillBytesFn(fillBytesSIMD)},
-		{"color32Row", preferSIMDColor32Row, color32RowFn, blitColorRowFn(color32RowSIMD)},
+		{fillWordsFn, blitFillWordsFn(fillWordsSIMD), "fillWords", preferSIMDFillWords},
+		{fillBytesFn, blitFillBytesFn(fillBytesSIMD), "fillBytes", preferSIMDFillBytes},
+		{color32RowFn, blitColorRowFn(color32RowSIMD), "color32Row", preferSIMDColor32Row},
 		{
-			"blitMaskTranslucentRow", preferSIMDBlitMaskTranslucentRow, blitMaskTranslucentRowFn,
-			blitMaskRowFn(blitMaskTranslucentRowSIMD),
+			blitMaskTranslucentRowFn, blitMaskRowFn(blitMaskTranslucentRowSIMD),
+			"blitMaskTranslucentRow", preferSIMDBlitMaskTranslucentRow,
 		},
-		{"interp256Row", preferSIMDInterp256Row, interp256RowFn, blitScaleRowFn(interp256RowSIMD)},
-		{"premulRow", preferSIMDPremulRow, premulRowFn, spanRowFn(premulRowSIMD)},
-		{"pmBlendRow", preferSIMDPMBlendRow, pmBlendRowFn, blitScaleRowFn(pmBlendRowSIMD)},
-		{"blitRowLCD16", preferSIMDBlitRowLCD16, blitRowLCD16Fn, blitLCD16RowFn(blitRowLCD16SIMD)},
+		{interp256RowFn, blitScaleRowFn(interp256RowSIMD), "interp256Row", preferSIMDInterp256Row},
+		{premulRowFn, spanRowFn(premulRowSIMD), "premulRow", preferSIMDPremulRow},
+		{pmBlendRowFn, blitScaleRowFn(pmBlendRowSIMD), "pmBlendRow", preferSIMDPMBlendRow},
+		{blitRowLCD16Fn, blitLCD16RowFn(blitRowLCD16SIMD), "blitRowLCD16", preferSIMDBlitRowLCD16},
 		{
-			"blitRowLCD16Opaque", preferSIMDBlitRowLCD16Opaque, blitRowLCD16OpaqueFn,
-			blitLCD16OpaqueRowFn(blitRowLCD16OpaqueSIMD),
+			blitRowLCD16OpaqueFn, blitLCD16OpaqueRowFn(blitRowLCD16OpaqueSIMD),
+			"blitRowLCD16Opaque", preferSIMDBlitRowLCD16Opaque,
+		},
+		{
+			blendRowLCD16OpaqueFn, blitLCD16SpanRowFn(blendRowLCD16OpaqueSIMD),
+			"blendRowLCD16Opaque", preferSIMDBlendRowLCD16Opaque,
 		},
 	} {
 		if tc.prefer && reflect.ValueOf(tc.wired).Pointer() != reflect.ValueOf(tc.simd).Pointer() {

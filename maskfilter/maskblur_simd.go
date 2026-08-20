@@ -76,43 +76,43 @@ func storeA8(to []uint8, v archsimd.Uint16x8, n a8Narrow) {
 // of v and zero swapped (see this file's header for the lane order that pins which operand goes where). Offset 0 is
 // not in the family because it needs no shift at all — the callers just add v straight into d0.
 
-func addShifted1V(d0, d8, v archsimd.Uint16x8, zero archsimd.Uint8x16) (archsimd.Uint16x8, archsimd.Uint16x8) {
+func addShifted1V(d0, d8, v archsimd.Uint16x8, zero archsimd.Uint8x16) (nd0, nd8 archsimd.Uint16x8) {
 	b := v.ReshapeToUint8s()
 	return d0.Add(b.ConcatShiftBytesRight(zero, 14).ReshapeToUint16s()),
 		d8.Add(zero.ConcatShiftBytesRight(b, 14).ReshapeToUint16s())
 }
 
-func addShifted2V(d0, d8, v archsimd.Uint16x8, zero archsimd.Uint8x16) (archsimd.Uint16x8, archsimd.Uint16x8) {
+func addShifted2V(d0, d8, v archsimd.Uint16x8, zero archsimd.Uint8x16) (nd0, nd8 archsimd.Uint16x8) {
 	b := v.ReshapeToUint8s()
 	return d0.Add(b.ConcatShiftBytesRight(zero, 12).ReshapeToUint16s()),
 		d8.Add(zero.ConcatShiftBytesRight(b, 12).ReshapeToUint16s())
 }
 
-func addShifted3V(d0, d8, v archsimd.Uint16x8, zero archsimd.Uint8x16) (archsimd.Uint16x8, archsimd.Uint16x8) {
+func addShifted3V(d0, d8, v archsimd.Uint16x8, zero archsimd.Uint8x16) (nd0, nd8 archsimd.Uint16x8) {
 	b := v.ReshapeToUint8s()
 	return d0.Add(b.ConcatShiftBytesRight(zero, 10).ReshapeToUint16s()),
 		d8.Add(zero.ConcatShiftBytesRight(b, 10).ReshapeToUint16s())
 }
 
-func addShifted4V(d0, d8, v archsimd.Uint16x8, zero archsimd.Uint8x16) (archsimd.Uint16x8, archsimd.Uint16x8) {
+func addShifted4V(d0, d8, v archsimd.Uint16x8, zero archsimd.Uint8x16) (nd0, nd8 archsimd.Uint16x8) {
 	b := v.ReshapeToUint8s()
 	return d0.Add(b.ConcatShiftBytesRight(zero, 8).ReshapeToUint16s()),
 		d8.Add(zero.ConcatShiftBytesRight(b, 8).ReshapeToUint16s())
 }
 
-func addShifted5V(d0, d8, v archsimd.Uint16x8, zero archsimd.Uint8x16) (archsimd.Uint16x8, archsimd.Uint16x8) {
+func addShifted5V(d0, d8, v archsimd.Uint16x8, zero archsimd.Uint8x16) (nd0, nd8 archsimd.Uint16x8) {
 	b := v.ReshapeToUint8s()
 	return d0.Add(b.ConcatShiftBytesRight(zero, 6).ReshapeToUint16s()),
 		d8.Add(zero.ConcatShiftBytesRight(b, 6).ReshapeToUint16s())
 }
 
-func addShifted6V(d0, d8, v archsimd.Uint16x8, zero archsimd.Uint8x16) (archsimd.Uint16x8, archsimd.Uint16x8) {
+func addShifted6V(d0, d8, v archsimd.Uint16x8, zero archsimd.Uint8x16) (nd0, nd8 archsimd.Uint16x8) {
 	b := v.ReshapeToUint8s()
 	return d0.Add(b.ConcatShiftBytesRight(zero, 4).ReshapeToUint16s()),
 		d8.Add(zero.ConcatShiftBytesRight(b, 4).ReshapeToUint16s())
 }
 
-func addShifted7V(d0, d8, v archsimd.Uint16x8, zero archsimd.Uint8x16) (archsimd.Uint16x8, archsimd.Uint16x8) {
+func addShifted7V(d0, d8, v archsimd.Uint16x8, zero archsimd.Uint8x16) (nd0, nd8 archsimd.Uint16x8) {
 	b := v.ReshapeToUint8s()
 	return d0.Add(b.ConcatShiftBytesRight(zero, 2).ReshapeToUint16s()),
 		d8.Add(zero.ConcatShiftBytesRight(b, 2).ReshapeToUint16s())
@@ -121,7 +121,7 @@ func addShifted7V(d0, d8, v archsimd.Uint16x8, zero archsimd.Uint8x16) (archsimd
 // addShifted8V is the degenerate end of the family: the whole vector clears d0 and lands in d8. The general formula
 // still produces it (byte shift 0 makes the first result the all-zero operand and the second the whole of v), so it is
 // spelled the same way as its siblings rather than special-cased.
-func addShifted8V(d0, d8, v archsimd.Uint16x8, zero archsimd.Uint8x16) (archsimd.Uint16x8, archsimd.Uint16x8) {
+func addShifted8V(d0, d8, v archsimd.Uint16x8, zero archsimd.Uint8x16) (nd0, nd8 archsimd.Uint16x8) {
 	b := v.ReshapeToUint8s()
 	return d0.Add(b.ConcatShiftBytesRight(zero, 0).ReshapeToUint16s()),
 		d8.Add(zero.ConcatShiftBytesRight(b, 0).ReshapeToUint16s())

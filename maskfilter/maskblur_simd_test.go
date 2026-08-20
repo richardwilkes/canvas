@@ -37,8 +37,7 @@ const (
 // both twins at once. The radius stays in 1..4 either way: that is what the reachable sigmas produce, and the vertical
 // path does not accept anything else — blurYRadius indexes regs[2*radius-1], so a radius of 0 panics in the portable
 // code long before any kernel sees it.
-func randGauss(rng *rand.Rand) (int, [5]uint16) {
-	var factors [5]uint16
+func randGauss(rng *rand.Rand) (radius int, factors [5]uint16) {
 	if rng.IntN(2) == 0 {
 		f := newGaussFilter(smallBlurSigmaLo + rng.Float64()*(smallBlurSigmaHi-smallBlurSigmaLo))
 		for i := 0; i < f.n; i++ {
@@ -46,7 +45,7 @@ func randGauss(rng *rand.Rand) (int, [5]uint16) {
 		}
 		return f.radius(), factors
 	}
-	radius := 1 + rng.IntN(4)
+	radius = 1 + rng.IntN(4)
 	for i := range factors {
 		factors[i] = uint16(rng.Uint32())
 	}

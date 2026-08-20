@@ -46,6 +46,17 @@ jobs:
         run: go vet ./...
       - name: Test
         run: go test ./...
+      # The goexperiment.simd leg: vet and test the module again with the simd kernels wired in (shaders/stage_simd.go
+      # and friends), so the vector dispatch and its bit-exactness gates run on every OS/arch pair. The default-build
+      # steps above stay authoritative for what ships; this leg guards the opt-in build.
+      - name: Vet (GOEXPERIMENT=simd)
+        run: go vet ./...
+        env:
+          GOEXPERIMENT: simd
+      - name: Test (GOEXPERIMENT=simd)
+        run: go test ./...
+        env:
+          GOEXPERIMENT: simd
       # The one step that needs cgo, overriding the workflow-level CGO_ENABLED=0: outside darwin the race
       # detector requires it, and `go test -race` hard-fails with "-race requires cgo" on the two Linux legs
       # (cmd/go/internal/work/init.go: "On macOS, -race does not require cgo").

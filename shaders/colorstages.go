@@ -37,12 +37,17 @@ func (p *Pipeline) AppendUnpremul() {
 	})
 }
 
+// matrix4x5StageFn dispatches the matrix_4x5 stage. The goexperiment.simd build substitutes the vector kernel
+// (stage_simd.go) at init when the hardware qualifies; every other build keeps the portable form. The substitution is
+// bit-identical (locked by TestStageSIMDMatchesScalar), so it changes throughput only, never rendered bytes.
+var matrix4x5StageFn stageFn = matrix4x5Stage
+
 // AppendMatrix4x5 appends the matrix_4x5 stage (row-major 4x5, translate column last). m is stored by reference as the
 // stage context — the pipeline's convention that the caller keeps it valid and unmutated for the pipeline's lifetime
 // (the reachable caller passes an immutable color-filter field), so the stage stays a static function rather than a
 // closure capturing the coefficients.
 func (p *Pipeline) AppendMatrix4x5(m *[20]float32) {
-	p.appendCtx(matrix4x5Stage, m)
+	p.appendCtx(matrix4x5StageFn, m)
 }
 
 func matrix4x5Stage(z *lanes) {

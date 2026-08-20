@@ -25,7 +25,8 @@ func simdKernelsSupported() bool {
 
 // simdKernelsPreferred reports whether the simd span kernels are the fastest lane on this hardware, which is what the
 // init-time dispatch gates on. On amd64 the only alternative is the portable scalar code, which the archsimd kernels
-// beat by 2.2-4.6x, so preferred is exactly supported (on arm64 the NEON assembly wins instead — see
+// beat by -57% to -70% (measured on a Xeon W-2191B, darwin/amd64, benchstat n=10, 2026-08-20, via simd-bench.sh), so
+// preferred is exactly supported (on arm64 the NEON assembly wins instead — see
 // span_simd_arm64.go).
 func simdKernelsPreferred() bool { return simdKernelsSupported() }
 

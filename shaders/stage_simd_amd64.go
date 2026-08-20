@@ -26,6 +26,9 @@ func simdKernelsSupported() bool {
 // are measured against this same portable code and win by 36-80%). move_src_dst is the one exception on both arches:
 // its scalar form is four whole-array assignments the compiler already copies 128 bits at a time, so the vector
 // spelling only adds a bounds-checked slice per quad and measures as a tie.
+//
+// Measured on real amd64 hardware (Xeon W-2191B, darwin/amd64, benchstat n=10, 2026-08-20, via simd-bench.sh): every
+// wired kernel wins, -49% to -84%, and move_src_dst ties there too — so the whole table is confirmed, not inferred.
 const (
 	preferSIMDSeed                 = true
 	preferSIMDClampX1              = true

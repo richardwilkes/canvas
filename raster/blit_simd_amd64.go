@@ -22,7 +22,9 @@ import "simd/archsimd"
 func simdBlitSupported() bool { return archsimd.X86.AVX2() }
 
 // Per-kernel dispatch preference: whether the simd blit row is at least as fast as this build's default lane. On amd64
-// the only alternative is the portable scalar/SWAR code, which every one of these kernels beats.
+// the only alternative is the portable scalar/SWAR code, which every one of these kernels beats — measured on real
+// amd64 hardware (Xeon W-2191B, darwin/amd64, benchstat n=10, 2026-08-20, via simd-bench.sh): -21% (fillWords) to
+// -78% (fillBytes).
 const (
 	preferSIMDFillWords              = true
 	preferSIMDFillBytes              = true

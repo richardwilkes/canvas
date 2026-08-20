@@ -24,9 +24,8 @@ import (
 const benchBlurSigma = 1.5
 
 // benchBlurGauss returns the radius and 0.16 fixed-point factors for a sigma, exactly as smallBlur derives them.
-func benchBlurGauss(sigma float64) (int, [5]uint16) {
+func benchBlurGauss(sigma float64) (radius int, factors [5]uint16) {
 	f := newGaussFilter(sigma)
-	var factors [5]uint16
 	for i := 0; i < f.n; i++ {
 		factors[i] = uint16(math.Round(f.basis[i] * (1 << 16)))
 	}

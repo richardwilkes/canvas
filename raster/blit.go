@@ -39,6 +39,18 @@ type (
 	blitLCD16SpanRowFn func(dst []uint32, mask []uint16, src []uint32)
 )
 
+// The span dispatch variables (the blit rows' own table follows below). Every build starts on the portable forms;
+// arm64's init (span_arm64.go) switches to the NEON wrappers, and a goexperiment.simd build's init (span_simd.go)
+// then repoints at the archsimd kernels where they are the preferred lane. Declaring the defaults here, untagged,
+// keeps the portable forms referenced on every build — they are the reference twin the equivalence suites fuzz
+// against and the dispatch default everywhere no vector lane applies.
+var (
+	clampSpan01Fn       spanClampFn = clampSpan01Generic
+	storeSpanSrcFn      spanStoreFn = storeSpanSrcGeneric
+	pmSrcOverRowFn      spanRowFn   = pmSrcOverRowGeneric
+	blitMaskOpaqueRowFn spanMaskFn  = blitMaskOpaqueRowGeneric
+)
+
 // The dispatch variables. Each defaults to the portable form declared beside the blitter that drives it; blit_simd.go's
 // init is the only assignment. premulRow reuses spanRowFn, whose shape it already has.
 var (

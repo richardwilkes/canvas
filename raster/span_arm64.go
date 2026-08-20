@@ -17,16 +17,17 @@ import (
 	"github.com/richardwilkes/canvas/colorcore"
 )
 
-// On arm64 the span dispatch starts on thin wrappers over the NEON kernels in span_arm64.s. They are bit-identical to
-// the portable forms (see the .s file's equivalence notes and TestSpanNEONMatchesScalar), so this substitution changes
-// throughput only, never rendered bytes. A goexperiment.simd build's init (span_simd.go) repoints these variables at
-// the archsimd kernels, which are locked against the same portable forms.
-var (
-	clampSpan01Fn       spanClampFn = clampSpan01NEON
-	storeSpanSrcFn      spanStoreFn = storeSpanSrcNEON
-	pmSrcOverRowFn      spanRowFn   = pmSrcOverRowNEON
-	blitMaskOpaqueRowFn spanMaskFn  = blitMaskOpaqueRowNEON
-)
+// On arm64 the span dispatch switches to thin wrappers over the NEON kernels in span_arm64.s. They are bit-identical
+// to the portable defaults (see the .s file's equivalence notes and TestSpanNEONMatchesScalar), so this substitution
+// changes throughput only, never rendered bytes. Under goexperiment.simd, span_simd.go's init runs after this one
+// (file-name order) and would repoint the variables at the archsimd kernels — today it declines on arm64, where these
+// wrappers are the faster lane (see span_simd_arm64.go).
+func init() {
+	clampSpan01Fn = clampSpan01NEON
+	storeSpanSrcFn = storeSpanSrcNEON
+	pmSrcOverRowFn = pmSrcOverRowNEON
+	blitMaskOpaqueRowFn = blitMaskOpaqueRowNEON
+}
 
 // The NEON span kernels treat a PMColor4f as a 16-byte {R,G,B,A} float quad.
 var (

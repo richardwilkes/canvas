@@ -19,6 +19,24 @@ demand it, but never widens `int` math or caps `int` values just to survive a 32
 
 The module is also 100% cgo-free and must stay that way; `build.sh` enforces it.
 
+## SIMD
+
+By default, the module compiles to portable Go, and each performance-critical kernel has a scalar form. If you build
+with `GOEXPERIMENT=simd` on Go 1.27 or later, the build wires in vector kernels for arm64 and amd64, written against
+the standard library's `simd/archsimd` package. The kernels cover:
+
+- `shaders` — the pipeline stages and the image-filter kernels
+- `raster` — the span and blit rows
+- `maskfilter` — the mask blur
+- `filtercore` — the blur engine
+- `imagecore` — the pixel-conversion rows
+- `codecs` — the VP8 (lossy WebP) encoder kernels
+
+Both build modes produce bit-identical output, and the test suites check this on every kernel. On amd64, the kernels
+need AVX2 and FMA; on a CPU without them, the code falls back to the scalar form at run time. Each kernel also carries
+a per-arch dispatch preference from measured benchmarks (see [SIMD-BENCH.md](SIMD-BENCH.md)), so a kernel that does
+not beat its scalar form on real silicon stays off.
+
 ## Packages
 
 | Package | What it is |

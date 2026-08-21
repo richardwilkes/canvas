@@ -29,11 +29,10 @@ import "simd/archsimd"
 func simdConvertSupported() bool { return archsimd.X86.AVX2() }
 
 // Per-kernel dispatch preference: whether the simd conversion row is at least as fast as this build's default lane. On
-// amd64 the only alternative is the portable scalar code in convert.go, which every one of these kernels beats, by
-// -37% (alphaFromWords) to -91% (fillBytes) on 256-pixel rows, geomean -65%. Those numbers come from darwin/amd64
-// under Rosetta 2 on an M4 Max (benchstat n=10, 2026-08-20), the only amd64 lane available when this landed — margins
-// this wide do not turn over on native silicon, but re-measure them there with simd-bench.sh before treating the exact
-// figures as amd64's.
+// amd64 the only alternative is the portable scalar code in convert.go, which every one of these kernels beats.
+// Measured on real amd64 hardware (Xeon W-2191B, darwin/amd64, benchstat n=10, 2026-08-20, via simd-bench.sh): -42%
+// (alphaFromWords) to -83% (unpremul) on 256-pixel rows, geomean -73% — confirming and mostly widening the Rosetta 2
+// estimates this landed with.
 const (
 	preferSIMDSwizzleWordRow    = true
 	preferSIMDPremulWordRow     = true

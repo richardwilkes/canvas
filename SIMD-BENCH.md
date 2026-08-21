@@ -1,10 +1,12 @@
 # amd64 benchmark handoff for the `simd` branch
 
 The `goexperiment.simd` kernels carry per-arch dispatch preferences. The arm64 values come from measured benchstat
-runs on an M4 Max. The amd64 values were confirmed on 2026-08-20 with data from a Xeon W-2191B (darwin/amd64): all 4
-wiring gates passed, the bit-exactness suites passed, and every wired kernel beat its scalar default (stages -49% to
--84%, spans -57% to -70%, blit rows -21% to -78%, the fp88 blur -93% to -96%; canvas end-to-end geomean -37%). No
-preference constant needed a flip.
+runs on an M4 Max. The amd64 values were confirmed on 2026-08-20 with two sweeps from a Xeon W-2191B (darwin/amd64).
+The first covered stages/spans/blits/fp88 (all 4 wiring gates passed; every wired kernel beat its scalar default:
+stages -49% to -84%, spans -57% to -70%, blit rows -21% to -78%, the fp88 blur -93% to -96%; canvas end-to-end
+geomean -37%). The second, at the survey's completion, covered the remaining packages (all 7 wiring gates passed;
+imagecore rows geomean -73%, blur segments/passes -69% to -73%, vp8enc kernels geomean -59% with whole encodes -34%
+to -39%). No preference constant needed a flip in either sweep.
 
 The script stays for future hardware: a new CPU family, a new Go release, or a kernel change can re-run the same
 collection.

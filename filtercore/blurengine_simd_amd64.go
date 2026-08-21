@@ -32,11 +32,9 @@ func simdKernelsSupported() bool { return archsimd.X86.AVX2() }
 // beat it on arm64 — a tap drops from four loads plus four multiply-adds to one of each, and the three-box pipeline's
 // twelve adds, twelve subtracts and four divides drop to three, three and one.
 //
-// Measured on darwin/amd64 under Rosetta 2 on an M4 Max (blurengine_bench_test.go, benchstat n=6, 2026-08-20, every
-// comparison p=0.002), the only amd64 lane available when this landed: the Gaussian segment wins -71% at 3 taps, -67%
-// at 7 and -71% at 13, and the three-box segment wins -64% at both windows; geomean -68%. Margins this wide do not
-// turn over on native silicon, but re-measure them there with simd-bench.sh before treating the exact figures as
-// amd64's.
+// Measured on real amd64 hardware (Xeon W-2191B, darwin/amd64, benchstat n=10, 2026-08-20, via simd-bench.sh): the
+// Gaussian segment wins -73% at every window, the three-box segment -71% at both windows, and the end-to-end passes
+// -73% (Gaussian) and -69% (three-box) — confirming and widening the Rosetta 2 estimates this landed with.
 const (
 	preferSIMDGaussianSegment = true
 	preferSIMDThreeBoxSegment = true

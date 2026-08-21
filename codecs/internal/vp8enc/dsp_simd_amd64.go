@@ -30,18 +30,15 @@ import "simd/archsimd"
 func simdKernelsSupported() bool { return archsimd.X86.AVX2() }
 
 // Per-kernel dispatch preference: whether the simd kernel is at least as fast as this build's default lane. On amd64
-// the only alternative is the portable form in dsp.go, which every one of these kernels beats: getSSE -37% (4x4) to
-// -77% (16x16), quantizeBlock -39%, iTransformOne -11%, fTransform -8%, geomean -46%; and -18% geomean on the
-// whole-encode benchmarks (-28% on a 512x384 photo). Those numbers come from darwin/amd64 under Rosetta 2 on an M4
-// Max (benchstat n=8, 2026-08-20), the only amd64 lane available here, so re-measure on native silicon before
-// treating them as amd64's.
+// the only alternative is the portable form in dsp.go, which every one of these kernels beats. Measured on real amd64
+// hardware (Xeon W-2191B, darwin/amd64, benchstat n=10, 2026-08-20, via simd-bench.sh): getSSE -55% (4x4) to -79%
+// (16x16), quantizeBlock -53%, iTransformOne -38%, fTransform -25%, geomean -59%; whole-encode -34% to -39%.
 //
-// Two of them deserve a second look when that happens. The transforms' margins are thin here because their butterflies
-// multiply in 32-bit lanes (VPMULLD, which is a slow multi-uop instruction on Intel and is very likely worse under
-// Rosetta's translation), where libwebp's SSE2 transforms instead fold each "a*2217 + b*5352" pair into one VPMADDWD
-// on 16-bit lanes — exact here too, since both a-values fit in an int16 and the pair sum stays under 1.3e8. That would
-// mean a per-arch transform body (arm64 has no pairwise dot product), so it was left alone rather than guessed at from
-// emulated timings; if native amd64 shows fTransform and iTransformOne as marginal, that is the change to make.
+// The transforms remain the thinnest margins because their butterflies multiply in 32-bit lanes (VPMULLD, a multi-uop
+// instruction on Intel), where libwebp's SSE2 transforms instead fold each "a*2217 + b*5352" pair into one VPMADDWD
+// on 16-bit lanes — exact here too, since both a-values fit in an int16 and the pair sum stays under 1.3e8. Native
+// measurement shows them clearly worthwhile as-is (-25%/-38%), so the per-arch VPMADDWD body (arm64 has no pairwise
+// dot product) stays an optional future optimization rather than a need.
 const (
 	preferSIMDFTransform    = true
 	preferSIMDITransformOne = true

@@ -99,6 +99,8 @@ type pixelFormatDescriptor struct {
 }
 
 // wndClassExW mirrors the Win32 WNDCLASSEXW (winuser.h): 80 bytes on 64-bit. The layout is fixed by the ABI.
+//
+//nolint:govet // fieldalignment: the field order is the ABI's, not ours to optimize
 type wndClassExW struct {
 	cbSize        uint32
 	style         uint32
@@ -139,7 +141,7 @@ func windowProcCallback() uintptr {
 			if defWindowProcWAddr == 0 {
 				return 0
 			}
-			r, _, _ := syscall.SyscallN(defWindowProcWAddr, hwnd, msg, wParam, lParam)
+			r, _, _ := syscall.SyscallN(defWindowProcWAddr, hwnd, msg, wParam, lParam) //nolint:errcheck // DefWindowProcW has no failure mode; the Errno slot is noise
 			return r
 		})
 	})
@@ -147,6 +149,8 @@ func windowProcCallback() uintptr {
 }
 
 type platformContext struct {
+	className *uint16 // kept alive for UnregisterClassW; first because it is the struct's only GC pointer
+
 	// Resolved user32 / gdi32 / opengl32 entry points.
 	getModuleHandleW  uintptr
 	registerClassExW  uintptr
@@ -163,7 +167,6 @@ type platformContext struct {
 	wglGetProcAddress uintptr
 
 	hInstance uintptr
-	className *uint16 // kept alive for UnregisterClassW
 	classAtom uintptr
 	hwnd      uintptr // HWND (hidden window)
 	hdc       uintptr // HDC (its device context)
@@ -185,7 +188,7 @@ type platformContext struct {
 //
 //go:uintptrescapes
 func winCall(fn uintptr, args ...uintptr) uintptr {
-	r, _, _ := syscall.SyscallN(fn, args...)
+	r, _, _ := syscall.SyscallN(fn, args...) //nolint:errcheck // callers test the returned value; the Errno slot is meaningless for these Win32/WGL procs
 	return r
 }
 
@@ -219,8 +222,8 @@ func (p *platformContext) init() error {
 	}
 	for _, proc := range []struct {
 		dst    *uintptr
-		module syscall.Handle
 		name   string
+		module syscall.Handle
 	}{
 		{dst: &p.getModuleHandleW, module: kernel32, name: "GetModuleHandleW"},
 		{dst: &p.registerClassExW, module: user32, name: "RegisterClassExW"},

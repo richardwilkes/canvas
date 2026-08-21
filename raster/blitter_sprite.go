@@ -129,19 +129,21 @@ func premul8888(c uint32) uint32 {
 	return pack64((prod>>8)&swarMask8)&0x00FFFFFF | a<<24
 }
 
-// premulRow premultiplies a row of straight-alpha words into dst, which must be at least as long as src.
-func premulRow(dst, src []uint32) {
+// premulRowGeneric premultiplies a row of straight-alpha words into dst, which must be at least as long as src. It is
+// the default premulRowFn; where a vector kernel is wired instead this remains the sub-chunk tail that kernel calls.
+func premulRowGeneric(dst, src []uint32) {
 	for i, s := range src {
 		dst[i] = premul8888(s)
 	}
 }
 
-// pmSrcOverRowGeneric is the portable form of pmSrcOverRow: per channel saturating-add(src, mulDiv255Round(dst,
-// 255-srcA)), run four channels per op in spread64 lanes. On arm64 pmSrcOverRow runs the NEON kernel instead and uses
-// this only for the sub-quad tail. Bit-exactness per lane: prod = d*nalpha + 128 <= 255*255+128 = 0xFE81 stays in its
-// 16-bit lane; (prod>>8)&0xFF is exactly the per-channel prod>>8 (prod < 2^16), and their sum <= 0xFF7F still carries
-// nowhere, so the lane holds mulDiv255Round32's value. The saturating add's lanes reach at most 510, so bit 8 of a lane
-// is the overflow flag; OR-ing 0xFF into overflowed lanes reproduces satAdd8's clamp on the low byte.
+// pmSrcOverRowGeneric is the portable src-over-opaque-dst row blend: per channel saturating-add(src,
+// mulDiv255Round(dst, 255-srcA)), run four channels per op in spread64 lanes. It is the default pmSrcOverRowFn; where a
+// vector kernel is wired instead (NEON on arm64, archsimd under goexperiment.simd) this remains the sub-quad tail those
+// kernels call. Bit-exactness per lane: prod = d*nalpha + 128 <= 255*255+128 = 0xFE81 stays in its 16-bit lane;
+// (prod>>8)&0xFF is exactly the per-channel prod>>8 (prod < 2^16), and their sum <= 0xFF7F still carries nowhere, so
+// the lane holds mulDiv255Round32's value. The saturating add's lanes reach at most 510, so bit 8 of a lane is the
+// overflow flag; OR-ing 0xFF into overflowed lanes reproduces satAdd8's clamp on the low byte.
 func pmSrcOverRowGeneric(dst, src []uint32) {
 	const half = uint64(0x0080008000800080)
 	const laneLSB = uint64(0x0001000100010001)
@@ -155,8 +157,10 @@ func pmSrcOverRowGeneric(dst, src []uint32) {
 	}
 }
 
-// pmBlendRow computes, per channel, (src*alpha256 + dst*alphaMulInv256(srcA, alpha256)) >> 8.
-func pmBlendRow(dst, src []uint32, alpha256 uint32) {
+// pmBlendRowGeneric computes, per channel, (src*alpha256 + dst*alphaMulInv256(srcA, alpha256)) >> 8. It is the default
+// pmBlendRowFn; where a vector kernel is wired instead this remains the sub-chunk tail that kernel calls. alpha256 must
+// be a 0..256 scale, which bounds each channel's two products by 255*256 and their weighted sum by a byte.
+func pmBlendRowGeneric(dst, src []uint32, alpha256 uint32) {
 	for i, s := range src {
 		d := dst[i]
 		dstScale := alphaMulInv256(s>>24, alpha256)
@@ -211,20 +215,18 @@ func (s *spriteD32S32) BlitRect(x, y, width, height int32) {
 			if len(s.scratch) < int(width) {
 				s.scratch = make([]uint32, width)
 			}
-			premulRow(s.scratch[:width], srcRow)
+			premulRowFn(s.scratch[:width], srcRow)
 			srcRow = s.scratch[:width]
 		}
 		switch {
 		case s.srcOpaque && s.alpha == 255:
 			copy(dstRow, srcRow) // opaque source, full alpha: verbatim copy
 		case s.srcOpaque:
-			for i, sp := range srcRow { // opaque source, scaled by paint alpha
-				dstRow[i] = fastFourByteInterp256(sp, dstRow[i], alpha256)
-			}
+			interp256RowFn(dstRow, srcRow, alpha256) // opaque source, scaled by paint alpha
 		case s.alpha == 255:
-			pmSrcOverRow(dstRow, srcRow)
+			pmSrcOverRowFn(dstRow, srcRow)
 		default:
-			pmBlendRow(dstRow, srcRow, alpha256)
+			pmBlendRowFn(dstRow, srcRow, alpha256)
 		}
 	}
 }

@@ -1319,7 +1319,7 @@ type Functions struct {
 	fnUniform1f                                      func(int32, float32)
 	fnTexParameterf                                  func(uint32, uint32, float32)
 	fnSamplerParameterf                              func(uint32, uint32, float32)
-	callState                                        glCallState
+	callState                                        glCallState //nolint:unused // empty on the Windows lane (fastcall_windows.go); the SysV lane's glcall trampolines work through it
 	callCounts                                       [glFuncCount]uint64
 	getRenderbufferParameteriv                       uintptr
 	drawArrays                                       uintptr

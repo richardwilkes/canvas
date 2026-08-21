@@ -24,7 +24,7 @@ import "syscall"
 // glCallState is this lane's per-Functions call state. There is none: Syscall15 takes its arguments in registers and
 // returns the result the same way, so no argument block is exposed to the callee and nothing has to be kept off the
 // goroutine stack (contrast the SysV lane's glcall9 trampoline, which writes its result back through a block pointer).
-type glCallState struct{}
+type glCallState struct{} //nolint:unused // referenced only as Functions.callState's type, which this lane never touches
 
 // glCall invokes the GL proc fn with up to nine integer-class arguments and returns the proc's integer result. The
 // //go:uintptrescapes tag is the GC-stack contract, identical to the tag on the purego.SyscallN this lane replaces: a
@@ -33,6 +33,6 @@ type glCallState struct{}
 //
 //go:uintptrescapes
 func (*Functions) glCall(fn, a1, a2, a3, a4, a5, a6, a7, a8, a9 uintptr) uintptr {
-	r1, _, _ := syscall.Syscall15(fn, 15, a1, a2, a3, a4, a5, a6, a7, a8, a9, 0, 0, 0, 0, 0, 0) //nolint:staticcheck // SA1019: the fixed-arity form is the point
+	r1, _, _ := syscall.Syscall15(fn, 15, a1, a2, a3, a4, a5, a6, a7, a8, a9, 0, 0, 0, 0, 0, 0) //nolint:staticcheck,errcheck // SA1019: the fixed-arity form is the point; the Errno return is meaningless for GL procs, which report through glGetError
 	return r1
 }

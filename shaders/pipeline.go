@@ -105,6 +105,10 @@ type Pipeline struct {
 	// a static stage instead of heap-allocating a capturing closure per compile. Values only — no external references
 	// to drop on recycle.
 	constColorCtxs []*colorcore.PMColor4f
+	// scale1Ctxs holds one scale factor per appendScale1Float stage (the paint alpha, plus one per alpha color filter a
+	// shader tree folds), retained across pooled compiles so a repeated alpha-scaled draw appends a static stage
+	// instead of heap-allocating a capturing closure per compile. Values only — no external references on recycle.
+	scale1Ctxs []*float32
 	// The image-filter runtime-kernel contexts (filterkernels.go, plus filterdecal.go's ramp): one per
 	// morphology/displacement/normal/lighting/matrix-convolution/arithmetic/filter-decal shader this pipeline compiled
 	// (a shader tree can nest kernels, so each nextXxxCtx hands out a distinct one), retained across pooled compiles so
@@ -126,6 +130,7 @@ type Pipeline struct {
 	blendShaderCtxN int
 	decalCtxN       int
 	constColorCtxN  int
+	scale1CtxN      int
 	gatherCtxN      int
 	morphCtxN       int
 	filterDecalCtxN int
@@ -207,6 +212,7 @@ func RecyclePipeline(p *Pipeline) {
 	p.colorFuncCtxN = 0
 	p.blendShaderCtxN = 0
 	p.constColorCtxN = 0
+	p.scale1CtxN = 0
 	// Drop the source-pixel references the image-shader gather contexts hold so an idle pooled pipeline does not pin
 	// image pixels (the ctx storage itself is retained for reuse). The sampler/decal contexts hold no external
 	// references.
@@ -432,27 +438,58 @@ func (p *Pipeline) nextConstColorCtx() *colorcore.PMColor4f {
 	return c
 }
 
+// The lane-wise stages this file defines dispatch through these fn variables. The goexperiment.simd build substitutes
+// the vector kernels (stage_simd.go) at init for the ones its per-arch preference table prefers; every other build
+// keeps the portable forms. Each substitution is bit-identical (locked by TestStageSIMDMatchesScalar), so it changes
+// throughput only, never rendered bytes.
+var (
+	premulStageFn      stageFn = premulStage
+	scale1FloatStageFn stageFn = scale1FloatStage
+	maskApplyStageFn   stageFn = maskApplyStage
+)
+
 // AppendPremul appends the premul stage: multiplies rgb by alpha.
 func (p *Pipeline) AppendPremul() {
-	p.append(func(z *lanes) {
-		for i := range z.n {
-			z.r[i] *= z.a[i]
-			z.g[i] *= z.a[i]
-			z.b[i] *= z.a[i]
-		}
-	})
+	p.append(premulStageFn)
 }
 
-// appendScale1Float appends the scale_1_float stage: multiplies all four channels by a constant.
+func premulStage(z *lanes) {
+	for i := range z.n {
+		z.r[i] *= z.a[i]
+		z.g[i] *= z.a[i]
+		z.b[i] *= z.a[i]
+	}
+}
+
+// nextScale1Ctx hands an appendScale1Float stage a distinct pooled scale slot, matching the constColorCtxs discipline
+// (a shader tree can fold several alphas — a paint alpha plus one per nested alpha color filter — so a single shared
+// slot would clobber).
+func (p *Pipeline) nextScale1Ctx() *float32 {
+	if p.scale1CtxN == len(p.scale1Ctxs) {
+		p.scale1Ctxs = append(p.scale1Ctxs, new(float32))
+	}
+	c := p.scale1Ctxs[p.scale1CtxN]
+	p.scale1CtxN++
+	return c
+}
+
+// appendScale1Float appends the scale_1_float stage: multiplies all four channels by a constant. The constant rides
+// pooled pipeline storage as the stage context, so the stage stays a static function rather than a per-compile
+// heap-allocated closure.
 func (p *Pipeline) appendScale1Float(c float32) {
-	p.append(func(z *lanes) {
-		for i := range z.n {
-			z.r[i] *= c
-			z.g[i] *= c
-			z.b[i] *= c
-			z.a[i] *= c
-		}
-	})
+	ctx := p.nextScale1Ctx()
+	*ctx = c
+	p.appendCtx(scale1FloatStageFn, ctx)
+}
+
+func scale1FloatStage(z *lanes) {
+	c := *z.ctx.(*float32)
+	for i := range z.n {
+		z.r[i] *= c
+		z.g[i] *= c
+		z.b[i] *= c
+		z.a[i] *= c
+	}
 }
 
 // AppendDither appends an 8x8 ordered-dither stage, used when the paint dithers a non-constant pipeline; rate is 1/255
@@ -547,7 +584,7 @@ func maskApplyStage(z *lanes) {
 
 // appendApplyVectorMask appends maskApplyStage.
 func (p *Pipeline) appendApplyVectorMask(mask *laneMask) {
-	p.appendCtx(maskApplyStage, mask)
+	p.appendCtx(maskApplyStageFn, mask)
 }
 
 ///////////////////////////////////////////////////////////////////////////////

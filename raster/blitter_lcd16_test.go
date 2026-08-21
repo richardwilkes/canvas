@@ -8,7 +8,7 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // LCD16 blit tests: the LCD16-over-8888 row procs pinned byte-exact against independently transcribed reference outputs
-// (blendLCD16/blendLCD16Opaque, blendRowLCD16/blendRowLCD16Opaque), the pipeline scale_565/lerp_565 lanes, and the
+// (blendLCD16/blendLCD16Opaque, blendRowLCD16/blendRowLCD16OpaqueGeneric), the pipeline scale_565/lerp_565 lanes, and
 // AA-clip LCD merge.
 
 package raster
@@ -95,21 +95,21 @@ func TestBlitRowLCD16Pinned(t *testing.T) {
 			for _, d := range lcdTestDsts {
 				// General proc.
 				dst := []uint32{d}
-				blitRowLCD16(dst, []uint16{m}, uint32(srcA), uint32(srcR), uint32(srcG), uint32(srcB))
+				blitRowLCD16Generic(dst, []uint16{m}, uint32(srcA), uint32(srcR), uint32(srcG), uint32(srcB))
 				want := refBlendLCD16(srcA, srcR, srcG, srcB, d, m)
 				if dst[0] != want {
-					t.Fatalf("blitRowLCD16(color %#x, mask %#04x, dst %#08x) = %#08x, want %#08x",
+					t.Fatalf("blitRowLCD16Generic(color %#x, mask %#04x, dst %#08x) = %#08x, want %#08x",
 						uint32(c), m, d, dst[0], want)
 				}
 				// Opaque proc.
 				if srcA == 0xFF {
 					opaqueDst := deviceRGBA(c.PreMultiply())
 					dst[0] = d
-					blitRowLCD16Opaque(dst, []uint16{m}, uint32(srcR), uint32(srcG), uint32(srcB),
+					blitRowLCD16OpaqueGeneric(dst, []uint16{m}, uint32(srcR), uint32(srcG), uint32(srcB),
 						opaqueDst)
 					want = refBlendLCD16Opaque(srcR, srcG, srcB, d, m, opaqueDst)
 					if dst[0] != want {
-						t.Fatalf("blitRowLCD16Opaque(color %#x, mask %#04x, dst %#08x) = %#08x, want %#08x",
+						t.Fatalf("blitRowLCD16OpaqueGeneric(color %#x, mask %#04x, dst %#08x) = %#08x, want %#08x",
 							uint32(c), m, d, dst[0], want)
 					}
 				}
@@ -169,7 +169,7 @@ func TestLegacyShaderBlitterLCD16(t *testing.T) {
 	dst := []uint32{0xFF808080, 0xFF808080, 0xFF808080}
 	src := []uint32{0xFF10E070, 0xFF10E070, 0xFF10E070}
 	masks := []uint16{0x0000, 0xFFFF, 0x1234}
-	blendRowLCD16Opaque(dst, masks, src)
+	blendRowLCD16OpaqueGeneric(dst, masks, src)
 	if dst[0] != 0xFF808080 {
 		t.Errorf("opaque mask 0 modified dst: %#08x", dst[0])
 	}

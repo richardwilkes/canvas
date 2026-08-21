@@ -19,6 +19,13 @@
 //   - everything else runs a generic pixel pipeline, which executes in lowp (16-bit integer kernels: 565
 //     bit-replication loads, the brute-searched 565 store quantizers, the /256 luma) whenever every stage has a lowp
 //     form, and in highp float only when an F16 endpoint or an unpremul stage forces it.
+//
+// The rows the hot lanes walk dispatch through package-level function variables, the shape raster's span/blit kernels
+// use: the portable form of each row lives here under a Generic name with no build tag, so every build compiles it,
+// and a goexperiment.simd build's init (convert_simd.go) repoints the variable at an archsimd kernel on qualifying
+// hardware. Every substitute is bit-identical to the portable form (locked by TestConvertSIMDMatchesScalar, whose
+// integer subtests enumerate the complete (channel, alpha) domains), so the choice of lane changes throughput only,
+// never converted bytes. The Generic forms are also the sub-chunk tail of every vector kernel.
 
 package imagecore
 
@@ -250,6 +257,107 @@ func storeHighp(ct ColorType, row []byte, x int, r, g, b, a float32) {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// conversion row kernels
+//
+// The rows the three hot lanes walk, factored out of their loops so the loop-invariant color/alpha decisions are made
+// once per conversion rather than once per pixel, and so a vector build has something row-shaped to substitute. Only
+// the lanes that carry real traffic have kernels; see convert_simd.go for which ones and why.
+
+// The dispatch signatures.
+type (
+	// convertWordRowFn converts a row of 8888 source words into 8888 destination bytes, swapping R and B when
+	// swapRB is set. len(src) is the pixel count; dst holds at least 4*len(src) bytes.
+	convertWordRowFn func(dst []byte, src []uint32, swapRB bool)
+	// alphaFromWordRowFn writes the alpha byte of each 8888 source word. len(dst) == len(src).
+	alphaFromWordRowFn func(dst []byte, src []uint32)
+	// fillByteRowFn fills a byte row with one value.
+	fillByteRowFn func(dst []byte, v byte)
+	// grayToWordRowFn expands a Gray8 row into opaque 8888 destination bytes. dst holds at least 4*len(src) bytes.
+	grayToWordRowFn func(dst, src []byte)
+)
+
+// The dispatch variables. Each defaults to the portable form below; convert_simd.go's init is the only assignment.
+var (
+	swizzleWordRowFn    convertWordRowFn   = swizzleWordRowGeneric
+	premulWordRowFn     convertWordRowFn   = premulWordRowGeneric
+	unpremulWordRowFn   convertWordRowFn   = unpremulWordRowGeneric
+	alphaFromWordsRowFn alphaFromWordRowFn = alphaFromWordsRowGeneric
+	fillBytesRowFn      fillByteRowFn      = fillBytesRowGeneric
+	grayToWordsRowFn    grayToWordRowFn    = grayToWordsRowGeneric
+)
+
+// swizzleWordRowGeneric is the 8888↔8888 lane with no alpha step: a straight word copy, or the R/B exchange that turns
+// RGBA_8888 into BGRA_8888 (and back — the swap is its own inverse). G and A ride through untouched, so they are kept
+// as their already-positioned bit fields rather than re-extracted.
+func swizzleWordRowGeneric(dst []byte, src []uint32, swapRB bool) {
+	if !swapRB {
+		for x, v := range src {
+			binary.LittleEndian.PutUint32(dst[4*x:], v)
+		}
+		return
+	}
+	for x, v := range src {
+		binary.LittleEndian.PutUint32(dst[4*x:], (v>>16)&0xFF|v&0x0000FF00|(v&0xFF)<<16|v&0xFF000000)
+	}
+}
+
+// premulWordRowGeneric is the 8888↔8888 premultiply lane (RGBA_to_rgbA / RGBA_to_bgrA): each color channel scaled by
+// the pixel's alpha with div255Round's exact rounding divide, alpha unchanged.
+func premulWordRowGeneric(dst []byte, src []uint32, swapRB bool) {
+	for x, v := range src {
+		a := v >> 24
+		r := div255Round((v & 0xFF) * a)
+		g := div255Round((v >> 8 & 0xFF) * a)
+		b := div255Round((v >> 16 & 0xFF) * a)
+		if swapRB {
+			r, b = b, r
+		}
+		binary.LittleEndian.PutUint32(dst[4*x:], r|g<<8|b<<16|a<<24)
+	}
+}
+
+// unpremulWordRowGeneric is the 8888↔8888 unpremultiply lane (rgbA_to_RGBA / rgbA_to_BGRA): each color channel divided
+// by the pixel's alpha through unpremulChannelRP's normalized reciprocal, alpha unchanged.
+func unpremulWordRowGeneric(dst []byte, src []uint32, swapRB bool) {
+	for x, v := range src {
+		a := v >> 24
+		r := unpremulChannelRP(v&0xFF, a)
+		g := unpremulChannelRP(v>>8&0xFF, a)
+		b := unpremulChannelRP(v>>16&0xFF, a)
+		if swapRB {
+			r, b = b, r
+		}
+		binary.LittleEndian.PutUint32(dst[4*x:], r|g<<8|b<<16|a<<24)
+	}
+}
+
+// alphaFromWordsRowGeneric is convert_to_alpha8's 8888 lane: the top byte of each source word.
+func alphaFromWordsRowGeneric(dst []byte, src []uint32) {
+	for x, v := range src {
+		dst[x] = byte(v >> 24)
+	}
+}
+
+// fillBytesRowGeneric fills a byte row with one value — convert_to_alpha8's always-opaque lane, where the source color
+// type carries no alpha.
+func fillBytesRowGeneric(dst []byte, v byte) {
+	for i := range dst {
+		dst[i] = v
+	}
+}
+
+// grayToWordsRowGeneric is the lowp pipeline's Gray8 → 8888 lane. loadLowp's Gray8 case is load_a8 + alpha_to_gray,
+// which yields {v, v, v, 255}; a premul step on it is the identity (div255Round(v*255) == v for every byte v), and so
+// is storeLowp's R/B swap (r == b) and its RGB_888x force_opaque (a is already 255) — so this one kernel covers
+// Gray8 to any of the three 8888-family destinations, with or without the premultiply stage.
+func grayToWordsRowGeneric(dst, src []byte) {
+	for x, v := range src {
+		w := uint32(v)
+		binary.LittleEndian.PutUint32(dst[4*x:], w|w<<8|w<<16|0xFF000000)
+	}
+}
+
+///////////////////////////////////////////////////////////////////////////////
 
 // ConvertPixels converts src into dst (rows dstRowBytes apart, little-endian bytes) with dstInfo's color/alpha types.
 // Dimensions must match. Returns false for unsupported color types (outside the supported color-type matrix, which is
@@ -272,34 +380,21 @@ func ConvertPixels(dstInfo ImageInfo, dst []byte, dstRowBytes int, src *Pixels) 
 		return true
 	}
 
-	// 8888↔8888 with at most an R/B swap and one alpha op, on the NEON kernels.
+	// 8888↔8888 with at most an R/B swap and one alpha op, on the NEON kernels. The alpha step and the swap are
+	// loop-invariant, so the lane is chosen once here and the rows run a specialized kernel rather than re-testing the
+	// flags per pixel.
 	is8888 := func(ct ColorType) bool { return ct == ColorTypeRGBA8888 || ct == ColorTypeBGRA8888 }
 	if is8888(dstInfo.ColorType) && is8888(src.Info.ColorType) {
 		swap := dstInfo.ColorType != src.Info.ColorType
+		row := swizzleWordRowFn
+		switch {
+		case steps.premul:
+			row = premulWordRowFn
+		case steps.unpremul:
+			row = unpremulWordRowFn
+		}
 		for y := range h {
-			row := dst[y*dstRowBytes:]
-			s := src.Words[y*int(src.RowElems):]
-			for x := range w {
-				v := s[x]
-				a := v >> 24
-				r := v & 0xFF
-				g := (v >> 8) & 0xFF
-				b := (v >> 16) & 0xFF
-				switch {
-				case steps.premul: // RGBA_to_rgbA / RGBA_to_bgrA
-					r = div255Round(r * a)
-					g = div255Round(g * a)
-					b = div255Round(b * a)
-				case steps.unpremul: // rgbA_to_RGBA / rgbA_to_BGRA
-					r = unpremulChannelRP(r, a)
-					g = unpremulChannelRP(g, a)
-					b = unpremulChannelRP(b, a)
-				}
-				if swap {
-					r, b = b, r
-				}
-				binary.LittleEndian.PutUint32(row[4*x:], r|g<<8|b<<16|a<<24)
-			}
+			row(dst[y*dstRowBytes:], src.Words[y*int(src.RowElems):][:w], swap)
 		}
 		return true
 	}
@@ -310,14 +405,9 @@ func ConvertPixels(dstInfo ImageInfo, dst []byte, dstRowBytes int, src *Pixels) 
 			row := dst[y*dstRowBytes:]
 			switch src.Info.ColorType {
 			case ColorTypeGray8, ColorTypeRGB565, ColorTypeRGB888x:
-				for x := range w {
-					row[x] = 0xFF
-				}
+				fillBytesRowFn(row[:w], 0xFF)
 			case ColorTypeRGBA8888, ColorTypeBGRA8888:
-				s := src.Words[y*int(src.RowElems):]
-				for x := range w {
-					row[x] = byte(s[x] >> 24)
-				}
+				alphaFromWordsRowFn(row[:w], src.Words[y*int(src.RowElems):][:w])
 			case ColorTypeRGBAF16:
 				s := src.U16s[y*int(src.RowElems):]
 				for x := range w {
@@ -335,6 +425,16 @@ func ConvertPixels(dstInfo ImageInfo, dst []byte, dstRowBytes int, src *Pixels) 
 	useLowp := src.Info.ColorType != ColorTypeRGBAF16 && dstInfo.ColorType != ColorTypeRGBAF16 &&
 		!steps.unpremul
 	if useLowp {
+		// Gray8 → 8888 is the one lowp pair with real traffic (a decoded grayscale image uploading as N32), and its
+		// whole pipeline collapses to one broadcast; see grayToWordsRowGeneric. Every other pair keeps the per-pixel
+		// pipeline below.
+		if src.Info.ColorType == ColorTypeGray8 && (dstInfo.ColorType == ColorTypeRGBA8888 ||
+			dstInfo.ColorType == ColorTypeBGRA8888 || dstInfo.ColorType == ColorTypeRGB888x) {
+			for y := range h {
+				grayToWordsRowFn(dst[y*dstRowBytes:], src.Bytes[y*int(src.RowElems):][:w])
+			}
+			return true
+		}
 		for y := range h {
 			row := dst[y*dstRowBytes:]
 			for x := range w {

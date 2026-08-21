@@ -17,8 +17,8 @@ import (
 	"testing"
 )
 
-// refPMSrcOverRow is the pre-SWAR pmSrcOverRow: the per-channel scalar form over satAdd8 and mulDiv255Round32, retained
-// as the differential reference.
+// refPMSrcOverRow is the pre-SWAR pmSrcOverRowGeneric: the per-channel scalar form over satAdd8 and mulDiv255Round32,
+// retained as the differential reference.
 func refPMSrcOverRow(dst, src []uint32) {
 	for i, s := range src {
 		d := dst[i]
@@ -31,8 +31,9 @@ func refPMSrcOverRow(dst, src []uint32) {
 	}
 }
 
-// TestPMSrcOverRowMatchesReference compares the SWAR pmSrcOverRow with the scalar reference over random pixels plus
-// structured extremes (transparent/opaque source, saturating channel sums), bit for bit.
+// TestPMSrcOverRowMatchesReference compares whichever pmSrcOverRow kernel the build wired (the SWAR form, the NEON
+// kernel, or the simd kernel) with the scalar reference over random pixels plus structured extremes
+// (transparent/opaque source, saturating channel sums), bit for bit.
 func TestPMSrcOverRowMatchesReference(t *testing.T) {
 	rng := rand.New(rand.NewPCG(5, 6))
 	const n = 1 << 16
@@ -59,7 +60,7 @@ func TestPMSrcOverRowMatchesReference(t *testing.T) {
 		dstGot[i] = sd.d
 	}
 	copy(dstWant, dstGot)
-	pmSrcOverRow(dstGot, src)
+	pmSrcOverRowFn(dstGot, src)
 	refPMSrcOverRow(dstWant, src)
 	for i := range dstGot {
 		if dstGot[i] != dstWant[i] {
@@ -89,6 +90,36 @@ func TestToUnormSubsumesClamp(t *testing.T) {
 		v := math.Float32frombits(rng.Uint32())
 		if got, want := toUnorm(v), toUnorm(clamp01f(v)); got != want {
 			t.Fatalf("toUnorm(%x=%g) = %d but toUnorm(clamp01f) = %d", math.Float32bits(v), v, got, want)
+		}
+	}
+}
+
+// TestColor32SubsumesBlackAntiHair locks the identity blitAntiHBlack was folded onto: for a black source premultiplied
+// by coverage, color32's three lanes reproduce that run's three cases exactly. The skip case is checked by requiring
+// the destination to be untouched at coverage 0, the fill case and the general lane by the reference expression the
+// loop used to compute. Every (coverage, device byte) pair is enumerated, so this is a proof, not a sample.
+func TestColor32SubsumesBlackAntiHair(t *testing.T) {
+	const black = uint32(0xFF) << deviceAlphaShift
+	got := make([]uint32, 256)
+	want := make([]uint32, 256)
+	for aa := range uint32(256) {
+		for i := range got {
+			d := uint32(i) * 0x01010101
+			got[i] = d
+			switch aa {
+			case 0:
+				want[i] = d
+			case 255:
+				want[i] = black
+			default:
+				want[i] = aa<<deviceAlphaShift + alphaMulQ(d, alpha255To256(255-aa))
+			}
+		}
+		color32(got, aa<<deviceAlphaShift)
+		for i := range got {
+			if got[i] != want[i] {
+				t.Fatalf("color32(coverage %d, dev byte %d) = %08x, want %08x", aa, i, got[i], want[i])
+			}
 		}
 	}
 }

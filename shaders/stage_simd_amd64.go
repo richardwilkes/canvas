@@ -1,0 +1,115 @@
+// Copyright (c) 2026 by Richard A. Wilkes. All rights reserved.
+//
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, version 2.0. If a copy of the MPL was not distributed with
+// this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+//
+// This Source Code Form is "Incompatible With Secondary Licenses", as
+// defined by the Mozilla Public License, version 2.0.
+
+//go:build goexperiment.simd
+
+package shaders
+
+import "simd/archsimd"
+
+// simdKernelsSupported reports whether the CPU can run the simd kernels. The amd64 baseline (GOAMD64=v1, SSE2)
+// includes neither the 256-bit doubles madf4 works in nor a fused multiply-add; requiring AVX2+FMA (Haswell, 2013)
+// covers everything the kernels compile to. Unqualified CPUs keep the default scalar dispatch.
+func simdKernelsSupported() bool {
+	return archsimd.X86.AVX2() && archsimd.X86.FMA()
+}
+
+// Per-kernel dispatch preference: whether the simd kernel is at least as fast as this build's default lane. On amd64
+// the only alternative is the portable scalar code, which every arithmetic kernel beats, so they are all preferred (on
+// arm64 the NEON assembly wins three of them back — see stage_simd_arm64.go, where the stages ported after the assembly
+// are measured against this same portable code and win by 36-80%). move_src_dst is the one exception on both arches:
+// its scalar form is four whole-array assignments the compiler already copies 128 bits at a time, so the vector
+// spelling only adds a bounds-checked slice per quad and measures as a tie.
+//
+// Measured on real amd64 hardware (Xeon W-2191B, darwin/amd64, benchstat n=10, 2026-08-20, via simd-bench.sh): every
+// wired kernel wins, -49% to -84%, and move_src_dst ties there too — so the whole table is confirmed, not inferred.
+const (
+	preferSIMDSeed                 = true
+	preferSIMDClampX1              = true
+	preferSIMDMatrixTranslate      = true
+	preferSIMDMatrixScaleTranslate = true
+	preferSIMDMatrixAffine         = true
+	preferSIMDGradient2Stop        = true
+	preferSIMDGradientEvenly       = true
+	preferSIMDMatrix4x5            = true
+	preferSIMDMaskApply            = true
+	preferSIMDClamp01              = true
+	preferSIMDClampGamut           = true
+	preferSIMDPremul               = true
+	preferSIMDUnpremul             = true
+	preferSIMDScale1Float          = true
+	preferSIMDSetRGB               = true
+	preferSIMDMoveSrcDst           = false
+	preferSIMDMoveDstSrc           = true
+	preferSIMDBilinear             = true
+	preferSIMDAccumulate           = true
+)
+
+// The image-filter kernel stages (filterkernels.go) ported afterwards. Their default lane is the same portable scalar
+// code, so they are all preferred here for the same reason; the arm64 table records the measurements.
+const (
+	preferSIMDMorphAggInit        = true
+	preferSIMDMorphPlusCoords     = true
+	preferSIMDMorphTakePlus       = true
+	preferSIMDMorphMaxAgg         = true
+	preferSIMDMorphSparseAggMinus = true
+	preferSIMDMorphSparseMaxAgg   = true
+	preferSIMDMorphReturn         = true
+	preferSIMDDisplacement        = true
+	preferSIMDNormalSetCoords     = true
+	preferSIMDNormalFilter        = true
+	preferSIMDMagnifier           = true
+	preferSIMDMatrixConvCoords    = true
+	preferSIMDMatrixConvAccum     = true
+	preferSIMDMatrixConvFinalize  = true
+	preferSIMDArithBlend          = true
+)
+
+// madfCoef is a loop-invariant madf multiplicand, pre-widened to double once so the chunk loop pays no per-iteration
+// widen for it. On amd64 a 4-lane madf works in one 256-bit Float64x4.
+type madfCoef = archsimd.Float64x4
+
+// broadcastCoef pre-widens a scalar coefficient for madf4. float64(float32) is exact.
+func broadcastCoef(c float32) madfCoef { return archsimd.BroadcastFloat64x4(float64(c)) }
+
+// madf4 is the lanewise madf: float32(math.FMA(float64(f), float64(m), float64(a))). A single-precision vector FMA is
+// NOT equivalent (the 48-bit product makes the 53-bit double rounding non-innocuous; ~1-ULP divergences exist), so
+// every madf site widens to double (VCVTPS2PD; exact), performs one fused double FMA, and rounds to single
+// (VCVTPD2PS) — the identical two-rounding sequence the scalar code performs. Locked by TestStageSIMDMatchesScalar.
+func madf4(f archsimd.Float32x4, m64 madfCoef, a archsimd.Float32x4) archsimd.Float32x4 {
+	return f.ConvertToFloat64().MulAdd(m64, a.ConvertToFloat64()).ConvertToFloat32()
+}
+
+// madf4v is madf4 for a multiplicand that varies per lane (the evenly-spaced gradient's gathered stop factors), so it
+// cannot be hoisted and pre-widened. It is the identical widen / one fused double FMA / round-to-single sequence, with
+// the multiplicand widened per call by the same exact VCVTPS2PD.
+func madf4v(f, m, a archsimd.Float32x4) archsimd.Float32x4 {
+	return f.ConvertToFloat64().MulAdd(m.ConvertToFloat64(), a.ConvertToFloat64()).ConvertToFloat32()
+}
+
+// exprMulAdd4 is the lanewise form of the *plain Go expression* "f*m + a" as this build's compiler lowers it — not the
+// explicit madf, which is a different operation. Go permits an implementation to contract such an expression into a
+// single fused operation; at this module's GOAMD64=v1 baseline the amd64 compiler does not, emitting MULSS then ADDSS
+// for the image-filter kernels' "sum += c*k", "sum*gain + bias" and arithmetic-blend chain, so the vector twin
+// multiplies and adds separately too — VMULPS and VADDPS are the same IEEE single-precision operations, lane for lane.
+// (arm64 contracts these same expressions into FMADDS, which is why its exprMulAdd4 fuses and why the goldens are
+// captured per platform.)
+//
+// Raising GOAMD64 changes this: at v3+ the compiler contracts "sum*gain + bias" into VFMADD231SS. That already moves
+// the *default* build's rendered output off the captured goldens, so v3 is not a supported configuration for this
+// module; should it become one, this helper and the scalar stages have to be revisited together.
+// TestStageSIMDMatchesScalar is the tripwire — it compares against whatever the scalar twin in the same binary does.
+func exprMulAdd4(f, m, a archsimd.Float32x4) archsimd.Float32x4 { return f.Mul(m).Add(a) }
+
+// exprMulSub4 is exprMulAdd4's subtractive shape: the plain Go expression "a - f*m" as this build's compiler lowers
+// it. At GOAMD64=v1 amd64 does not contract that one either — the magnifier's "2 - edgeInset" disassembles to a MULSS
+// producing the rounded edge inset and a SUBSS against it — so the vector twin multiplies and subtracts separately,
+// reusing the same rounded product the neighboring comparison sees. (arm64 contracts this into FMSUBS, which does not
+// reuse it; see stage_simd_arm64.go.) Raising GOAMD64 would change this the same way it changes exprMulAdd4.
+func exprMulSub4(f, m, a archsimd.Float32x4) archsimd.Float32x4 { return a.Sub(f.Mul(m)) }

@@ -7,8 +7,6 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-//go:build arm64
-
 package raster
 
 import (
@@ -32,7 +30,8 @@ func quietBits(bits uint32) float32 {
 
 // TestSpanNEONMatchesScalar locks the NEON span kernels against their portable twins bit for bit over randomized spans
 // of every length class (quads plus tails), with hostile float classes for the float kernels and full random pixels for
-// the integer kernel.
+// the integer kernel. It calls the NEON wrappers directly rather than the dispatch variables, so it keeps testing the
+// NEON lane under goexperiment.simd too, where init repoints the dispatch at the archsimd kernels.
 func TestSpanNEONMatchesScalar(t *testing.T) {
 	rng := rand.New(rand.NewPCG(21, 22))
 	hostile := []float32{
@@ -64,7 +63,7 @@ func TestSpanNEONMatchesScalar(t *testing.T) {
 					buf1[i].B = clamp01f(buf1[i].B)
 					buf1[i].A = clamp01f(buf1[i].A)
 				}
-				clampSpan01(buf2)
+				clampSpan01NEON(buf2)
 				// clamp01f never emits NaN or -0 (NaN and negatives clamp to +0), so plain bit comparison of every
 				// channel is exact.
 				for i := range buf1 {
@@ -96,7 +95,7 @@ func TestSpanNEONMatchesScalar(t *testing.T) {
 					want[i] = storeWord(pmColor4f{r: buf[i].R, g: buf[i].G, b: buf[i].B, a: buf[i].A})
 				}
 				got := make([]uint32, n)
-				storeSpanSrc(buf, got)
+				storeSpanSrcNEON(buf, got)
 				for i := range want {
 					if got[i] != want[i] {
 						t.Fatalf("storeSpanSrc n=%d pixel %d (%+v) = %08x, want %08x", n, i, buf[i],
@@ -123,7 +122,7 @@ func TestSpanNEONMatchesScalar(t *testing.T) {
 				d2 := append([]uint32(nil), d1...)
 				pm := rng.Uint32() | 0xFF000000
 				blitMaskOpaqueRowGeneric(d1, aa, pm)
-				blitMaskOpaqueRow(d2, aa, pm)
+				blitMaskOpaqueRowNEON(d2, aa, pm)
 				for i := range d1 {
 					if d1[i] != d2[i] {
 						t.Fatalf("blitMaskOpaqueRow n=%d pixel %d: pm %08x m %02x -> %08x, want %08x",
@@ -145,7 +144,7 @@ func TestSpanNEONMatchesScalar(t *testing.T) {
 				}
 				d2 := append([]uint32(nil), d1...)
 				pmSrcOverRowGeneric(d1, src)
-				pmSrcOverRow(d2, src)
+				pmSrcOverRowNEON(d2, src)
 				for i := range d1 {
 					if d1[i] != d2[i] {
 						t.Fatalf("pmSrcOverRow n=%d pixel %d: src %08x -> %08x, want %08x", n, i,

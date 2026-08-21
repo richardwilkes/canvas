@@ -29,7 +29,7 @@ for arg in "$@"; do
 		echo "$0 [options]"
 		echo "  -a, --all  Equivalent to --fmt --lint --race"
 		echo "  -f, --fmt  Verify the source formatting (gofumpt and goimports)"
-		echo "  -l, --lint Run the linters for every supported platform"
+		echo "  -l, --lint Run the linters (host pass + scoped platform passes + go vet typecheck matrix)"
 		echo "  -r, --race Run the tests with race-checking enabled"
 		echo "  -t, --test Run the tests"
 		echo "  -h, --help This help text"
@@ -115,25 +115,65 @@ if [ "$FMT"x == "1x" ]; then
 	echo "0 issues."
 fi
 
-# Run the linters for every supported platform. The module carries per-GOOS sources (gpu/gl), per-GOARCH kernel
-# sources (the NEON and archsimd files), and goexperiment.simd-tagged sources, so a host-shaped lint pass leaves
-# files unanalyzed; each supported GOOS/GOARCH pair gets its own pass, in both experiment modes. internal/oracle
-# typechecks against the per-platform main module, so it joins the platform loop (no experiment dimension — it has no
-# simd-tagged files); internal/tools is fully portable, so the host pass covers it.
+# Run the linters. Platform- and experiment-sensitive source is confined to a few directories, so a full lint pass for
+# every GOOS/GOARCH/GOEXPERIMENT permutation mostly re-analyzes identical portable code. The pruned scheme keeps the
+# same coverage at a fraction of the cost:
+#   - One host-shaped full pass lints every package, which covers every portable file once.
+#   - gpu/gl (including gltest) holds the only per-GOOS code, so each non-host GOOS lints just ./gpu/gl/... .
+#   - The kernel directories hold the only per-GOARCH and goexperiment.simd code, so only the non-host GOARCH and the
+#     GOEXPERIMENT=simd permutations lint just those directories.
+#   - go vet runs over the full permutation matrix as a typecheck net. It is cheap because it runs no lint analysis
+#     beyond its small standard set, and it catches portable code (tests included) that references an API which only
+#     exists in some permutations. -composites=false matches the govet "composites" disable in .golangci.yml.
+#   - A guard fails the build if a platform- or experiment-constrained file appears outside the scoped directories, so
+#     this pruning cannot silently lose coverage as code moves around.
+# internal/oracle has no platform-sensitive files of its own; the per-platform value of its old loop was the typecheck
+# against the per-platform main module, which the go vet matrix now gives, so it lints once, host-shaped.
+# internal/tools is fully portable, so a single host-shaped pass covers it.
 LINT_PLATFORMS="linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64"
+LINT_ARCH_SCOPE="./codecs/internal/vp8enc/... ./filtercore/... ./imagecore/... ./maskfilter/... ./raster/... ./shaders/..."
 if [ "$LINT"x == "1x" ]; then
 	ensure_golangci_lint
 	echo -e "\033[33mLinting...\033[0m"
-	for platform in $LINT_PLATFORMS; do
+	UNSCOPED=$( { grep -rlE --include='*.go' '^//go:build.*(darwin|linux|windows|amd64|arm64|goexperiment)' .
+		find . -name '*.go' | grep -E '_(darwin|linux|windows|amd64|arm64)(_test)?\.go$'; } |
+		sed 's|^\./||' | sort -u |
+		grep -vE '^(gpu/gl|codecs/internal/vp8enc|filtercore|imagecore|maskfilter|raster|shaders)/' || true)
+	if [ -n "$UNSCOPED" ]; then
+		echo -e "\033[31mThese files have platform or experiment build constraints, but they are outside the\033[0m"
+		echo -e "\033[31mdirectories that the scoped lint passes cover. Add their directories to the scoped\033[0m"
+		echo -e "\033[31mlint loops in build.sh:\033[0m"
+		echo "$UNSCOPED"
+		exit 1
+	fi
+	HOST_GOOS=$(go env GOOS)
+	HOST_GOARCH=$(go env GOARCH)
+	echo -e "\033[33m  $HOST_GOOS/$HOST_GOARCH (host, all packages)\033[0m"
+	GOEXPERIMENT= "$GOLANGCI_LINT" run ./...
+	for goos in linux darwin windows; do
+		if [ "$goos" != "$HOST_GOOS" ]; then
+			echo -e "\033[33m  $goos gpu/gl\033[0m"
+			GOOS=$goos GOEXPERIMENT= "$GOLANGCI_LINT" run ./gpu/gl/...
+		fi
+	done
+	for goarch in amd64 arm64; do
 		for exp in "" simd; do
-			echo -e "\033[33m  $platform${exp:+ (GOEXPERIMENT=$exp)}\033[0m"
-			GOOS=${platform%/*} GOARCH=${platform#*/} GOEXPERIMENT=$exp "$GOLANGCI_LINT" run ./...
+			if [ "$goarch" != "$HOST_GOARCH" ] || [ -n "$exp" ]; then
+				echo -e "\033[33m  $goarch${exp:+ (GOEXPERIMENT=$exp)} kernels\033[0m"
+				GOARCH=$goarch GOEXPERIMENT=$exp "$GOLANGCI_LINT" run $LINT_ARCH_SCOPE
+			fi
 		done
 	done
+	echo -e "\033[33m  typecheck matrix (go vet)\033[0m"
 	for platform in $LINT_PLATFORMS; do
-		echo -e "\033[33m  internal/oracle $platform\033[0m"
-		(cd internal/oracle && GOOS=${platform%/*} GOARCH=${platform#*/} "$GOLANGCI_LINT" run -c ../../.golangci.yml ./...)
+		for exp in "" simd; do
+			echo -e "\033[33m    $platform${exp:+ (GOEXPERIMENT=$exp)}\033[0m"
+			GOOS=${platform%/*} GOARCH=${platform#*/} GOEXPERIMENT=$exp go vet -composites=false ./...
+			(cd internal/oracle && GOOS=${platform%/*} GOARCH=${platform#*/} GOEXPERIMENT=$exp go vet -composites=false ./...)
+		done
 	done
+	echo -e "\033[33m  internal/oracle ($HOST_GOOS/$HOST_GOARCH)\033[0m"
+	(cd internal/oracle && GOEXPERIMENT= "$GOLANGCI_LINT" run -c ../../.golangci.yml ./...)
 	echo -e "\033[33m  internal/tools\033[0m"
-	(cd internal/tools && "$GOLANGCI_LINT" run -c ../../.golangci.yml ./...)
+	(cd internal/tools && GOEXPERIMENT= "$GOLANGCI_LINT" run -c ../../.golangci.yml ./...)
 fi

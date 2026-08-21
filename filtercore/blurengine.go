@@ -97,6 +97,20 @@ func (e *rasterBlurEngine) FindAlgorithm() BlurAlgorithm {
 ///////////////////////////////////////////////////////////////////////////////
 // pass plumbing
 
+// The two hot per-scanline kernels — the Gaussian pass's windowed dot product and the three-box pass's prefix-sum
+// pipeline — dispatch through package-level function variables so a build can substitute a vector form for the
+// portable one: a goexperiment.simd build repoints them at the archsimd kernels in blurengine_simd.go where those are
+// the faster lane. The portable bodies below stay the reference implementation and remain the default everywhere else.
+type (
+	gaussianSegmentFn func(p *gaussianPass, n int32, src []uint32, srcStride int32, dst []uint32, dstStride int32)
+	threeBoxSegmentFn func(p *threeBoxApproxPass, n int32, src []uint32, srcStride int32, dst []uint32, dstStride int32)
+)
+
+var (
+	gaussianBlurSegmentFn gaussianSegmentFn = gaussianBlurSegmentGeneric
+	threeBoxBlurSegmentFn threeBoxSegmentFn = threeBoxBlurSegmentGeneric
+)
+
 // blurPass is a scanline processor with a border (the distance between the first dst pixel and the first src pixel it
 // depends on).
 type blurPass interface {
@@ -280,6 +294,15 @@ func (p *gaussianPass) startBlur() {
 }
 
 func (p *gaussianPass) blurSegment(n int32, src []uint32, srcStride int32, dst []uint32, dstStride int32) {
+	gaussianBlurSegmentFn(p, n, src, srcStride, dst, dstStride)
+}
+
+// gaussianBlurSegmentGeneric is the portable windowed dot product: per output sample the leading source pixel is
+// unpacked into the circular buffer and the whole window is re-summed against the kernel, four float channels at a
+// time. Both float sites here are plain Go expressions, so the compiler is free to contract them into fused
+// multiply-adds and on arm64 it does; any vector twin has to reproduce the lowering of *this* build (see
+// blurengine_simd_arm64.go's and blurengine_simd_amd64.go's exprMulAdd4).
+func gaussianBlurSegmentGeneric(p *gaussianPass, n int32, src []uint32, srcStride int32, dst []uint32, dstStride int32) {
 	base := p.base
 	window := p.window
 	srcCursor := int32(0)
@@ -409,6 +432,13 @@ func (p *threeBoxApproxPass) divide(v uint32) uint32 {
 }
 
 func (p *threeBoxApproxPass) blurSegment(n int32, src []uint32, srcStride int32, dst []uint32, dstStride int32) {
+	threeBoxBlurSegmentFn(p, n, src, srcStride, dst, dstStride)
+}
+
+// threeBoxBlurSegmentGeneric is the portable prefix-sum pipeline: three chained running sums per channel, each reduced
+// by the trailing edge its circular buffer remembers. The scan axis carries a true loop-carried dependency, so the
+// only vectorizable axis is the four channels.
+func threeBoxBlurSegmentGeneric(p *threeBoxApproxPass, n int32, src []uint32, srcStride int32, dst []uint32, dstStride int32) {
 	sum0, sum1, sum2 := p.sum0, p.sum1, p.sum2
 	c0, c1, c2 := p.cursor0, p.cursor1, p.cursor2
 	srcCursor := int32(0)

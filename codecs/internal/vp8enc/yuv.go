@@ -48,6 +48,14 @@ func rgbToV(r, g, b, rounding int) uint8 {
 
 // importPicture converts img into the encoder's Y/U/V source planes. Alpha is ignored (lossy WebP alpha is a separate
 // ALPH chunk, out of scope for the encoder core).
+//
+// Nothing in this file has a simd kernel, deliberately. Color conversion runs once per image while the DSP kernels
+// run thousands of times per macroblock: measured on an M4 Max, this whole function is ~1.0-1.5 ms of a 41 ms 512x384
+// photo encode (~3%), and a good part of that is allocating and filling the interleaved rgb staging buffer rather than
+// the arithmetic a kernel would replace. The arithmetic that is left would need a three-byte deinterleave (a
+// shuffle-heavy, per-arch affair) before any lane could be multiplied, and the RGBA lane would need the 16-bit
+// unpremultiply divide reproduced exactly. Reworking the staging buffer away is the larger and safer win here, and it
+// is a portable change, not a vector one.
 func (e *encoder) importPicture(img image.Image) {
 	w, h := e.width, e.height
 	uvW := (w + 1) >> 1

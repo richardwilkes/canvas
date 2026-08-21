@@ -12,6 +12,26 @@
 
 package vp8enc
 
+// Kernel dispatch. The four hot DSP entry points below (fTransform, iTransformOne, getSSE and quantizeBlock) each have
+// a portable "Generic" implementation here and, in the goexperiment.simd build on arm64 and amd64, an archsimd kernel
+// in dsp_simd.go. The entry point itself is a thin wrapper defined per build mode — dsp_portable.go for builds without
+// the kernels, dsp_simd.go for builds with them — which branches on a package-level bool that init sets from the CPU
+// check and the per-arch preference constants.
+//
+// This is deliberately NOT the function-variable dispatch the raster, maskfilter, imagecore and shaders packages use,
+// and the reason is escape analysis rather than taste. Those packages hand their kernels slices of already-heap-backed
+// pixel buffers, so routing the call through a package-level func variable — which escape analysis must treat as
+// leaking every pointer argument — costs nothing. This package's hot kernels instead take pointers into the caller's
+// *stack*: reconstructIntra16's tmp [16][16]int16 and dcTmp [16]int16, reconstructIntra4's tmp [16]int16 (160 calls
+// per macroblock) and reconstructUV's tmp [8][16]int16. Switching quantizeBlock and fTransform alone to func variables
+// moves all four to the heap ("go build -gcflags=-m": moved to heap: tmp/dcTmp at frame.go:140,141,176,188) and costs
+// ~3% of whole-encode time in fresh allocation and GC before a single kernel has run. Branching on a bool keeps the
+// call graph static, so escape analysis still sees that neither implementation leaks its arguments and every one of
+// those blocks stays on the stack.
+//
+// The bools are variables rather than constants because the equivalence tests flip them to run a whole encode down
+// each lane and compare the emitted bitstreams byte for byte (TestDSPSIMDEncodeMatchesScalar).
+
 // bps is the stride of all the macroblock work caches.
 const bps = 32
 
@@ -101,8 +121,8 @@ const (
 func mul1(a int) int { return (a*ac3Mul1Const)>>16 + a }
 func mul2(a int) int { return (a * ac3Mul2Const) >> 16 }
 
-// iTransformOne reconstructs a 4x4 block: dst = clip(ref + idct(in)).
-func iTransformOne(ref []uint8, in []int16, dst []uint8) {
+// iTransformOneGeneric reconstructs a 4x4 block: dst = clip(ref + idct(in)).
+func iTransformOneGeneric(ref []uint8, in []int16, dst []uint8) {
 	var c [4 * 4]int
 	for i := 0; i < 4; i++ { // vertical pass
 		a := int(in[i]) + int(in[i+8])
@@ -127,8 +147,8 @@ func iTransformOne(ref []uint8, in []int16, dst []uint8) {
 	}
 }
 
-// fTransform computes the forward DCT of the 4x4 difference block src-ref into out.
-func fTransform(src, ref []uint8, out []int16) {
+// fTransformGeneric computes the forward DCT of the 4x4 difference block src-ref into out.
+func fTransformGeneric(src, ref []uint8, out []int16) {
 	var tmp [16]int
 	for i := 0; i < 4; i++ {
 		d0 := int(src[i*bps+0]) - int(ref[i*bps+0]) // 9-bit dynamic range [-255,255]
@@ -162,6 +182,10 @@ func fTransform(src, ref []uint8, out []int16) {
 
 // fTransformWHT computes the forward Walsh-Hadamard transform of the 16 DC coefficients. in is the [16][16]int16 luma
 // coefficient array flattened; it reads entry 0 of each block.
+//
+// Neither WHT is a dispatch point. The butterflies are 32 adds, but the operands are one int16 out of every 32-byte
+// block, so a vector form would spend more on the strided gather (and, for the inverse, the scatter) than the whole
+// transform costs; and where fTransform runs 64 times per macroblock, these run four.
 func fTransformWHT(in *[16][16]int16, out *[16]int16) {
 	var tmp [16]int
 	for i := 0; i < 4; i++ {
@@ -220,6 +244,13 @@ func iTransformWHT(in *[16]int16, out *[16][16]int16) {
 //------------------------------------------------------------------------------
 // Intra predictions. left and top may be nil when the corresponding neighbors are outside the frame. left[-1] (the
 // top-left corner sample) is passed separately as topLeft.
+//
+// None of the predictors is a dispatch point either. Measured on an M4 Max with the DSP kernels in play, the whole
+// family costs about 1.2 us per macroblock — encPredLuma16 355 ns, encPredChroma8 200 ns, encPredLuma4 38 ns times
+// sixteen sub-blocks — which is ~2% of a 512x384 photo encode, and only the 16x16 and 8x8 halves are vector-shaped:
+// the 4x4 predictors write four-byte rows into a cache where the next mode's block starts four bytes later (see i4TM4
+// and friends above), so a wider store would clobber a neighbor, and their ten diagonal patterns would each need their
+// own shuffle.
 
 func fill(dst []uint8, value uint8, size int) {
 	for j := 0; j < size; j++ {
@@ -554,7 +585,7 @@ func encPredLuma4(yuvP, top []uint8) {
 //------------------------------------------------------------------------------
 // Metrics
 
-func getSSE(a, b []uint8, w, h int) int64 {
+func getSSEGeneric(a, b []uint8, w, h int) int64 {
 	var count int64
 	for y := 0; y < h; y++ {
 		for x := 0; x < w; x++ {
@@ -569,7 +600,10 @@ func sse16x16(a, b []uint8) int64 { return getSSE(a, b, 16, 16) }
 func sse16x8(a, b []uint8) int64  { return getSSE(a, b, 16, 8) }
 func sse4x4(a, b []uint8) int64   { return getSSE(a, b, 4, 4) }
 
-// isFlatSource16 reports whether the 16x16 source block is a single uniform color.
+// isFlatSource16 reports whether the 16x16 source block is a single uniform color. This one is deliberately not a
+// dispatch point: its scalar loop exits at the first differing sample, which on real content is the second sample of
+// the block, so a vector form that must always read all sixteen rows would lose. It is also called once per
+// macroblock, against the ~1500 calls per macroblock the quantizer sees.
 func isFlatSource16(src []uint8) bool {
 	v := src[0]
 	for j := 0; j < 16; j++ {
@@ -583,6 +617,11 @@ func isFlatSource16(src []uint8) bool {
 }
 
 // isFlat reports whether the given quantized level blocks have no more than thresh non-zero AC coefficients in total.
+// Like isFlatSource16 this is deliberately not a dispatch point, and for the same reason: the thresholds it is asked
+// about are 0 to 3, so the scalar loop stops within a handful of coefficients, while a vector form has to count every
+// block before it can compare. Measured on an M4 Max, an archsimd version of this was -20% for the single-block case
+// but +21% for eight blocks and +256% for sixteen, and it would also have cost this function its inlining in the
+// portable build.
 func isFlat(blocks [][16]int16, thresh int) bool {
 	score := 0
 	for b := range blocks {
@@ -617,6 +656,12 @@ type matrix struct {
 	bias    [16]uint32 // rounding bias
 	zthresh [16]uint32 // value below which a coefficient is quantized to zero
 	sharpen [16]uint16 // frequency boosters for slight sharpening
+	// 16-bit views of iq and zthresh, which is the width the simd quantizer's lanes carry them in (both are provably
+	// under 65536; see quantizeBlockSIMD and TestQuantMatrixSIMDDomain). They are filled unconditionally — expand runs
+	// three times per frame, so the cost is noise, and keeping one matrix layout for both build modes keeps the
+	// portable path readable.
+	iq16      [16]uint16
+	zthresh16 [16]uint16
 }
 
 // expand fills the derived fields from q[0]/q[1] and returns the average quantizer. mType is 0 for luma-1 (AC), 1 for
@@ -646,14 +691,16 @@ func (m *matrix) expand(mType int) int {
 		} else {
 			m.sharpen[i] = 0
 		}
+		m.iq16[i] = uint16(m.iq[i])
+		m.zthresh16[i] = uint16(m.zthresh[i])
 		sum += int(m.q[i])
 	}
 	return (sum + 8) >> 4
 }
 
-// quantizeBlock quantizes the 16 coefficients of in, writing the quantized levels in zigzag order to out and the
+// quantizeBlockGeneric quantizes the 16 coefficients of in, writing the quantized levels in zigzag order to out and the
 // dequantized coefficients back into in (natural order). It returns whether any level is non-zero.
-func quantizeBlock(in, out *[16]int16, m *matrix) int {
+func quantizeBlockGeneric(in, out *[16]int16, m *matrix) int {
 	last := -1
 	for n := 0; n < 16; n++ {
 		j := zigzag[n]

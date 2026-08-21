@@ -45,6 +45,14 @@ func clamp255(x int) uint8 {
 }
 
 // filter246 modifies a 2-, 4- or 6-pixel wide or high band along an edge (the normal filter, §15.3).
+//
+// This has no simd kernel, deliberately. Every branch here is a lane predicate, so the mask algebra is expressible,
+// but only half of the calls have a vector-friendly layout: filterMBNormal passes jStep = stride for the horizontal
+// edges (the eight samples across the edge are eight rows, so sixteen consecutive pixels along the edge load
+// directly), while for the vertical edges jStep = 1 and the eight samples are consecutive *bytes*, which needs a 16x8
+// byte transpose in and out. Measured on an M4 Max, the whole filter is ~0.95 ms of a 41 ms 512x384 photo encode
+// (~2.3%) with the DSP kernels in play, so vectorizing the transpose-free half caps out near 1% — not worth carrying
+// the most delicate mask algebra in the package for.
 func filter246(pix []uint8, n, level, ilevel, hlevel, index, iStep, jStep int, fourNotSix bool) {
 	for ; n > 0; n, index = n-1, index+iStep {
 		p3 := int(pix[index-4*jStep])

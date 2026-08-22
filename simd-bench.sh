@@ -8,15 +8,6 @@ set -eo pipefail
 
 trap 'echo -e "\033[33;5msimd-bench failed on simd-bench.sh:$LINENO\033[0m"' ERR
 
-GOVER=$(go env GOVERSION)
-case "$GOVER" in
-go1.2[7-9]* | go1.[3-9]* | go[2-9]*) ;;
-*)
-	echo "Go 1.27 or later is required (found $GOVER)" >&2
-	exit 1
-	;;
-esac
-
 OUT=simd-bench-results
 rm -rf "$OUT" simd-bench-results.tgz
 mkdir -p "$OUT"

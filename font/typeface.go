@@ -170,7 +170,7 @@ func (t *Typeface) faceGlyphExtents(gid opentype.GID) (tsfont.GlyphExtents, bool
 func (t *Typeface) faceGlyphOutline(gid opentype.GID) (tsfont.GlyphOutline, bool) {
 	t.faceMu.Lock()
 	defer t.faceMu.Unlock()
-	return t.face.GlyphDataOutline(tables.GlyphID(gid))
+	return t.face.GlyphDataOutline(gid)
 }
 
 // faceNominalGlyph maps ch through the face's cmap under the face lock (the Face-level lookup caches).
@@ -330,7 +330,7 @@ func (t *Typeface) faceBitmapGlyph(gid opentype.GID, ppem uint16) (tsfont.GlyphB
 	t.faceMu.Lock()
 	defer t.faceMu.Unlock()
 	face := t.bitmapLaneFace(ppem)
-	bm, ok := face.GlyphDataBitmap(tables.GlyphID(gid))
+	bm, ok := face.GlyphDataBitmap(gid)
 	if !ok {
 		return tsfont.GlyphBitmap{}, tsfont.GlyphExtents{}, false
 	}

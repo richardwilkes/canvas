@@ -7,10 +7,8 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// Assembles a GL function-pointer interface by resolving each entry point through a GetProc callback, gating
-// desktop-GL-only entry points by version/extension support. Per the desktop trim, only the desktop-GL assembler is
-// implemented; an ES or WebGL context yields nil where the assembler would otherwise have dispatched to an
-// ES/WebGL-specific assembler.
+// Assembles a GL function-pointer interface by resolving each entry point through a GetProc callback, gating entry
+// points by version/extension support. Only the desktop-GL assembler is implemented; an ES or WebGL context yields nil.
 
 package gl
 

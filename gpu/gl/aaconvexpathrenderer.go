@@ -24,7 +24,7 @@ import (
 	"github.com/richardwilkes/canvas/path"
 )
 
-// aaConvexClose is the vertex-fusing tolerance, in device space.
+// aaConvexClose is the device-space distance within which points are treated as coincident or collinear.
 const aaConvexClose = float32(1) / 16
 
 const aaConvexCloseSqd = aaConvexClose * aaConvexClose
@@ -56,11 +56,11 @@ func aaConvexCenterOfMass(segments []aaConvexSegment) (c geom.Point, ok bool) {
 	}
 	p0 := geom.Point{}
 	if count > 2 {
-		// We translate the polygon so that the first point is at the origin. This avoids some precision issues with
-		// small area polygons far away from the origin.
+		// Translate the polygon so that the first point is at the origin, which avoids precision issues with small-area
+		// polygons far from the origin.
 		p0 = segments[0].endPt()
-		// The first and last iteration of the below loop would compute zeros since the starting / ending point is
-		// (0,0). So instead we start at i=1 and make the last iteration i=count-2.
+		// The first and last iterations would compute zeros since the start/end point is (0,0), so the loop runs from
+		// i=1 through i=count-2.
 		pj := segments[1].endPt().Sub(p0)
 		for i := 1; i < count-1; i++ {
 			pi := pj
@@ -73,7 +73,6 @@ func aaConvexCenterOfMass(segments []aaConvexSegment) (c geom.Point, ok bool) {
 		}
 	}
 
-	// If the poly has no area then we instead return the average of its points.
 	if geom.ScalarNearlyZero(area) {
 		var avg geom.Point
 		for i := 0; i < count; i++ {
@@ -109,7 +108,6 @@ func aaConvexComputeVectors(segments []aaConvexSegment, fanPt *geom.Point, dir p
 	}
 
 	var vCount64, iCount64 int64
-	// Compute normals at all points.
 	for a := 0; a < count; a++ {
 		sega := &segments[a]
 		b := (a + 1) % count
@@ -132,7 +130,6 @@ func aaConvexComputeVectors(segments []aaConvexSegment, fanPt *geom.Point, dir p
 		}
 	}
 
-	// Compute mid-vectors where segments meet.
 	for a := 0; a < count; a++ {
 		sega := &segments[a]
 		b := (a + 1) % count
@@ -173,7 +170,6 @@ type aaConvexDegenerateData struct {
 
 func (d *aaConvexDegenerateData) isDegenerate() bool { return d.stage != aaConvexNonDegenerate }
 
-// update feeds the next path point into the degenerate-path test.
 func (d *aaConvexDegenerateData) update(pt geom.Point) {
 	switch d.stage {
 	case aaConvexDegenerateInitial:
@@ -195,7 +191,6 @@ func (d *aaConvexDegenerateData) update(pt geom.Point) {
 	}
 }
 
-// oppositeFirstDirection returns the reverse of dir, or Unknown if dir is Unknown.
 func oppositeFirstDirection(dir path.FirstDirection) path.FirstDirection {
 	switch dir {
 	case path.FirstDirectionCW:
@@ -210,15 +205,14 @@ func oppositeFirstDirection(dir path.FirstDirection) path.FirstDirection {
 // aaConvexGetDirection returns the path's winding direction as seen after applying m, accounting for m reversing
 // orientation.
 func aaConvexGetDirection(p *path.Path, m *geom.Matrix) (path.FirstDirection, bool) {
-	// At this point, we've already returned true from canDraw(), which checked that the path's direction could be
-	// determined, so this should just be fetching the cached direction. However, if perspective is involved, we're
-	// operating on a transformed path, which may no longer have a computable direction.
+	// OnCanDrawPath already checked that the path's direction could be determined, so this should just fetch the cached
+	// direction. Under perspective, however, we operate on a transformed path, which may no longer have a computable
+	// direction.
 	dir := p.ComputeFirstDirection()
 	if dir == path.FirstDirectionUnknown {
 		return dir, false
 	}
 
-	// Check whether m reverses the orientation.
 	if m.HasPerspective() {
 		panic("aaConvexGetDirection requires a non-perspective matrix")
 	}
@@ -229,7 +223,6 @@ func aaConvexGetDirection(p *path.Path, m *geom.Matrix) (path.FirstDirection, bo
 	return dir, true
 }
 
-// allPointsEq reports whether every point in pts equals the first one.
 func allPointsEq(pts []geom.Point) bool {
 	for i := 1; i < len(pts); i++ {
 		if pts[0] != pts[i] {
@@ -239,7 +232,6 @@ func allPointsEq(pts []geom.Point) bool {
 	return true
 }
 
-// aaConvexAddLineToSegment appends a line segment ending at pt.
 func aaConvexAddLineToSegment(pt geom.Point, segments *[]aaConvexSegment) {
 	*segments = append(*segments, aaConvexSegment{typ: 0, pts: [2]geom.Point{pt}})
 }
@@ -274,10 +266,10 @@ func aaConvexAddCubicSegments(pts *[4]geom.Point, dir path.FirstDirection, segme
 // aaConvexGetSegments walks the transformed path, converting each verb into line/quad segments and tracking whether the
 // path degenerates to a point or a line (in which case it returns false).
 func aaConvexGetSegments(p *path.Path, m *geom.Matrix, segments *[]aaConvexSegment, fanPt *geom.Point, vCount, iCount *int) bool {
-	// This renderer over-emphasizes very thin path regions. We use the distance to the path from the sample to compute
-	// coverage. Every pixel intersected by the path will be hit and the maximum distance is sqrt(2)/2. We don't notice
-	// that the sample may be close to a very thin area of the path and thus should be very light. This is particularly
-	// egregious for degenerate line paths. We detect paths that are very close to a line (zero area) and draw nothing.
+	// This renderer over-emphasizes very thin path regions: coverage comes from the sample's distance to the path,
+	// every pixel the path intersects is hit, and the maximum distance is sqrt(2)/2, so a sample near a very thin area
+	// is not lightened as it should be. This is most egregious for degenerate line paths, so paths very close to a line
+	// (zero area) are detected and not drawn.
 	var degenerateData aaConvexDegenerateData
 	dir, ok := aaConvexGetDirection(p, m)
 	if !ok {
@@ -311,7 +303,6 @@ func aaConvexGetSegments(p *path.Path, m *geom.Matrix, segments *[]aaConvexSegme
 			if !allPointsEq(pts[:3]) {
 				var dst [3]geom.Point
 				m.MapPoints(dst[:], pts[:3])
-				// Approximate the conic with quads at tolerance 0.25.
 				conic := geom.MakeConic(dst[0], dst[1], dst[2], it.ConicWeight())
 				pow2 := conic.ComputeQuadPOW2(0.25)
 				quadPts := make([]geom.Point, 1+2*(1<<pow2))
@@ -350,8 +341,8 @@ type aaConvexDraw struct {
 	indexCnt  int
 }
 
-// aaConvexStableLargeNegativeValue is a negative value that is very large so it won't affect results if interpolated
-// with, but not so large a negative that it affects numerical precision on less powerful GPUs.
+// aaConvexStableLargeNegativeValue is negative and large enough not to affect results when interpolated with, but not
+// so large that it hurts numerical precision on less powerful GPUs.
 const aaConvexStableLargeNegativeValue = -geom.ScalarMax / 1000000
 
 // aaConvexCreateVertices builds the triangulation for the segments' fan and edge coverage. verts writes the interleaved
@@ -396,7 +387,6 @@ func aaConvexCreateVertices(segments []aaConvexSegment, fanPt geom.Point, color 
 
 		// These tris are inset in the 1 unit arc around the corner.
 		p0 := sega.endPt()
-		// Position, Color, UV, D0, D1.
 		putVertex(p0, geom.Point{}, negOne, negOne)
 		putVertex(p0.Add(sega.endNorm()), geom.Point{Y: -1}, negOne, negOne)
 		putVertex(p0.Add(segb.mid), geom.Point{Y: -1}, negOne, negOne)
@@ -504,14 +494,11 @@ func aaConvexCreateVertices(segments []aaConvexSegment, fanPt geom.Point, color 
 	}
 }
 
-//////////////////////////////////////////////////////////////////////////////
-// QuadEdgeEffect
-
 // quadEdgeEffect is a geometry processor for a quadratic specified by 0 = u^2 - v canonical coords, u and v being the
 // first two components of the vertex attribute. Coverage is based on signed distance with negative being inside,
-// positive outside. The edge is specified in window space (y-down). If either the third or fourth component of the
-// interpolated vertex coord is > 0 then the pixel is considered outside the edge; this is used to attempt to trim to a
-// portion of the infinite quad. Requires shader derivative instruction support.
+// positive outside. The edge is specified in window space (y-down). When the third and fourth components of the
+// interpolated vertex coord are both > 0, coverage instead comes from the smaller of the two (device-space distances);
+// this is used to trim to a portion of the infinite quad. Requires shader derivative instruction support.
 type quadEdgeEffect struct {
 	attrs [3]Attribute // inPosition, inColor, inQuadEdge
 	GPBase
@@ -519,7 +506,6 @@ type quadEdgeEffect struct {
 	usesLocalCoords bool
 }
 
-// makeQuadEdgeEffect builds a quadEdgeEffect geometry processor.
 func makeQuadEdgeEffect(localMatrix *geom.Matrix, usesLocalCoords, wideColor bool) GeometryProcessor {
 	gp := &quadEdgeEffect{localMatrix: *localMatrix, usesLocalCoords: usesLocalCoords}
 	gp.initGP(QuadEdgeEffectClassID)
@@ -543,7 +529,6 @@ func (g *quadEdgeEffect) MakeProgramImpl(*gpu.ShaderCaps) GPProgramImpl {
 	return &quadEdgeEffectImpl{}
 }
 
-// quadEdgeEffectImpl is the shader implementation for quadEdgeEffect.
 type quadEdgeEffectImpl struct {
 	GPImplBase
 	localMatrixPrev    geom.Matrix
@@ -564,19 +549,16 @@ func (i *quadEdgeEffectImpl) onEmitCode(args *GPEmitArgs, gpArgs *GPArgs) {
 	varyingHandler := args.VaryingHandler
 	uniformHandler := args.UniformHandler
 
-	// Emit attributes.
 	varyingHandler.EmitAttributes(qe)
 
 	v := NewVarying(GLSLTypeFloat4)
 	varyingHandler.AddVarying("QuadEdge", &v)
 	vertBuilder.CodeAppendf("%s = %s;", v.VsOut(), qe.attrs[2].Name())
 
-	// Set up pass-through color.
 	fragBuilder.CodeAppendf("vec4 %s;", args.OutputColor)
 	varyingHandler.AddPassThroughAttribute(qe.attrs[1].AsShaderVar(), args.OutputColor,
 		InterpolationInterpolated)
 
-	// Set up position.
 	WriteOutputPosition(vertBuilder, gpArgs, qe.attrs[0].Name())
 	if qe.usesLocalCoords {
 		WriteLocalCoord(vertBuilder, uniformHandler, args.ShaderCaps, gpArgs,
@@ -599,9 +581,6 @@ func (i *quadEdgeEffectImpl) onEmitCode(args *GPEmitArgs, gpArgs *GPArgs) {
 
 	fragBuilder.CodeAppendf("vec4 %s = vec4(edgeAlpha);", args.OutputCoverage)
 }
-
-//////////////////////////////////////////////////////////////////////////////
-// AAConvexPathOp
 
 var aaConvexPathOpClassID = GenOpClassID()
 
@@ -665,7 +644,8 @@ func (o *aaConvexPathOp) Finalize(caps *gpu.Caps, clip *AppliedClip, clampType g
 		AnalysisCoverageSingleChannel, &o.paths[len(o.paths)-1].color, &o.wideColor)
 }
 
-// createProgramInfo builds the program info for this op's draw, if not already built.
+// createProgramInfo builds the program info, leaving it nil if local coords are needed and the view matrix cannot be
+// inverted.
 func (o *aaConvexPathOp) createProgramInfo(state *OpFlushState) {
 	invert := geom.IdentityMatrix()
 	if o.helper.UsesLocalCoords() {
@@ -787,9 +767,6 @@ func (o *aaConvexPathOp) OnCombineIfPossible(t Op) CombineResult {
 	return CombineResultMerged
 }
 
-//////////////////////////////////////////////////////////////////////////////
-// AAConvexPathRenderer
-
 // AAConvexPathRenderer is a PathRenderer for coverage-AA convex fills.
 type AAConvexPathRenderer struct{}
 
@@ -832,7 +809,7 @@ func (r *AAConvexPathRenderer) OnDrawPath(args *DrawPathArgs) bool {
 	return true
 }
 
-// OnStencilPath implements PathRenderer (never reached: kNoSupport).
+// OnStencilPath implements PathRenderer (never reached: StencilSupportNone).
 func (r *AAConvexPathRenderer) OnStencilPath(*StencilPathArgs) {
 	panic("AAConvexPathRenderer cannot stencil paths")
 }

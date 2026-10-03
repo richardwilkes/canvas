@@ -24,7 +24,6 @@ type TransferFn struct {
 // mirror-image handling of negative inputs (strip the sign, evaluate, reapply) with fused multiply-adds and the
 // ApproxPowf approximation for the power segment.
 func (t *TransferFn) EvalParametric(v float32) float32 {
-	// strip the sign, evaluate the magnitude, reapply the sign at the end
 	bits := math.Float32bits(v)
 	sign := bits & 0x80000000
 	v = math.Float32frombits(bits ^ sign)

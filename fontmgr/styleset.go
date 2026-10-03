@@ -58,8 +58,8 @@ func (s *StyleSet) MatchStyle(pattern font.Style) *font.Typeface {
 
 // css3SlantBits and css3WeightBits are the field widths css3Score reserves for the tiers below the one being shifted:
 // the slant addend spans [1, 3] and the weight addend [0, 1000] (font.NewStyle pins weight to WeightExtraBlack), so two
-// and ten bits hold them exactly. Upstream Skia's matchStyleCSS3 shifts by 8 for both, which is one bit too few for the
-// weight tier: any weight score >= 256 carries into the slant field and inverts the documented priority, e.g. an
+// and ten bits hold them exactly. Upstream Skia's matchStyleCSS3 shifts by 8 for both, which is two bits too few for
+// the weight tier: any weight score >= 256 carries into the slant field and inverts the documented priority, e.g. an
 // italic 400 face outscoring an upright 900 face for an upright 400 request.
 const (
 	css3SlantBits  = 2
@@ -71,18 +71,15 @@ const (
 // them. Higher scores are better.
 //
 // The wider-than-normal width branch tests current >= pattern where upstream Skia's matchStyleCSS3 tests current >
-// pattern, which is the second deliberate divergence in this function (see css3SlantBits above for the first). CSS3
-// ranks an exact width match ahead of every other candidate, and upstream's strict comparison drops the exact-width
-// face into the else, scoring it its raw width instead of the full 10 — for a pattern of width 6, 7 or 8, that lets a
-// wider face outrank it, e.g. an ExtraExpanded face beating an Expanded one for an Expanded request. The narrower-than-
-// normal branch above already tests current <= pattern, so this makes the two branches mirror images, as they read.
+// pattern, the second deliberate divergence here (see css3SlantBits for the first). CSS3 ranks an exact width match
+// first, but upstream's strict comparison scores the exact-width face its raw width instead of the full 10, so for a
+// pattern of width 6, 7 or 8 a wider face outranks it (an ExtraExpanded face beats an Expanded one for an Expanded
+// request).
 func css3Score(pattern, current font.Style) int {
-	// font.Style is an exported int32 whose packed layout is the documented round-trip (font.Style(storedInt32)) and it
-	// has no validating constructor from a raw value, so a style that never came from font.NewStyle can carry any
-	// component: a slant above SlantOblique indexes slantScore out of range and panics, and an out-of-range width or
-	// weight yields a tier addend too wide for its field, carrying into the tier above and inverting the documented
-	// priority. Re-pinning both styles through the validating constructor is this port's stand-in for upstream Skia's
-	// enum-typed constructor plus SkASSERT.
+	// font.Style is an exported int32 with no validating constructor from a raw value, so a style that never came from
+	// font.NewStyle can carry any component: a slant above SlantOblique would index slantScore out of range and panic,
+	// and an out-of-range width or weight would yield a tier addend too wide for its field, carrying into the tier
+	// above. Re-pinning both styles stands in for upstream Skia's enum-typed constructor plus SkASSERT.
 	pattern, current = pinStyle(pattern), pinStyle(current)
 	score := 0
 
@@ -153,14 +150,12 @@ func pinStyle(s font.Style) font.Style { return font.NewStyle(s.Weight(), s.Widt
 // MatchStyle and matchCovering both walk it, so an unloadable face falls through to the next-best style rather than
 // failing the match.
 //
-// Ordering is deferred, not skipped: the scores are computed once and only the maximum is extracted, so the common
-// case — the best-scoring face loads and answers — costs two linear passes and no sort at all. The rest is ordered
-// only if that first candidate is turned down, and by a stable sort rather than by repeated max extraction, which is
-// what the walk used to do: that made a fully-rejected walk quadratic, and the fully-rejected walk is not the rare case
-// it sounds like. It is what a character *nothing* covers costs, on every tier of every BCP-47 tag —
-// matchCoveringTiered calls matchCovering once per tier and MatchFamilyStyleCharacter calls matchCoveringTiered once
-// per tag — over a candidate set that a full Noto install pushes into the thousands. Upstream Skia's matchStyleCSS3 is
-// a single max scan with no fallthrough at all.
+// Ordering is deferred: the scores are computed once and only the maximum is extracted, so the common case (the
+// best-scoring face loads and answers) costs one linear pass and no sort. The rest is ordered only if that first
+// candidate is turned down, by a stable sort rather than repeated max extraction, which made a fully-rejected walk
+// quadratic. That walk is not rare: it is what a character nothing covers costs, on every tier of every BCP-47 tag,
+// over a candidate set that a full Noto install pushes into the thousands. Upstream Skia's matchStyleCSS3 is a single
+// max scan with no fallthrough.
 func selectStyleCSS3(pattern font.Style, count int, styleAt func(int) font.Style, accept func(int) bool) bool {
 	if count == 0 {
 		return false

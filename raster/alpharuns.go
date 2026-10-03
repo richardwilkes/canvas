@@ -8,8 +8,8 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // AlphaRuns: a sparse run-length-encoded scanline of alpha (coverage) values. Sparseness allows several paths to be
-// composed independently into the same buffer. The Break/BreakAt helpers live in blitter.go for RectClipBlitter; the
-// instance side lands here for the AA scan converters.
+// composed independently into the same buffer. The AlphaRunsBreak/AlphaRunsBreakAt helpers live in blitter.go, which
+// also uses them for RectClipBlitter.
 
 package raster
 
@@ -53,9 +53,8 @@ func (a *AlphaRuns) Add(x int, startAlpha uint8, middleCount int, stopAlpha, max
 
 	if startAlpha != 0 {
 		AlphaRunsBreak(a.Runs[runs:], a.Alpha[alpha:], x, 1)
-		// I should be able to just add alpha[x] + startAlpha. However, if the trailing edge of the previous span and
-		// the leading edge of the current span round to the same super-sampled x value, I might overflow to 256 with
-		// this add, hence the funny subtract (crud).
+		// If the trailing edge of the previous span and the leading edge of this one round to the same supersampled x,
+		// this add can overflow to 256, hence the subtract.
 		tmp := uint32(a.Alpha[alpha+x]) + uint32(startAlpha)
 		a.Alpha[alpha+x] = Alpha(tmp - (tmp >> 8))
 

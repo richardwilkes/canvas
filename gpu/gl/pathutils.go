@@ -65,7 +65,6 @@ func scaleToleranceToSrc(devTol float32, viewM *geom.Matrix, pathBounds geom.Rec
 	return srcTol
 }
 
-// maxBezierVertices returns 1 << min(chopCount, 10).
 func maxBezierVertices(chopCount int) int {
 	const maxChopsPerCurve = 10
 	return 1 << min(chopCount, maxChopsPerCurve)
@@ -88,9 +87,8 @@ func cubicPointCount(pts [4]geom.Point, tol float32) int {
 		pts[0], pts[1], pts[2], pts[3], identityVectorXform())))
 }
 
-// distanceToLineSegmentBetweenSqd returns the squared distance from pt to the segment a-b.
 func distanceToLineSegmentBetweenSqd(pt, a, b geom.Point) float32 {
-	// The projection falls in one of three zones along the segment; uDotV and vLengthSqd decide which without a divide.
+	// The projection falls in one of three zones along the segment; uDotV and uLengthSqd decide which without a divide.
 	ux := b.X - a.X
 	uy := b.Y - a.Y
 	vx := pt.X - a.X
@@ -116,8 +114,8 @@ func distanceToLineSegmentBetweenSqd(pt, a, b geom.Point) float32 {
 	}
 }
 
-// generateQuadraticPoints appends up to pointsLeft points approximating the quadratic to dst, returning the count
-// written.
+// generateQuadraticPoints writes up to pointsLeft points approximating the quadratic (p0 excluded) into dst, returning
+// the count written.
 func generateQuadraticPoints(p0, p1, p2 geom.Point, tolSqd float32, dst []geom.Point, pointsLeft int) int {
 	if pointsLeft < 2 || distanceToLineSegmentBetweenSqd(p1, p0, p2) < tolSqd {
 		dst[0] = p2
@@ -134,7 +132,8 @@ func generateQuadraticPoints(p0, p1, p2 geom.Point, tolSqd float32, dst []geom.P
 	return a + b
 }
 
-// generateCubicPoints appends up to pointsLeft points approximating the cubic to dst, returning the count written.
+// generateCubicPoints writes up to pointsLeft points approximating the cubic (p0 excluded) into dst, returning the
+// count written.
 func generateCubicPoints(p0, p1, p2, p3 geom.Point, tolSqd float32, dst []geom.Point, pointsLeft int) int {
 	if pointsLeft < 2 ||
 		(distanceToLineSegmentBetweenSqd(p1, p0, p3) < tolSqd &&
@@ -166,7 +165,6 @@ type quadUVMatrix struct {
 	m [6]float32
 }
 
-// set computes the matrix for the given quadratic's three control points.
 func (q *quadUVMatrix) set(qPts *[3]geom.Point) {
 	// We know M * control_pts = [0 1/2 1]
 	//                           [0  0   1]
@@ -202,7 +200,6 @@ func (q *quadUVMatrix) set(qPts *[3]geom.Point) {
 		if d > maxD {
 			maxEdge = 2
 		}
-		// We could have a tolerance here, not sure if it would improve anything.
 		if maxD > 0 {
 			// Set the matrix to give (u = 0, v = distance_to_line).
 			lineVec := qPts[(maxEdge+1)%3].Sub(qPts[maxEdge])
@@ -288,7 +285,6 @@ func getConicKLM(p *[3]geom.Point, weight float32) [9]float32 {
 	klm[7] = w2 * (p[1].X - p[2].X)
 	klm[8] = w2 * (p[2].X*p[1].Y - p[1].X*p[2].Y)
 
-	// Scale the max absolute value of coeffs to 10.
 	scale := float32(0)
 	for i := 0; i < 9; i++ {
 		scale = max(scale, geom.ScalarAbs(klm[i]))
@@ -402,8 +398,7 @@ func convertNoninflectCubicToQuads(p *[4]geom.Point, toleranceSqd float32, quads
 // convertNoninflectCubicToQuadsWithConstraint is convertNoninflectCubicToQuads constrained to keep every generated quad
 // control point within the cubic's tangent lines.
 func convertNoninflectCubicToQuadsWithConstraint(p *[4]geom.Point, toleranceSqd float32, dir path.FirstDirection, quads *[]geom.Point, sublevel int) {
-	// Notation: Point a is always p[0]. Point b is p[1] unless p[1] == p[0], in which case it is p[2]. Point d is
-	// always p[3]. Point c is p[2] unless p[2] == p[3], in which case it is p[1].
+	// Notation: as in convertNoninflectCubicToQuads.
 	ab := p[1].Sub(p[0])
 	dc := p[2].Sub(p[3])
 
@@ -486,7 +481,7 @@ func convertNoninflectCubicToQuadsWithConstraint(p *[4]geom.Point, toleranceSqd 
 				d0Sqd := c0.DistanceToSqd(cAvg)
 				d1Sqd := c1.DistanceToSqd(cAvg)
 				// We need to subdivide if d0 + d1 > tolerance but we have the sqd values. We know the distances and
-				// tolerance can't be negative. (d0 + d1)^2 > toleranceSqd d0Sqd + 2*d0*d1 + d1Sqd > toleranceSqd
+				// tolerance can't be negative, so test (d0 + d1)^2 = d0Sqd + 2*d0*d1 + d1Sqd > toleranceSqd.
 				d0d1 := geom.ScalarSqrt(d0Sqd * d1Sqd)
 				subdivide = 2*d0d1+d0Sqd+d1Sqd > toleranceSqd
 			}

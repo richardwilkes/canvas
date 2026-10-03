@@ -7,15 +7,14 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// The shared driver spine the boolean-op and simplify entry points build on — the angle-winding lookup (angleWinding),
-// the undone-span scan (findUndone), the simplify chase walker (findChase), the bounds-sort of the contour list
-// (sortContourList), and the whole coincidence-resolution orchestrator (handleCoincidence) with its per-contour
-// calc/sort-angles and move/missing-coincidence passes. findSortableTop lives in winding.go.
+// The driver spine shared by the boolean-op and simplify entry points: the angle-winding lookup (angleWinding), the
+// undone-span scan (findUndone), the simplify chase walker (findChase), the contour-list bounds sort (sortContourList),
+// and the coincidence-resolution orchestrator (handleCoincidence) with its per-contour passes. findSortableTop lives in
+// winding.go.
 //
-// The chase list is a *[]*opSpanBase, with appends always going to the tail; sortContourList re-seats the head through
-// the opContourHead sortedHead redirect rather than reassigning a head pointer (see opContourHead); the two markAngle
-// overloads are markAngleUnary/markAngleBinary. Pathops computes in double precision, so winding accumulators are plain
-// int and t values are float64.
+// The chase list is a *[]*opSpanBase used as a stack. sortContourList re-seats the head through
+// opContourHead.sortedHead rather than reassigning a head pointer. Skia's two markAngle overloads are markAngleUnary
+// and markAngleBinary. Pathops computes in double precision, so winding accumulators are int and t values are float64.
 
 package pathops
 
@@ -112,7 +111,6 @@ func findChase(chase *[]*opSpanBase, startPtr, endPtr **opSpanBase) *opSegment {
 		if done {
 			continue
 		}
-		// find first angle, initialize winding to computed wind sum
 		var winding int
 		var sortable bool
 		angle := angleWinding(*startPtr, *endPtr, &winding, &sortable)
@@ -195,7 +193,6 @@ func sortContourList(contourList *opContourHead, evenOdd, oppEvenOdd bool) bool 
 	return true
 }
 
-// calcAnglesAll builds every contour's angle loops.
 func calcAnglesAll(contourList *opContourHead) {
 	for contour := contourList.listHead(); contour != nil; contour = contour.next {
 		contour.calcAngles()
@@ -254,11 +251,9 @@ func handleCoincidence(contourList *opContourHead, coincidence *opCoincidence) b
 	if !coincidence.addExpanded() {
 		return false
 	}
-	// combine t values when multiple intersections occur on some segments but not others
 	if !moveMultiplesAll(contourList) {
 		return false
 	}
-	// move t values and points together to eliminate small/tiny gaps
 	if !moveNearbyAll(contourList) {
 		return false
 	}

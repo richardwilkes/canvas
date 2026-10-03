@@ -7,12 +7,12 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// GL-free guards for the persistent per-flush scratch objects. The DrawingManager now caches and reuses one
-// OpFlushState (and its buffer pools) and one ResourceAllocator across flushes instead of heap-allocating them per
-// flush; correct reuse depends on each being returned to its fresh-construction state before the next flush. These
-// tests pin the two reset invariants that make that reuse safe. The render-level guard that a reused object cannot
-// bleed stale state into a later frame is TestOpPoolCrossFrameStability (GL-live), which drives the persistent objects
-// across many flushes on one context.
+// GL-free guards for the persistent per-flush scratch objects. The DrawingManager caches and reuses one OpFlushState
+// (and its buffer pools) and one ResourceAllocator across flushes instead of heap-allocating them per flush; correct
+// reuse depends on each being returned to its fresh-construction state before the next flush. These tests pin the two
+// reset invariants that make that reuse safe. The render-level guard that a reused object cannot bleed stale state into
+// a later frame is TestOpPoolCrossFrameStability (GL-live), which drives the persistent objects across many flushes on
+// one context.
 
 package gl
 

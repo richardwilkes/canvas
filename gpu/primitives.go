@@ -12,8 +12,8 @@
 
 package gpu
 
-// PrimitiveType identifies the GPU primitive topology a draw uses. Patch and hardware-path primitives are unreachable
-// on this backend, but the numbering keeps all members so key values stay comparable.
+// PrimitiveType identifies the GPU primitive topology a draw uses. The numbering matches Skia's GrPrimitiveType so key
+// values stay comparable.
 type PrimitiveType uint8
 
 // PrimitiveType values.
@@ -25,9 +25,9 @@ const (
 	PrimitiveTypeLineStrip // 1 pix wide only
 )
 
-// ClampType describes how the pixel values of the render target are clamped. ClampTypeAuto means the format clamps to
-// [0,1] automatically (all normalized formats); ClampTypeManual means shader clamping is required (float formats —
-// unreachable given the supported color types, but the analysis code consults it, so the type is kept).
+// ClampType describes how the pixel values of the render target are clamped: ClampTypeAuto for normalized formats,
+// which clamp to [0,1] automatically; ClampTypeManual for float formats that need shader clamping; ClampTypeNone for
+// unclamped float formats. Every draw passes ClampTypeAuto, but the blend analysis consults the type, so it is kept.
 type ClampType int32
 
 // ClampType values.

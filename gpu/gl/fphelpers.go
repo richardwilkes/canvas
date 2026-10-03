@@ -7,13 +7,9 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// Small helper fragment processors used throughout the pipeline: MakeColorFP produces a constant color, OverrideInputFP
-// feeds a fixed color to a child instead of the input, DisableCoverageAsAlphaFP clears the coverage-as-alpha
-// optimization, ComposeFP chains two processors in series, SwizzleOutputFP permutes a child's output channels,
-// MulInputByChildAlphaFP multiplies the input by a child's alpha, and ApplyPaintAlphaFP defers alpha application until
-// after a child runs. Each is a small GLSL-emitting fragment processor whose optimization flags are computed from its
-// own semantics and merged with any child's flags (pass-through children merge, constant-output when the effect
-// supports it).
+// Small helper fragment processors used throughout the pipeline: constant color, input override, coverage-as-alpha
+// disabling, paint-alpha application, series composition, and output swizzle. Each one's optimization flags are those
+// its own semantics allow, intersected with its children's.
 
 package gl
 
@@ -24,7 +20,6 @@ import (
 )
 
 //////////////////////////////////////////////////////////////////////////////
-// MakeColor ("color_fp"): always returns the stored color.
 
 type colorFP struct {
 	FPBase
@@ -47,8 +42,7 @@ func (f *colorFP) Name() string { return "color_fp" }
 func (f *colorFP) Clone() FragmentProcessor { return MakeColorFP(f.color) }
 
 func (f *colorFP) onAddToKey(_ *gpu.ShaderCaps, b *gpu.KeyBuilder) {
-	// The program key is a runtimeFPKind tag plus specialized uniforms; the color is a regular uniform. The tag
-	// distinguishes these hand-written effects from one another even though they share a single class ID.
+	// The color is a regular uniform, so the key holds only the runtimeFPKind tag.
 	b.Add32(uint32(runtimeFPColor), "runtimeFPKind")
 }
 
@@ -86,8 +80,7 @@ func (i *colorFPImpl) onSetData(pdman *ProgramDataManager, fp FragmentProcessor)
 	}
 }
 
-// runtimeFPKind separates these hand-written fragment-processor effects from one another in program keys; each distinct
-// effect gets a distinct value.
+// runtimeFPKind distinguishes, in program keys, the hand-written fragment-processor effects that share GLSLFPClassID.
 type runtimeFPKind uint32
 
 const (
@@ -131,7 +124,6 @@ const (
 )
 
 //////////////////////////////////////////////////////////////////////////////
-// OverrideInput: feeds a constant color to the child instead of the input color.
 
 type overrideInputFP struct {
 	FPBase
@@ -143,8 +135,6 @@ func OverrideInputFP(child FragmentProcessor, color colorcore.PMColor4f) Fragmen
 	if child == nil {
 		return nil
 	}
-	// Declares PreservesOpaqueInput (for opaque colors) plus constant-output support, then intersects with the child's
-	// flags as the child is added.
 	declared := FPConstantOutputForConstantInput
 	if pmIsOpaque(color) {
 		declared |= FPPreservesOpaqueInput
@@ -196,7 +186,6 @@ func (i *overrideInputFPImpl) onSetData(pdman *ProgramDataManager, fp FragmentPr
 }
 
 //////////////////////////////////////////////////////////////////////////////
-// DisableCoverageAsAlpha: returns the child's color but clears the coverage-as-alpha optimization.
 
 type disableCoverageAsAlphaFP struct {
 	FPBase
@@ -248,8 +237,6 @@ func (i *disableCoverageAsAlphaFPImpl) EmitCode(args *FPEmitArgs) {
 }
 
 //////////////////////////////////////////////////////////////////////////////
-// ApplyPaintAlpha: invokes the child with an opaque version of the input color, then applies the input alpha to the
-// result.
 
 type applyPaintAlphaFP struct {
 	FPBase
@@ -306,7 +293,6 @@ func (i *applyPaintAlphaFPImpl) EmitCode(args *FPEmitArgs) {
 }
 
 //////////////////////////////////////////////////////////////////////////////
-// Compose ("SeriesFragmentProcessor"): f(g(x)).
 
 type composeFP struct {
 	FPBase
@@ -315,7 +301,6 @@ type composeFP struct {
 // ComposeFP composes two fragment processors f and g into f(g(x)) — running them in series (g, then f) with no blending
 // step. Either may be nil, in which case the other is returned unchanged.
 func ComposeFP(f, g FragmentProcessor) FragmentProcessor {
-	// Allow either of the composed functions to be nil.
 	if f == nil {
 		return g
 	}
@@ -370,7 +355,6 @@ func (i *composeFPImpl) EmitCode(args *FPEmitArgs) {
 }
 
 //////////////////////////////////////////////////////////////////////////////
-// SwizzleOutput: invokes the child, then swizzles the output.
 
 type swizzleFP struct {
 	FPBase

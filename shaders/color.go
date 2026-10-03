@@ -32,8 +32,8 @@ func NewColor4f(c colorcore.Color4f) *ColorShader {
 func (s *ColorShader) Color() colorcore.Color4f { return s.color }
 
 // SetColor re-initializes s to the given color, the scratch-construction counterpart of NewColor: a caller reuses one
-// ColorShader value across draws — the DrawAtlas per-sprite color lane — instead of allocating a fresh *ColorShader per
-// sprite. Only for transient scratch shaders consumed synchronously within a draw.
+// ColorShader value across draws — the DrawAtlas per-sprite color lane — instead of allocating one per sprite. Only for
+// transient scratch shaders consumed synchronously within a draw.
 func (s *ColorShader) SetColor(c colorcore.Color) { s.color = colorcore.Color4fFromColor(c) }
 
 // IsOpaque implements Shader.

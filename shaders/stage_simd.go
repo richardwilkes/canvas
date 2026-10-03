@@ -25,7 +25,7 @@ import (
 //
 //   - madf is float32(math.FMA(float64...)) — a double FMA rounded to single. madf4 reproduces that two-rounding
 //     sequence exactly; a single-precision vector FMA would diverge by ~1 ULP on rare inputs (see the stage_arm64.s
-//     header, and the anchors in TestStageSIMDMatchesScalar's history).
+//     header).
 //   - minf/maxf are comparison-based ("comparison false -> second operand"); vector Min/Max propagate NaN (FMIN), so
 //     clamps must be built from compare+select instead.
 //   - Add/Sub/Mul are the same IEEE single ops the scalar stages perform, applied in the same operand order.
@@ -538,8 +538,7 @@ func moveDstSrcStageSIMD(z *lanes) {
 
 // matrix4x5StageSIMD is the vector matrix_4x5 kernel. The 16 multiplicand coefficients are pre-widened once
 // (broadcastCoef) and the 4 translate-column addends broadcast as singles; each output row is then the same nested
-// madf chain the scalar stage computes, with every intermediate rounded to single before the next madf re-widens it —
-// exactly like the scalar nesting.
+// madf chain the scalar stage computes, with every intermediate rounded to single before the next madf re-widens it.
 func matrix4x5StageSIMD(z *lanes) {
 	mat := z.ctx.(*[20]float32)
 	c00, c01, c02, c03 := broadcastCoef(mat[0]), broadcastCoef(mat[1]), broadcastCoef(mat[2]), broadcastCoef(mat[3])

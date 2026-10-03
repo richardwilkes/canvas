@@ -143,7 +143,7 @@ func TestDMSAADefaultOffTouchesNoMSAAState(t *testing.T) {
 	}
 }
 
-// TestDMSAAStencilEscalation covers the "always trigger DMSAA when there is stencil" lane of addDrawOp: a draw that
+// TestDMSAAStencilEscalation covers the "always trigger DMSAA when there is stencil" lane of AddDrawOp: a draw that
 // requires stencil (a stencil-clipped fill) promotes the task to the MSAA surface even when the op itself is not an
 // MSAA op.
 func TestDMSAAStencilEscalation(t *testing.T) {
@@ -179,15 +179,15 @@ func dmsaaStencilAttachment(sdc *SurfaceDrawContext) *Attachment {
 // TestDMSAASharedStencilClearedForEveryRenderTarget: stencil attachments are shared between render targets under a
 // unique key that carries no render-target identity, so the second render target to reach a given attachment inherits
 // whatever the first left in it. Tracking "the initial clear already happened" on the attachment therefore downgrades
-// the second target's kUserBitsCleared load op to a load of the first target's residue, which under DMSAA paints stray
-// bands into a render that carries no clip at all. Every render target that asks for cleared stencil must get a real
-// clear.
+// the second target's StencilContentUserBitsCleared load op to a load of the first target's residue, which under DMSAA
+// paints stray bands into a render that carries no clip at all. Every render target that asks for cleared stencil must
+// get a real clear.
 func TestDMSAASharedStencilClearedForEveryRenderTarget(t *testing.T) {
 	dc := newShaderRecordingContext(t)
 	dc.Gpu().ctx.Interface.Functions.clearStencil = counterProc("glClearStencil")
 
-	// A stencil-carrying rect draw: it calls setNeedsStencil (so the ops task asks for kUserBitsCleared) without
-	// recording a stencil-clip clear op, leaving the load-op clear as the only glClearStencil of the flush.
+	// A stencil-carrying rect draw: it calls setNeedsStencil (so the ops task asks for StencilContentUserBitsCleared)
+	// without recording a stencil-clip clear op, leaving the load-op clear as the only glClearStencil of the flush.
 	flushStencilDraw := func(sdc *SurfaceDrawContext) (clears int, stencil *Attachment) {
 		paint := NewPaint()
 		paint.SetColor4f(colorcore.PMColor4f{R: 1, A: 1})

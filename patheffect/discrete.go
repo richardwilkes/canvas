@@ -49,7 +49,6 @@ func perterb(p *geom.Point, tangent geom.Point, scale float32) {
 	*p = p.Add(normal)
 }
 
-// discreteEffect is the discrete path effect implementation.
 type discreteEffect struct {
 	noAsPoints
 	segLength  float32
@@ -58,8 +57,8 @@ type discreteEffect struct {
 }
 
 // MakeDiscrete creates a discrete path effect: segLength is the segment subdivision length, deviation the random
-// displacement magnitude, seedAssist an optional extra seed (0 by default). Returns nil for non-finite inputs or
-// segLength <= nearly-zero.
+// displacement magnitude, and seedAssist an extra value mixed into the random seed. Returns nil for non-finite inputs
+// or a nearly zero (or negative) segLength.
 func MakeDiscrete(segLength, deviation float32, seedAssist uint32) stroke.PathEffect {
 	if !scalarIsFinite(segLength) || !scalarIsFinite(deviation) {
 		return nil
@@ -75,7 +74,6 @@ func (d *discreteEffect) FilterPath(dst, src *path.Path, rec *stroke.Rec, _ *geo
 
 	meas := contour.NewPathMeasure(src, doFill, 1)
 
-	// Caller may supply their own seed assist, which by default is 0
 	seed := d.seedAssist ^ uint32(geom.RoundToInt(meas.Length()))
 
 	rand := lcgRandom{seed: seed ^ ((seed << 16) | (seed >> 16))}

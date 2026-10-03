@@ -53,15 +53,14 @@ func runListForText(t *testing.T, f *font.Font, text string, origin geom.Point) 
 
 func fillPaint() *canvas.Paint { return canvas.NewPaint() }
 
-// noSDFTControl builds the SubRunControl equivalent to the pre-E.1 trimmed configuration: SDFT off (as on a device
-// without derivatives support), maxMaskSize 256.
+// noSDFTControl builds a SubRunControl with SDFT off (as on a device without derivatives support) and maxMaskSize 256.
 func noSDFTControl() *SubRunControl {
 	c := NewSubRunControl(false, false, true, 18, 256, false)
 	return &c
 }
 
-// sdftControl builds an SDFT-enabled SubRunControl at the default option thresholds (min 18, paths above 256; no
-// small-text SDFT), mirroring getSubRunControl on a derivatives-capable device with kUseDeviceIndependentFonts unset.
+// sdftControl builds an SDFT-enabled SubRunControl at the macOS default option thresholds (min 18, paths above 256; no
+// small-text SDFT), mirroring GetSubRunControl on a derivatives-capable device with UseDeviceIndependentFonts unset.
 func sdftControl() *SubRunControl {
 	c := NewSubRunControl(true, false, true, 18, 256, false)
 	return &c
@@ -91,7 +90,6 @@ func TestMakeSubRunsDirectMask(t *testing.T) {
 		t.Errorf("direct padding = %d, want 0", direct.GlyphSrcPadding())
 	}
 
-	// Integer translation reuses; fractional translation does not.
 	intTranslate := positionMatrix
 	intTranslate.PostTranslate(5, -3)
 	if !container.CanReuse(&intTranslate) {
@@ -128,7 +126,6 @@ func TestMakeSubRunsPathLane(t *testing.T) {
 	if _, ok := container.SubRuns()[0].(*PathSubRun); !ok {
 		t.Fatalf("subrun type = %T, want PathSubRun", container.SubRuns()[0])
 	}
-	// Path subruns reuse under any matrix.
 	var scaled geom.Matrix
 	scaled.SetScale(4, 4)
 	if !container.CanReuse(&scaled) {
@@ -262,8 +259,6 @@ func TestMakeSubRunsSDFTLane(t *testing.T) {
 		t.Error("scaling to 2x (400px) must leave the matrix range")
 	}
 
-	// The accepted positions are the *inset* glyph bounds' left-top in creation space: strictly inside the raw padded
-	// bounds.
 	if got := sdft.GlyphCount(); got != 3 {
 		t.Errorf("glyph count = %d, want 3", got)
 	}
@@ -271,7 +266,7 @@ func TestMakeSubRunsSDFTLane(t *testing.T) {
 
 func TestMakeSubRunsSDFTSmallTextStaysDirect(t *testing.T) {
 	// The default/unrotated regression gate: with SDFT enabled but useSDFTForSmallText off, axis-aligned small text
-	// keeps taking the direct-mask path (isSDFT's min is 162).
+	// keeps taking the direct-mask path (IsSDFT's min is 162).
 	f := loadTestFont(t, "Roboto-Regular.ttf", 16)
 	list := runListForText(t, f, "Hi", geom.Pt(0, 20))
 	positionMatrix := geom.IdentityMatrix()
@@ -294,8 +289,8 @@ func TestMakeSubRunsSDFTSmallTextStaysDirect(t *testing.T) {
 }
 
 func TestMakeSubRunsSDFTSmallTextWithDIF(t *testing.T) {
-	// With useSDFTForSmallText (the kUseDeviceIndependentFonts surface flag), 30px text rides SDFT — the animated-text
-	// demand case.
+	// With useSDFTForSmallText (the UseDeviceIndependentFontsFlag surface flag), 30px text rides SDFT — the
+	// animated-text demand case.
 	f := loadTestFont(t, "Roboto-Regular.ttf", 30)
 	list := runListForText(t, f, "anim", geom.Pt(0, 30))
 	positionMatrix := geom.IdentityMatrix()

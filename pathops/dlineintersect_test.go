@@ -250,7 +250,7 @@ func TestPathOpsIntersectRayLineCoincidentT(t *testing.T) {
 	if in.tVal(1, 0) != 1 || in.tVal(1, 1) != 1 {
 		t.Fatalf("ts[1] = {%v, %v}, want {1, 1}", in.tVal(1, 0), in.tVal(1, 1))
 	}
-	// pts[1] is computed from ts[0][1]; with the fix it must be a.ptAtT(0) == a.pts[0], not a.ptAtT(0.75).
+	// pts[1] is computed from ts[0][1], so it must be a.ptAtT(0) == a.pts[0], not a.ptAtT(0.75).
 	want := a.ptAtT(0)
 	if !in.pt(1).equals(want) {
 		t.Fatalf("pts[1] = %v, want %v (stale ts[0][1] leaked into computePoints)", in.pt(1), want)

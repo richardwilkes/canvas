@@ -12,8 +12,8 @@
 // "ASAP" mode until it is impossible to add data without overwriting texels read by draws that have not yet executed on
 // the gpu; at that point the atlas attempts to activate a new page (up to maxPages), and failing that performs the
 // uploads "inline" between draws. When even that is impossible without touching texels read by the draw currently being
-// prepared, addToAtlas returns ErrorCodeTryAgain so the op can split its draw. Garbage collection runs through
-// compact(): pages are deactivated when their recently-used plots can migrate to earlier pages, based on the plot/atlas
+// prepared, AddToAtlas returns AtlasErrorCodeTryAgain so the op can split its draw. Garbage collection runs through
+// Compact: pages are deactivated when their recently-used plots can migrate to earlier pages, based on the plot/atlas
 // recently-used-count thresholds. Trims: debug spew and trace events are dropped.
 
 package gl
@@ -97,7 +97,7 @@ type DrawOpAtlas struct {
 	plotHeight        int
 	plotWidth         int
 	atlasGeneration   uint64
-	// prevFlushToken is the nextFlushToken() value at the end of the previous flush.
+	// prevFlushToken is the NextFlushToken value at the end of the previous flush.
 	prevFlushToken gpu.Token
 	// flushesSinceLastUse counts flushes since this atlas was last used.
 	flushesSinceLastUse int
@@ -127,7 +127,6 @@ func MakeDrawOpAtlas(proxyProvider *ProxyProvider, format Format, colorType gpu.
 	return atlas
 }
 
-// newDrawOpAtlas creates a DrawOpAtlas with the given format/dimensions.
 func newDrawOpAtlas(format Format, colorType gpu.ColorType, bpp, width, height, plotWidth, plotHeight int, generationCounter *gpu.AtlasGenerationCounter, allowMultitexturing AllowMultitexturing, label string) *DrawOpAtlas {
 	maxPages := uint32(1)
 	if allowMultitexturing == AllowMultitexturingYes {
@@ -234,7 +233,6 @@ func (a *DrawOpAtlas) validate(atlasLocator *gpu.AtlasLocator) {
 	}
 }
 
-// processEviction notifies the registered eviction callbacks and bumps the atlas generation.
 func (a *DrawOpAtlas) processEviction(plotLocator gpu.PlotLocator) {
 	for _, evictor := range a.evictionCallbacks {
 		evictor.Evict(plotLocator)
@@ -242,7 +240,6 @@ func (a *DrawOpAtlas) processEviction(plotLocator gpu.PlotLocator) {
 	a.atlasGeneration = a.generationCounter.Next()
 }
 
-// processEvictionAndResetRects evicts plot's current contents and clears its packed rects.
 func (a *DrawOpAtlas) processEvictionAndResetRects(plot *gpu.Plot) {
 	a.processEviction(plot.PlotLocator())
 	plot.ResetRects(false /* freeData */)
@@ -388,8 +385,7 @@ func (a *DrawOpAtlas) AddToAtlas(resourceProvider *ResourceProvider, target Defe
 		panic("add to a cloned plot failed")
 	}
 
-	// Note that this plot will be uploaded inline with the draws whereas the one it displaced most likely was uploaded
-	// ASAP.
+	// This plot will be uploaded inline with the draws whereas the one it displaced most likely was uploaded ASAP.
 	proxy := a.views[pageIdx].Proxy()
 	if proxy == nil || !proxy.IsInstantiated() {
 		panic("atlas page not instantiated at flush time")
@@ -406,7 +402,7 @@ func (a *DrawOpAtlas) AddToAtlas(resourceProvider *ResourceProvider, target Defe
 	return AtlasErrorCodeSucceeded
 }
 
-// Compact is called by the atlas's client (the atlas manager's postFlush) to shift data from higher-index pages to
+// Compact is called by the atlas's client (the atlas manager's PostFlush) to shift data from higher-index pages to
 // lower ones and deactivate pages no longer in use.
 func (a *DrawOpAtlas) Compact(startTokenForNextFlush gpu.Token) {
 	if a.numActivePages < 1 {
@@ -438,8 +434,8 @@ func (a *DrawOpAtlas) Compact(startTokenForNextFlush gpu.Token) {
 		var availablePlots []*gpu.Plot
 		lastPageIndex := a.numActivePages - 1
 
-		// For all plots but the last one, update number of flushes since used, and check to see if there are any in the
-		// first pages that the last page can safely upload to.
+		// For all pages but the last one, update number of flushes since used, and check to see if there are any plots
+		// in them that the last page can safely upload to.
 		for pageIndex := uint32(0); pageIndex < lastPageIndex; pageIndex++ {
 			for plot := a.pages[pageIndex].plotList.Head(); plot != nil; plot = plot.Next() {
 				// We only increment the 'sinceLastUsed' count for flushes where the atlas was used to avoid deleting
@@ -469,9 +465,8 @@ func (a *DrawOpAtlas) Compact(startTokenForNextFlush gpu.Token) {
 			}
 		}
 
-		// If recently used plots in the last page are using less than a quarter of the page, try to evict them if
-		// there's available space in earlier pages. Since we prioritize uploading to the first pages, this will
-		// eventually clear out usage of this page unless we have a large need.
+		// If recently used plots in the last page are using at most a quarter of the page, try to evict them if there's
+		// available space in earlier pages.
 		if len(availablePlots) > 0 && usedPlots != 0 && usedPlots <= a.numPlots/4 {
 			for plot := a.pages[lastPageIndex].plotList.Head(); plot != nil; plot = plot.Next() {
 				if plot.FlushesSinceLastUsed() <= plotRecentlyUsedCount {
@@ -500,10 +495,10 @@ func (a *DrawOpAtlas) Compact(startTokenForNextFlush gpu.Token) {
 	a.prevFlushToken = startTokenForNextFlush
 }
 
-// Instantiate ensures every active page's proxy is instantiated. Atlas proxies are created with UseAllocatorNo
-// (independent of the ops there are ASAP and inline uploads to them, and they persist beyond the last use in an op for
-// a given flush), so the atlas manages their lifetime via the onFlushCallback system, which calls this method. All
-// active pages were instantiated in activateNewPage, so this only validates.
+// Instantiate panics unless every active page's proxy is instantiated (activateNewPage instantiates them). Atlas
+// proxies are created with UseAllocatorNo (independent of the ops there are ASAP and inline uploads to them, and they
+// persist beyond the last use in an op for a given flush), so the atlas manages their lifetime via the on-flush
+// callback system, which calls this method.
 func (a *DrawOpAtlas) Instantiate() {
 	for i := uint32(0); i < a.numActivePages; i++ {
 		if a.views[i].Proxy() == nil || !a.views[i].Proxy().IsInstantiated() {
@@ -533,7 +528,6 @@ func (a *DrawOpAtlas) createPages(proxyProvider *ProxyProvider, generationCounte
 		}
 		a.views[i] = MakeSurfaceProxyView(proxy, gpu.OriginTopLeft, swizzle)
 
-		// Set up allocated plots.
 		a.pages[i].plotArray = make([]*gpu.Plot, numPlotsX*numPlotsY)
 		for y, r := numPlotsY-1, 0; y >= 0; y, r = y-1, r+1 {
 			for x, c := numPlotsX-1, 0; x >= 0; x, c = x-1, c+1 {
@@ -541,7 +535,6 @@ func (a *DrawOpAtlas) createPages(proxyProvider *ProxyProvider, generationCounte
 				plot := gpu.NewPlot(int(i), index, generationCounter, x, y, a.plotWidth,
 					a.plotHeight, a.colorType, a.bytesPerPixel)
 				a.pages[i].plotArray[index] = plot
-				// Build the LRU list.
 				a.pages[i].plotList.AddToHead(plot)
 			}
 		}
@@ -549,7 +542,6 @@ func (a *DrawOpAtlas) createPages(proxyProvider *ProxyProvider, generationCounte
 	return true
 }
 
-// activateNewPage instantiates and activates the next inactive page.
 func (a *DrawOpAtlas) activateNewPage(resourceProvider *ResourceProvider) bool {
 	if a.numActivePages >= a.maxPages {
 		panic("no page left to activate")
@@ -577,7 +569,6 @@ func (a *DrawOpAtlas) deactivateLastPage() {
 			currPlot := a.pages[lastPageIndex].plotArray[plotIndex]
 			currPlot.ResetRects(false /* freeData */)
 			currPlot.ResetFlushesSinceLastUsed()
-			// Rebuild the LRU list.
 			a.pages[lastPageIndex].plotList.AddToHead(currPlot)
 		}
 	}

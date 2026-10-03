@@ -7,8 +7,7 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// Detecting whether a contour is, when filled, identical to a rectangle. The AA scan converter's fat-anti-rect fast
-// path consumes this; the canvas and GPU backend may add more consumers later.
+// Detecting whether a contour is, when filled, identical to a rectangle.
 
 package path
 
@@ -38,8 +37,7 @@ func rectMakeDir(dx, dy float32) int8 {
 
 // isRectContour detects whether the leading contour of the given verb/point stream is, when filled, identical to a
 // rectangle. With allowPartial false it inspects the whole stream (any extra geometry disqualifies the rect); with
-// allowPartial true it stops after the first closed contour (recording how much it consumed, for nested-rect detection
-// later).
+// allowPartial true it stops after the first closed contour and records how much it consumed (for nested rects).
 func isRectContour(points []geom.Point, verbs []Verb, allowPartial bool) (rectContour, bool) {
 	var rc rectContour
 	if len(points) < 4 {
@@ -165,7 +163,7 @@ func isRectContour(points []geom.Point, verbs []Verb, allowPartial bool) (rectCo
 		}
 	}
 
-	// Success if 4 corners and first point equals last
+	// Three corners suffice: the implicit close supplies the fourth side.
 	if corners < 3 || corners > 4 {
 		return rc, false
 	}

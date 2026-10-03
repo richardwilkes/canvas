@@ -139,7 +139,6 @@ func windingMonoCubic(pts []geom.Point, x, y float32, onCurveCount *int) int {
 		return dir
 	}
 
-	// compute the actual x(t) value
 	t, ok := chopMonoCubicAtY(pts, y)
 	if !ok {
 		return 0

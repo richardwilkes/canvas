@@ -7,9 +7,6 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// BackingFit describes whether a backing store must match the requested dimensions exactly or may be larger, plus the
-// approx-size rounding used for loose fits.
-
 package gpu
 
 import (
@@ -30,8 +27,8 @@ const (
 	BackingFitExact BackingFit = true
 )
 
-// approxSizeAdjust rounds value up to a larger power of 2, or, above magicTol, to the midpoint between the floor and
-// ceiling powers of 2 (a looser fit that still recycles well).
+// approxSizeAdjust rounds value (at least minApproxSize) up to a power of 2, or, above magicTol, to the midpoint
+// between the floor and ceiling powers of 2 when value does not exceed it.
 func approxSizeAdjust(value int32) int32 {
 	const minApproxSize = 16
 	const magicTol = 1024

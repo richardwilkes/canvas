@@ -67,13 +67,13 @@ type laneSession struct {
 	glVersion  string
 }
 
-// pinSoftwareRenderer pins CANVAS_GLTEST_RENDERER=software for the GL lanes, so a capture renders on the same stack
-// the golden gates do. Every GPU gate pins it — TestGoGPUvsSelfCapturedGolden and its wrapped-FBO twin
-// (gorender/gpugolden_test.go) as much as TestGoGPUDMSAAvsSelfCapturedGolden — because comparing across GL stacks is
-// meaningless under exact1: hardware and software rasterizers differ structurally at AA edges, and DMSAA output
-// additionally depends on the driver's MSAA sample positions and resolve filter. Pinning only the gpudmsaa lane would
-// let `oracle bless -lane gpu` on a machine with hardware GL capture a set no gate can ever render, caught only after
-// a full two-pass capture by the gate's GL_RENDERER manifest guard.
+// pinSoftwareRenderer pins CANVAS_GLTEST_RENDERER=software for the GL lanes, so a capture renders on the same stack the
+// golden gates do. Every GPU gate pins it (TestGoGPUvsSelfCapturedGolden and its wrapped-FBO twin in
+// gorender/gpugolden_test.go, and TestGoGPUDMSAAvsSelfCapturedGolden) because comparing across GL stacks is meaningless
+// under exact1: hardware and software rasterizers differ structurally at AA edges, and DMSAA output also depends on the
+// driver's MSAA sample positions and resolve filter. Pinning only the gpudmsaa lane would let `oracle bless -lane gpu`
+// on a machine with hardware GL capture a set no gate can render, caught only after a full two-pass capture by the
+// gate's GL_RENDERER manifest guard.
 //
 // On darwin the variable selects kCGLRendererGenericFloatID; on Linux and Windows it is a no-op (their software stacks
 // are provisioned externally — llvmpipe under Xvfb / the Mesa3D drop-in), so setting it for every GL lane is safe. The

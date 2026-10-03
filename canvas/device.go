@@ -9,7 +9,8 @@
 
 // The device layer: the canvas targets the Device interface, so the GPU device and the PDF device plug in behind it.
 // The raster device wraps a Pixmap and a raster clip stack. Layer devices (saveLayer) have a non-identity
-// device-to-global transform; the public surface can only produce the integer translation form (layer buffer origin).
+// device-to-global transform: an integer translation (the layer buffer origin) for plain layers, while image-filter
+// layers can also carry rotation/scale.
 
 package canvas
 
@@ -117,7 +118,6 @@ type releasable interface {
 	Release()
 }
 
-// release runs v's teardown hook, if it has one.
 func release(v any) {
 	if r, ok := v.(releasable); ok {
 		r.Release()
@@ -131,7 +131,7 @@ type BitmapDevice struct {
 	localToDevice  geom.Matrix
 	deviceToGlobal geom.Matrix
 	globalToDevice geom.Matrix
-	// props carries the surface properties the text scaler consumes (pixel geometry for LCD16, E.4). The zero value is
+	// props carries the surface properties the text scaler consumes (pixel geometry for LCD16). The zero value is
 	// unknown geometry — layers and filter devices keep it; only the surface package installs a real geometry.
 	props font.DeviceProps
 }

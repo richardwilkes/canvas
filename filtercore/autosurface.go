@@ -103,9 +103,8 @@ func (s *autoSurface) snap() FilterResult {
 	if !s.valid {
 		return FilterResult{}
 	}
-	// Snap the device with the padded dst bounds.
 	image := s.device.SnapSpecial(geom.IRectWH(s.dstBounds.Width(), s.dstBounds.Height()))
-	s.valid = false // only use the AutoSurface once
+	s.valid = false
 	if image != nil && s.boundary != boundaryUnknown {
 		// Inset the subset relative to the image's reported size.
 		padding := s.padding()

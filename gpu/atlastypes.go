@@ -7,11 +7,7 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// The backend-shared atlas types and token machinery: IRect16, MaskFormat, AtlasGenerationCounter, PlotLocator,
-// AtlasLocator, PlotEvictionCallback, BulkUsePlotUpdater, Plot, and PlotList, plus Token/TokenTracker. These back the
-// GPU draw-op atlas in gpu/gl. Plot's pixel copy has no RGBA<->BGRA swizzle lane since this codebase's device/N32
-// format is RGBA8888 on every platform; the intrusive-list plumbing is an explicit intrusive list (PlotList); and
-// MaskFormat.ColorType maps each mask format directly to the ColorType it uploads as.
+// The backend-shared atlas types and token machinery that back the GPU draw-op atlas in gpu/gl.
 
 package gpu
 
@@ -98,8 +94,8 @@ func (r *IRect16) Offset(dx, dy int16) {
 	r.Bottom += dy
 }
 
-// MaskFormat identifies the pixel format of a glyph mask stored in the font atlas. Important that these are 0-based
-// (they index the atlas-manager arrays).
+// MaskFormat identifies the pixel format of a glyph mask stored in the font atlas. The values must stay 0-based: they
+// index the atlas-manager arrays.
 type MaskFormat int32
 
 // MaskFormat values.
@@ -188,8 +184,8 @@ func (p PlotLocator) PlotIndex() uint32 { return p.plotIndex }
 func (p PlotLocator) GenID() uint64 { return p.genID }
 
 // AtlasLocator holds atlas position information as a left-top/right-bottom pair of encoded UV coordinates; bits 13 and
-// 14 of the U coordinates hold the atlas page index. This encoding has the nice property that width = uvs[2] - uvs[0]
-// (the page bits subtract to zero).
+// 14 of the U coordinates hold the atlas page index, so width is still uvs[2] - uvs[0] (the page bits subtract to
+// zero).
 type AtlasLocator struct {
 	plotLocator PlotLocator
 	uvs         [4]uint16
@@ -257,8 +253,7 @@ func (a *AtlasLocator) UpdateRect(rect IRect16) {
 	a.uvs[3] = uint16(rect.Bottom)
 }
 
-// PlotEvictionCallback is notified whenever an atlas evicts a specific PlotLocator, so listeners can process the
-// eviction.
+// PlotEvictionCallback is notified whenever an atlas evicts a PlotLocator.
 type PlotEvictionCallback interface {
 	Evict(PlotLocator)
 }
@@ -341,9 +336,8 @@ type Plot struct {
 	isFull              bool
 }
 
-// NewPlot returns a new Plot at the given page/plot indices and backing-texture offset.
+// NewPlot returns a new Plot at the given page/plot indices and grid cell (offX, offY) of the backing texture.
 func NewPlot(pageIndex, plotIndex int, generationCounter *AtlasGenerationCounter, offX, offY, width, height int, colorType ColorType, bpp int) *Plot {
-	// We expect the allocated dimensions to be a multiple of 4 bytes.
 	if (width*bpp)&0x3 != 0 {
 		panic("plot width is not 4-byte aligned")
 	}
@@ -417,7 +411,6 @@ func (p *Plot) DataAt(atlasLocator *AtlasLocator) []byte {
 		p.data = make([]byte, p.bytesPerPixel*p.width*p.height)
 	}
 	topLeft := atlasLocator.TopLeft()
-	// Assert we're accessing the correct Plot.
 	if int(topLeft.X) < p.offsetX || int(topLeft.X) >= p.offsetX+p.width ||
 		int(topLeft.Y) < p.offsetY || int(topLeft.Y) >= p.offsetY+p.height {
 		panic("locator outside this plot")
@@ -479,7 +472,6 @@ func (p *Plot) NeedsUpload() bool { return !p.dirtyRect.IsEmpty() }
 // dirty rect in atlas coordinates, then clears the dirty state. Returns a nil slice when no backing data was ever
 // allocated.
 func (p *Plot) PrepareForUpload() (data []byte, offsetRect geom.IRect) {
-	// We should only be issuing uploads if we are dirty.
 	if p.dirtyRect.IsEmpty() {
 		panic("prepareForUpload on a clean plot")
 	}
@@ -527,7 +519,7 @@ func (p *Plot) ResetRects(freeData bool) {
 // MarkFullIfUsed marks the plot full if it has any dirty (used) area.
 func (p *Plot) MarkFullIfUsed() { p.isFull = !p.dirtyRect.IsEmpty() }
 
-// IsEmpty reports whether the plot's rectanizer has never placed a rectangle.
+// IsEmpty reports whether the plot's rectanizer holds no rectangles.
 func (p *Plot) IsEmpty() bool { return p.rectanizer.PercentFull() == 0 }
 
 // HasAllocation reports whether the plot's backing data has been allocated.

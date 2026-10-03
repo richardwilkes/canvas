@@ -76,7 +76,7 @@ func withLocalMatrixPtr(s Shader, localMatrix *geom.Matrix) Shader {
 	return NewWithLocalMatrix(s, *localMatrix)
 }
 
-// Start returns the gradient's start point; End returns its end point.
+// Start returns the gradient's start point.
 func (g *LinearGradient) Start() geom.Point { return g.start }
 
 // End returns the gradient's end point.

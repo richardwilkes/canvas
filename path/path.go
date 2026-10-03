@@ -8,9 +8,8 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // Package path provides the Path type: verb/point/conic-weight storage, the full builder op set (including the three
-// arcTo forms), shape adders, bounds/tight-bounds/contains queries, and transform. Structure uses plain Go slices (no
-// copy-on-write sharing), with well-defined semantics for verb streams, point arrays, conic weights, lazy caches, and
-// degenerate-input handling.
+// arcTo forms), shape adders, bounds/tight-bounds/contains queries, and transform. Storage is plain Go slices with no
+// copy-on-write sharing.
 package path
 
 import (
@@ -194,8 +193,8 @@ var nextPathGenID atomic.Uint32
 func init() { nextPathGenID.Store(1) }
 
 // GenerationID returns a value that changes whenever the path's verb or point data mutates (fill-type changes
-// excluded). Empty paths share the ID 1. The ID is assigned lazily; like the other lazy caches (Bounds), the first call
-// counts as a mutation for the concurrency rules, so prime it before sharing a path between goroutines.
+// excluded). Empty paths share the ID 1. The ID is assigned lazily, so the first call is a write (see Path's
+// concurrency rules).
 func (p *Path) GenerationID() uint32 {
 	if len(p.verbs) == 0 {
 		return 1
@@ -384,8 +383,6 @@ func (p *Path) SetLastPt(x, y float32) {
 		p.MoveTo(x, y)
 	} else {
 		p.points[n-1] = geom.Pt(x, y)
-		// Moving a point changes the geometry, so the bounds, the simple-shape identity and everything dirtyAfterEdit
-		// covers (convexity, generation ID) must all be invalidated.
 		p.boundsValid = false
 		p.isa = isAGeneral
 		p.dirtyAfterEdit()
@@ -611,7 +608,6 @@ func (p *Path) Close() *Path {
 	if len(p.verbs) > 0 && p.verbs[len(p.verbs)-1] != VerbClose {
 		p.growForVerb(VerbClose, 0)
 	}
-	// Signal that we need a moveTo to follow us (unless we're done).
 	if idx := p.lastMoveToIndex(); idx >= 0 {
 		p.setLastMoveToIndex(^idx)
 	}
@@ -619,8 +615,8 @@ func (p *Path) Close() *Path {
 }
 
 // Equal reports whether two paths have the same fill type, verbs, points and conic weights. Coordinates and conic
-// weights are compared with the IEEE == operator, so 0 compares equal to -0, while two distinct paths holding a NaN
-// never compare equal (a path is still equal to itself: that is answered by the pointer check, before any comparison).
+// weights are compared with ==, so 0 equals -0 and two distinct paths holding a NaN are never equal (a path is still
+// equal to itself, via the pointer check).
 func Equal(a, b *Path) bool {
 	if a == b {
 		return true

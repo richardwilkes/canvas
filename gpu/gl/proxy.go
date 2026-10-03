@@ -109,8 +109,7 @@ type SurfaceProxy struct {
 	rt     *RenderTargetProxy
 	tex    *TextureProxy
 	label  string
-	// gpuMemorySize is lazily evaluated: when the proxy wraps a resource the resource is asked, otherwise the proxy
-	// computes the answer itself.
+	// gpuMemorySize is invalidProxyGpuMemorySize until GpuMemorySize lazily computes it.
 	gpuMemorySize   uint64
 	taskTargetCount int
 	dims            geom.ISize
@@ -123,8 +122,8 @@ type SurfaceProxy struct {
 	surfaceFlags               gpu.SurfaceFlags
 	useAllocator               UseAllocator
 	ignoredByResourceAllocator bool
-	budgeted                   gpu.Budgeted   // always yes for lazy-callback proxies; from the resource for wrapped
-	fit                        gpu.BackingFit // always approx for lazy-callback proxies, exact for wrapped
+	budgeted                   gpu.Budgeted   // from the resource for wrapped proxies
+	fit                        gpu.BackingFit // always approx for fully lazy proxies, exact for wrapped
 }
 
 // newDeferredSurfaceProxy builds a proxy with no backing surface yet, taking a new unique ID from the shared
@@ -224,7 +223,6 @@ func (p *SurfaceProxy) Unref() {
 		p.tex.proxyProvider.ProcessInvalidUniqueKey(&p.tex.uniqueKey, p.tex,
 			InvalidateGPUResourceNo)
 	}
-	// Drop the target's ref.
 	if target != nil {
 		target.Unref()
 	}
@@ -272,7 +270,7 @@ func (p *SurfaceProxy) BackingStoreBoundsIRect() geom.IRect {
 	return geom.IRectSize(p.BackingStoreDimensions())
 }
 
-// BoundsIRect returns the proxy's dimensions as a rect at the origin (the float form is built where needed).
+// BoundsIRect returns the proxy's dimensions as a rect at the origin.
 func (p *SurfaceProxy) BoundsIRect() geom.IRect {
 	return geom.IRectSize(p.Dimensions())
 }
@@ -392,7 +390,6 @@ func (p *SurfaceProxy) onUninstantiatedGpuMemorySize() uint64 {
 	return ComputeSurfaceSize(p.format, p.dims, colorSamplesPerPixel, mipmapped, !p.isExact())
 }
 
-// isExact reports whether the proxy requires an exact-sized backing store.
 func (p *SurfaceProxy) isExact() bool { return p.fit == gpu.BackingFitExact }
 
 // AsTextureProxy returns the texture facet; nil when the proxy is not a texture.
@@ -421,8 +418,6 @@ func (p *SurfaceProxy) CanSkipResourceAllocator() bool {
 	if peek == nil {
 		return false
 	}
-	// If this resource is already allocated and not recyclable then the resource allocator does not need to do anything
-	// with it.
 	return !peek.ScratchKey().IsValid()
 }
 
@@ -437,7 +432,7 @@ func (p *SurfaceProxy) Deinstantiate() {
 	target.Unref()
 }
 
-// assign gives the proxy its backing surface.
+// assign gives the proxy its backing surface, taking over the caller's ref on it.
 func (p *SurfaceProxy) assign(surface *Surface) {
 	if p.target != nil || surface == nil {
 		panic("assign requires an uninstantiated proxy and a surface")
@@ -461,7 +456,7 @@ func (p *SurfaceProxy) computeScratchKey(caps *Caps, key *gpu.ScratchKey) {
 		mipmapped, key)
 }
 
-// createSurfaceImpl allocates a fresh (or approx-fit recycled) backing surface for the proxy.
+// createSurfaceImpl creates (or recycles from scratch) a backing surface for the proxy.
 func (p *SurfaceProxy) createSurfaceImpl(provider *ResourceProvider, sampleCnt int, renderable gpu.Renderable, mipmapped gpu.Mipmapped) *Surface {
 	if mipmapped == gpu.MipmappedYes && p.fit != gpu.BackingFitExact {
 		panic("mipmapped surfaces must be exact fit")
@@ -477,8 +472,8 @@ func (p *SurfaceProxy) createSurfaceImpl(provider *ResourceProvider, sampleCnt i
 		mipmapped, p.budgeted, p.label)
 }
 
-// createSurface allocates the right kind of backing surface (texture, render target, or both) based on the proxy's
-// facets; used by the resource allocator (via ProxyProvider) when instantiating with a recycled or fresh backing store.
+// createSurface creates the right kind of backing surface (texture, render target, or both) for the proxy's facets;
+// used by the resource allocator.
 func (p *SurfaceProxy) createSurface(provider *ResourceProvider) *Surface {
 	switch {
 	case p.rt != nil && p.tex != nil:
@@ -540,7 +535,6 @@ func (p *SurfaceProxy) Instantiate(provider *ResourceProvider) bool {
 // callbackDesc describes the surface a lazy proxy's callback is expected to return, based on the proxy's facets.
 func (p *SurfaceProxy) callbackDesc() LazySurfaceDesc {
 	if p.rt != nil && p.tex == nil {
-		// Only exactly-sized lazy render-target-only proxies are expected.
 		if p.IsFullyLazy() || !p.IsFunctionallyExact() {
 			panic("lazy render-target-only proxies must be exactly sized")
 		}
@@ -608,7 +602,6 @@ func (p *SurfaceProxy) doLazyInstantiation(provider *ResourceProvider) bool {
 	}
 	var surface *Surface
 	if key := p.UniqueKey(); key.IsValid() {
-		// First try to reattach to a cached version if the proxy is uniquely keyed.
 		if res := provider.FindByUniqueKey(key); res != nil {
 			surface = res.(*Surface)
 		}
@@ -628,8 +621,7 @@ func (p *SurfaceProxy) doLazyInstantiation(provider *ResourceProvider) bool {
 	}
 
 	if p.IsFullyLazy() {
-		// This was a fully lazy proxy: fill in the width & height. Partially lazy proxies preserve their original
-		// dimensions since those indicate the content area.
+		// Partially lazy proxies keep their original dimensions instead, since those indicate the content area.
 		p.dims = surface.Dimensions()
 	}
 	if p.Width() > surface.Width() || p.Height() > surface.Height() {
@@ -742,7 +734,6 @@ func (t *TextureProxy) setUniqueKey(provider *ProxyProvider, key *gpu.UniqueKey)
 	t.proxyProvider = provider
 }
 
-// clearUniqueKey clears the texture proxy's unique key.
 func (t *TextureProxy) clearUniqueKey() {
 	t.uniqueKey.Reset()
 	t.proxyProvider = nil
@@ -754,10 +745,9 @@ func ProxiesAreCompatibleAsDynamicState(first, second *SurfaceProxy) bool {
 	return first.textureType == second.textureType && first.format == second.format
 }
 
-// Arenas matches the lifetime of a single frame — created on the SurfaceFillContext's render target proxy, ref'd by
-// each OpsTask, and dropped after the first OpsTask's execution completes so new tasks get fresh arenas. The op/sub-run
-// arena allocators themselves arrive with the op and sub-run recording layers, so for now this carries only the
-// lifetime protocol.
+// Arenas matches the lifetime of a single frame — created on the SurfaceFillContext's render target proxy, shared by
+// each OpsTask, and dropped after the first OpsTask's execution completes so new tasks get fresh arenas. It holds no
+// arena storage (ops are pooled, see oppool.go) and carries only the lifetime protocol.
 type Arenas struct {
 	flushed bool
 }
@@ -808,16 +798,14 @@ func (r *RenderTargetProxy) CanUseStencil(caps *Caps) bool {
 	}
 	if !r.proxy.IsInstantiated() {
 		if r.proxy.IsLazy() {
-			// It's possible for wrapped GL render targets to not have stencil. We don't have an exact way of knowing
-			// whether the target will be able to use stencil, so do the best we can: if a lazy GL proxy doesn't have a
-			// texture it might be a wrapped target without stencil, so conservatively block stencil.
+			// A wrapped GL render target may lack stencil, and there is no exact way to tell before instantiation: a
+			// lazy proxy without a texture might be such a target, so conservatively block stencil.
 			return r.proxy.AsTextureProxy() != nil
 		}
 		// Otherwise the target will definitely not be wrapped, so a stencil can be attached freely on this internal
 		// render target.
 		return true
 	}
-	// Just ask the actual target if we can use stencil.
 	rt := r.proxy.PeekRenderTarget()
 	useMSAASurface := rt.NumSamples() > 1
 	return rt.StencilAttachment(useMSAASurface) != nil ||

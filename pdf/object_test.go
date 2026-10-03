@@ -63,7 +63,7 @@ func TestByteStringEmit(t *testing.T) {
 		{in: "a(b)c", want: "(a\\(b\\)c)"},         // escape parens
 		{in: "a\\b", want: "(a\\\\b)"},             // escape backslash
 		{in: "\x01\x02", want: "<0102>"},           // non-printable -> hex is shorter
-		{in: "\x0a", want: "<0A>"},                 // single control byte -> hex (3+len vs 2+2)
+		{in: "\x0a", want: "<0A>"},                 // single control byte -> hex (4 bytes vs 6 literal)
 		{in: string([]byte{0xFF}), want: "<FF>"},   // high byte -> hex
 		{in: "hello world", want: "(hello world)"}, // printable -> literal
 	}

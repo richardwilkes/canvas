@@ -29,7 +29,7 @@ func TestLiveMaskFilterCacheSW(t *testing.T) {
 
 	base := cache.NumEntries()
 	adds0 := cache.Stats().Adds
-	// A 20px Solid-blur rect stays under the kMIN_GPU_BLUR gate, so it takes the SW lane.
+	// A 20px Solid-blur rect stays under the kMinGPUBlurSize gate, so it takes the SW lane.
 	first, _ := drawBlurredRect(t, dc, 64, 22, 22, 42, 42, maskfilter.BlurSolid, 3)
 	if got := cache.NumEntries() - base; got != 1 {
 		t.Fatalf("expected 1 new cache entry after the first SW draw, got %d", got)

@@ -107,7 +107,7 @@ func BlendModeAffectsTransparentBlack(mode BlendMode) bool {
 ///////////////////////////////////////////////////////////////////////////////
 // lowp (8-bit in 16-bit lanes) kernels
 
-// div255 is the exact-rounding division by 255 (formula [2]; see the file comment).
+// div255 is the exact-rounding division by 255 (see the file comment).
 func div255(v uint32) uint32 {
 	v += 128
 	return (v + (v >> 8)) >> 8

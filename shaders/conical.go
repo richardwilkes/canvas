@@ -37,8 +37,8 @@ func (f *focalData) isWellBehaved() bool   { return !f.isFocalOnCircle() && f.r1
 func (f *focalData) isSwappedFlag() bool   { return f.isSwapped }
 func (f *focalData) isNativelyFocal() bool { return geom.ScalarNearlyZero(f.focalX) }
 
-// set normalizes the radii/matrix so the focal point maps to the origin and the end circle crosses (1, 0). Returns
-// false when the focal transform is not constructible.
+// set normalizes the radii/matrix so the focal point maps to the origin. Returns false when the focal transform is not
+// constructible.
 func (f *focalData) set(r0, r1 float32, matrix *geom.Matrix) bool {
 	f.isSwapped = false
 	f.focalX = r0 / (r0 - r1)
@@ -63,20 +63,20 @@ func (f *focalData) set(r0, r1 float32, matrix *geom.Matrix) bool {
 	matrix.PostConcat(&focalMatrix)
 	f.r1 = r1 / geom.ScalarAbs(1-f.focalX) // focalMatrix has a scale of 1/(1-f)
 
-	// The following transformations are just to accelerate the shader computation by saving some arithmetic operations.
+	// The remaining scales only save the shader stages some arithmetic.
 	if f.isFocalOnCircle() {
 		matrix.PostScale(0.5, 0.5)
 	} else {
 		matrix.PostScale(f.r1/(f.r1*f.r1-1), 1/sqrtf(geom.ScalarAbs(f.r1*f.r1-1)))
 	}
-	matrix.PostScale(geom.ScalarAbs(1-f.focalX), geom.ScalarAbs(1-f.focalX)) // scale |1 - f|
+	matrix.PostScale(geom.ScalarAbs(1-f.focalX), geom.ScalarAbs(1-f.focalX))
 	return true
 }
 
-// poly2 returns the similarity matrix mapping (0,0) to p0 and (0,1) to p1 — note the unit segment it maps is
-// (0,0)-(0,1), not (0,0)-(1,0), and (1,0) lands on p0 plus the perpendicular of p1-p0. Only polyToPoly2 uses this, and
-// it uses it for both the src and dst pair, so the composed src-to-pair-to-dst transform is a genuine (src0, src1) to
-// (dst0, dst1) map regardless of which unit segment the two halves agree on.
+// poly2 returns the similarity matrix mapping (0,0) to p0 and (0,1) to p1. The unit segment it maps is (0,0)-(0,1), not
+// (0,0)-(1,0); (1,0) lands on p0 plus the perpendicular of p1-p0. polyToPoly2, its only user, applies it to both the
+// src and dst pair, so the composed transform maps (src0, src1) to (dst0, dst1) regardless of which unit segment the
+// two halves agree on.
 func poly2(p0, p1 geom.Point) geom.Matrix {
 	var m geom.Matrix
 	m.SetAll(
@@ -114,8 +114,7 @@ func mapToUnitX(startCenter, endCenter geom.Point) (geom.Matrix, bool) {
 	return polyToPoly2(startCenter, endCenter, geom.Point{X: 0, Y: 0}, geom.Point{X: 1, Y: 0})
 }
 
-// newConical builds a ConicalGradient (or a radial-gradient equivalent for the concentric-circles special case),
-// classifying its geometry as radial, strip, or focal.
+// newConical builds a ConicalGradient, classifying its geometry as radial (concentric circles), strip, or focal.
 func newConical(c0 geom.Point, r0 float32, c1 geom.Point, r1 float32, colors []colorcore.Color4f, pos []float32, tileMode TileMode, localMatrix *geom.Matrix) Shader {
 	var gradientMatrix geom.Matrix
 	var gradientType conicalType
@@ -123,8 +122,7 @@ func newConical(c0 geom.Point, r0 float32, c1 geom.Point, r1 float32, colors []c
 	d := geom.Point{X: c0.X - c1.X, Y: c0.Y - c1.Y}
 	if geom.ScalarNearlyZero(d.Length()) {
 		if geom.ScalarNearlyZero(maxf(r0, r1)) || geom.ScalarNearlyEqual(r0, r1) {
-			// Degenerate case; avoid dividing by zero. Should have been caught by caller but just in case, recheck
-			// here.
+			// Degenerate case; the caller should have caught it, but recheck to avoid dividing by zero.
 			return nil
 		}
 		// Concentric case: we can pretend we're radial (with a tiny twist).
@@ -211,7 +209,7 @@ func NewTwoPointConicalGradient(start geom.Point, startRadius float32, end geom.
 	return newConical(start, startRadius, end, endRadius, c4f, pos, tileMode, localMatrix)
 }
 
-// Center1 returns the start center; Center2 the end center; Radius1/Radius2 the radii.
+// Center1 returns the start center.
 func (g *ConicalGradient) Center1() geom.Point { return g.center1 }
 
 // Center2 returns the end center.
@@ -269,10 +267,10 @@ func (g *ConicalGradient) centerX1() float32 {
 	return d.Length()
 }
 
-// appendStages runs the base gradient stages, then appends the conical-specific coordinate stages. The coordinate
-// stages read their scalars (the strip lane's r0^2, the focal lanes' 1/r1 and focal x) from the immutable gradient via
-// z.ctx rather than capturing them, so each stage function stays static; recomputing those scalars once per ShadeSpan
-// chunk from the gradient's fields is byte-identical to computing them once at compile time.
+// appendStages appends the base gradient stages around the conical-specific coordinate stages. The coordinate stages
+// read their scalars (the strip lane's r0^2, the focal lanes' 1/r1 and focal x) from the immutable gradient via z.ctx
+// rather than capturing them, so each stage function stays static; recomputing those scalars once per ShadeSpan chunk
+// from the gradient's fields is byte-identical to computing them once at compile time.
 func (g *ConicalGradient) appendStages(p *Pipeline, m MatrixRec) bool { //nolint:gocritic // see Shader.appendStages
 	return g.appendBaseStages(p, &m, func(p *Pipeline) {
 		dRadius := g.radius2 - g.radius1

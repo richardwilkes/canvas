@@ -13,8 +13,8 @@
 // hand-written as a GLSL-emitting FP with its own uniforms, specializations, children, and optimization flags. Trims:
 // the unrolled-binary colorizer is unreachable (desktop GLSL always has non-constant array indexing) and the
 // low-precision interval limit never trips (FloatIs32Bits is always true on the desktop trim). Gradients past the
-// looping colorizer's 128-color limit fall back to the textured colorizer — the 256×1 LUT texture baked by
-// gradientbitmapcache.go — and the draw is skipped only when the LUT texture cannot be created.
+// looping colorizer's limits (128 colors, 64 intervals) fall back to the textured colorizer — the 256×1 LUT texture
+// baked by gradientbitmapcache.go — and the draw is skipped only when the LUT texture cannot be created.
 
 package gl
 
@@ -728,7 +728,7 @@ func (i *clampedGradientImpl) onSetData(pdman *ProgramDataManager, fp FragmentPr
 		f.rightBorderColor.A)
 }
 
-// tiledGradientFP is the repeat/mirror top-level tile-mode effect: repeat or mirror tiling of the layout coordinate.
+// tiledGradientFP is the repeat/mirror top-level tile-mode effect.
 type tiledGradientFP struct {
 	FPBase
 	mirror                 bool // specialized
@@ -897,8 +897,8 @@ func makeUniformColorizer(colors []colorcore.Color4f, positions []float32, caps 
 		return makeSingleIntervalColorizer(colors[0], colors[1])
 	}
 
-	// intervalsExceedPrecisionLimit is a half-float-hardware concern; FloatIs32Bits is always true on the desktop trim,
-	// but the check is retained for completeness.
+	// Skia's intervalsExceedPrecisionLimit check is a half-float-hardware concern; FloatIs32Bits is always true on the
+	// desktop trim, but the check is retained for completeness.
 	if !caps.FloatIs32Bits {
 		const lowPrecisionIntervalLimit = 0.01
 		for i := 0; i < count-1; i++ {
@@ -994,10 +994,9 @@ func makeGradientFP(shader gradientDescriptor, args *FPArgs, mRec *shaders.Matri
 			colorizer = ColorXformFP(colorizer, XformStepPremul)
 		}
 	} else {
-		// The gradient is too complex for the analytic colorizers (more than 128 fixed stops): rasterize it into a
-		// 256×1 LUT texture instead. The LUT bake directly encodes the interpolated-to-dst result — including the final
-		// premultiplication — so the ColorXformFP wrapper above is skipped. The draw is skipped only when texture
-		// creation fails.
+		// The gradient is too complex for the analytic colorizers: rasterize it into a 256×1 LUT texture instead. The
+		// LUT bake directly encodes the interpolated-to-dst result — including the final premultiplication — so the
+		// ColorXformFP wrapper above is skipped. The draw is skipped only when texture creation fails.
 		colorizer = makeTexturedColorizer(colors, positions, allOpaque, args)
 		if colorizer == nil {
 			return nil

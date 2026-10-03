@@ -20,8 +20,7 @@ func simdBlitSupported() bool { return true }
 
 // Per-kernel dispatch preference: whether the simd blit row is at least as fast as this build's default lane. Unlike
 // the span kernels, none of these rows has a hand-written NEON lane to lose to — the alternative is the portable
-// scalar/SWAR form in the blitter files — so every one of them is preferred on arm64 as well. (simdKernelsPreferred,
-// which the span kernels gate on, answers a different question: whether archsimd beats span_arm64.s.)
+// scalar/SWAR form in the blitter files — so every one of them is preferred on arm64 as well.
 const (
 	preferSIMDFillWords              = true
 	preferSIMDFillBytes              = true

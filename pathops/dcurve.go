@@ -7,11 +7,9 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// The operation-time curve holder that opAngle carries: dCurve stores a shared four-point array (plus the conic weight)
-// that can be viewed as a line, quad, conic, or cubic on demand — the typed views (line/quad/conic/cubic) are rebuilt
-// from the same underlying points rather than each holding its own copy. dCurveSweep pairs a curve with the two sweep
-// vectors describing its convex hull direction. Pathops computes in double precision, so the points are float64; the
-// conic weight is float32.
+// The operation-time curve holder that opAngle carries (dCurve), and dCurveSweep, which pairs a curve with the sweep
+// vectors of its convex hull. Pathops computes in double precision, so the points are float64; the conic weight is
+// float32.
 
 package pathops
 
@@ -21,8 +19,8 @@ import (
 	"github.com/richardwilkes/canvas/path"
 )
 
-// dCurve holds the four curve types over shared four-point storage, indexed by curve.pts[n]; the typed views
-// (line/quad/conic/cubic) reinterpret that storage as the corresponding curve type.
+// dCurve holds the points of a line, quad, conic, or cubic in shared four-point storage; the typed views
+// (line/quad/conic/cubic) build the corresponding curve type from it.
 type dCurve struct {
 	pts    [4]dPoint // shared line/quad/conic/cubic point storage
 	weight float32   // the conic weight, unused by the other curve types
@@ -102,9 +100,9 @@ func (s *dCurveSweep) setCurveHullSweep(verb path.Verb) {
 		return
 	}
 	s2x1 := s.sweep[1].crossCheck(s.sweep[0])
-	// Known limitation: this reordering assumes the hull's sweep is at most 180 degrees. Past that the cross products
-	// stop distinguishing "third vector is between the first two" from its reflection, so the branch below can pick the
-	// wrong sweep pair. Nothing here enforces the bound; it is a documented gap in the test, not a pending edit.
+	// Known limitation (a FIXME upstream): this reordering assumes the hull's sweep is at most 180 degrees. Past that
+	// the cross products stop distinguishing "third vector is between the first two" from its reflection, so the branch
+	// below can pick the wrong sweep pair. Nothing enforces the bound.
 	if s3x2*s2x1 < 0 {
 		s.sweep[0] = s.sweep[1]
 		s.ordered = false

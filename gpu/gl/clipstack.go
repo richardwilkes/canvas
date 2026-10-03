@@ -8,12 +8,12 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // The GPU clip stack — elements with device-space bounds reasoning, save records with element invalidation/restoration,
-// and the apply() strategy that converts the active elements into scissor state, analytic coverage FPs, stencil masks,
-// or cached software masks. Trims: clip shaders have no entry point, so the SaveRecord shader lanes are dropped; window
-// rectangles are dropped with the desktop trim (difference elements that would otherwise use window rects instead take
-// the FP/mask lanes instead); the atlas-path-renderer clip lane is trimmed with that renderer; the threaded SW mask
-// render reduces to a synchronous render on the recording goroutine; the path-genID containment fast path falls through
-// to the conservative geometric test (the path has no generation ID).
+// and the Apply strategy that converts the active elements into scissor state, analytic coverage FPs, stencil masks, or
+// cached software masks. Trims: clip shaders have no entry point, so the SaveRecord shader lanes are dropped; window
+// rectangles are dropped with the desktop trim (difference elements take the FP/mask lanes instead); the
+// atlas-path-renderer clip lane is trimmed with that renderer; the threaded SW mask render reduces to a synchronous
+// render on the recording goroutine; the path-genID containment fast path falls through to the conservative geometric
+// test (paths have no generation ID).
 
 package gl
 
@@ -55,7 +55,7 @@ const (
 
 var nextClipGenID atomic.Uint32
 
-// nextGenID returns the next clip generation ID; 0-2 are reserved for invalid, empty & wide-open.
+// nextGenID returns the next clip generation ID, skipping the reserved ones.
 func nextGenID() uint32 {
 	for {
 		if id := nextClipGenID.Add(1); id >= 3 {
@@ -84,8 +84,8 @@ type clipGeometryOperand interface {
 	geoContains(other clipGeometryOperand) bool
 }
 
-// getClipGeometry computes how operands a and b combine. NOTE: geom.IRect.Intersects returns false when two rectangles
-// touch at an edge (the result is empty), which is the desired policy here.
+// getClipGeometry computes how operands a and b combine. geom.IRect.Intersects is false for rectangles that only touch
+// at an edge, which is the desired policy here.
 func getClipGeometry(a, b clipGeometryOperand) clipGeometry {
 	if a.geoOp() == raster.ClipIntersect {
 		if b.geoOp() == raster.ClipIntersect {
@@ -114,7 +114,7 @@ func getClipGeometry(a, b clipGeometryOperand) clipGeometry {
 			// B's zero coverage region completely contains A, so intersection = empty.
 			return clipGeometryEmpty
 		default:
-			// Note that this op combination cannot produce clipGeometryBOnly.
+			// This op combination cannot produce clipGeometryBOnly.
 			return clipGeometryBoth
 		}
 	}
@@ -140,19 +140,16 @@ func getClipGeometry(a, b clipGeometryOperand) clipGeometry {
 		// Mirror of the above case, intersection = B instead.
 		return clipGeometryBOnly
 	default:
-		// It is not possible to produce clipGeometryEmpty for this op combination.
+		// This op combination cannot produce clipGeometryEmpty.
 		return clipGeometryBoth
 	}
 }
 
-// getClipGeometryVsDraw computes getClipGeometry with the draw as operand B, taking the draw by value so
-// ClipStack.Apply never has to take its address. Boxing &draw into the clipGeometryOperand interface forces the draw
-// onto the heap, and Go's escape analysis is flow-insensitive, so calling getClipGeometry(a, &draw) directly in Apply
-// would heap-allocate the draw on every draw — including the common wide-open/empty clip early-outs (an unclipped
-// canvas) that return before any geometry analysis. Confining the &-of-draw to this helper's own by-value copy keeps
-// Apply's draw on the stack for those early-outs; the per-call copy here only happens on the complex-clip path that
-// genuinely compares element geometry. It is marked noinline so the compiler cannot fold the &draw back into Apply's
-// frame and re-escape Apply's draw.
+// getClipGeometryVsDraw computes getClipGeometry with the draw as operand B, taking the draw by value. Boxing &draw
+// into the clipGeometryOperand interface forces it onto the heap, and Go's escape analysis is flow-insensitive, so
+// doing that directly in Apply or PreApply would heap-allocate the draw on every call, including the common
+// wide-open/empty early-outs. Confining the address-of to this helper's copy keeps the caller's draw on the stack;
+// noinline stops the compiler from folding the &draw back into the caller's frame.
 //
 //go:noinline
 func getClipGeometryVsDraw(a clipGeometryOperand, draw clipStackDraw) clipGeometry {
@@ -204,7 +201,7 @@ func shapeContainsRect(a *Shape, aToDevice, deviceToA *geom.Matrix, b geom.Rect,
 	return true
 }
 
-// subtractRects returns either A-B exactly, or (when not exactly representable and exact is required) the original A.
+// subtractRects returns rectSubtract(a, b), or a when exact is set and the difference is not exactly a rectangle.
 func subtractRects(a, b geom.IRect, exact bool) geom.IRect {
 	diff, wasExact := rectSubtract(a, b)
 	if wasExact || !exact {
@@ -263,7 +260,6 @@ func rectSubtract(a, b geom.IRect) (geom.IRect, bool) {
 	return out, positiveCount == 1
 }
 
-// getClipEdgeType maps a clip op and AA setting to the corresponding ClipEdgeType.
 func getClipEdgeType(op raster.ClipOp, aa gpu.AA) ClipEdgeType {
 	if op == raster.ClipIntersect {
 		if aa == gpu.AAYes {
@@ -299,12 +295,11 @@ func analyticClipFP(e *ClipElement, caps *gpu.ShaderCaps, fp FragmentProcessor) 
 	return fp, false
 }
 
-// clipMaskOrigin is the coordinate origin used for generated clip mask surfaces.
 const clipMaskOrigin = gpu.OriginTopLeft
 
-// drawToSWMask renders one element into the helper with replace semantics. If the first element is an intersect, the
-// mask is cleared to 0 and the element draws coverage 1 (subsequent intersects invert and draw 0 outside); a leading
-// difference clears to 1 and always draws 0.
+// drawToSWMask renders one element into the helper with replace semantics. A leading intersect clears the mask to 0 and
+// draws coverage 1, while later intersects draw 0 over their inverse; a leading difference clears to 1, and every
+// difference draws 0.
 func drawToSWMask(helper *swMaskHelper, e *ClipElement, clearMask bool) {
 	if clearMask {
 		if e.Op == raster.ClipIntersect {
@@ -341,8 +336,7 @@ func drawToSWMask(helper *swMaskHelper, e *ClipElement, clearMask bool) {
 	}
 }
 
-// renderSWMask, reduced to the synchronous lane (threaded render + deferred upload is trimmed), rasterizes the elements
-// into an A8 mask and wraps it in a texture proxy view.
+// renderSWMask synchronously rasterizes the elements into an A8 mask and wraps it in a texture proxy view.
 func renderSWMask(ctx *DirectContext, bounds geom.IRect, elements []*ClipElement) SurfaceProxyView {
 	if len(elements) == 0 {
 		panic("renderSWMask requires elements")
@@ -382,9 +376,6 @@ func renderStencilMask(sdc *SurfaceDrawContext, genID uint32, bounds geom.IRect,
 	out.HardClip().AddStencilClip(genID)
 }
 
-//////////////////////////////////////////////////////////////////////////////
-// ClipStack draw query
-
 // clipStackDraw is a draw query; it fits the same reasoning shape as an element with an implicit intersect op and empty
 // inner bounds.
 type clipStackDraw struct {
@@ -417,9 +408,6 @@ func (d *clipStackDraw) applyDeviceBounds(deviceBounds geom.IRect) bool {
 	return d.bounds.Intersect(deviceBounds)
 }
 
-//////////////////////////////////////////////////////////////////////////////
-// ClipStack raw element
-
 // clipStackRawElement wraps the element data with containment and bounds testing, plus the invalidation bookkeeping.
 type clipStackRawElement struct {
 	ClipElement
@@ -438,7 +426,6 @@ type clipStackRawElement struct {
 	invalidatedByIndex int
 }
 
-// newClipStackRawElement creates a raw element wrapping shape's clip contribution.
 func newClipStackRawElement(localToDevice *geom.Matrix, shape *Shape, aa gpu.AA, op raster.ClipOp) clipStackRawElement {
 	e := clipStackRawElement{
 		ClipElement:        ClipElement{Shape: *shape, LocalToDevice: *localToDevice, Op: op, AA: aa},
@@ -447,8 +434,8 @@ func newClipStackRawElement(localToDevice *geom.Matrix, shape *Shape, aa gpu.AA,
 	if inv, ok := localToDevice.Invert(); ok {
 		e.deviceToLocal = inv
 	} else {
-		// If the transform can't be inverted, it means that two dimensions are collapsed to 0 or 1 dimensions, making
-		// the device-space geometry effectively empty.
+		// A non-invertible transform collapses two dimensions to 0 or 1, making the device-space geometry effectively
+		// empty.
 		e.Shape.Reset()
 	}
 	return e
@@ -482,7 +469,6 @@ func (e *clipStackRawElement) restoreValid(current *clipStackSaveRecord) {
 	}
 }
 
-// containsDraw reports whether this element's full-coverage region contains d.
 func (e *clipStackRawElement) containsDraw(d *clipStackDraw) bool {
 	if e.innerBounds.ContainsRect(d.bounds) {
 		return true
@@ -498,7 +484,6 @@ func (e *clipStackRawElement) containsDraw(d *clipStackDraw) bool {
 		&identity, false /* mixed-aa */)
 }
 
-// containsSave reports whether this element's full-coverage region contains s.
 func (e *clipStackRawElement) containsSave(s *clipStackSaveRecord) bool {
 	if e.innerBounds.ContainsRect(s.outerBounds) {
 		return true
@@ -508,7 +493,6 @@ func (e *clipStackRawElement) containsSave(s *clipStackSaveRecord) bool {
 		s.outerBounds.ToRect(), &identity, false /* mixed-aa */)
 }
 
-// containsElement reports whether this element's full-coverage region contains o.
 func (e *clipStackRawElement) containsElement(o *clipStackRawElement) bool {
 	// Similar to containsDraw, except that both the tester and testee have transforms.
 	if e.innerBounds.ContainsRect(o.outerBounds) {
@@ -759,10 +743,6 @@ func (e *clipStackRawElement) clipType() ClipStackState {
 	}
 }
 
-//////////////////////////////////////////////////////////////////////////////
-// ClipStack mask
-
-// clipMaskKeyDomain is the unique-key domain generated for clip masks.
 var clipMaskKeyDomain = gpu.GenerateUniqueKeyDomain()
 
 // clipStackMask is an alpha mask with the rasterized coverage from elements in a draw query that could not be converted
@@ -774,7 +754,6 @@ type clipStackMask struct {
 	genID  uint32
 }
 
-// newClipStackMask creates a clipStackMask keyed by the save record's generation and drawBounds.
 func newClipStackMask(current *clipStackSaveRecord, drawBounds geom.IRect) clipStackMask {
 	m := clipStackMask{bounds: drawBounds, genID: current.genID()}
 	if m.genID == clipInvalidGenID || m.genID == clipEmptyGenID ||
@@ -806,9 +785,6 @@ func (m *clipStackMask) invalidate(proxyProvider *ProxyProvider) {
 	proxyProvider.ProcessInvalidUniqueKey(&m.key, nil, InvalidateGPUResourceYes)
 	m.key.Reset()
 }
-
-//////////////////////////////////////////////////////////////////////////////
-// ClipStack save record
 
 // clipStackSaveRecord is a snapshot of the clip stack's aggregate bounds and state at a save point.
 type clipStackSaveRecord struct {
@@ -884,7 +860,6 @@ func (s *clipStackSaveRecord) genID() uint32 {
 // recordState returns this save record's ClipStackState (the shader term is trimmed with clip shaders).
 func (s *clipStackSaveRecord) recordState() ClipStackState { return s.state }
 
-// removeElements truncates elements back to this save record's starting index.
 func (s *clipStackSaveRecord) removeElements(elements *[]clipStackRawElement) {
 	*elements = (*elements)[:s.startingElementIndex]
 }
@@ -924,7 +899,6 @@ func (s *clipStackSaveRecord) reset(bounds geom.IRect) {
 // addElement returns true if the element was added to 'elements' or otherwise affected the save record (e.g. turned it
 // empty).
 func (s *clipStackSaveRecord) addElement(toAdd *clipStackRawElement, elements *[]clipStackRawElement) bool {
-	// Validity check the element's state first.
 	if !toAdd.Shape.IsEmpty() && toAdd.outerBounds.IsEmpty() {
 		panic("non-empty shape must have outer bounds")
 	}
@@ -965,8 +939,8 @@ func (s *clipStackSaveRecord) addElement(toAdd *clipStackRawElement, elements *[
 	}
 
 	if s.state == ClipStackWideOpen {
-		// When the stack was wide open and the clip effect was kBoth, the "complex" manner is simply to keep the
-		// element and update the stack bounds to be the element's intersected with the device.
+		// The stack was wide open and the geometry is clipGeometryBoth, so the "complex" manner is to keep the element
+		// and set the stack bounds to the element's device-intersected bounds.
 		s.replaceWithElement(toAdd, elements)
 		return true
 	}
@@ -1130,19 +1104,15 @@ func (s *clipStackSaveRecord) replaceWithElement(toAdd *clipStackRawElement, ele
 	s.genIDv = nextGenID()
 }
 
-//////////////////////////////////////////////////////////////////////////////
-// ClipStack
-
-// clipMaxAnalyticFPs limits how many analytic coverage FPs a single draw's clip may accumulate before falling back to a
-// mask; drawn from prior draw-call analysis showing the most complex clip used 5, with the limit set at the historical
-// 4.
+// clipMaxAnalyticFPs limits how many analytic coverage FPs a draw's clip may accumulate before falling back to a mask.
+// Draw-call analysis found the most complex clip used 5; the limit stays at the historical 4, which is close to that.
 const clipMaxAnalyticFPs = 4
 
 // ClipStack implements Clip as a stack of clip elements with save/restore semantics.
 type ClipStack struct {
 	proxyProvider *ProxyProvider
 	elements      []clipStackRawElement
-	saves         []clipStackSaveRecord // always has one wide-open record at the top
+	saves         []clipStackSaveRecord // never empty; the bottom record starts wide open
 	// Masks are recorded during Apply() calls so they can be cached; they are not modifications of the actual clip
 	// stack.
 	masks        []clipStackMask
@@ -1152,19 +1122,18 @@ type ClipStack struct {
 	forceAA bool
 }
 
-// NewClipStack creates a ClipStack covering deviceBounds. (Clip shaders have no entry point, so that lane is trimmed.)
+// NewClipStack creates a ClipStack covering deviceBounds.
 func NewClipStack(deviceBounds geom.IRect, forceAA bool) *ClipStack {
 	cs := &ClipStack{deviceBounds: deviceBounds, forceAA: forceAA}
-	// Start with a wide-open save record.
 	cs.saves = append(cs.saves, newClipStackSaveRecord(deviceBounds))
 	return cs
 }
 
-// Release invalidates every SW mask the stack still holds, standing in for the destructor upstream's ClipStack has. Masks
-// are registered with the proxy provider under a unique key when they are rendered and are otherwise only evicted by
-// Restore/ReplaceClip/clip, so a stack dropped with a clip still set would leave its mask textures unique-keyed in the
-// resource cache — where they are excluded from scratch reuse — until budget pressure or context teardown. The stack is
-// left usable but empty of masks (a mask is re-rendered on demand), and Release is safe to call more than once.
+// Release invalidates every SW mask the stack still holds, standing in for upstream's ClipStack destructor. Masks are
+// unique-keyed in the proxy provider when rendered and otherwise only evicted by Restore/ReplaceClip/clip, so a stack
+// dropped with a clip still set would leave its mask textures in the resource cache, excluded from scratch reuse, until
+// budget pressure or context teardown. The stack stays usable (a mask is re-rendered on demand), and Release may be
+// called more than once.
 func (cs *ClipStack) Release() {
 	if cs.proxyProvider == nil {
 		if len(cs.masks) > 0 {
@@ -1179,7 +1148,6 @@ func (cs *ClipStack) Release() {
 	cs.masks = cs.masks[:0]
 }
 
-// currentSaveRecord returns the topmost (active) save record.
 func (cs *ClipStack) currentSaveRecord() *clipStackSaveRecord {
 	return &cs.saves[len(cs.saves)-1]
 }
@@ -1226,7 +1194,8 @@ func (cs *ClipStack) Restore() {
 	cs.currentSaveRecord().restoreElements(&cs.elements)
 }
 
-// writableSaveRecord returns the current save record, properly updating deferred saves.
+// writableSaveRecord returns the current save record if it can be updated; otherwise it turns one deferred save into a
+// new record, sets *wasDeferred, and returns that.
 func (cs *ClipStack) writableSaveRecord(wasDeferred *bool) *clipStackSaveRecord {
 	current := cs.currentSaveRecord()
 	if current.canBeUpdated() {
@@ -1299,7 +1268,6 @@ func (cs *ClipStack) clip(element *clipStackRawElement) {
 	// An empty op means do nothing (for difference) or close the save record, so detect that early to avoid unnecessary
 	// save record allocation.
 	if element.Shape.IsEmpty() && element.Op == raster.ClipDifference {
-		// Subtracting an empty shape has no effect on the clip.
 		return
 	}
 
@@ -1363,8 +1331,7 @@ func (cs *ClipStack) PreApply(bounds geom.Rect, aa gpu.AA) PreClipResult {
 	default:
 	}
 
-	// Given argument order, 'A' == current clip, 'B' == draw. The by-value helper keeps this function's draw off the
-	// heap for the common wide-open/empty early-outs above (see getClipGeometryVsDraw).
+	// Given argument order, 'A' == current clip, 'B' == draw, passed by value (see getClipGeometryVsDraw).
 	switch getClipGeometryVsDraw(current, draw) {
 	case clipGeometryEmpty:
 		return MakePreClipResult(ClipEffectClippedOut)
@@ -1390,7 +1357,7 @@ func (cs *ClipStack) PreApply(bounds geom.Rect, aa gpu.AA) PreClipResult {
 			}
 			return MakePreClipResultRRect(back.Shape.RRect(), back.AA)
 		default:
-			// The clip stack has complex shapes or multiple elements; preApply is meant to be conservative and
+			// The clip stack has complex shapes or multiple elements; PreApply is meant to be conservative and
 			// efficient.
 			return MakePreClipResult(ClipEffectClipped)
 		}
@@ -1426,7 +1393,7 @@ func (cs *ClipStack) Apply(sdc *SurfaceDrawContext, op DrawOp, aa gpu.AAType, ou
 	default:
 	}
 
-	// The clip-shader conversion is trimmed with clipShader (it has no public entry point).
+	// The clip-shader conversion is trimmed (clip shaders have no entry point).
 	var clipFP FragmentProcessor
 
 	// A refers to the entire clip stack, B refers to the draw.
@@ -1437,8 +1404,8 @@ func (cs *ClipStack) Apply(sdc *SurfaceDrawContext, op DrawOp, aa gpu.AAType, ou
 		// Geometrically unclipped (no clip shader to add).
 		return ClipEffectUnclipped
 	default:
-		// clipGeometryBoth, plus clipGeometryAOnly (shouldn't happen since draws don't report inner bounds; treated
-		// as kBoth).
+		// clipGeometryBoth, plus clipGeometryAOnly (shouldn't happen since draws don't report inner bounds; treated as
+		// clipGeometryBoth).
 		if current.recordState() != ClipStackDeviceRect &&
 			current.recordState() != ClipStackDeviceRRect &&
 			current.recordState() != ClipStackComplex {
@@ -1465,7 +1432,7 @@ func (cs *ClipStack) Apply(sdc *SurfaceDrawContext, op DrawOp, aa gpu.AAType, ou
 	remainingAnalyticFPs := clipMaxAnalyticFPs
 
 	// Elements not represented as an analytic FP or skipped are collected and later applied using the stencil buffer or
-	// a cached SW mask. (Window rectangles and the atlas clip lane are both trimmed.)
+	// a cached SW mask.
 	var elementsForMask []*ClipElement
 
 	maskRequiresAA := false
@@ -1577,7 +1544,6 @@ func (cs *ClipStack) Apply(sdc *SurfaceDrawContext, op DrawOp, aa gpu.AAType, ou
 				// Drop the draw when a stencil-requiring clip has no stencil buffer.
 				return ClipEffectClippedOut
 			}
-			// Rasterize the remaining elements into the stencil buffer.
 			renderStencilMask(sdc, current.genID(), scissorBounds, elementsForMask, out)
 		}
 	}

@@ -7,11 +7,7 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// Hermetic tests for the atlas support types: the skyline rectanizer (packing invariants and the lowest-then-narrowest
-// placement rule), the PlotLocator/AtlasLocator UV encoding (page bits in bits 13-14 of the U coordinates, insetSrc,
-// width/height as UV differences), BulkUsePlotUpdater dedup, Plot behavior (dirty-rect join, subimage copy,
-// prepareForUpload's 4-byte clamp and atlas-space offset, resetRects generation bumps, clone), the PlotList LRU
-// operations, and the Token/TokenTracker sequencing rules.
+// Hermetic tests for the atlas support types and the skyline rectanizer.
 
 package gpu
 
@@ -27,7 +23,6 @@ func TestRectanizerSkylineBasic(t *testing.T) {
 		t.Fatal("new rectanizer should be empty")
 	}
 
-	// First rect lands at the origin.
 	x, y, ok := r.AddRect(32, 16)
 	if !ok || x != 0 || y != 0 {
 		t.Fatalf("first rect at (%d,%d) ok=%v, want (0,0) true", x, y, ok)
@@ -148,7 +143,6 @@ func TestAtlasLocatorEncoding(t *testing.T) {
 		t.Fatalf("plot locator fields wrong")
 	}
 
-	// insetSrc shrinks all four edges.
 	al.InsetSrc(1)
 	if got := al.TopLeft(); got.X != 101 || got.Y != 201 {
 		t.Fatalf("topLeft after inset = %v", got)
@@ -282,7 +276,6 @@ func TestPlotAddAndUpload(t *testing.T) {
 		t.Fatal("resetRects(true) should free the data")
 	}
 
-	// Clone matches identity but takes a fresh generation.
 	clone := plot.Clone()
 	if clone.PageIndex() != plot.PageIndex() || clone.PlotIndex() != plot.PlotIndex() {
 		t.Fatal("clone identity wrong")
@@ -326,7 +319,6 @@ func TestPlotList(t *testing.T) {
 	if list.Head() != nil || list.Tail() != nil {
 		t.Fatal("reset should empty the list")
 	}
-	// Plots are re-addable after reset.
 	list.AddToHead(p1)
 	if list.Head() != p1 || list.Tail() != p1 {
 		t.Fatal("re-add after reset failed")
@@ -346,7 +338,6 @@ func TestTokenTracker(t *testing.T) {
 	if d1 != (Token{sequenceNumber: 1}) || tracker.NextDrawToken() != (Token{sequenceNumber: 2}) {
 		t.Fatal("draw token sequencing wrong")
 	}
-	// Flush tokens run independently.
 	if tracker.NextFlushToken() != (Token{sequenceNumber: 1}) {
 		t.Fatal("flush token should not advance with draws")
 	}

@@ -50,7 +50,7 @@ const (
 
 // numCurveTrianglesAtResolveLevel returns how many triangles are in a curve with 2^resolveLevel line segments.
 //
-//	resolveLevel=0 -> 0 line segments -> 0 triangles
+//	resolveLevel=0 -> 1 line segment  -> 0 triangles
 //	resolveLevel=1 -> 2 line segments -> 1 triangle
 //	resolveLevel=2 -> 4 line segments -> 3 triangles
 //	...
@@ -121,9 +121,6 @@ func patchStride(attribs PatchAttribs) int {
 	return 4*8 + patchAttribsStride(attribs)
 }
 
-//////////////////////////////////////////////////////////////////////////////
-// findCubicConvex180Chops / conicHasCusp
-
 // findCubicConvex180Chops finds 0, 1, or 2 T values at which to chop the given curve in order to guarantee the
 // resulting cubics are convex and rotate no more than 180 degrees.
 //
@@ -174,7 +171,7 @@ func findCubicConvex180Chops(pts *[4]geom.Point, t *[2]float32, areCusps *bool) 
 	bOverMinus2 := -0.5 * b
 	discrOver4 := bOverMinus2*bOverMinus2 - a*c
 
-	// If -cuspThreshold <= discrOver4 <= cuspThreshold, the two roots are within kEpsilon of one another (in parametric
+	// If -cuspThreshold <= discrOver4 <= cuspThreshold, the two roots are within epsilon of one another (in parametric
 	// space). This is close enough for our purposes to consider them a single cusp.
 	cuspThreshold := a * (epsilon / 2)
 	cuspThreshold *= cuspThreshold
@@ -193,7 +190,7 @@ func findCubicConvex180Chops(pts *[4]geom.Point, t *[2]float32, areCusps *bool) 
 		// are colocated, and T[0] will equal NaN which returns 0 chops.
 		*areCusps = false
 		root := c / bOverMinus2 // plain float division
-		// Is "root" inside the range [kEpsilon, 1 - kEpsilon)?
+		// Is "root" inside the range [epsilon, 1 - epsilon)?
 		if math.Float32bits(root-epsilon) < ieeeOneMinus2Epsilon {
 			t[0] = root
 			return 1
@@ -203,11 +200,10 @@ func findCubicConvex180Chops(pts *[4]geom.Point, t *[2]float32, areCusps *bool) 
 
 	*areCusps = discrOver4 <= cuspThreshold
 	if *areCusps {
-		// The two roots are close enough that we can consider them a single cusp.
 		if a != 0 || bOverMinus2 != 0 || c != 0 {
 			// Pick the average of both roots.
 			root := bOverMinus2 / a // plain float division
-			// Is "root" inside the range [kEpsilon, 1 - kEpsilon)?
+			// Is "root" inside the range [epsilon, 1 - epsilon)?
 			if math.Float32bits(root-epsilon) < ieeeOneMinus2Epsilon {
 				t[0] = root
 				return 1
@@ -311,7 +307,6 @@ type strokeParams struct {
 	joinType float32 // see tessGetJoinType
 }
 
-// makeStrokeParams derives strokeParams from a stroke description.
 func makeStrokeParams(rec *stroke.Rec) strokeParams {
 	return strokeParams{radius: rec.Width() * 0.5, joinType: tessGetJoinType(rec)}
 }
@@ -339,7 +334,7 @@ func tessNumFixedEdgesInJoinType(join stroke.Join) int {
 	return 3 // round or bevel
 }
 
-// strokesHaveEqualParams reports whether two strokes can share the same (uniform or per-patch) StrokeParams.
+// strokesHaveEqualParams reports whether two strokes can share the same (uniform or per-patch) strokeParams.
 func strokesHaveEqualParams(a, b *stroke.Rec) bool {
 	return a.Width() == b.Width() && a.Join() == b.Join() &&
 		(a.Join() != stroke.JoinMiter || a.Miter() == b.Miter())
@@ -351,9 +346,6 @@ func tessCalcNumRadialSegmentsPerRadian(approxDevStrokeRadius float32) float32 {
 	cosTheta := 1 - (1/tessPrecision)/approxDevStrokeRadius
 	return 0.5 / float32(math.Acos(float64(max32(cosTheta, -1))))
 }
-
-//////////////////////////////////////////////////////////////////////////////
-// linearTolerances
 
 // linearTolerances stores state to approximate the final device-space transform applied to curves, and uses that to
 // calculate segmentation levels for both the parametric curves and radial components (when stroking). These tolerances
@@ -371,7 +363,6 @@ type linearTolerances struct {
 	edgesInJoins int
 }
 
-// newLinearTolerances returns tolerances with the default field values.
 func newLinearTolerances() linearTolerances {
 	return linearTolerances{numParametricSegmentsP4: 1}
 }
@@ -454,9 +445,6 @@ func (t *linearTolerances) accumulate(other *linearTolerances) {
 	}
 }
 
-//////////////////////////////////////////////////////////////////////////////
-// cullTest
-
 // cullTest determines whether the given local-space points will be contained in the cull bounds post transform. For the
 // versions that take >1 point, it returns whether any region of their device-space bounding box will be in the cull
 // bounds.
@@ -465,7 +453,6 @@ func (t *linearTolerances) accumulate(other *linearTolerances) {
 // quick bounds calculations. It also carries no translation; the translation is unapplied from the cull bounds ahead of
 // time.
 type cullTest struct {
-	// matX/matY map path coordinates to the float4 [x, y, -x, -y] in device space.
 	matX [4]float32
 	matY [4]float32
 	// cullBounds is [l, t, -r, -b] with the matrix translation pre-subtracted.
@@ -528,9 +515,6 @@ func (c *cullTest) areVisible4(p *[4]geom.Point) bool {
 	return true
 }
 
-//////////////////////////////////////////////////////////////////////////////
-// tessAffineMatrix
-
 // tessAffineMatrix applies an affine 2d transformation to points. Per-point float32 math reproduces the same result
 // regardless of how many points are mapped at once.
 type tessAffineMatrix struct {
@@ -551,16 +535,12 @@ func makeTessAffineMatrix(m *geom.Matrix) tessAffineMatrix {
 	}
 }
 
-// mapPoint applies the affine transform to p.
 func (m *tessAffineMatrix) mapPoint(p geom.Point) geom.Point {
 	return geom.Point{
 		X: m.scaleX*p.X + (m.skewX*p.Y + m.transX),
 		Y: m.scaleY*p.Y + (m.skewY*p.X + m.transY),
 	}
 }
-
-//////////////////////////////////////////////////////////////////////////////
-// midpointContourParser
 
 // tessContourRecord is one decoded path record for midpointContourParser's contour iteration.
 type tessContourRecord struct {
@@ -581,7 +561,6 @@ type midpointContourParser struct {
 	midpointWeight int
 }
 
-// newMidpointContourParser decodes the path.
 func newMidpointContourParser(p *path.Path) *midpointContourParser {
 	m := &midpointContourParser{}
 	it := path.NewRawIter(p)
@@ -642,7 +621,7 @@ func (m *midpointContourParser) parseNextContour() bool {
 	return hasGeometry
 }
 
-// currentContour returns the records of the contour parseNextContour returned.
+// currentContour returns the records of the contour parseNextContour last found.
 func (m *midpointContourParser) currentContour() []tessContourRecord {
 	return m.records[m.contourStart:m.contourEnd]
 }
@@ -652,9 +631,6 @@ func (m *midpointContourParser) currentMidpoint() geom.Point {
 	inv := 1 / float32(m.midpointWeight)
 	return geom.Point{X: m.midpoint.X * inv, Y: m.midpoint.Y * inv}
 }
-
-//////////////////////////////////////////////////////////////////////////////
-// preChopPathCurves
 
 // tessMaxChopsPerCurve only protects us against getting stuck in infinite recursion due to fp32 precision issues.
 // Mathematically, every curve should reduce to manageable visible sections in O(log N) chops, where N is the magnitude

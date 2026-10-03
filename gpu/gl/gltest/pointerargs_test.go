@@ -112,7 +112,6 @@ func TestGLXRawCallPointerContract(t *testing.T) {
 			"SyscallN itself does not cover pointers converted at glxRawCall call sites")
 	}
 
-	// Every object whose address is converted for a glxRawCall argument must be kept alive across that call.
 	keptAlive := make(map[string]bool)
 	converted := make(map[string]bool)
 	ast.Inspect(file, func(n ast.Node) bool {

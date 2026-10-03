@@ -23,10 +23,9 @@ import (
 // variable font's program would embed the default instance's outlines under this face's metrics, and a WOFF's tables
 // live inside a wrapper (individually compressible), so the container is not an sfnt at all.
 //
-// What each flag then costs the face is the pdf package's decision and is pinned there, over pdfFontType itself
-// (pdf.TestPDFFontTypeForcesThePathFallback). A copy of that decision here could only restate the flag assertions
-// below — pdf depends on font, so the real one cannot be called — and would stay green while the real one stopped
-// reading one of them.
+// What each flag then costs the face is the pdf package's decision, pinned there over pdfFontType itself
+// (pdf.TestPDFFontTypeForcesThePathFallback): pdf depends on font, so a test here could only restate the flag
+// assertions below.
 func TestAdvancedMetricsFlags(t *testing.T) {
 	base := readTestFont(t, "Roboto-Regular.ttf")
 	plain, err := NewTypefaceFromData(base, 0)
@@ -66,7 +65,7 @@ func TestAdvancedMetricsFlags(t *testing.T) {
 }
 
 // TestAdvancedMetricsPCLT covers the PCLT lane: it is the only source of the serif and script style flags, and the cap
-// height it carries takes precedence over OS/2 sCapHeight, as FreeType's advanced-metrics recipe has it.
+// height it carries takes precedence over OS/2 sCapHeight, as in SkTypeface_FreeType::onGetAdvancedMetrics.
 func TestAdvancedMetricsPCLT(t *testing.T) {
 	base := readTestFont(t, "Roboto-Regular.ttf")
 	plain, err := NewTypefaceFromData(base, 0)
@@ -94,7 +93,7 @@ func TestAdvancedMetricsPCLT(t *testing.T) {
 		{desc: "first script class", serifStyle: 9, want: StyleScript},
 		{desc: "last script class", serifStyle: 12, want: StyleScript},
 		{desc: "past the script classes", serifStyle: 13},
-		// The class is the low 6 bits; the top two hold the vertical/horizontal stroke-position flags.
+		// The class is the low 6 bits; the top two hold a separate sans-serif/serif classification.
 		{desc: "serif class with the high bits set", serifStyle: 0xC0 | 3, want: StyleSerif},
 	} {
 		data := sfntWithTables(t, base, map[string][]byte{

@@ -39,13 +39,11 @@ func (g *glyphUse) toCode(gid uint16) int {
 	return int(gid) - int(g.firstNonZero) + 1
 }
 
-// set marks gid as used.
 func (g *glyphUse) set(gid uint16) {
 	code := g.toCode(gid)
 	g.bits[code>>6] |= 1 << uint(code&63)
 }
 
-// has reports whether gid is marked used.
 func (g *glyphUse) has(gid uint16) bool {
 	code := g.toCode(gid)
 	return g.bits[code>>6]&(1<<uint(code&63)) != 0

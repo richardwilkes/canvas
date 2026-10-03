@@ -486,8 +486,8 @@ func f16Half(v float32) uint16 {
 }
 
 // TestImageShaderF16Gather covers the F16 gather's element addressing: RowElems already counts the four elements per
-// pixel, so the row term must not be scaled a second time. Before the fix every row but the first read the wrong pixels
-// and rows at or past height/4 indexed past the end of the storage.
+// pixel, so the row term must not be scaled a second time. Scaling it twice made every row but the first read the wrong
+// pixels and rows at or past height/4 index past the end of the storage.
 func TestImageShaderF16Gather(t *testing.T) {
 	s := NewImage(f16TestImage(t), TileClamp, TileClamp, SamplingOptions{}, nil)
 	for y := range int32(4) {
@@ -509,8 +509,8 @@ func TestImageShaderF16Gather(t *testing.T) {
 // on two different rows — the row stride has to be right for the vertical pair to blend the neighboring rows.
 func TestImageShaderF16BilerpSpansRows(t *testing.T) {
 	s := NewImage(f16TestImage(t), TileClamp, TileClamp, SamplingOptions{Filter: FilterLinear}, nil)
-	// Device pixel (0,1) has center (0.5,1.5), so fx = fract(1.0) = 0 (column 0 only, clamped) and fy = fract(2.0) = 0,
-	// which weights rows 0 and 1 evenly: R = (0.25+0.5)/2 = 0.375.
+	// Device pixel (0,1) has center (0.5,1.5) → image space (0.5,1.0), so fx = fract(1.0) = 0 (column 0 only) and fy =
+	// fract(1.5) = 0.5, which weights rows 0 and 1 evenly: R = (0.25+0.5)/2 = 0.375.
 	var ctm geom.Matrix
 	ctm.SetTranslate(0, 0.5)
 	got := shadePixel(t, s, ctm, 0xFF000000, 0, 1)

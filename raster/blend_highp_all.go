@@ -112,8 +112,8 @@ func srcOverAlpha(s, d pmColor4f, ch func(sc, dc, sa, da float32) float32) pmCol
 	}
 }
 
-// BlendHighp4f exposes the highp blend kernels on colorcore's premul float color, for the shaders package's
-// blend-shader implementation.
+// BlendHighp4f exposes the highp blend kernels on colorcore's premul float color, for the shaders package's blend stage
+// and the GL backend's constant-folded blend processor.
 func BlendHighp4f(mode BlendMode, s, d colorcore.PMColor4f) colorcore.PMColor4f {
 	r := blendHighpAll(mode, pmColor4f{r: s.R, g: s.G, b: s.B, a: s.A}, pmColor4f{r: d.R, g: d.G, b: d.B, a: d.A})
 	return colorcore.PMColor4f{R: r.r, G: r.g, B: r.b, A: r.a}

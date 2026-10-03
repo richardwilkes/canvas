@@ -48,8 +48,8 @@ func (c *Caps) SurfaceSupportsReadPixels(surface *Surface) SurfaceReadPixelsSupp
 }
 
 // SurfaceSupportsWritePixels reports whether surface's pixels can be written directly. A read-only surface never
-// supports writes, and a multisampled render target backed by separate MSAA renderbuffers can only be written to if it
-// is also a texture.
+// supports writes, nor does a multisampled render target backed by separate MSAA renderbuffers; any other render target
+// does only if it is also a texture.
 func (c *Caps) SurfaceSupportsWritePixels(surface *Surface) bool {
 	if surface.ReadOnly() {
 		return false
@@ -103,7 +103,7 @@ func (c *Caps) CanCopySurface(dst *SurfaceProxy, dstRect geom.IRect, src *Surfac
 			!rtProxy.GLRTFBOIDIs0()
 	}
 
-	// Only the blit (and eventually draw) lanes can handle scaling between src and dst.
+	// Only the blit lane can handle scaling between src and dst.
 	scalingCopy := srcRect.Size() != dstRect.Size()
 	if !scalingCopy && c.CanCopyTexSubImage(dst.Format(),
 		proxyHasMSAARenderBuffer(dst, dstSampleCnt), proxyTexTypePtr(dst), src.Format(),

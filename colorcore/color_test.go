@@ -43,12 +43,10 @@ func TestMulDiv255Round(t *testing.T) {
 }
 
 func TestPreMultiply(t *testing.T) {
-	// Opaque colors pass through.
 	c := ARGB(255, 10, 20, 30)
 	if pm := c.PreMultiply(); pm != PMColor(c) {
 		t.Errorf("opaque premul changed value: %#x", uint32(pm))
 	}
-	// Transparent black.
 	if pm := ARGB(0, 255, 255, 255).PreMultiply(); pm != PMColorARGB(0, 0, 0, 0) {
 		t.Errorf("transparent premul = %#x", uint32(pm))
 	}
@@ -88,16 +86,14 @@ func TestPremulUnpremulRoundTrip(t *testing.T) {
 			}
 		}
 	}
-	// Alpha 0 unpremultiplies to transparent.
 	if PMColorARGB(0, 0, 0, 0).UnPreMultiply() != 0 {
 		t.Error("alpha-0 unpremul should be 0")
 	}
 }
 
-// TestUnPreMultiplySaturatesNonCanonical pins the clamp for premultiplied colors whose channels exceed their alpha.
-// PMColorARGB is exported and validates nothing, so such a color is constructible through the public API; without the
-// clamp the shifted product wraps on the conversion to uint8 (alpha 1, channel 255 lands on 65025, whose low byte is 1
-// — near-black instead of white).
+// TestUnPreMultiplySaturatesNonCanonical pins the clamp for premultiplied colors whose channels exceed their alpha,
+// which PMColorARGB does not reject. Without the clamp the shifted product wraps on the conversion to uint8 (alpha 1,
+// channel 255 lands on 65025, whose low byte is 1: near-black instead of white).
 func TestUnPreMultiplySaturatesNonCanonical(t *testing.T) {
 	if got := PMColorARGB(1, 255, 0, 0).UnPreMultiply(); got != ARGB(1, 255, 0, 0) {
 		t.Errorf("PMColorARGB(1,255,0,0).UnPreMultiply() = %#08x, want %#08x", uint32(got), uint32(ARGB(1, 255, 0, 0)))
@@ -179,12 +175,11 @@ func TestSRGBTransferRoundTrip(t *testing.T) {
 	}
 }
 
-// TestToUnorm8MatchesTwoStepRounding pins the arithmetic toUnorm8's doc describes: x*255 is rounded to float32, then the
-// +0.5 is rounded separately, then the result is truncated, with the pin and the NaN-to-0 behavior around it. The
+// TestToUnorm8MatchesTwoStepRounding pins the arithmetic toUnorm8's doc describes: x*255 is rounded to float32, then
+// the +0.5 is rounded separately, then the result is truncated, with the pin and the NaN-to-0 behavior around it. The
 // reference computes both roundings in float64, where no contraction is possible, so any change to the rounding
-// discipline (round-to-even, math.Round, a different pin order) shows up here. It does not by itself catch a
-// reintroduced fused multiply-add: an exhaustive sweep of all 2^32 float32 inputs shows the fused and unfused forms
-// agree on every one of them, which is why the FMA in the pre-fix code was latent rather than a live golden divergence.
+// discipline (round-to-even, math.Round, a different pin order) shows up here. It cannot catch a reintroduced fused
+// multiply-add, because the fused and unfused forms agree on all 2^32 float32 inputs.
 func TestToUnorm8MatchesTwoStepRounding(t *testing.T) {
 	twoStep := func(x float32) uint8 {
 		v := float32(float64(float32(float64(x)*255)) + 0.5)

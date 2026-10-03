@@ -8,13 +8,10 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // The sortable angle formed by a segment span, used to order every segment meeting at an intersection point
-// counterclockwise so winding can be assigned. Angles are sorted counterclockwise; the smallest has a positive x and
-// the smallest positive y, the largest a positive x and a zero y. The type carries the curve (offset to a shared
-// origin), its sweep vectors, a 16-sector compass classification of that sweep, and the pairwise comparison machinery
+// counterclockwise so winding can be assigned. The smallest angle has a positive x and the smallest positive y, the
+// largest a positive x and a zero y. The type carries the curve (offset to a shared origin), its sweep vectors, a
+// 16-sector compass classification of that sweep, and the pairwise comparison machinery
 // (after/orderable/endsIntersect/convexHullOverlaps/checkParallel) the sorted insert relies on.
-//
-// All geometry here is computed in float64 for the precision the boolean-op math needs; the sector mask is a plain
-// 32-bit field. Sorting the inflection-test parameter values uses an ascending slices.Sort.
 
 package pathops
 
@@ -71,16 +68,13 @@ type opAngle struct {
 	tangentsAmbiguous bool           // true when the tangent comparison could not order this angle unambiguously
 }
 
-// segment returns the segment that owns this angle's starting span.
 func (a *opAngle) segment() *opSegment { return a.start.segment }
 
-// midT returns the midpoint of the angle's span parameter range: (start.t()+end.t())/2.
 func (a *opAngle) midT() float64 { return (a.start.t() + a.end.t()) / 2 }
 
 // starter returns whichever of start/end comes first in t-order (see opSpanBase.starter).
 func (a *opAngle) starter() *opSpan { return a.start.starter(a.end) }
 
-// setLastMarked records the last span visited while marking windings through this angle's loop.
 func (a *opAngle) setLastMarked(last *opSpanBase) { a.lastMarked = last }
 
 // set installs a new start/end span pair for this angle, resetting its cached state and recomputing the curve section
@@ -246,9 +240,8 @@ func (a *opAngle) deferSector() {
 	a.computeSectorFlag = true
 }
 
-/*      y<0 y==0 y>0  x<0 x==0 x>0 xy<0 xy==0 xy>0 */
-
-// findSector maps a sweep vector into a 0..31 sector (odd values are exact compass points; -1 defers).
+// findSector maps a sweep vector to an odd sector in 1..31 (those with value&3 == 3 are exact compass points), or to -1
+// to defer.
 func (a *opAngle) findSector(verb path.Verb, x, y float64) int {
 	absX := math.Abs(x)
 	absY := math.Abs(y)
@@ -256,7 +249,7 @@ func (a *opAngle) findSector(verb path.Verb, x, y float64) int {
 	if verb == path.VerbLine || !almostEqualUlps(absX, absY) {
 		xy = absX - absY
 	}
-	// sixteen sections: a space divided into 16 "sedecimant" sections
+	// The plane divided into 16 "sedecimant" sections.
 	sedecimant := [3][3][3]int{
 		//       y<0           y==0           y>0
 		//   x<0 x==0 x>0  x<0 x==0 x>0  x<0 x==0 x>0
@@ -278,7 +271,7 @@ func (a *opAngle) checkCrossesZero() bool {
 	return end-start > 16
 }
 
-// oppositePlanes reports whether rh's sector start is at least 8 sedecimants (a quarter turn) away from this angle's.
+// oppositePlanes reports whether rh's sector start is at least 8 sectors (a quarter turn) away from this angle's.
 func (a *opAngle) oppositePlanes(rh *opAngle) bool {
 	startSpan := rh.sectorStart - a.sectorStart
 	if startSpan < 0 {
@@ -428,7 +421,6 @@ func (a *opAngle) computeSector() bool {
 			}
 		}
 	}
-	// recomputeSector
 	var computedEnd *opSpanBase
 	if stepUp {
 		if checkEnd != nil {
@@ -828,8 +820,8 @@ func (a *opAngle) lineOnOneSide(test *opAngle, useOriginal bool) int {
 	return result
 }
 
-// linesOnOriginalSide is an experimental original-data ordering for two lines sharing a point (returns 2 for 180
-// degrees apart).
+// linesOnOriginalSide orders two lines sharing a point using their original (untranslated) data, returning 2 when they
+// are 180 degrees apart.
 func (a *opAngle) linesOnOriginalSide(test *opAngle) int {
 	origin := a.originalCurvePart.pts[0]
 	line := a.originalCurvePart.pts[1].sub(origin)
@@ -1093,7 +1085,8 @@ func (a *opAngle) previous() *opAngle {
 	}
 }
 
-// loopContains reports whether angle's start segment/t pair appears in this loop.
+// loopContains reports whether this loop holds an angle on angle's segment spanning the same t range in the reverse
+// direction.
 func (a *opAngle) loopContains(angle *opAngle) bool {
 	if a.next == nil {
 		return false

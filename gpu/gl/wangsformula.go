@@ -25,8 +25,8 @@ import (
 	"github.com/richardwilkes/canvas/geom"
 )
 
-// min32/max32 return the first operand when the comparison against a NaN operand is false, so NaN never silently wins.
-// sqrt32 is a float32-rounded sqrt.
+// min32/max32 return the first operand when either operand is NaN, like std::min/std::max. sqrt32 is a float32-rounded
+// sqrt.
 func min32(a, b float32) float32 {
 	if b < a {
 		return b
@@ -49,13 +49,12 @@ func wangsLengthTermP2(degree int, precision float32) float32 {
 	return (float32(degree*degree*(degree-1)*(degree-1)) / 64) * (precision * precision)
 }
 
-// wangsRoot4 returns sqrt(sqrt(x)).
 func wangsRoot4(x float32) float32 {
 	return float32(math.Sqrt(math.Sqrt(float64(x))))
 }
 
-// wangsNextLog2 returns, for finite positive x > 1, ceil(log2(x)); otherwise returns 0. For +/- NaN returns 0. For
-// +infinity returns 128. For -infinity returns 0.
+// wangsNextLog2 returns ceil(log2(x)) for finite x > 1, 128 for +infinity, and 0 otherwise (including NaN and
+// -infinity).
 //
 //	nextlog2((-inf..1]) -> 0
 //	nextlog2((1..2]) -> 1
@@ -68,7 +67,7 @@ func wangsNextLog2(x float32) int {
 	}
 	bits := math.Float32bits(x)
 	const digitsAfterBinaryPoint = 23
-	// The constant is a significand of all 1s -- 0b0'00000000'111'1111111111'111111111. So, if the significand of x is
+	// The constant is a significand of all 1s -- 0b0'00000000'111'1111111111'1111111111. So, if the significand of x is
 	// all 0s (and therefore an integer power of two) this will not increment the exponent, but if it is just one ULP
 	// above the power of two the carry will ripple into the exponent incrementing the exponent by 1.
 	bits += (1 << digitsAfterBinaryPoint) - 1
@@ -82,7 +81,7 @@ func wangsNextLog2(x float32) int {
 	return 0
 }
 
-// wangsNextLog16 returns nextlog2(sqrt(sqrt(x))), computed as (wangsNextLog2(x) + 3) / 4.
+// wangsNextLog16 returns wangsNextLog2(sqrt(sqrt(x))).
 func wangsNextLog16(x float32) int {
 	return (wangsNextLog2(x) + 3) >> 2
 }
@@ -96,7 +95,6 @@ type vectorXform struct {
 	c1x, c1y float32
 }
 
-// identityVectorXform returns the identity transform.
 func identityVectorXform() vectorXform {
 	return vectorXform{c0x: 1, c0y: 0, c1x: 0, c1y: 1}
 }
@@ -113,7 +111,6 @@ func makeVectorXform(m *geom.Matrix) vectorXform {
 	}
 }
 
-// apply transforms v as a vector (direction only, no translation) by the 2x2 matrix.
 func (x vectorXform) apply(v geom.Point) geom.Point {
 	return geom.Point{X: x.c0x*v.X + x.c1x*v.Y, Y: x.c0y*v.X + x.c1y*v.Y}
 }
@@ -136,7 +133,7 @@ func wangsCubicP4(precision float32, p0, p1, p2, p3 geom.Point, xf vectorXform) 
 	v1 := xf.apply(geom.Point{X: -2*p2.X + p1.X + p3.X, Y: -2*p2.Y + p1.Y + p3.Y})
 	m := v0.X*v0.X + v0.Y*v0.Y
 	if n := v1.X*v1.X + v1.Y*v1.Y; m < n {
-		m = n // Keep the larger of the two magnitudes.
+		m = n
 	}
 	return m * wangsLengthTermP2(3, precision)
 }
@@ -185,7 +182,6 @@ func wangsConicP2(precision float32, p0, p1, p2 geom.Point, w float32, xf vector
 	p2.X -= cx
 	p2.Y -= cy
 
-	// Compute max length.
 	maxLen := sqrt32(max32(p0.X*p0.X+p0.Y*p0.Y, max32(p1.X*p1.X+p1.Y*p1.Y, p2.X*p2.X+p2.Y*p2.Y)))
 
 	// Compute forward differences.

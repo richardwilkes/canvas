@@ -7,12 +7,10 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// Blob and BlobRedrawCoordinator: a fully processed text blob (a SubRunContainer with a reuse key) and the
-// budgeted cache that reuses blobs across draws. A8 masks are gamma-free, so the non-LCD canonical color is a constant
-// and non-LCD blob reuse stays color-independent; LCD blobs key on the pixel geometry and regenerate on luminance-color
-// changes (see BlobKey/CanReuse). There is no destruction hook to purge a blob's cache entry when its source is freed,
-// so stale blobs leave through the same LRU budget sweep that handles ordinary eviction. Untracked glyph-run lists (no
-// source blob) ride the same drawing path uncached.
+// Blob and BlobRedrawCoordinator: a fully processed text blob (a SubRunContainer with a reuse key) and the budgeted
+// cache that reuses blobs across draws. There is no destruction hook to purge a blob's cache entry when its source is
+// freed, so stale blobs leave through the same LRU budget sweep that handles ordinary eviction. Untracked glyph-run
+// lists (no source blob) ride the same drawing path uncached.
 
 package text
 
@@ -47,7 +45,6 @@ type BlobKey struct {
 	hasLCD               bool
 }
 
-// anyRunsLCD reports whether any run in glyphRunList uses subpixel (LCD) anti-aliasing.
 func anyRunsLCD(glyphRunList *textblob.GlyphRunList) bool {
 	for i := range glyphRunList.Runs {
 		if glyphRunList.Runs[i].Font.Edging() == font.EdgingSubpixelAntiAlias {
@@ -181,8 +178,6 @@ type Blob struct {
 // MakeTextBlob processes glyphRunList into a fully resolved, cacheable Blob.
 func MakeTextBlob(glyphRunList *textblob.GlyphRunList, paint *canvas.Paint, positionMatrix *geom.Matrix, deviceProps *font.DeviceProps, control *SubRunControl) *Blob {
 	container := MakeSubRuns(glyphRunList, positionMatrix, paint, deviceProps, control)
-	// Approximate the blob's footprint with the per-glyph data (positions + variants) plus a per-blob overhead so the
-	// budget sweep has comparable teeth.
 	size := blobFixedBytes
 	for i := range glyphRunList.Runs {
 		size += len(glyphRunList.Runs[i].Glyphs) * blobGlyphBytes
@@ -221,9 +216,6 @@ func (b *Blob) CanReuse(paint *canvas.Paint, positionMatrix *geom.Matrix) bool {
 func (b *Blob) Draw(c *canvas.Canvas, drawOrigin geom.Point, paint *canvas.Paint, atlas AtlasDrawDelegate) {
 	b.subRuns.Draw(c, drawOrigin, paint, atlas)
 }
-
-//////////////////////////////////////////////////////////////////////////////
-// BlobRedrawCoordinator.
 
 // blobCacheDefaultBudget is the default byte budget for the text blob cache.
 const blobCacheDefaultBudget = 1 << 22
@@ -279,7 +271,6 @@ func (c *BlobRedrawCoordinator) findOrCreateBlob(viewMatrix *geom.Matrix, glyphR
 	return blob
 }
 
-// addOrReturnExisting inserts blob into the cache, or returns an already-cached blob with the same key.
 func (c *BlobRedrawCoordinator) addOrReturnExisting(blob *Blob) *Blob {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -308,7 +299,6 @@ func (c *BlobRedrawCoordinator) findInEntry(key *BlobKey) *Blob {
 	return nil
 }
 
-// remove evicts blob from the cache.
 func (c *BlobRedrawCoordinator) remove(blob *Blob) {
 	c.mu.Lock()
 	c.internalRemove(blob)
@@ -357,7 +347,7 @@ func (c *BlobRedrawCoordinator) internalAdd(blob *Blob) *Blob {
 	return blob
 }
 
-// internalCheckPurge evicts from the LRU tail until under budget, if over budget, never evicting the blob just used.
+// internalCheckPurge evicts from the LRU tail until within budget, never evicting the blob just used.
 func (c *BlobRedrawCoordinator) internalCheckPurge(blob *Blob) {
 	if c.currentSize <= c.sizeBudget {
 		return

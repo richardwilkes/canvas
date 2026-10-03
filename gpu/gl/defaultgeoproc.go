@@ -60,8 +60,6 @@ const (
 	LocalCoordsTypeHasExplicit
 )
 
-// defaultGeoProc is the default geometry processor: position times a uniform view matrix, with optional per-vertex
-// color, local coords, and coverage.
 type defaultGeoProc struct {
 	attrs [4]Attribute // inPosition, inColor, inLocalCoord, inCoverage
 	GPBase
@@ -73,8 +71,8 @@ type defaultGeoProc struct {
 	localCoordsWillBeRead bool
 }
 
-// MakeDefaultGeoProc builds a defaultGeoProc (with the Color/Coverage/LocalCoords options flattened into arguments; the
-// arena parameter is dropped, since ops are ordinary allocations rather than arena-allocated).
+// MakeDefaultGeoProc builds a defaultGeoProc. Skia's Color/Coverage/LocalCoords options are flattened into arguments,
+// and its arena parameter is dropped (the shell comes from a free list instead).
 func MakeDefaultGeoProc(colorType DefaultGeoProcColorType, color colorcore.PMColor4f, coverageType DefaultGeoProcCoverageType, coverage uint8, localCoordsType DefaultGeoProcLocalCoordsType, localMatrix, viewMatrix *geom.Matrix) GeometryProcessor {
 	var flags uint32
 	switch colorType {
@@ -161,11 +159,10 @@ func (g *defaultGeoProc) tweaksAlphaForCoverage() bool {
 	return g.flags&gpFlagCoverageAttributeTweak != 0
 }
 
-// usesCoverageUniform reports whether the fragment shader declares and reads the Coverage uniform, which is the emitter's
-// fallback case: any coverage other than fully opaque that is not already being passed through from the vertex coverage
-// attribute. Tweak-alpha folds the vertex coverage into the color instead of into the coverage output, so it takes the
-// uniform lane too — SetData must agree with the emitter here or the declared uniform is never written, leaving the draw
-// with zero coverage.
+// usesCoverageUniform reports whether the fragment shader declares and reads the Coverage uniform: any coverage other
+// than fully opaque that is not passed through from the vertex coverage attribute. Tweak-alpha folds the vertex
+// coverage into the color instead of the coverage output, so it takes the uniform lane too. SetData must agree with the
+// emitter here, or the declared uniform is never written, leaving the draw with zero coverage.
 func (g *defaultGeoProc) usesCoverageUniform() bool {
 	return g.coverage != 0xff && (!g.hasVertexCoverage() || g.tweaksAlphaForCoverage())
 }
@@ -193,7 +190,6 @@ func (g *defaultGeoProc) MakeProgramImpl(*gpu.ShaderCaps) GPProgramImpl {
 	return &defaultGeoProcImpl{coverage: 0xff}
 }
 
-// defaultGeoProcImpl is the shader implementation for defaultGeoProc.
 type defaultGeoProcImpl struct {
 	GPImplBase
 	viewMatrixPrev     geom.Matrix
@@ -236,7 +232,6 @@ func (i *defaultGeoProcImpl) onEmitCode(args *GPEmitArgs, gpArgs *GPArgs) {
 	varyingHandler := args.VaryingHandler
 	uniformHandler := args.UniformHandler
 
-	// Emit attributes.
 	varyingHandler.EmitAttributes(gp)
 
 	tweakAlpha := gp.tweaksAlphaForCoverage()
@@ -274,7 +269,6 @@ func (i *defaultGeoProcImpl) onEmitCode(args *GPEmitArgs, gpArgs *GPArgs) {
 		i.setupUniformColor(fragBuilder, uniformHandler, args.OutputColor, &i.colorUniform)
 	}
 
-	// Set up position.
 	WriteOutputPositionWithMatrix(vertBuilder, uniformHandler, args.ShaderCaps, gpArgs,
 		gp.attrs[0].Name(), &gp.viewMatrix, &i.viewMatrixUniform)
 

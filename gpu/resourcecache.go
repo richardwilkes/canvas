@@ -14,7 +14,7 @@
 // uniquely keyed resources through a hash keyed on the full key bytes.
 //
 // This is a single-threaded cache: cross-thread unref and cross-thread key invalidation have no counterpart here. The
-// ThreadSafeCacheHook interface lets a separate thread-safe cache layer plug in: abandonAll/releaseAll drop all of its
+// ThreadSafeCacheHook interface lets a separate thread-safe cache layer plug in: AbandonAll/ReleaseAll drop all of its
 // refs, PurgeAsNeeded asks it to drop uniquely-held refs when still over budget after the first purge pass, and
 // purgeUnlockedResources(PurgeAllResources) drops its uniquely-held (optionally stale) refs up front.
 
@@ -58,8 +58,7 @@ type ResourceCache struct {
 	// deleted from the map on empty). scratchInsert reuses one when it (re)creates a key's list, so the steady-state
 	// recycle of a scratch resource — e.g. a dynamic vertex/index buffer freed and re-acquired every frame — does not
 	// re-grow its list from nil each frame. Always cleared before it is reused, so it pins no Resource, and bounded so
-	// a burst of distinct keys cannot retain unbounded storage; this recovers the benefit a pooled-list-node
-	// implementation would get for free.
+	// a burst of distinct keys cannot retain unbounded storage.
 	scratchBackings       [][]Resource
 	nonpurgeableResources []Resource
 	purgeableQueue        purgeableQueue
@@ -235,12 +234,10 @@ func (c *ResourceCache) ReleaseAll() {
 		c.bytes != 0 || c.budgetedCount != 0 || c.budgetedBytes != 0 || c.purgeableBytes != 0 {
 		panic("resource cache not empty after releaseAll")
 	}
-	// The teardown loop repopulated the reclaimed-backing free list via scratchRemove; drop it so an emptied cache
-	// retains no storage.
+	// As in AbandonAll, drop the free list the teardown loops repopulated.
 	c.scratchBackings = nil
 }
 
-// releaseResource is the cache freeing a resource.
 func (c *ResourceCache) releaseResource(resource Resource) {
 	resource.resourceBase().release()
 }
@@ -281,10 +278,8 @@ func (c *ResourceCache) scratchInsert(scratchKey *ScratchKey, resource Resource)
 	key := scratchKey.mapKey()
 	list := c.scratchMap[key]
 	if list == nil {
-		// The key is absent (delete-on-empty removed its list, or it was never seen). Reuse a reclaimed backing array
-		// if one is available so the steady-state recycle of a scratch resource does not re-grow its list from nil;
-		// append below reuses the backing in place. A present key always has length >= 1 (delete-on-empty), so list ==
-		// nil iff the key is absent.
+		// A present key always has length >= 1 (delete-on-empty), so list == nil iff the key is absent. Reuse a
+		// reclaimed backing array if one is available (see scratchBackings); append below fills it in place.
 		list = c.borrowScratchBacking()
 	}
 	c.scratchMap[key] = append(list, resource)
@@ -315,15 +310,14 @@ func (c *ResourceCache) scratchRemove(scratchKey *ScratchKey, resource Resource)
 	panic("resource not in scratch map")
 }
 
-// scratchBackingsMax bounds the reclaimed-backing free list so a pathological burst of distinct scratch keys emptied
-// without reuse cannot retain unbounded slice headers. Each backing is tiny (a handful of Resource slots) and always
-// cleared, so this is purely a defensive cap; steady-state usage keeps only a couple of backings live.
+// scratchBackingsMax bounds the reclaimed-backing free list so a burst of distinct scratch keys emptied without reuse
+// cannot retain unbounded storage. Each backing is tiny (a handful of Resource slots) and always cleared, so this is
+// purely a defensive cap; steady-state usage keeps only a couple of backings live.
 const scratchBackingsMax = 32
 
 // recycleScratchBacking reclaims an emptied scratch-map backing (length 0, capacity possibly nonzero) for reuse by a
 // later scratchInsert. The full capacity is cleared first because append leaves the removed element(s) in the
-// underlying array, so the backing would otherwise pin dead Resources — this gives the same leak-safety a
-// pooled-list-node implementation would get from freeing its node.
+// underlying array, so the backing would otherwise pin dead Resources.
 func (c *ResourceCache) recycleScratchBacking(list []Resource) {
 	if cap(list) == 0 || len(c.scratchBackings) >= scratchBackingsMax {
 		return
@@ -334,7 +328,7 @@ func (c *ResourceCache) recycleScratchBacking(list []Resource) {
 }
 
 // borrowScratchBacking returns a cleared, length-0 backing array reclaimed by a prior recycleScratchBacking, or nil
-// when none is available (in which case scratchInsert's append allocates a fresh one, exactly as before).
+// when none is available (scratchInsert's append then allocates a fresh one).
 func (c *ResourceCache) borrowScratchBacking() []Resource {
 	n := len(c.scratchBackings)
 	if n == 0 {
@@ -599,10 +593,9 @@ func (c *ResourceCache) purgeUnlockedResources(purgeTime *time.Time, opts PurgeR
 			resource := c.purgeableQueue.peek()
 			if purgeTime != nil &&
 				!resource.resourceBase().timeWhenBecamePurgeable.Before(*purgeTime) {
-				// Resources were given both LRU timestamps and tagged with a frame number when they first became
-				// purgeable. The LRU timestamp won't change again until the resource is made non-purgeable again. So,
-				// at this point all the remaining resources in the timestamp-sorted queue will have a frame number >=
-				// to this one.
+				// Resources were given both an LRU timestamp and the time when they became purgeable. The LRU timestamp
+				// won't change again until the resource is made non-purgeable again, so all the remaining resources in
+				// the timestamp-sorted queue became purgeable no earlier than this one.
 				break
 			}
 			c.releaseResource(resource)

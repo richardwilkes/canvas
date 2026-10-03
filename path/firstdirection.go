@@ -7,8 +7,7 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// Computing the winding direction of the outermost contour (the one holding the global y-max). The stroker's
-// stroke-and-fill lane consumes this; the GPU backend may add more consumers later.
+// Computing the winding direction of the outermost contour (the one holding the global y-max).
 
 package path
 
@@ -84,7 +83,6 @@ func (it *contourIter) next() {
 // subtracts underflow to a zero cross.
 func crossProd(p0, p1, p2 geom.Point) float32 {
 	cross := p1.Sub(p0).Cross(p2.Sub(p0))
-	// We may get 0 when the above subtracts underflow. We expect this to be very rare and lazily promote to double.
 	if cross == 0 {
 		p0x := float64(p0.X)
 		p0y := float64(p0.Y)
@@ -116,10 +114,10 @@ func findDiffPt(pts []geom.Point, index, n, inc int) int {
 	i := index
 	for {
 		i = (i + inc) % n
-		if i == index { // we wrapped around, so abort
+		if i == index {
 			break
 		}
-		if pts[index] != pts[i] { // found a different point, success!
+		if pts[index] != pts[i] {
 			break
 		}
 	}
@@ -163,8 +161,6 @@ func crossToDir(cross float32) FirstDirection {
 // global y-max decides.
 func (p *Path) ComputeFirstDirection() FirstDirection {
 	if p.convexity.IsConvex() {
-		// Note, this can return Unknown. That is valid. If we've determined that the path is convex, then we've already
-		// tried to compute its first-direction. If that failed, then Unknown is the right answer.
 		return convexityToFirstDirection(p.convexity)
 	}
 	return p.ComputeFirstDirectionRaw()
@@ -173,10 +169,8 @@ func (p *Path) ComputeFirstDirection() FirstDirection {
 // ComputeFirstDirectionRaw computes the winding direction from the geometry alone, without consulting the convexity
 // cache (the stroker's stroke-and-fill lane calls this form).
 func (p *Path) ComputeFirstDirectionRaw() FirstDirection {
-	// We loop through all contours, and keep the computed cross-product of the contour that contained the global y-max.
-	// If we just look at the first contour, we may find one that is wound the opposite way (correctly) since it is the
-	// interior of a hole (e.g. 'o'). Thus we must find the contour that is outer most (or at least has the global
-	// y-max) before we can consider its cross product.
+	// Keep the cross product of the contour holding the global y-max. The first contour alone could be a hole (e.g. in
+	// 'o'), correctly wound the opposite way.
 	ymax := p.Bounds().Top
 	ymaxCross := float32(0)
 
@@ -193,8 +187,7 @@ func (p *Path) ComputeFirstDirectionRaw() FirstDirection {
 			continue
 		}
 
-		// If there is more than 1 distinct point at the y-max, we take the x-min and x-max of them and just subtract to
-		// compute the dir.
+		// With several points at the y-max, the order of their x-min and x-max gives the direction.
 		if pts[(index+1)%n].Y == pts[index].Y {
 			minIndex, maxIndex := findMinMaxXAtY(pts, index, n)
 			if minIndex == maxIndex {
@@ -203,8 +196,7 @@ func (p *Path) ComputeFirstDirectionRaw() FirstDirection {
 					continue
 				}
 			} else {
-				// we just subtract the indices, and let that auto-convert to scalar, since we just want - or + to
-				// signal the direction.
+				// Only the sign of the index difference matters.
 				cross = float32(minIndex - maxIndex)
 			}
 		} else {
@@ -215,7 +207,6 @@ func (p *Path) ComputeFirstDirectionRaw() FirstDirection {
 		}
 
 		if cross != 0 {
-			// record our best guess so far
 			ymax = pts[index].Y
 			ymaxCross = cross
 		}
@@ -231,24 +222,15 @@ func (p *Path) ComputeFirstDirectionRaw() FirstDirection {
 // falling back to the X-spread when the points are horizontal. Returns 0 when the contour is completely degenerate,
 // signaling the caller to skip to the next contour.
 func tryCrossProd(pts []geom.Point, index, n int) float32 {
-	// Find a next and prev index to use for the cross-product test, but we try to find pts that form non-zero vectors
-	// from pts[index]
-	//
-	// Its possible that we can't find two non-degenerate vectors, so we have to guard our search (e.g. all the pts
-	// could be in the same place).
-
-	// we pass n - 1 instead of -1 so we don't foul up % operator by passing it a negative LH argument.
+	// Step by n-1 rather than -1 to keep the % operand non-negative.
 	prev := findDiffPt(pts, index, n, n-1)
 	if prev == index {
-		// completely degenerate, skip to next contour
 		return 0
 	}
 	next := findDiffPt(pts, index, n, 1)
 	cross := crossProd(pts[prev], pts[index], pts[next])
-	// if we get a zero and the points are horizontal, then we look at the spread in x-direction. We really should
-	// continue to walk away from the degeneracy until there is a divergence.
+	// Ideally this would keep walking away from the degeneracy until the points diverge.
 	if cross == 0 && pts[prev].Y == pts[index].Y && pts[next].Y == pts[index].Y {
-		// construct the subtract so we get the correct Direction below
 		cross = pts[index].X - pts[next].X
 	}
 	return cross

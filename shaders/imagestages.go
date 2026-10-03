@@ -35,11 +35,10 @@ var (
 	setRGBStageFn     stageFn = setRGBStage
 )
 
-// gatherCtx is the gather stage's context over an imagecore pixel container. tileX/tileY hold the pixel-space
-// repeat/mirror limits (one tileCtx per axis) the tile stages read: they are constant across every gather stage in a
-// compile (derived from width/height/ roundDownAtInteger), so homing them here lets the shared static tile stages read
-// them instead of each capturing a snapshot. setRGB holds the paint color the alpha-only set_rgb stage tints with (one
-// per image shader, so a 1:1 home on the gatherCtx). Held in reused pipeline storage so the stages need not capture.
+// gatherCtx is the gather stage's context over an imagecore pixel container, held in reused pipeline storage.
+// tileX/tileY hold the pixel-space repeat/mirror limits (one tileCtx per axis) the shared static tile stages read; they
+// are constant across every gather stage in a compile (derived from width/height/roundDownAtInteger). setRGB holds the
+// paint color the alpha-only set_rgb stage tints with (one per image shader).
 type gatherCtx struct {
 	px                 *imagecore.Pixels
 	width              float32
@@ -119,7 +118,7 @@ var fltMin = math.Float32frombits(0x00800000)
 // roundDownAtInteger ULP subtraction cannot produce NaN).
 func clampEx(v, limit float32) float32 {
 	inclusiveL := math.Float32frombits(math.Float32bits(limit) - 1)
-	if !(v > fltMin) { // NaN-aware max(inclusiveZ, v)
+	if !(v > fltMin) { // NaN-aware max(fltMin, v)
 		v = fltMin
 	}
 	if v > inclusiveL {
@@ -201,9 +200,8 @@ func halfBitsToFloat(h uint16) float32 {
 	}
 }
 
-// appendGather appends the tiling + gather + decal-mask stage group for one level (append_tiling_and_gather). The
-// per-axis limits live on g (setTileLimits, filled once at compile setup), constant across every gather this compile
-// appends, so the shared static tile stages read them from g rather than each capturing a snapshot.
+// appendGather appends the tiling + gather + decal-mask stage group for one level (append_tiling_and_gather). The tile
+// stages read the per-axis limits from g (filled once by setTileLimits).
 func (p *Pipeline) appendGather(g *gatherCtx, tmx, tmy TileMode, decal *decalTileCtx) {
 	if tmx == TileDecal && tmy == TileDecal {
 		p.appendDecalXAndY(decal)
@@ -272,8 +270,7 @@ func (t *tileCtx) exclusiveMirror(v float32) float32 {
 	return math.Float32frombits(uint32(int32(math.Float32bits(m)) + t.mirrorBiasDir*biasInUlps))
 }
 
-// appendTile appends repeat_x/repeat_y/mirror_x/mirror_y as a static stage reading t (which lives on the gatherCtx, so
-// it stays valid without a captured snapshot).
+// appendTile appends repeat_x/repeat_y/mirror_x/mirror_y as a static stage reading t (which lives on the gatherCtx).
 func (p *Pipeline) appendTile(t *tileCtx, isX, mirror bool) {
 	switch {
 	case isX && mirror:
@@ -582,9 +579,8 @@ func clampGamutStage(z *lanes) {
 	}
 }
 
-// appendSetRGB appends the set_rgb stage (alpha-only image tinting by the paint color). The three tint channels are
-// stored on the alpha-only image's own gatherCtx (a 1:1 home — one set_rgb per image shader), which is the stage
-// context, so the stage need not capture them.
+// appendSetRGB appends the set_rgb stage (alpha-only image tinting by the paint color). The tint is stored on the
+// image's own gatherCtx, which is the stage context.
 func (p *Pipeline) appendSetRGB(g *gatherCtx, r, gg, b float32) {
 	g.setRGB = [3]float32{r, gg, b}
 	p.appendCtx(setRGBStageFn, g)

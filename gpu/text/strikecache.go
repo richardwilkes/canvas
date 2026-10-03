@@ -22,7 +22,6 @@ import (
 	"github.com/richardwilkes/canvas/internal/memsize"
 )
 
-// Cache limits for the GPU-side strike cache.
 const (
 	defaultGpuFontCacheLimit      = 2 * 1024 * 1024
 	defaultGpuFontCacheCountLimit = 2048

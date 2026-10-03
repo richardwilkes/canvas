@@ -8,9 +8,7 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // The shader mask filter: coverage becomes mask * shader-alpha. Conceptually this is the shader drawn over a copy of
-// the mask through an A8 canvas with a src-in paint; per pixel, that reduces to: evaluate the shader, clamp alpha to
-// [0, 1], load the existing A8 coverage (normalized), multiply (a *= da), and store back to A8 — which is exactly the
-// per-pixel math applied here.
+// the mask through an A8 canvas with a src-in paint, which per pixel reduces to the math in FilterMask.
 
 package maskfilter
 
@@ -23,7 +21,6 @@ import (
 	"github.com/richardwilkes/canvas/shaders"
 )
 
-// shaderMaskFilter is the shader mask filter implementation.
 type shaderMaskFilter struct {
 	shader shaders.Shader
 }

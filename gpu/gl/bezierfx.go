@@ -10,9 +10,7 @@
 // The conic and quad hairline geometry processors used by AAHairLinePathRenderer, emitting GLSL directly (half types
 // widen to float — the desktop targets have no mediump). Both compute coverage as max(0, 1 - distance) using a
 // first-order Taylor approximation of the distance to the implicit curve (Loop-Blinn): conics use K^2 - LM over the KLM
-// functionals in the vertex attribute; quads use the canonical-space parabola u^2 - v. Note: makeConicEffect
-// initializes its localMatrix field from the *view* matrix argument (not the local matrix parameter) — this quirk is
-// preserved faithfully.
+// functionals in the vertex attribute; quads use the canonical-space parabola u^2 - v.
 
 package gl
 
@@ -21,9 +19,6 @@ import (
 	"github.com/richardwilkes/canvas/geom"
 	"github.com/richardwilkes/canvas/gpu"
 )
-
-//////////////////////////////////////////////////////////////////////////////
-// Conic hairline geometry processor
 
 // conicEffect is a hairline geometry processor for conics, computing coverage from the KLM implicit-form functionals.
 type conicEffect struct {
@@ -44,8 +39,8 @@ func makeConicEffect(color colorcore.PMColor4f, viewMatrix *geom.Matrix, caps *C
 	gp := &conicEffect{
 		color:      color,
 		viewMatrix: *viewMatrix,
-		// Initializes localMatrix with viewMatrix (not localMatrix); the quirk is preserved. localMatrix is accepted to
-		// keep the call signature uniform.
+		// Skia initializes fLocalMatrix from viewMatrix, not localMatrix; the quirk is preserved. localMatrix is
+		// accepted only to keep the call signature uniform with makeQuadEffect.
 		localMatrix:     *viewMatrix,
 		usesLocalCoords: usesLocalCoords,
 		coverageScale:   coverage,
@@ -81,7 +76,6 @@ func (g *conicEffect) MakeProgramImpl(*gpu.ShaderCaps) GPProgramImpl {
 	return &conicEffectImpl{}
 }
 
-// conicEffectImpl is the shader implementation for conicEffect.
 type conicEffectImpl struct {
 	GPImplBase
 	viewMatrixPrev       geom.Matrix
@@ -129,18 +123,15 @@ func (i *conicEffectImpl) onEmitCode(args *GPEmitArgs, gpArgs *GPArgs) {
 	uniformHandler := args.UniformHandler
 	fragBuilder := args.FragBuilder
 
-	// Emit attributes.
 	varyingHandler.EmitAttributes(gp)
 
 	v := NewVarying(GLSLTypeFloat4)
 	varyingHandler.AddVarying("ConicCoeffs", &v)
 	vertBuilder.CodeAppendf("%s = %s;", v.VsOut(), gp.attrs[1].Name())
 
-	// Set up pass-through color.
 	fragBuilder.CodeAppendf("vec4 %s;", args.OutputColor)
 	i.setupUniformColor(fragBuilder, uniformHandler, args.OutputColor, &i.colorUniform)
 
-	// Set up position.
 	WriteOutputPositionWithMatrix(vertBuilder, uniformHandler, args.ShaderCaps, gpArgs,
 		gp.attrs[0].Name(), &gp.viewMatrix, &i.viewMatrixUniform)
 	if gp.usesLocalCoords {
@@ -170,7 +161,6 @@ func (i *conicEffectImpl) onEmitCode(args *GPEmitArgs, gpArgs *GPArgs) {
 	fragBuilder.CodeAppend("func_ = abs(func_);")
 	fragBuilder.CodeAppend("edgeAlpha = func_ / gFM;")
 	fragBuilder.CodeAppend("edgeAlpha = max(1.0 - edgeAlpha, 0.0);")
-	// Add line below for smooth cubic ramp: edgeAlpha = edgeAlpha*edgeAlpha*(3.0-2.0*edgeAlpha);
 
 	if gp.coverageScale != 0xff {
 		var coverageScale string
@@ -182,9 +172,6 @@ func (i *conicEffectImpl) onEmitCode(args *GPEmitArgs, gpArgs *GPArgs) {
 		fragBuilder.CodeAppendf("vec4 %s = vec4(edgeAlpha);", args.OutputCoverage)
 	}
 }
-
-//////////////////////////////////////////////////////////////////////////////
-// Quad hairline geometry processor
 
 // quadEffect is a hairline geometry processor for quadratics specified by the 0 = u^2 - v canonical coords in the first
 // two components of the vertex attribute (the control points have (u, v) of (0,0), (1/2, 0), and (1, 1)).
@@ -219,9 +206,8 @@ func makeQuadEffect(color colorcore.PMColor4f, viewMatrix *geom.Matrix, caps *Ca
 
 func (g *quadEffect) Name() string { return "Quad" }
 
-// AddToKey adds this geometry processor's shader-affecting state to the program key (note the coverage-scale key bit
-// tests != 0xff here, where conicEffect tests == 0xff — this asymmetry with conicEffect's key is intentional, matching
-// the original design).
+// AddToKey adds this geometry processor's shader-affecting state to the program key. The coverage-scale key bit tests
+// != 0xff here where conicEffect tests == 0xff; the asymmetry matches Skia.
 func (g *quadEffect) AddToKey(caps *gpu.ShaderCaps, b *gpu.KeyBuilder) {
 	var key uint32
 	if g.coverageScale != 0xff {
@@ -242,7 +228,6 @@ func (g *quadEffect) MakeProgramImpl(*gpu.ShaderCaps) GPProgramImpl {
 	return &quadEffectImpl{}
 }
 
-// quadEffectImpl is the shader implementation for quadEffect.
 type quadEffectImpl struct {
 	GPImplBase
 	viewMatrixPrev       geom.Matrix
@@ -290,18 +275,15 @@ func (i *quadEffectImpl) onEmitCode(args *GPEmitArgs, gpArgs *GPArgs) {
 	uniformHandler := args.UniformHandler
 	fragBuilder := args.FragBuilder
 
-	// Emit attributes.
 	varyingHandler.EmitAttributes(gp)
 
 	v := NewVarying(GLSLTypeHalf4)
 	varyingHandler.AddVarying("HairQuadEdge", &v)
 	vertBuilder.CodeAppendf("%s = %s;", v.VsOut(), gp.attrs[1].Name())
 
-	// Set up pass-through color.
 	fragBuilder.CodeAppendf("vec4 %s;", args.OutputColor)
 	i.setupUniformColor(fragBuilder, uniformHandler, args.OutputColor, &i.colorUniform)
 
-	// Set up position.
 	WriteOutputPositionWithMatrix(vertBuilder, uniformHandler, args.ShaderCaps, gpArgs,
 		gp.attrs[0].Name(), &gp.viewMatrix, &i.viewMatrixUniform)
 	if gp.usesLocalCoords {
@@ -318,7 +300,6 @@ func (i *quadEffectImpl) onEmitCode(args *GPEmitArgs, gpArgs *GPArgs) {
 	fragBuilder.CodeAppendf("edgeAlpha = %s.x * %s.x - %s.y;", v.FsIn(), v.FsIn(), v.FsIn())
 	fragBuilder.CodeAppend("edgeAlpha = sqrt(edgeAlpha * edgeAlpha / dot(gF, gF));")
 	fragBuilder.CodeAppend("edgeAlpha = max(1.0 - edgeAlpha, 0.0);")
-	// Add line below for smooth cubic ramp: edgeAlpha = edgeAlpha*edgeAlpha*(3.0-2.0*edgeAlpha);
 
 	if gp.coverageScale != 0xff {
 		var coverageScale string

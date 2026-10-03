@@ -37,8 +37,8 @@ const (
 	QuadTypePerspective
 )
 
-// Quad is a general quadrilateral: 4 (x, y, w) vertices plus a QuadType classification. The zero value is an
-// uninitialized axis-aligned quad with ws == 1.
+// Quad is a general quadrilateral: 4 (x, y, w) vertices plus a QuadType classification. The zero value is not a valid
+// quad (its ws are 0, not 1); build quads with the MakeQuad functions.
 type Quad struct {
 	xs       [4]float32
 	ys       [4]float32
@@ -55,12 +55,11 @@ func MakeQuadFromRectNoTransform(r geom.Rect) Quad {
 	}
 }
 
-// mapRectTranslateScale maps r's corners through m, taking a fast path when m is only a translation and/or scale.
+// mapRectTranslateScale maps r's corners through m, which must be at most a scale and translation.
 func mapRectTranslateScale(r geom.Rect, m *geom.Matrix) (xs, ys [4]float32) {
 	tm := m.Type()
-	// r as (L, T, R, B) lanes.
 	l, t, rr, b := r.Left, r.Top, r.Right, r.Bottom
-	if tm > 0 { // > kIdentity_Mask
+	if tm > 0 { // > geom.TypeIdentity
 		tx, ty := m.Get(geom.MTransX), m.Get(geom.MTransY)
 		if tm <= geom.TypeTranslate {
 			l += tx
@@ -118,7 +117,7 @@ func quadTypeForPoints(pts *[4]geom.Point, m *geom.Matrix) QuadType {
 		return QuadTypePerspective
 	}
 	// If 'pts' was formed directly from a rect's corners and not transformed further, it is safe to use the quad type
-	// derived from 'm'. Otherwise don't waste any more time and assume the most general 2D quad.
+	// derived from 'm'. Otherwise assume the most general 2D quad.
 	if pts[0].X == pts[3].X && pts[1].X == pts[2].X &&
 		pts[0].Y == pts[1].Y && pts[2].Y == pts[3].Y {
 		return quadTypeForTransformedRect(m)
@@ -142,7 +141,6 @@ func MakeQuadFromRect(r geom.Rect, m *geom.Matrix) Quad {
 // MakeQuadFromPoints creates a quad from 4 points in TL, TR, BR, BL order, rearranged into CCW tri-strip order and
 // mapped through m.
 func MakeQuadFromPoints(pts *[4]geom.Point, m *geom.Matrix) Quad {
-	// Rearrange from TL, TR, BR, BL order into CCW tri-strip order (TL, BL, TR, BR).
 	xs := [4]float32{pts[0].X, pts[3].X, pts[1].X, pts[2].X}
 	ys := [4]float32{pts[0].Y, pts[3].Y, pts[1].Y, pts[2].Y}
 	quadType := quadTypeForPoints(pts, m)
@@ -164,7 +162,7 @@ func (q *Quad) Point(i int) geom.Point {
 	return geom.Point{X: q.xs[i], Y: q.ys[i]}
 }
 
-// Bounds returns the quad's device-space bounding rect.
+// Bounds returns the quad's bounding rect (the projected bounds for a perspective quad).
 func (q *Quad) Bounds() geom.Rect {
 	if q.quadType == QuadTypePerspective {
 		return q.projectedBounds()
@@ -225,7 +223,6 @@ func (q *Quad) QuadType() QuadType { return q.quadType }
 // HasPerspective reports whether the quad's w coordinates can be non-unity.
 func (q *Quad) HasPerspective() bool { return q.quadType == QuadTypePerspective }
 
-// scalarIsInt reports whether v has no fractional part.
 func scalarIsInt(v float32) bool { return v == float32(math.Floor(float64(v))) }
 
 // aaAffectsRect reports whether any AA-enabled edge is at a non-integer coordinate; an AA-enabled edge at an integer

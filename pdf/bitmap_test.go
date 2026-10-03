@@ -124,7 +124,7 @@ func TestDeviceDrawImageCaching(t *testing.T) {
 	})
 	validatePDF(t, data)
 
-	// The same image drawn twice is serialized once (fPDFBitmapMap dedup)...
+	// The same image drawn twice is serialized once (pdfBitmapMap dedup)...
 	if n := countSubstr(data, "/Subtype /Image"); n != 1 {
 		t.Fatalf("expected 1 cached image XObject, got %d", n)
 	}
@@ -153,7 +153,6 @@ func TestDeviceDrawImageIntegralSubset(t *testing.T) {
 	if bytes.Contains(data, []byte("/Width 8")) {
 		t.Error("integral subset should serialize the 2x2 sub-image, not the full 8x8")
 	}
-	// An integral src rect needs no sub-pixel clip.
 	if strings.Contains(pageContent(t, data), "W* n") {
 		t.Error("integral src draw should not emit a sub-pixel clip")
 	}
@@ -204,9 +203,8 @@ func TestDeviceDrawGray8Image(t *testing.T) {
 	}
 }
 
-// TestSerializeAlpha8Image exercises do_deflated_image's alpha-only lane directly (the device draw path routes
-// alpha-only images through the luminosity-SMask form-XObject lane instead — see
-// TestDeviceAlphaOnlyImageLuminositySMask).
+// TestSerializeAlpha8Image exercises doDeflatedImage's alpha-only lane directly (the device draw path routes alpha-only
+// images through the luminosity-SMask form-XObject lane instead — see TestDeviceAlphaOnlyImageLuminositySMask).
 func TestSerializeAlpha8Image(t *testing.T) {
 	w, h := int32(3), int32(2)
 	alphas := make([]byte, int(w)*int(h))
@@ -246,7 +244,7 @@ func TestSerializeAlpha8Image(t *testing.T) {
 	}
 }
 
-// TestNeighborAvgColor checks get_neighbor_avg_color: a fully-transparent pixel takes the average color of its
+// TestNeighborAvgColor checks neighborAvgColor: a fully-transparent pixel takes the average color of its
 // non-transparent neighbors so soft-mask resampling does not bleed black.
 func TestNeighborAvgColor(t *testing.T) {
 	// 3x3, center transparent (word 0), the 8 neighbors opaque (10,20,30).

@@ -7,7 +7,7 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// Integration tests for the part-2 shader-evaluating filters (morphology, displacement, lighting, magnifier, matrix
+// Integration tests for the shader-evaluating filters (morphology, displacement, lighting, magnifier, matrix
 // convolution, arithmetic) and the image-source leaf, exercised end-to-end through canvas paint image filters.
 
 package imagefilter_test
@@ -108,7 +108,6 @@ func TestDisplacementMapImageFilter(t *testing.T) {
 	if got := pixel(pix, 18, 30); got != 0 {
 		t.Fatalf("(18,30) = %08x, want transparent", got)
 	}
-	// Invalid channel or non-finite scale produce nil filters.
 	if imagefilter.DisplacementMap(imagefilter.ColorChannel(7), imagefilter.ChannelG, 1,
 		nil, nil, nil) != nil {
 		t.Fatal("invalid channel must produce a nil filter")
@@ -148,8 +147,7 @@ func TestLightingSpotSpecularGeometry(t *testing.T) {
 	if got := alphaOf(pixel(pix, 60, 60)); got != 0 {
 		t.Fatalf("far outside the cone = alpha %d, want 0", got)
 	}
-	// Validation: cutoff cosine outside [-1,1] comes from cos() so it's always valid, but a non-finite falloff must
-	// fail.
+	// The cutoff cosine comes from cos() so it is always within [-1,1], but a non-finite falloff must fail.
 	inf := float32(math.Inf(1))
 	if imagefilter.SpotLitDiffuse(geom.Point3{}, geom.Point3{X: 1}, inf, 10, 0xFFFFFFFF, 1, 1,
 		nil, nil) != nil {
@@ -182,7 +180,6 @@ func TestMagnifierImageFilter(t *testing.T) {
 	if imagefilter.Magnifier(lens, 1, 8, shaders.SamplingOptions{}, nil, nil) != nil {
 		t.Fatal("zoom <= 1 must collapse to the input")
 	}
-	// Invalid lens produces nil.
 	if imagefilter.Magnifier(geom.Rect{}, 2, 8, shaders.SamplingOptions{}, nil, nil) != nil {
 		t.Fatal("empty lens must produce a nil filter")
 	}

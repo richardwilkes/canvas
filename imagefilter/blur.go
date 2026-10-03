@@ -33,11 +33,11 @@ type blurFilter struct {
 // to cropRect. Negative or non-finite sigmas are rejected by returning nil.
 func Blur(sigmaX, sigmaY float32, tileMode shaders.TileMode, input filtercore.Filter, cropRect *geom.Rect) filtercore.Filter {
 	if !geom.IsFinite(sigmaX, sigmaY) || sigmaX < 0 || sigmaY < 0 {
-		// Negative or non-finite sigmas are errors; zero sigmas support 1D blurs and are detected in OnFilterImage.
+		// Zero sigmas are allowed: they support 1D blurs and are detected in OnFilterImage.
 		return nil
 	}
 
-	// Temporarily allow tiling with no crop rect (legacy behavior).
+	// Legacy behavior: tiling with no crop rect is allowed.
 	if tileMode != shaders.TileDecal && cropRect == nil {
 		f := &blurFilter{sigma: geom.Size{Width: sigmaX, Height: sigmaY}, legacyTileMode: tileMode}
 		f.base = filtercore.NewFilterBase(input)
@@ -67,9 +67,7 @@ func Blur(sigmaX, sigmaY float32, tileMode shaders.TileMode, input filtercore.Fi
 // zeroing axes that are non-finite or effectively an identity blur.
 func (f *blurFilter) mapSigma(mapping *filtercore.Mapping) geom.Size {
 	sigma := mapping.ParamToLayerSize(f.sigma)
-	// Clamp to the maximum sigma.
 	sigma = geom.Size{Width: min(sigma.Width, maxBlurSigma), Height: min(sigma.Height, maxBlurSigma)}
-	// Disable blurring on axes that are not finite or are effectively the identity.
 	if !geom.IsFinite(sigma.Width) || filtercore.IsEffectivelyIdentity(sigma.Width) {
 		sigma.Width = 0
 	}

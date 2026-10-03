@@ -14,12 +14,8 @@ import (
 	"github.com/richardwilkes/canvas/geom"
 )
 
-// Image filters, one scenario per sk_imagefilter_new_* constructor the declarative spec reaches
-// ("image filters per constructor"). Parameter ranges follow the GPU image-filter live differential scenes, which both
-// GPU backends agreed on; those scenes were one-offs outside the corpus, and once these scenarios covered every
-// constructor they reached — all 21 ImageFilterKind values, including the six straggler kernels (morphology,
-// displacement, lighting, arithmetic, convolution, magnifier) — the one-offs were redundant and went with the rest of
-// the C differentials. These gate in every lane against the self-captured golden sets.
+// Image filters: together these scenarios cover all 21 ImageFilterKind values. Parameter ranges follow the retired GPU
+// image-filter differential scenes they replaced, which both GPU backends agreed on.
 
 const ifClear = colorcore.Color(0xFF202830)
 
@@ -192,8 +188,6 @@ func init() {
 	})
 
 	reg("imagefilter-matrix-transform", func(c Canvas) {
-		// The 90x90 size is not significant; every lane gates against self-captured goldens ((near-)bit-exactly), so
-		// the size is simply what the goldens hold.
 		c.Clear(white)
 		m := geom.IdentityMatrix()
 		m.SetAll(0.86, -0.5, 60, 0.5, 0.86, -30, 0, 0, 1) // rotate 30 degrees + offset

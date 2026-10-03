@@ -8,7 +8,7 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // Hermetic tests for the triangulator: a corpus of paths that historically crashed, hung, or asserted in triangulators
-// of this kind (these pass by not panicking or hanging), plus differential rasterization checks the emitted triangles,
+// of this kind (these pass by not panicking or hanging), plus differential rasterization checks: the emitted triangles,
 // rasterized by point-in-triangle sampling (with barycentric coverage interpolation for the AA mesh), must reproduce
 // the CPU rasterizer's fill of the same path within an edge-pixel budget.
 
@@ -332,7 +332,7 @@ var triangulatorCrashCorpus = []func(*path.Path){
 		p.LineTo(392.3460693359375, 579.33544921875)
 		p.LineTo(426.632415771484375, 628.5740966796875)
 	},
-	// Collinear edges merged in set_top(); also an intersection between the left and right enclosing edges which falls
+	// Collinear edges merged in setTop(); also an intersection between the left and right enclosing edges which falls
 	// above the current vertex.
 	func(p *path.Path) {
 		p.MoveTo(545.95751953125, 791.69854736328125)
@@ -343,7 +343,7 @@ var triangulatorCrashCorpus = []func(*path.Path){
 		p.LineTo(552.4056396484375, 732.0209960937)
 		p.LineTo(612.05816650390625, 738.494140625)
 	},
-	// Tests active edges which are made inactive by set_top().
+	// Tests active edges which are made inactive by setTop().
 	func(p *path.Path) {
 		p.MoveTo(819.2725830078125, 751.77447509765625)
 		p.LineTo(820.70904541015625, 666.933837890625)
@@ -417,7 +417,7 @@ var triangulatorCrashCorpus = []func(*path.Path){
 		p.LineTo(179.708892822265625, 297.849029541015625)
 		p.LineTo(190.4742279052734375, 299.11895751953125)
 	},
-	// Handle the case where edge.dist(edge.fTop) != 0.0.
+	// Handle the case where edge.dist(edge.top) != 0.0.
 	func(p *path.Path) {
 		p.MoveTo(0.0, 400.0)
 		p.LineTo(138.0, 202.0)
@@ -476,7 +476,7 @@ var triangulatorCrashCorpus = []func(*path.Path){
 		p.LineTo(173.7649993896484375, 489.7340087890625)
 		p.LineTo(170.82000732421875, 491.86700439453125)
 	},
-	// A shape with a vertex collinear to the right hand edge (messes up find_enclosing_edges).
+	// A shape with a vertex collinear to the right hand edge (messes up triFindEnclosingEdges).
 	func(p *path.Path) {
 		p.MoveTo(80, 20)
 		p.LineTo(80, 60)
@@ -832,8 +832,8 @@ func (g *testLCG) next() uint64 {
 	return g.state >> 33
 }
 
-// TestTriPin verifies triPin clamps to [lo, hi] and, per its documented intent (matching Skia's
-// std::max(lo, std::min(x, hi))), pins a NaN input to lo rather than hi.
+// TestTriPin verifies triPin clamps to [lo, hi] and, matching Skia's std::max(lo, std::min(x, hi)), pins a NaN input to
+// lo rather than hi.
 func TestTriPin(t *testing.T) {
 	nan := float32(math.NaN())
 	for _, tc := range []struct {

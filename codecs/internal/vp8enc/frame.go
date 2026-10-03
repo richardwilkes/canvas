@@ -153,7 +153,6 @@ func (e *encoder) reconstructIntra16(it *iterator, rd *modeScore, yuvOut []uint8
 		nz |= uint32(quantizeBlock(&tmp[n], &rd.yAcLevels[n], &dqm.y1)) << uint(n)
 	}
 
-	// Transform back.
 	iTransformWHT(&dcTmp, &tmp)
 	// Track whether the distributed DC coefficients are all zero: the decoder derives its per-macroblock loop-filter
 	// skip from the post-WHT coefficients (RFC 6386 §15.1), so a macroblock whose Y2 levels are non-zero but whose
@@ -279,7 +278,6 @@ func (e *encoder) pickBestIntra16(it *iterator, rd *modeScore) {
 		tmpDst := it.yuvOut2[yOff:] // scratch buffer
 		rdCur.modeI16 = mode
 
-		// Reconstruct.
 		rdCur.nz = e.reconstructIntra16(it, rdCur, tmpDst, mode)
 
 		// Measure the RD score.
@@ -363,7 +361,6 @@ func (e *encoder) pickBestIntra4(it *iterator, rd *modeScore) bool {
 			var rdTmp modeScore
 			var tmpLevels [16]int16
 
-			// Reconstruct.
 			rdTmp.nz = uint32(e.reconstructIntra4(it, &tmpLevels, src, tmpDst, mode)) << uint(it.i4)
 
 			// Compute the RD score.
@@ -450,7 +447,6 @@ func (e *encoder) pickBestUV(it *iterator, rd *modeScore) {
 	for mode := 0; mode < numPredModes; mode++ {
 		var rdUV modeScore
 
-		// Reconstruct.
 		rdUV.nz = e.reconstructUV(it, &rdUV, tmpDst, mode)
 
 		// Compute the RD score.
@@ -498,8 +494,8 @@ func (e *encoder) decimate(it *iterator, rd *modeScore) bool {
 
 	skipped := rd.nz == 0
 	it.mb.skip = skipped
-	// The decoder's loop-filter skip (§15.1: "no DCT coefficient coded for the whole macroblock") is derived from the
-	// post-WHT coefficients, so the Y2 bit of rd.nz counts only when the inverse WHT actually produced a non-zero DC.
+	// The Y2 bit of rd.nz counts against the decoder's loop-filter skip (§15.1) only when the inverse WHT produced a
+	// non-zero DC; see reconstructIntra16.
 	it.mb.noCoeffs = rd.nz&0xffffff == 0 && !rd.dcNz
 	return skipped
 }

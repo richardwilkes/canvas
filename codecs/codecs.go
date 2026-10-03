@@ -32,8 +32,7 @@ func Register() {
 	imagecore.RegisterCodec(wbmpCodec())
 }
 
-// mulDiv255Round returns a*b/255 with round-to-nearest ((a*b + 128) * 257 >> 16) — the premultiply rounding the codec
-// swizzlers use.
+// mulDiv255Round returns a*b/255 rounded to nearest, the premultiply rounding the codec swizzlers use.
 func mulDiv255Round(a, b uint32) uint32 {
 	prod := a*b + 128
 	return (prod + (prod >> 8)) >> 8
@@ -65,7 +64,7 @@ func hasAlpha(m image.Image) bool {
 }
 
 // pixelsFromImage converts a decoded Go image into pixel storage matching info (Gray8 or premul/opaque RGBA_8888), with
-// the codec premultiply rounding on the type-specific fast paths.
+// the codec premultiply rounding.
 func pixelsFromImage(m image.Image, info imagecore.ImageInfo) *imagecore.Pixels {
 	p := imagecore.NewPixels(info)
 	b := m.Bounds()
@@ -182,7 +181,6 @@ func makeDecodedInfo(w, h int, gray, alpha bool) imagecore.ImageInfo {
 	return info
 }
 
-// hasPrefix sniffs a magic number.
 func hasPrefix(data, prefix []byte) bool {
 	return len(data) >= len(prefix) && bytes.Equal(data[:len(prefix)], prefix)
 }

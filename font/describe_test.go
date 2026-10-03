@@ -170,9 +170,9 @@ func TestFaceRunesDataUnknowable(t *testing.T) {
 
 // TestFaceRunesDataBoundsTheCmapWalk pins the bound on the per-code-point cmap walk. typesetting's format-12/13
 // iterator yields one code point at a time and takes a group's length from EndCharCode-StartCharCode in unsigned
-// arithmetic, so a group declaring an EndCharCode of 0xFFFFFFFF — or one below its StartCharCode, which wraps to the
-// same count — asks for 4.29e9 iterations. fontmgr.NewFromData calls this for every face of every supplied blob, so one
-// malformed embedded font would otherwise hang manager construction. The count of entries examined is what pins the
+// arithmetic, so a group declaring an EndCharCode of 0xFFFFFFFF — or one just below its StartCharCode, which wraps to
+// the same count — asks for 4.29e9 iterations. fontmgr.NewFromData calls this for every face of every supplied blob, so
+// one malformed embedded font would otherwise hang manager construction. The count of entries examined is what pins the
 // bound: the runes returned cannot, since a malformed group's code points climb straight past U+10FFFF, where the
 // code-point filter rejects every one of them, so an unbounded walk would return the same runes as this one.
 func TestFaceRunesDataBoundsTheCmapWalk(t *testing.T) {
@@ -246,7 +246,7 @@ func TestFaceCoversRuneUnknowable(t *testing.T) {
 	if FaceCoversRuneData([]byte("not a font at all"), 0, 'A') {
 		t.Error("garbage data reported coverage")
 	}
-	// A real font truncated to its header parses as a collection whose tables are unreadable.
+	// A real font truncated to its 12-byte header has no readable table directory.
 	data, err := os.ReadFile("testdata/Roboto-Regular.ttf")
 	if err != nil {
 		t.Fatal(err)

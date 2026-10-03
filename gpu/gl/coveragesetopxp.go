@@ -18,7 +18,6 @@ import (
 	"github.com/richardwilkes/canvas/raster"
 )
 
-// coverageSetOpXP is a transfer processor that blends src coverage with dst via a region set op.
 type coverageSetOpXP struct {
 	XPBase
 	regionOp       raster.RegionOp
@@ -83,9 +82,7 @@ func (i *coverageSetOpXPImpl) emitOutputsForBlendState(args *XPEmitArgs) {
 	}
 }
 
-//////////////////////////////////////////////////////////////////////////////
-
-// coverageSetOpXPFactory is a stateless immutable singleton compared by identity.
+// coverageSetOpXPFactory is an immutable singleton (one per regionOp/invertCoverage pair) compared by identity.
 type coverageSetOpXPFactory struct {
 	regionOp       raster.RegionOp
 	invertCoverage bool
@@ -119,10 +116,9 @@ func (f *coverageSetOpXPFactory) makeXferProcessor(_ ProcessorAnalysisColor, _ A
 func (f *coverageSetOpXPFactory) analysisProperties(_ ProcessorAnalysisColor, _ AnalysisCoverage, _ *gpu.Caps, _ gpu.ClampType) uint32 {
 	props := XPAnalysisIgnoresInputColor
 	if f.regionOp == raster.RegionReplace {
-		// Only Replace is claimed here. Union/Difference are also unaffected by the dst value when the coverage and
-		// color are all opaque, but proving that needs the opacity plumbed through the factory, so they are left out.
-		// The omission costs a missed optimization on those ops and nothing else: claiming too little is the safe
-		// direction, since the flag only ever licenses the backend to skip reading dst.
+		// Only Replace is claimed. Union/Difference are also unaffected by the dst value when coverage and color are
+		// opaque, but proving that needs the opacity plumbed through the factory. Omitting them only costs a missed
+		// optimization: the flag merely licenses the backend to skip reading dst, so claiming too little is safe.
 		props |= XPAnalysisUnaffectedByDstValue
 	}
 	return props

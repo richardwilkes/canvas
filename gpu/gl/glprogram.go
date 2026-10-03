@@ -8,7 +8,7 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // Program is the linked program object with its attribute layout, uniform-upload manager, and render-target state
-// (RT-adjust vector). The generated GLSL sources are retained for the GLSL parity shader parity harness dumps.
+// (RT-adjust vector). The generated GLSL sources are retained so tests can inspect them.
 
 package gl
 
@@ -147,13 +147,12 @@ type glRenderTargetState struct {
 
 // Program is a linked GL program together with the processor implementations that emitted it.
 type Program struct {
-	// The installed effects.
 	gpImpl             GPProgramImpl
 	xpImpl             XPProgramImpl
 	gpu                *Gpu
 	programDataManager *ProgramDataManager
 	fragmentSource     string
-	// The generated GLSL, kept for the parity harness.
+	// vertexSource and fragmentSource hold the generated GLSL, kept so tests can inspect it.
 	vertexSource          string
 	fpImpls               []FPProgramImpl
 	attributes            []ProgramAttribute
@@ -194,17 +193,16 @@ func newGLProgram(g *Gpu, builtinUniforms BuiltinUniformHandles, programID uint3
 // ProgramID returns the GL program object name.
 func (p *Program) ProgramID() uint32 { return p.programID }
 
-// VertexSource returns the generated vertex GLSL (parity-harness hook).
+// VertexSource returns the generated vertex GLSL (a test hook).
 func (p *Program) VertexSource() string { return p.vertexSource }
 
-// FragmentSource returns the generated fragment GLSL (parity-harness hook).
+// FragmentSource returns the generated fragment GLSL (a test hook).
 func (p *Program) FragmentSource() string { return p.fragmentSource }
 
 // Abandon marks the program object as no longer owned by this Program, without deleting it (for use when the
 // underlying GL context has already been lost).
 func (p *Program) Abandon() { p.programID = 0 }
 
-// destroy deletes the underlying GL program object.
 func (p *Program) destroy(g *Gpu) {
 	if p.programID != 0 {
 		g.fns().DeleteProgram(p.programID)
@@ -236,8 +234,6 @@ func (p *Program) InstanceAttribute(i int) *ProgramAttribute {
 func (p *Program) UpdateUniforms(renderTarget *RenderTarget, programInfo *ProgramInfo) {
 	p.setRenderTargetState(renderTarget, programInfo.Origin())
 
-	// We set the uniforms for installed processors in a generic way; textures must be bound in the same order the
-	// uniforms were set in: GP, FPs, then XP.
 	p.gpImpl.SetData(p.programDataManager, p.gpu.Caps().ShaderCaps, programInfo.GeomProc())
 
 	for i := 0; i < programInfo.Pipeline().NumFragmentProcessors(); i++ {

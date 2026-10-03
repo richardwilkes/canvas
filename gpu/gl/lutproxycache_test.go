@@ -8,8 +8,8 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // Tests for the bound on uniquely-keyed LUT texture proxies: the perlin-noise tables and baked gradient ramps mint a
-// fresh key per shader instance / per bake, so without eviction an animated shader grows the proxy provider's map (and the
-// textures behind it) by a couple of entries per frame, forever.
+// fresh key per shader instance / per bake, so without eviction an animated shader grows the proxy provider's map (and
+// the textures behind it) by a couple of entries per frame, forever.
 
 package gl
 
@@ -56,8 +56,8 @@ func TestPerlinLUTProxiesAreBounded(t *testing.T) {
 }
 
 // TestLUTProxyCacheKeepsTheWorkingSet checks the other half of the bound: a LUT that keeps being used is refreshed on
-// every request, so it is never evicted in favor of one-shot keys — an animated shader must not cost the dither table or a
-// steadily drawn gradient its texture.
+// every request, so it is never evicted in favor of one-shot keys — an animated shader must not cost the dither table
+// or a steadily drawn gradient its texture.
 func TestLUTProxyCacheKeepsTheWorkingSet(t *testing.T) {
 	dc := newFakeDirectContext(t)
 	steady, ok := shaders.NewTurbulence(0.05, 0.05, 2, 1, 0, 0).(*shaders.PerlinNoiseShader)
@@ -89,7 +89,8 @@ func TestLUTProxyCacheKeepsTheWorkingSet(t *testing.T) {
 	}
 }
 
-// TestGradientRampLUTProxiesAreBounded covers the gradient lane's own fresh-per-bake key through the textured colorizer.
+// TestGradientRampLUTProxiesAreBounded covers the gradient lane's own fresh-per-bake key through the textured
+// colorizer.
 func TestGradientRampLUTProxiesAreBounded(t *testing.T) {
 	dc := newFakeDirectContext(t)
 	args := &FPArgs{Ctx: dc, Caps: dc.GLCaps(), DstColorType: gpu.ColorTypeRGBA8888}

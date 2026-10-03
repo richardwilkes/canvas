@@ -9,7 +9,7 @@
 
 // The per-scaler glyph cache with lazily generated metrics, paths, and mask images, plus the accept/reject decisions
 // the glyph-run painter consumes. Drawable glyphs are not implemented (no reachable scaler produces them); the GPU
-// actions (ActionDirectMask/ActionMask) are dimension-only gates for the atlas lanes.
+// actions (ActionDirectMask/ActionMask/ActionSDFT) are gates for the atlas lanes that generate no image.
 
 package font
 
@@ -31,7 +31,7 @@ const (
 	GlyphActionDrop
 )
 
-// ActionType identifies which consumer is asking for a glyph's disposition (the CPU subset).
+// ActionType identifies which consumer is asking for a glyph's disposition.
 type ActionType uint8
 
 // ActionType values.
@@ -52,7 +52,7 @@ const (
 // SideTooBigForAtlas is the largest glyph dimension (in pixels) that can fit in the GPU glyph atlas.
 const SideTooBigForAtlas = 256
 
-// glyphEntry pairs a glyph with its resolved actions (the per-action-type dispositions the CPU painter needs).
+// glyphEntry pairs a glyph with its resolved per-action-type dispositions.
 type glyphEntry struct {
 	glyph   *Glyph
 	actions [actionTypeCount]GlyphAction
@@ -245,9 +245,8 @@ func (s *Strike) FindIntercepts(bounds [2]float32, scale, xPos float32, g *Glyph
 	s.mu.Lock()
 	interval, increase := interceptForBand(bounds, g)
 	s.mu.Unlock()
-	// A cached intercept is charged like any other retained glyph byte. Without it a caller asking about band after band
-	// grows the strike without ever moving the cache's accounting, so the byte budget never sees the growth and never
-	// purges the strike that holds it.
+	// A cached intercept is charged like any other retained glyph byte; otherwise a caller asking about band after band
+	// would grow the strike without the byte budget ever seeing it.
 	s.updateMemoryUsage(increase)
 	if interval[0] < interval[1] {
 		if array != nil {
@@ -258,8 +257,8 @@ func (s *Strike) FindIntercepts(bounds [2]float32, scale, xPos float32, g *Glyph
 	return array
 }
 
-// interceptForBand returns the glyph's cached interval for the band, computing and caching it on the first ask. increase
-// is the bytes the new entry added, 0 on a cache hit. Caller holds the owning strike's lock.
+// interceptForBand returns the glyph's cached interval for the band, computing and caching it on the first ask.
+// increase is the bytes the new entry added, 0 on a cache hit. Caller holds the owning strike's lock.
 func interceptForBand(bounds [2]float32, g *Glyph) (interval [2]float32, increase int) {
 	for _, ic := range g.intercepts {
 		if sameInterceptBand(ic.bounds, bounds) {
@@ -272,12 +271,10 @@ func interceptForBand(bounds [2]float32, g *Glyph) (interval [2]float32, increas
 	return interval, interceptOverhead
 }
 
-// sameInterceptBand reports whether a cached band is the band being asked about. Ordinary values compare by value, so
-// +0 and -0 still share one entry, but a band is only as well-formed as its caller: textblob's GetIntercepts divides by
-// a scale its own comment says can be zero, so a zero-size run with a glyph at pos.Y == 0 asks about {NaN, NaN}. A NaN
-// is not equal to itself, so a plain comparison misses on every lookup — every call would then append another entry and
-// rescan the whole list, growing the glyph without bound at O(n²) cost. Comparing the bit patterns as well makes the
-// cache a cache again for those.
+// sameInterceptBand reports whether a cached band is the band being asked about. Bands compare by value, so +0 and -0
+// share one entry, and also by bit pattern, so a NaN band matches itself: textblob's GetIntercepts divides by a scale
+// that can be zero, so a zero-size run with a glyph at pos.Y == 0 asks about {NaN, NaN}. A plain comparison would miss
+// those on every lookup, appending another entry per call and growing the glyph without bound at O(n²) cost.
 func sameInterceptBand(a, b [2]float32) bool {
 	return a == b || (math.Float32bits(a[0]) == math.Float32bits(b[0]) &&
 		math.Float32bits(a[1]) == math.Float32bits(b[1]))

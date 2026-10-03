@@ -7,16 +7,15 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// The font manager surface: family enumeration, family/style/character matching, style sets, and load-from-data, built
-// over go-text/typesetting's fontscan index for the system manager (Default) and over caller-supplied font data for an
-// in-memory one (NewFromData). A face is therefore either file-backed or data-backed, and each of its lazy reads — the
-// display metadata, the rune-coverage probe, the typeface load — has a lane for both. Font metadata is
-// host-independent: footprints (file location, normalized family, rune coverage, language coverage, aspect) group into
-// families; per-face display names, style names, and font styles come from a lightweight table read
-// (font.DescribeFaceFile/Data) on demand; style matching uses the CSS3 style-matching scoring in css3Score; character
-// fallback probes the faces' cmap-derived rune coverage with BCP-47 hints ordered least-to-most significant, then
-// verifies the chosen face really maps the character through its own cmap before answering — with another table-only
-// read (font.FaceCoversRuneFile/Data), so a rejected candidate never becomes a fully parsed, permanently cached font.
+// The font manager: family enumeration, family/style/character matching, style sets, and load-from-data, built over
+// go-text/typesetting's fontscan index for the system manager (Default) and over caller-supplied font data for an
+// in-memory one (NewFromData). A face is either file-backed or data-backed, and each of its lazy reads (display
+// metadata, rune-coverage probe, typeface load) has a lane for both. Footprints (file location, normalized family, rune
+// coverage, language coverage, aspect) group into families; display names, style names, and font styles come from an
+// on-demand lightweight table read (font.DescribeFaceFile/Data); style matching uses css3Score; character fallback
+// filters by the faces' recorded rune coverage with BCP-47 hints ordered least-to-most significant, then verifies
+// through a cmap-only read (font.FaceCoversRuneFile/Data) that the chosen face really maps the character, so a rejected
+// candidate never becomes a fully parsed, permanently cached font.
 //
 // This is one host-independent implementation where a platform library would have three hosts (CoreText, fontconfig,
 // DirectWrite), so its behavior is the documented font-manager contract plus the majority host behavior rather than any
@@ -24,7 +23,7 @@
 // activated and miss host-virtual families; hidden (dot-prefixed) families are excluded from enumeration but stay
 // matchable by name and reachable through character fallback; enumeration is ordered by normalized family name; family
 // lookup is case- and space-insensitive with no fontconfig-style alias substitution; selectStyleCSS3 is the one
-// style-distance algorithm on every platform; and when nothing covers a character, matchFamilyStyleCharacter returns
+// style-distance algorithm on every platform; and when nothing covers a character, MatchFamilyStyleCharacter returns
 // nil per the documented contract.
 
 package fontmgr
@@ -68,9 +67,8 @@ type Family struct {
 }
 
 // faceRec is one face known to the manager. Display metadata (family/style names, the OS/2-derived style) and the
-// typeface itself load lazily and are cached for the life of the manager (cache aggressively). Exactly one of path and
-// data holds the face's bytes: a scanned face re-reads its file for every lazy read, a face supplied to NewFromData
-// reads the blob it came with.
+// typeface load lazily and are cached for the life of the manager. Exactly one of path and data holds the face's bytes:
+// a scanned face re-reads its file for every lazy read, a face supplied to NewFromData reads the blob it came with.
 type faceRec struct {
 	tf       *font.Typeface
 	key      string
@@ -96,12 +94,11 @@ type faceRec struct {
 }
 
 // coverMemoSize is how many distinct runes one face remembers its cmap verdict for. Each probe is a file open and a
-// cmap parse, and a fallback scan asks every claiming face about the same rune several times over — once per tier, and
-// again per BCP-47 tag — so remembering only the rune in flight, which is what a single-entry memo does, still costs
-// the whole inventory a fresh parse for every *distinct* character a run falls back on. Sixteen covers the interleaving
-// a real run produces (a document mixes a handful of uncovered characters, not hundreds) at a fixed 96 bytes per face,
-// allocated with the record and never grown — which is what rules out a map with an eviction policy here: the memo has
-// to stay negligible beside the footprint data it sits in, and a system inventory holds thousands of these.
+// cmap parse, and a fallback scan asks every claiming face about the same rune once per tier and again per BCP-47 tag.
+// A single-entry memo is not enough: a run that falls back on several distinct characters interleaves them, costing the
+// whole inventory a fresh parse for each. Sixteen covers the handful of uncovered characters a real document mixes at a
+// fixed 96 bytes per face. A system inventory holds thousands of these records, which rules out a map with an eviction
+// policy.
 const coverMemoSize = 16
 
 // faceInfo returns the lazily-loaded lightweight description (family/style names + style).
@@ -138,29 +135,24 @@ func (f *faceRec) styleName() string {
 // probe behind covers both go through.
 const symbolPUAPage = 0xF000
 
-// claims reports whether the face's recorded rune coverage can account for r. Both coverage sets a face can carry — a
-// scan footprint's and the cmap-derived one NewFromData builds — are built by iterating the *raw* cmap subtable, while
-// every resolution of r goes through go-text's remapping wrappers, whose added mappings the iteration deliberately does
-// not include (see the "the Iter() and RuneRanges() method does not include the additional mapping" note above
-// typesetting's remaperSymbol). So a set answering only for the code points it literally holds cannot see a symbol
-// font's ASCII/Latin-1 coverage at all: Wingdings maps 'a' to a real glyph through the U+F061 entry its set does hold,
-// and a filter asking only about 'a' vetoes the face before covers is ever asked. Asking about the U+F000-page
-// character alongside r keeps the filter a superset of what the resolvers answer, which is all it has to be — a face
-// claiming U+F0xx without a symbol cmap merely reaches covers, which rejects it.
+// claims reports whether the face's recorded rune coverage can account for r. Both kinds of coverage set (a scan
+// footprint's and the one NewFromData builds) come from iterating the raw cmap subtable, which omits the mappings
+// go-text's remapping wrappers add when resolving r (see the TODO above typesetting's remaperSymbol). A symbol font's
+// set therefore holds nothing for ASCII/Latin-1: Wingdings maps 'a' through its U+F061 entry, so a filter asking only
+// about 'a' would veto the face before covers is asked. Also asking about the U+F000-page character keeps the filter a
+// superset of what the resolvers answer; a face claiming U+F0xx without a symbol cmap merely reaches covers, which
+// rejects it.
 func (f *faceRec) claims(r rune) bool {
 	return f.runes.Contains(r) || (r >= 0 && r <= 0xFF && f.runes.Contains(symbolPUAPage+r))
 }
 
 // covers reports whether the face's own cmap maps r to a real glyph, reading only the cmap (and OS/2, which selects its
-// encoding) instead of loading the typeface: the character-fallback scans reject most of their candidates, and a
-// typeface, once loaded, is cached — with the whole font file inside it — for the life of the manager, so verifying
-// through typeface() made one MatchFamilyStyleCharacter call retain a large fraction of the system inventory. Only the
-// answering candidate is loaded now.
+// encoding) instead of loading the typeface. The character-fallback scans reject most of their candidates, and a loaded
+// typeface is cached, with the whole font file inside it, for the life of the manager, so verifying through typeface()
+// would make one MatchFamilyStyleCharacter call retain a large fraction of the system inventory.
 //
-// The answer is memoized for the last coverMemoSize distinct runes, which is what the scans re-ask: a face reached
-// through the default-family tier is re-probed by the all-visible-families tier, a face in a BCP-47 restricted set is
-// re-probed by the unrestricted scan, and a run of text falls back over the same handful of characters again and again,
-// interleaved. Nothing but those runes and their verdicts is retained (see coverMemoSize).
+// The answer is memoized for the last coverMemoSize distinct runes (see coverMemoSize), since the tiers and BCP-47
+// passes of a fallback scan re-probe the same faces.
 func (f *faceRec) covers(r rune) bool {
 	f.coverMu.Lock()
 	defer f.coverMu.Unlock()
@@ -200,9 +192,9 @@ func (f *faceRec) typeface() *font.Typeface {
 	return f.tf
 }
 
-// Name returns the family's display name: the first face's described family (which normalizes back to the grouping key
-// by construction), falling back to the normalized key if no face parses. The fallback is a last resort for a family
-// reached by name — enumeration drops such a family instead of showing the key (see Manager.enumerated).
+// Name returns the family's display name: the family name of its first describable face (which normalizes back to the
+// grouping key by construction), or the normalized key if no face can be described. The fallback is a last resort for a
+// family reached by name; enumeration drops such a family instead of showing the key (see Manager.enumerated).
 func (f *Family) Name() string {
 	if name := f.describedName(); name != "" {
 		return name
@@ -210,9 +202,9 @@ func (f *Family) Name() string {
 	return f.key
 }
 
-// describedName returns the display family name of the family's first describable face, "" when no face of the family
-// can be described at all. Computed once and cached: a font picker asks for every family's name, and the answer is the
-// same table read the enumeration filter needs.
+// describedName returns the display family name of the family's first describable face, or "" when none can be
+// described. It is computed once: a font picker asks for every family's name, and the enumeration filter needs the same
+// table read.
 func (f *Family) describedName() string {
 	f.nameOnce.Do(func() {
 		for _, face := range f.faces {
@@ -230,10 +222,9 @@ func (f *Family) describedName() string {
 // name the failure.
 const scanLogLines = 8
 
-// scanLogger captures fontscan's informational logging rather than discarding it. fontscan reports its diagnostics
-// through a logger instead of through its error, and a library has no business writing to a process-wide log stream, so
-// the lines are held here and folded into the error the scan surfaces — the one place they are of use. Safe for
-// concurrent use because fontscan scans font directories in parallel.
+// scanLogger captures fontscan's logging. fontscan reports its diagnostics through a logger instead of through its
+// error, and a library should not write to a process-wide log stream, so the lines are held here and folded into the
+// error the scan surfaces. It is safe for concurrent use.
 type scanLogger struct {
 	lines []string
 	mu    sync.Mutex
@@ -256,9 +247,8 @@ func (l *scanLogger) tail() string {
 }
 
 // memoizedScan holds the process's one system scan and its result. The scan function and the cache-directory resolver
-// are fields rather than direct calls so that the memoization contract itself — one attempt, one answer, both entry
-// points agreeing — is testable without touching the machine's fonts or its cache directory, exactly as scanSystemFonts
-// takes them as parameters for the same reason.
+// are fields so that the memoization contract (one attempt, one answer, both entry points agreeing) is testable without
+// touching the machine's fonts or its cache directory.
 type memoizedScan struct {
 	scan     func(fontscan.Logger, string) ([]fontscan.Footprint, error)
 	cacheDir func() string
@@ -284,15 +274,14 @@ func Default() *Manager {
 	return systemDefault.mgr
 }
 
-// DefaultWithError returns what Default returns, plus the error from the one system scan the process performs (nil when
-// it succeeded; a scan that finds no usable face is an error even where fontscan reported none). Both are memoized, so
-// the reason a process has no system fonts stays available to every caller rather than only to whoever called first. A
-// non-nil error always comes with an empty, non-nil manager.
+// DefaultWithError returns what Default returns, plus the error from the process's one system scan (nil when it
+// succeeded; a scan that finds no usable face is an error even where fontscan reported none). Both are memoized, so the
+// reason a process has no system fonts stays available to every caller. A non-nil error always comes with an empty,
+// non-nil manager.
 //
-// The scan is never retried. fontscan guards its system index with a package-level sync.Once, so the first attempt in
-// the process is the only one that can run: a second fontscan.SystemFonts call after a failed first returns an empty
-// index and a *nil* error, which would replace a diagnosable failure with a silent one. Making the single attempt
-// succeed is therefore what systemFontCacheDir is for.
+// The scan is never retried. fontscan guards its system index with a package-level sync.Once, so a second
+// fontscan.SystemFonts call after a failed first returns an empty index and a nil error, which would replace a
+// diagnosable failure with a silent one. systemFontCacheDir exists to make the single attempt succeed.
 func DefaultWithError() (*Manager, error) {
 	systemDefault.resolve()
 	return systemDefault.mgr, systemDefault.err
@@ -341,13 +330,11 @@ func scanError(err error, logger *scanLogger) error {
 	return err
 }
 
-// systemFontCacheDir picks the directory fontscan serializes its font index cache into. Left to choose for itself
-// fontscan uses os.UserCacheDir, and it discards a *fully successful* scan when it cannot write the index there
-// (refreshSystemFontsIndex turns serializeToFile's error into the SystemFonts error), so a process with HOME unset or
-// read-only — a systemd unit, a container, a sandboxed app — ends up with no system fonts at all rather than with
-// uncached ones. Resolving the directory here lets such a scan fall back to the temporary directory, which is writable
-// in practically every environment the user cache dir is not. The user cache dir stays the first choice and is passed
-// through unchanged, so the ordinary case reads and writes exactly the file fontscan would have picked on its own.
+// systemFontCacheDir picks the directory fontscan serializes its font index cache into. Left to itself fontscan uses
+// os.UserCacheDir and discards a fully successful scan when it cannot write the index there (refreshSystemFontsIndex
+// returns serializeToFile's error), so a process with HOME unset or read-only (a systemd unit, a container, a sandboxed
+// app) would get no system fonts at all rather than uncached ones. The user cache dir stays the first choice and is
+// passed through unchanged, so the ordinary case uses exactly the file fontscan would have picked.
 //
 // The fallback is a per-user subdirectory of the temporary directory: a shared /tmp is sticky, so one user's index
 // cache must not be a file another user's process then fails to rewrite. "" is returned when neither candidate is
@@ -387,22 +374,19 @@ func cacheDirWritable(dir string) bool {
 	return os.Remove(name) == nil && closeErr == nil
 }
 
-// NewFromData builds a manager over in-memory font data instead of a system scan: each blob is one font file (anything
-// the sfnt reader accepts — TTF, OTF, TTC, WOFF), every face of every blob becomes a matchable face, and the faces
-// group into families by the same normalized family name the scan groups by. Nothing touches the filesystem and no
-// system font is involved, so an application's own fonts (a go:embed corpus, a downloaded file) get the same family
-// enumeration, style matching, and character fallback the system manager offers. A blob that does not parse, and any
-// face carrying no family name, is skipped; the result is never nil, and is empty when nothing usable was supplied.
+// NewFromData builds a manager over in-memory font data instead of a system scan. Each blob is one font file (anything
+// the sfnt reader accepts: TTF, OTF, TTC, WOFF), every face of every blob becomes a matchable face, and the faces group
+// into families by the same normalized family name the scan groups by. Nothing touches the filesystem, so an
+// application's own fonts (a go:embed corpus, a downloaded file) get the same family enumeration, style matching, and
+// character fallback the system manager offers. A blob that does not parse, and any face carrying no family name, is
+// skipped; the result is never nil, and is empty when nothing usable was supplied.
 //
-// Two things differ from a scanned face. Rune coverage is read from each face's own cmap here, so it holds exactly the
-// code points that cmap maps to a real glyph, where a scan footprint also counts the entries that map to .notdef. That
-// removes the over-claim, not the under-claim: both sets are built by iterating the raw subtable, so neither can see
-// the mappings go-text's remapping wrappers add on top of it, and a symbol-encoded face's set therefore holds
-// U+F020–U+F0FF and nothing below it while the face really does resolve U+0020–U+00FF through that page. The candidate
-// filter widens for exactly that (see faceRec.claims); the set is a filter in front of the cmap probe, never the last
-// word on what a face covers. Language coverage is left empty — fontscan derives its language sets while indexing, from
-// data this package cannot reach — so a BCP-47 hint never restricts a candidate set to these faces, though the
-// unrestricted scan still reaches all of them.
+// Two things differ from a scanned face. Rune coverage is read from each face's own cmap, so it holds exactly the code
+// points that cmap maps to a real glyph, where a scan footprint also counts the entries that map to .notdef. Like a
+// footprint it still misses the code points a remapped (symbol) cmap resolves (see faceRec.claims), so the set is only
+// a filter in front of the cmap probe. Language coverage is left empty (fontscan derives its language sets while
+// indexing, from data this package cannot reach), so a BCP-47 hint never restricts a candidate set to these faces,
+// though the unrestricted scan still reaches all of them.
 //
 // The blobs are retained for the life of the manager (each face parses lazily out of its own blob, as a scanned face
 // re-reads its file) and must not be modified afterwards.
@@ -458,15 +442,14 @@ func newManager(recs []*faceRec) *Manager {
 	return m
 }
 
-// enumerated returns the enumeration list: the visible families that can actually name themselves. A family none of
-// whose faces this port can even describe cannot produce a typeface either, so listing it offers a font picker an entry
-// that selects nothing and — since Name() has only the normalized grouping key left to fall back on — labels it with a
-// lowercased, space-stripped key rather than a display name (stock macOS ships one, NISC18030.ttf, which carries no
-// head table). Both halves of that are the port's own bookkeeping leaking out, so such a family is dropped from the
-// list while staying matchable by name and reachable through character fallback, exactly as a hidden family is.
+// enumerated returns the enumeration list: the visible families that can name themselves. A family none of whose faces
+// can be described cannot produce a typeface either, so listing it would offer a font picker an entry that selects
+// nothing, labeled with the lowercased, space-stripped grouping key rather than a display name (stock macOS ships one,
+// NISC18030.ttf, which carries no head table). Such a family is dropped from the list but, like a hidden family, stays
+// matchable by name and reachable through character fallback.
 //
-// The filter is computed on the first enumeration and cached. It costs one lightweight table read per family, which is
-// the same read the caller's own FamilyName call makes and which faceRec memoizes for the life of the manager.
+// The filter is computed on the first enumeration and cached. It costs one lightweight table read per family, the same
+// read the caller's FamilyName call makes, which faceRec memoizes.
 func (m *Manager) enumerated() []*Family {
 	m.listedOnce.Do(func() {
 		for _, fam := range m.notHidden {
@@ -491,10 +474,9 @@ func (m *Manager) FamilyName(index int) string {
 }
 
 // MatchFamily returns the style set for the named family (normalized, so the lookup is case- and space-insensitive like
-// the platform hosts'). An empty name requests the platform default family, resolved exactly as MatchFamilyStyle
-// resolves it (the documented contract is the same for both: a null family name asks for the default system family), so
-// MatchFamily("").MatchStyle(s) and MatchFamilyStyle("", s) always agree. Unknown names — and an empty name in a
-// manager with no families at all — yield an empty set, never nil.
+// the platform hosts'). An empty name requests the platform default family, resolved as MatchFamilyStyle resolves it,
+// so MatchFamily("").MatchStyle(s) and MatchFamilyStyle("", s) always agree. Unknown names, and an empty name in a
+// manager with no families, yield an empty set, never nil.
 func (m *Manager) MatchFamily(familyName string) *StyleSet {
 	fam := m.lookupOrDefault(familyName)
 	if fam == nil {
@@ -658,22 +640,17 @@ func (m *Manager) defaultFamilyTiers(candidates []*faceRec) [][]*faceRec {
 // style (no I/O — used for the cross-family fallback scans) over the exact table-read style (used within a single
 // family).
 //
-// A recorded rune set is approximate in both directions, so it decides nothing on its own.
+// A recorded rune set is approximate in both directions, so it only nominates candidates.
 //
-// It overcounts: go-text's scanner counts cmap entries that map to glyph 0 (fontforge-built fonts commonly carry
-// U+0000 and U+FFFF segments mapping to .notdef — ubuntu's DejaVuSans-ExtraLight does), and no host treats a .notdef
-// mapping as coverage: FreeType's charcode iteration skips glyph-0 entries, so fontconfig charsets never contain them,
-// and the CoreText/DirectWrite cmap lookups yield the missing glyph. So for a candidate the set does put forward, the
-// face's own cmap is the final word — it only answers when it really maps r. That verdict comes from faceRec's
-// cmap-only probe (covers), so the walk loads a typeface only for the candidate that is about to be returned; a
-// character that many footprints claim and few really map used to load, and permanently cache, one full font per
-// rejection.
+// It overcounts: go-text's scanner counts cmap entries that map to glyph 0 (fontforge-built fonts commonly carry U+0000
+// and U+FFFF segments mapping to .notdef, as Ubuntu's DejaVuSans-ExtraLight does), and no host treats a .notdef mapping
+// as coverage: FreeType's charcode iteration skips glyph-0 entries, so fontconfig charsets never contain them, and the
+// CoreText/DirectWrite cmap lookups yield the missing glyph. So the face's own cmap has the final word, through
+// faceRec's cmap-only probe (covers), and a typeface is loaded only for the candidate about to be returned.
 //
-// It also undercounts, for the remapped cmaps a set built by raw iteration cannot describe (a symbol-encoded face maps
-// 'a' through its U+F061 entry, and holds nothing at 'a' at all). A set that only overcounted would make membership a
-// sound filter; one that undercounts too would let it veto faces the resolvers would rescue, before covers is ever
-// asked. So the filter is faceRec.claims rather than membership itself: claims widens the question by the remap, and
-// the set may then only put a face in front of covers, never keep it out.
+// It also undercounts remapped cmaps (a symbol-encoded face maps 'a' through its U+F061 entry and holds nothing at
+// 'a'), so the filter is faceRec.claims rather than set membership, which would veto such a face before covers is
+// asked.
 func matchCovering(faces []*faceRec, pattern font.Style, r rune, approx bool) *font.Typeface {
 	var covering []*faceRec
 	for _, f := range faces {

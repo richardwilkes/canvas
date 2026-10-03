@@ -35,10 +35,8 @@ type intersectionHelper struct {
 	segment *opSegment
 }
 
-// init positions the cursor at the contour's first segment.
 func (h *intersectionHelper) init(contour *opContour) { h.segment = contour.first() }
 
-// advance steps to the next segment; returns false at the end of the contour.
 func (h *intersectionHelper) advance() bool {
 	h.segment = h.segment.next
 	return h.segment != nil
@@ -51,7 +49,6 @@ func (h *intersectionHelper) startAfter(after *intersectionHelper) bool {
 	return h.segment != nil
 }
 
-// bounds returns the current segment's bounding box.
 func (h *intersectionHelper) bounds() pathOpsBounds { return h.segment.bounds }
 
 func (h *intersectionHelper) left() float64   { return float64(h.segment.bounds.left) }
@@ -70,7 +67,6 @@ func (h *intersectionHelper) xFlipped() bool { return h.segment.bounds.left != h
 // yFlipped reports whether the bounds' top edge is the curve's second, not first, y coordinate.
 func (h *intersectionHelper) yFlipped() bool { return h.segment.bounds.top != h.segment.pts[0].Y }
 
-// segmentType classifies the current segment (see the segmentType constants above).
 func (h *intersectionHelper) segmentType() segmentType {
 	switch h.segment.verb {
 	case path.VerbQuad:

@@ -29,7 +29,7 @@ func MakeRSXform(scos, ssin, tx, ty float32) RSXform {
 }
 
 // RSXformFromRadians builds a new xform from the scale, rotation (in radians), final tx,ty location, and anchor point
-// ax,ay within the src quad. Note: the anchor point is not normalized (e.g. 0...1) but is in pixels of the src image.
+// ax,ay within the src quad. The anchor point is in pixels of the src image, not normalized to 0...1.
 func RSXformFromRadians(scale, radians, tx, ty, ax, ay float32) RSXform {
 	s := ScalarSin(radians) * scale
 	c := ScalarCos(radians) * scale
@@ -41,7 +41,7 @@ func (x RSXform) RectStaysRect() bool {
 	return x.SCos == 0 || x.SSin == 0
 }
 
-// ToQuad returns the four corners of the transformed [0,0,width,height] rect, in the order (0,0), (w,0), (w,h), (0,h).
+// ToQuad sets quad to the corners of the transformed [0,0,width,height] rect, in the order (0,0), (w,0), (w,h), (0,h).
 func (x RSXform) ToQuad(width, height float32, quad *[4]Point) {
 	m00 := x.SCos
 	m01 := -x.SSin
@@ -56,7 +56,7 @@ func (x RSXform) ToQuad(width, height float32, quad *[4]Point) {
 	quad[3] = Point{X: m01*height + m02, Y: m11*height + m12}
 }
 
-// ToTriStrip returns the four transformed corners in triangle-strip order (0,0), (0,h), (w,0), (w,h).
+// ToTriStrip sets strip to the four transformed corners in triangle-strip order (0,0), (0,h), (w,0), (w,h).
 func (x RSXform) ToTriStrip(width, height float32, strip *[4]Point) {
 	m00 := x.SCos
 	m01 := -x.SSin

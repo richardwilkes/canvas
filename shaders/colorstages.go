@@ -7,10 +7,10 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// The raster-pipeline stages color filters append: unpremul, matrix_4x5, the clamps, move_src_dst, the blend-mode
-// stage, the parametric transfer-function stage (with its approximate-power math — the working-format color filters
-// linearize/encode through it), and a per-lane color-function stage standing in for the runtime-effect color filters
-// (luma, high contrast) under the no-shader-language rule.
+// The raster-pipeline stages color filters append: unpremul, matrix_4x5, clamp_01, move_src_dst, the blend-mode stage,
+// the parametric transfer-function stage (the working-format color filters linearize/encode through it), and a per-lane
+// color-function stage standing in for the runtime-effect color filters (luma, high contrast) under the
+// no-shader-language rule.
 
 package shaders
 
@@ -51,9 +51,8 @@ func unpremulStage(z *lanes) {
 }
 
 // AppendMatrix4x5 appends the matrix_4x5 stage (row-major 4x5, translate column last). m is stored by reference as the
-// stage context — the pipeline's convention that the caller keeps it valid and unmutated for the pipeline's lifetime
-// (the reachable caller passes an immutable color-filter field), so the stage stays a static function rather than a
-// closure capturing the coefficients.
+// stage context, so the caller must keep it valid and unmutated for the pipeline's lifetime; that keeps the stage a
+// static function rather than a closure capturing the coefficients.
 func (p *Pipeline) AppendMatrix4x5(m *[20]float32) {
 	p.appendCtx(matrix4x5StageFn, m)
 }
@@ -88,8 +87,8 @@ func (p *Pipeline) AppendMoveSrcDst() {
 	p.append(moveSrcDstStageFn)
 }
 
-// moveSrcDstStage copies the whole src register file into the dst registers, scratch tail included — the array
-// assignments the stage has always performed, which are lane-count-independent.
+// moveSrcDstStage copies the whole src register file into the dst registers, scratch tail included: the array
+// assignments are lane-count-independent.
 func moveSrcDstStage(z *lanes) {
 	z.dr = z.r
 	z.dg = z.g
@@ -177,9 +176,8 @@ func colorFuncStage(z *lanes) {
 type TransferFn = colorcore.TransferFn
 
 // AppendTransferFunction appends the parametric transfer-function stage (the only one reachable here — sRGB and its
-// inverse are both sRGBish). tf is stored by reference as the stage context — the pipeline's convention that the caller
-// keeps it valid and unmutated for the pipeline's lifetime (the reachable callers pass package-global sRGB transfer
-// functions), so the stage stays a static function rather than a closure capturing the coefficients.
+// inverse are both sRGBish). tf is stored by reference as the stage context, under the same caller contract as
+// AppendMatrix4x5's m.
 func (p *Pipeline) AppendTransferFunction(tf *TransferFn) {
 	p.appendCtx(transferFunctionStage, tf)
 }

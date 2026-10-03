@@ -23,8 +23,7 @@ import (
 	"github.com/richardwilkes/canvas/surface"
 )
 
-// maskToGreyscaleImage wraps an A8 coverage mask as an opaque Gray8 image (each coverage byte becomes the grey level).
-// The mask's storage is copied into the image.
+// maskToGreyscaleImage copies an A8 coverage mask into an opaque Gray8 image (grey = coverage).
 func maskToGreyscaleImage(mask *raster.Mask) *imagecore.Image {
 	info := imagecore.ImageInfo{
 		Width:     mask.Bounds.Width(),

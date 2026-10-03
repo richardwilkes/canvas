@@ -7,18 +7,16 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// GPU frame race/leak soak (GA hardening: race/leak soak over 10k frames): render many panel frames through the GPU
-// backend on one persistent context and surface — a steady-state render loop, exactly what BenchmarkGLFramePanels times
-// — and assert the GPU resource cache reaches a steady state and stays there across the soak: no unbounded growth in
-// resource count or bytes, no budget overflow, and zero program-cache misses (no per-frame recompilation). A real leak
-// (an un-recycled buffer/texture/program per frame, or a pool that fails to reset) grows ~linearly with the frame count
-// and blows past the tolerances; the per-frame Go allocation ceiling is the separate 238 allocs/frame gate the
-// benchmark reports.
+// GPU frame race/leak soak: render many panel frames through the GPU backend on one persistent context and surface (the
+// steady-state render loop BenchmarkGLFramePanels times) and assert the GPU resource cache reaches a steady state and
+// stays there: no unbounded growth in resource count or bytes, no budget overflow, and zero program-cache misses (no
+// per-frame recompilation). A real leak (an un-recycled buffer/texture/program per frame, or a pool that fails to
+// reset) grows ~linearly with the frame count and blows past the tolerances. The per-frame Go allocation ceiling is
+// gated separately, by TestGLFramePanelsAllocs in internal/oracle/gorender.
 //
-// This is the GPU half of the GA soak and is cgo-free (built on a gltest context, with no cgo dependency), so it also
-// runs under `-race`, where it exercises the op / program-info / pipeline / geometry-processor / scratch-backing pools
-// and the persistent flush state across thousands of recycle cycles on one context. Skips when no GL context is
-// available.
+// The soak is cgo-free (built on a gltest context), so it also runs under `-race`, where it exercises the op /
+// program-info / pipeline / geometry-processor / scratch-backing pools and the persistent flush state across thousands
+// of recycle cycles on one context. Skips when no GL context is available.
 
 package gl_test
 

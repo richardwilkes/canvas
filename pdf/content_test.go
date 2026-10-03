@@ -18,7 +18,6 @@ import (
 	"github.com/richardwilkes/canvas/stream"
 )
 
-// capture runs f against a fresh memory stream and returns the bytes it wrote.
 func capture(f func(s stream.WStream)) string {
 	s := stream.NewMemoryWStream()
 	f(s)

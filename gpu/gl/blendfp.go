@@ -20,8 +20,8 @@ import (
 
 // doesCPUBlendImplMatchGPU reports whether the CPU implementation of mode agrees closely enough with the GPU's that
 // constantOutputForConstantInput may fold the blend on the CPU. The non-separable (HSL) modes are evaluated as scalar
-// floats rather than vectors, which introduces error relative to the GPU, and soft-light and color-burn are
-// hard-to-get-right enough that they are excluded as well.
+// floats rather than vectors, which introduces error relative to the GPU; soft-light and color-burn are excluded as too
+// hard to get right.
 func doesCPUBlendImplMatchGPU(mode raster.BlendMode) bool {
 	return mode <= raster.BlendMultiply && mode != raster.BlendSoftLight &&
 		mode != raster.BlendColorBurn
@@ -50,7 +50,6 @@ func newBlendFP(src, dst FragmentProcessor, mode raster.BlendMode, shareBlendLog
 	return fp
 }
 
-// blendFPOptFlags computes the optimization flags for a blend of src and dst under mode.
 func blendFPOptFlags(src, dst FragmentProcessor, mode raster.BlendMode) uint32 {
 	var flags uint32
 	switch mode {
@@ -150,12 +149,10 @@ func (i *blendFPImpl) EmitCode(args *FPEmitArgs) {
 	dstColor := i.InvokeChild(1, args)
 
 	if bfp.shareBlendLogic {
-		// Use a blend expression that may rely on uniforms.
 		blendExpr := GLSLBlendExpression(args.FP, args.UniformHandler, args.FragBuilder,
 			&i.blendUni, srcColor, dstColor, bfp.mode)
 		args.FragBuilder.CodeAppendf("return %s;", blendExpr)
 	} else {
-		// Blend src and dst colors together using a hardwired blend function.
 		fn := args.FragBuilder.ensureBlendFunction(bfp.mode)
 		args.FragBuilder.CodeAppendf("return %s(%s, %s);", fn, srcColor, dstColor)
 	}

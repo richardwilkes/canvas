@@ -44,9 +44,8 @@ vec2 robust_normalize_diff(vec2 a, vec2 b) {
     }
 }`
 
-// float cosine_between_unit_vectors(vec2 a, vec2 b): the cosine of the angle between a and b, assuming a and b are unit
-// vectors already. Guaranteed to be between [-1, 1]. (Since a and b are assumed to be normalized, the cosine is equal
-// to the dot product, although we clamp that to ensure it falls within the expected range.)
+// float cosine_between_unit_vectors(vec2 a, vec2 b): the cosine of the angle between unit vectors a and b, i.e. their
+// dot product, clamped to guarantee a result in [-1, 1].
 const strokeCosineBetweenUnitVectorsFn = `
 float cosine_between_unit_vectors(vec2 a, vec2 b) {
     return clamp(dot(a, b), -1.0, 1.0);
@@ -83,7 +82,6 @@ vec4 unchecked_mix(vec4 a, vec4 b, vec4 T) {
     return (b - a) * T + a;
 }`
 
-// strokeCrossLength2DFn defines the cross_length_2d helper that the stroke body references.
 const strokeCrossLength2DFn = `
 float cross_length_2d(vec2 a, vec2 b) { return determinant(mat2(a, b)); }`
 
@@ -136,8 +134,6 @@ func newStrokeTessellationShader(shaderCaps *gpu.ShaderCaps, attribs PatchAttrib
 	if s.InstanceStride() != 4*8+patchAttribsStride(s.patchAttribs) {
 		panic("stroke shader instance attributes out of sync with the patch stride")
 	}
-	// An "edgeID" vertex attribute would be needed here if gl_VertexID were unsupported; desktop core profiles always
-	// have gl_VertexID.
 	return s
 }
 
@@ -247,7 +243,6 @@ func (i *strokeTessellationShaderImpl) onEmitCode(args *GPEmitArgs, gpArgs *GPAr
 	}
 
 	if shader.hasDynamicColor() {
-		// Create a varying for color to get passed in through.
 		dynamicColor := NewVarying(GLSLTypeHalf4)
 		args.VaryingHandler.AddVarying("dynamicColor", &dynamicColor)
 		v.CodeAppendf("%s = dynamicColorAttr;", dynamicColor.VsOut())
@@ -367,8 +362,8 @@ func (i *strokeTessellationShaderImpl) onEmitCode(args *GPEmitArgs, gpArgs *GPAr
 	}
 
 	v.CodeAppend(
-		// Find which direction the curve turns. NOTE: Since the curve is not allowed to inflect, we can just check
-		// F'(.5) x F''(.5). NOTE: F'(.5) x F''(.5) has the same sign as (P2 - P0) x (P3 - P1).
+		// Find which direction the curve turns. Since the curve is not allowed to inflect, we can just check F'(.5) x
+		// F''(.5), which has the same sign as (P2 - P0) x (P3 - P1).
 		"float turn = cross_length_2d(p2 - p0, p3 - p1);" +
 			"float combinedEdgeID = abs(edgeID) - numEdgesInJoin;" +
 			"if (combinedEdgeID < 0.0) {" +
@@ -656,10 +651,9 @@ func (i *strokeTessellationShaderImpl) emitTessellationCode(shader *strokeTessel
 	}
 }
 
-// emitFragmentCode emits the fragment shader body that outputs the stroke's color and coverage.
 func (i *strokeTessellationShaderImpl) emitFragmentCode(shader *strokeTessellationShader, args *GPEmitArgs) {
 	if !shader.hasDynamicColor() {
-		// The fragment shader just outputs a uniform color.
+		// The fragment shader outputs a uniform color.
 		var colorUniformName string
 		i.colorUniform, colorUniformName = args.UniformHandler.AddUniform(nil,
 			ShaderFlagFragment, GLSLTypeHalf4, "color")
@@ -675,8 +669,8 @@ func (i *strokeTessellationShaderImpl) SetData(pdman *ProgramDataManager, _ *gpu
 	shader := geomProc.(*strokeTessellationShader)
 	rec := &shader.stroke
 
-	// getMaxScale() returns -1 if it can't compute a scale factor (e.g. perspective); taking the absolute value
-	// automatically converts that to an identity scale factor for our purposes.
+	// MaxScale() returns -1 if it can't compute a scale factor (e.g. perspective); taking the absolute value converts
+	// that to an identity scale factor for our purposes.
 	maxScale := geom.ScalarAbs(shader.viewMatrix.MaxScale())
 	if !shader.hasDynamicStroke() {
 		// Set up the tessellation control uniforms. In the hairline case we transform prior to tessellation, so it will

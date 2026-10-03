@@ -7,12 +7,8 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// The double-precision quadratic Bezier primitive. Present are the quad/line intersection layer's members (ptAtT, the
-// monotonic checks, isLinear, the quadratic-root helpers quadRootsReal/quadRootsValidT/ quadAddValidTs,
-// quadFindExtrema) and the curve-vs-curve members the curve-pair intersection solver consumes (hullIntersects,
-// otherPts, subDivide in both forms, dxdyAtT, quadSetABC, align, chopAt, collapsed, controlsInside). The generic-curve
-// interface and its quad wrapper (thin adapters over these members) live in tcurve.go; the span layer that consumes
-// them lives in tspan.go; the solver body itself lands in a later session.
+// The double-precision quadratic Bezier primitive. The generic-curve interface and its quad wrapper (thin adapters over
+// these members) live in tcurve.go; the span layer that consumes them lives in tspan.go.
 
 package pathops
 
@@ -22,19 +18,16 @@ import (
 	"github.com/richardwilkes/canvas/geom"
 )
 
-// dQuad is a quadratic Bezier defined by three double-precision points.
 type dQuad struct {
 	pts [3]dPoint
 }
 
-// set widens the float32 host points into q.
 func (q *dQuad) set(pts [3]geom.Point) {
 	q.pts[0].set(pts[0])
 	q.pts[1].set(pts[1])
 	q.pts[2].set(pts[2])
 }
 
-// ptAtT evaluates the quad at parameter t using the standard Bernstein basis.
 func (q dQuad) ptAtT(t float64) dPoint {
 	if t == 0 {
 		return q.pts[0]
@@ -52,10 +45,8 @@ func (q dQuad) ptAtT(t float64) dPoint {
 	}
 }
 
-// monotonicInX reports whether the quad's x coordinate is monotonic over t in [0,1].
 func (q dQuad) monotonicInX() bool { return between(q.pts[0].x, q.pts[1].x, q.pts[2].x) }
 
-// monotonicInY reports whether the quad's y coordinate is monotonic over t in [0,1].
 func (q dQuad) monotonicInY() bool { return between(q.pts[0].y, q.pts[1].y, q.pts[2].y) }
 
 // isLinear reports whether the control point lies (within tolerance) on the chord through the two selected endpoints,
@@ -63,9 +54,8 @@ func (q dQuad) monotonicInY() bool { return between(q.pts[0].y, q.pts[1].y, q.pt
 func (q dQuad) isLinear(startIndex, endIndex int) bool {
 	var lp lineParameters
 	lp.quadEndPointsSE(q, startIndex, endIndex)
-	// The normalize is load-bearing, not incidental: it makes controlPtDistanceQuad a true distance, which is what
-	// approximatelyZeroWhenComparedTo's tolerance is defined against below. Skipping it to elide the sqrt would compare
-	// an unnormalized value against the same tolerance, silently changing which quads count as linear.
+	// The normalize is load-bearing: it makes controlPtDistanceQuad a true distance, which the tolerance below assumes.
+	// Eliding it to save the sqrt would silently change which quads count as linear.
 	lp.normalize()
 	distance := lp.controlPtDistanceQuad(q)
 	tiniest := math.Min(math.Min(math.Min(math.Min(math.Min(q.pts[0].x, q.pts[0].y),
@@ -86,7 +76,7 @@ func handleZeroRoots(b, c float64, s []float64) int {
 	return 1
 }
 
-// quadRootsReal computes the real roots of A*t^2 + B*t + C, smaller first. Does not discard roots outside [0,1].
+// quadRootsReal computes the real roots of A*t^2 + B*t + C, larger first. Does not discard roots outside [0,1].
 func quadRootsReal(a, b, c float64, s []float64) int {
 	if a == 0 {
 		return handleZeroRoots(b, c, s)
@@ -96,7 +86,7 @@ func quadRootsReal(a, b, c float64, s []float64) int {
 	if approximatelyZero(a) && (approximatelyZeroInverse(p) || approximatelyZeroInverse(q)) {
 		return handleZeroRoots(b, c, s)
 	}
-	// normal form: x^2 + px + q = 0
+	// normal form: x^2 + 2px + q = 0
 	p2 := p * p
 	if !almostDequalUlps(p2, q) && p2 < q {
 		return 0
@@ -145,9 +135,8 @@ func quadRootsValidT(a, b, c float64, t []float64) int {
 	return quadAddValidTs(s[:], realRoots, t)
 }
 
-// validUnitDivide computes numer/denom, flipping the sign of both operands first if numer is negative, and reports 0
-// (leaving *ratio untouched) if the result is not a proper fraction in (0,1) — including the underflow case where numer
-// is so much smaller than denom that the quotient rounds to exactly 0.
+// validUnitDivide stores numer/denom in *ratio and returns 1 if the quotient lies in (0,1); otherwise it returns 0 and
+// leaves *ratio untouched.
 func validUnitDivide(numer, denom float64, ratio *float64) int {
 	if numer < 0 {
 		numer = -numer
@@ -164,7 +153,7 @@ func validUnitDivide(numer, denom float64, ratio *float64) int {
 	return 1
 }
 
-// quadFindExtrema finds the one t (pinned to (0,1)) at which one coordinate of the quad is stationary, given that
+// quadFindExtrema finds the t in (0,1), if any, at which one coordinate of the quad is stationary, given that
 // coordinate's three control values a,b,c. Quad'(t) = A*t + B with A = 2(a-2b+c), B = 2(b-a), solved as t = -B/A.
 func quadFindExtrema(a, b, c float64, tValue *float64) int {
 	return validUnitDivide(a-b, a-b-b+c, tValue)
@@ -175,13 +164,10 @@ type dQuadPair struct {
 	pts [5]dPoint
 }
 
-// first returns the sub-quad over points [0..2].
 func (p *dQuadPair) first() dQuad { return dQuad{pts: [3]dPoint{p.pts[0], p.pts[1], p.pts[2]}} }
 
-// second returns the sub-quad over points [2..4].
 func (p *dQuadPair) second() dQuad { return dQuad{pts: [3]dPoint{p.pts[2], p.pts[3], p.pts[4]}} }
 
-// collapsed reports whether all three control points of q are approximately coincident.
 func (q dQuad) collapsed() bool {
 	return q.pts[0].approximatelyEqual(q.pts[1]) && q.pts[0].approximatelyEqual(q.pts[2])
 }
@@ -195,9 +181,8 @@ func (q dQuad) controlsInside() bool {
 	return v02.dot(v01) > 0 && v02.dot(v12) > 0
 }
 
-// otherPts returns the two control points other than the one at index oddMan, computed without a branch: the bit
-// twiddling picks the off-curve index, and a negative intermediate is clamped to zero by `end &= ^(end >> 2)` (Go's
-// signed >> is arithmetic, so this works the same way it does in C).
+// otherPts returns the two control points other than the one at index oddMan. The branchless index math relies on Go's
+// signed >> being arithmetic, as in C.
 func (q dQuad) otherPts(oddMan int) [2]dPoint {
 	var endPt [2]dPoint
 	for opp := 1; opp < 3; opp++ {
@@ -208,8 +193,8 @@ func (q dQuad) otherPts(oddMan int) [2]dPoint {
 	return endPt
 }
 
-// pointInTriangle reports whether test lies strictly inside the triangle formed by the three points, via barycentric
-// coordinates (see blackpawn.com/texts/pointinpoly).
+// pointInTriangle reports whether test lies inside the triangle formed by the three points, via barycentric coordinates
+// (see blackpawn.com/texts/pointinpoly).
 func pointInTriangle(pts [3]dPoint, test dPoint) bool {
 	v0 := pts[2].sub(pts[0])
 	v1 := pts[1].sub(pts[0])
@@ -219,27 +204,23 @@ func pointInTriangle(pts [3]dPoint, test dPoint) bool {
 	dot02 := v0.dot(v2)
 	dot11 := v1.dot(v1)
 	dot12 := v1.dot(v2)
-	// Compute barycentric coordinates.
 	denom := dot00*dot11 - dot01*dot01
 	u := dot11*dot02 - dot01*dot12
 	v := dot00*dot12 - dot01*dot02
-	// Check if the point is in the triangle.
 	if denom >= 0 {
 		return u >= 0 && v >= 0 && u+v < denom
 	}
 	return u <= 0 && v <= 0 && u+v > denom
 }
 
-// matchesEnd reports whether test exactly equals either endpoint of the quad.
 func matchesEnd(pts [3]dPoint, test dPoint) bool {
 	return pts[0].equals(test) || pts[2].equals(test)
 }
 
-// hullIntersects is a quick reject that rotates all points onto a line through each pair of this quad's endpoints; if
-// q2's points all fall on the line or on the opposite side from this quad's odd man, the curves at most touch at
-// endpoints. Returns whether the hulls may intersect beyond the endpoints; the returned isLinear is meaningful only
-// when result is true (an early false return leaves it at its zero value) and reports whether this quad's hull
-// collapsed to a line.
+// hullIntersects is a quick reject that tests all points against the line through each pair of this quad's control
+// points; if q2's points all fall on that line or on the opposite side from this quad's odd man, the curves at most
+// touch at endpoints. It returns whether the hulls may intersect beyond the endpoints; isLinear, meaningful only when
+// result is true, reports whether this quad's hull collapsed to a line.
 func (q dQuad) hullIntersects(q2 dQuad) (result, isLinear bool) {
 	linear := true
 	for oddMan := 0; oddMan < 3; oddMan++ {
@@ -266,8 +247,8 @@ func (q dQuad) hullIntersects(q2 dQuad) (result, isLinear bool) {
 		}
 	}
 	if linear && !matchesEnd(q.pts, q2.pts[0]) && !matchesEnd(q.pts, q2.pts[2]) {
-		// If the end point of the opposite quad is inside the hull that is nearly a line, then representing the quad as
-		// a line may cause the intersection to be missed. Check to see if the endpoint is in the triangle.
+		// If an end point of the opposite quad is inside a hull that is nearly a line, representing the quad as a line
+		// may cause the intersection to be missed.
 		if pointInTriangle(q.pts, q2.pts[0]) || pointInTriangle(q.pts, q2.pts[2]) {
 			linear = false
 		}
@@ -275,12 +256,10 @@ func (q dQuad) hullIntersects(q2 dQuad) (result, isLinear bool) {
 	return true, linear
 }
 
-// hullIntersectsConic dispatches hull-intersection testing to the conic overload (conic.hullIntersectsQuad).
 func (q dQuad) hullIntersectsConic(conic dConic) (sects, isLinear bool) {
 	return conic.hullIntersectsQuad(q)
 }
 
-// hullIntersectsCubic dispatches hull-intersection testing to the cubic overload (cubic.hullIntersectsQuad).
 func (q dQuad) hullIntersectsCubic(cubic dCubic) (sects, isLinear bool) {
 	return cubic.hullIntersectsQuad(q)
 }
@@ -391,7 +370,6 @@ func interpQuadCoordsChop(p0, p1, p2, t float64) (d0, d2, d4, d6, d8 float64) {
 	return p0, ab, dInterp(ab, bc, t), bc, p2
 }
 
-// chopAt splits the quad at t into two adjoining sub-quads.
 func (q dQuad) chopAt(t float64) dQuadPair {
 	var dst dQuadPair
 	dst.pts[0].x, dst.pts[1].x, dst.pts[2].x, dst.pts[3].x, dst.pts[4].x = interpQuadCoordsChop(q.pts[0].x, q.pts[1].x, q.pts[2].x, t)

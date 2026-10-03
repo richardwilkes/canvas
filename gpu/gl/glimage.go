@@ -9,11 +9,10 @@
 
 // The texture-backed image type: a GPU image is a view over a texture proxy plus its color info. TextureFromImage
 // uploads a CPU imagecore image to a texture (reusing the device's shared, uniquely-keyed image-upload lane);
-// ReadPixels and MakeNonTextureImage read the texture back into CPU memory through a SurfaceContext. Trims: mipmap
-// generation is deferred (the shared upload lane produces a single non-mipmapped level — cubic/mip sampling degrades to
-// linear as elsewhere), and the "already texture-backed on this context" identity short-circuit is unreachable here
-// because the only CPU image type is imagecore.Image; the budgeted flag is accepted but the shared upload lane always
-// budgets.
+// ReadPixels and MakeNonTextureImage read the texture back into CPU memory through a SurfaceContext. Deviations from
+// Skia: the shared upload lane produces a single non-mipmapped, budgeted level whatever the caller asks for (cubic/mip
+// sampling degrades to linear as elsewhere), and the "already texture-backed on this context" identity short-circuit is
+// unreachable because the only CPU image type is imagecore.Image.
 
 package gl
 
@@ -25,8 +24,8 @@ import (
 	"github.com/richardwilkes/canvas/imagecore"
 )
 
-// nextGLImageID assigns each GPU image its own unique ID, independent of the source bitmap's id and of the shared
-// image-proxy cache key (which still dedups by source content).
+// nextGLImageID assigns each GPU image its own unique ID, independent of the source image's ID (which still keys the
+// shared image-proxy cache).
 var nextGLImageID atomic.Uint32
 
 // TextureImage is the GL-backed GPU image: an immutable image whose pixels live in a texture proxy on a specific direct
@@ -93,7 +92,7 @@ func (im *TextureImage) Dimensions() geom.ISize { return im.dims }
 // UniqueID returns the image's process-unique identifier.
 func (im *TextureImage) UniqueID() uint32 { return im.uniqueID }
 
-// ColorType returns the image's GPU color type (RGBA8888 or Alpha8 under the supported color-type matrix).
+// ColorType returns the image's GPU color type.
 func (im *TextureImage) ColorType() gpu.ColorType { return im.colorType }
 
 // AlphaType returns the image's alpha type.
@@ -105,14 +104,12 @@ func (im *TextureImage) IsAlphaOnly() bool { return im.colorType == gpu.ColorTyp
 // IsTextureBacked reports whether the image's pixels live in a GPU texture: always true here.
 func (im *TextureImage) IsTextureBacked() bool { return true }
 
-// View returns the image's texture proxy view for the shader/draw consumers (this is wired into image shaders and
-// drawImageRect). The returned view shares the underlying proxy; the caller must not outlive the image without taking
-// its own ref.
+// View returns the image's texture proxy view for the shader/draw consumers. It shares the underlying proxy; the caller
+// must not outlive the image without taking its own ref.
 func (im *TextureImage) View() SurfaceProxyView { return im.view }
 
-// Release drops the image's ref on its texture proxy (a real refcounted release — GPU resources are freed
-// deterministically through the resource cache, not by the GC). After Release the image must not be used. The
-// debug-mode GC-finalizer leak detector is deferred; callers are responsible for calling Release themselves.
+// Release drops the image's ref on its texture proxy. GPU resources are freed deterministically through the resource
+// cache, not by the GC, so callers must call Release themselves. After Release the image must not be used.
 func (im *TextureImage) Release() {
 	if im.view.Proxy() != nil {
 		im.view.Proxy().Unref()
@@ -120,9 +117,8 @@ func (im *TextureImage) Release() {
 	}
 }
 
-// readToRasterImage reads the whole texture back into a CPU imagecore image at the GPU color type (premul); this is the
-// shared readback path behind both MakeNonTextureImage and ReadPixels. Returns nil when the context is abandoned or the
-// read fails.
+// readToRasterImage reads the whole texture back into a CPU imagecore image at the GPU color type; it is the shared
+// readback path behind MakeNonTextureImage and ReadPixels. Returns nil when the context is abandoned or the read fails.
 func (im *TextureImage) readToRasterImage() *imagecore.Image {
 	return readGPUToRasterImage(im.ctx, im.view, im.colorType, im.alphaType)
 }
@@ -159,8 +155,8 @@ func gpuColorTypeToImagecore(ct gpu.ColorType) (imagecore.ColorType, bool) {
 }
 
 // readGPUToRasterImage reads the entire proxy behind view into a fresh CPU imagecore image at the GPU color type. It
-// drives a bare SurfaceContext (the same read path the surface/image readbacks use), so it works for any readable proxy
-// — a render target or a plain texture (bound to a temporary FBO for the read).
+// drives a bare SurfaceContext, so it works for any readable proxy: a render target or a plain texture (bound to a
+// temporary FBO for the read).
 func readGPUToRasterImage(ctx *DirectContext, view SurfaceProxyView, colorType gpu.ColorType, alphaType imagecore.AlphaType) *imagecore.Image {
 	if ctx == nil || ctx.Abandoned() {
 		return nil

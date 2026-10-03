@@ -24,7 +24,7 @@ import (
 
 func ptr[T any](p *T) unsafe.Pointer { return unsafe.Pointer(p) }
 
-// glEnv is the shared spike fixture: a live context plus a validated interface.
+// glEnv is the shared spike fixture: a live context plus its native interface.
 type glEnv struct {
 	ctx  *gltest.Context
 	intf *gl.Interface
@@ -83,8 +83,8 @@ func (e *glEnv) compileShader(tb testing.TB, kind uint32, src string) uint32 {
 	return shader
 }
 
-// makeOffscreenFBO builds a 64x64 RGBA8 renderbuffer-backed FBO and binds it. Rendering to a wrapped FBO id is exactly
-// what unison's backend-render-target path does; here we own the FBO since the context is headless.
+// makeOffscreenFBO builds a size x size RGBA8 renderbuffer-backed FBO and binds it. Rendering to a wrapped FBO id is
+// exactly what unison's backend-render-target path does; here we own the FBO since the context is headless.
 func (e *glEnv) makeOffscreenFBO(tb testing.TB, size int32) (fbo, rb uint32) {
 	tb.Helper()
 	f := &e.intf.Functions
@@ -187,7 +187,6 @@ func TestSpikeClearDrawReadback(t *testing.T) {
 	f.VertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0)
 	env.checkNoError(t, "geometry upload")
 
-	// One draw.
 	f.UseProgram(program)
 	loc := f.GetUniformLocationString(program, "uColor")
 	if loc < 0 {
@@ -229,13 +228,13 @@ func TestSpikeClearDrawReadback(t *testing.T) {
 	env.checkNoError(t, "cleanup")
 }
 
-// TestSpikeBindAttribLocationTakesEffectBeforeLink pins the invariant the mipmap-program builder depends on: an explicit
-// glBindAttribLocation only takes effect on the linked program when it is issued *before* glLinkProgram (as
-// createMipmapProgram now does). The vertex position attribute is bound to a non-default location (3) and the quad is fed
-// on generic attribute array 3 while array 0 is left disabled. If the binding took effect the fullscreen quad rasterizes
-// (center pixel red); if it did not (e.g. the bind issued after link, the pre-fix bug), the driver assigns a_vertex to
-// its own location, array 3 supplies nothing, gl_Position collapses to a single point, and nothing draws (center pixel
-// stays the clear color).
+// TestSpikeBindAttribLocationTakesEffectBeforeLink pins the invariant the mipmap-program builder depends on: an
+// explicit glBindAttribLocation only takes effect on the linked program when it is issued *before* glLinkProgram (as
+// createMipmapProgram does). The vertex position attribute is bound to a non-default location (3) and the quad is fed
+// on generic attribute array 3 while array 0 is left disabled. If the binding took effect the fullscreen quad
+// rasterizes (center pixel red); if it did not (e.g. the bind issued after link), the driver assigns a_vertex its own
+// location, array 3 supplies nothing, gl_Position collapses to a single point, and nothing draws (center pixel stays
+// the clear color).
 func TestSpikeBindAttribLocationTakesEffectBeforeLink(t *testing.T) {
 	env := newGLEnv(t)
 	f := &env.intf.Functions

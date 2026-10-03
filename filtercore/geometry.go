@@ -74,8 +74,8 @@ func mapIRect(m *geom.Matrix, r geom.IRect) geom.IRect {
 	return RoundOut(mapRect(m, r.ToRect()))
 }
 
-// mapRect maps r through m: empty maps to empty; perspective routes through path.MapRect (see the perspective note on
-// geom.Matrix.MapRect).
+// mapRect maps r through m: empty maps to empty, and everything else goes through path.MapRect for its perspective
+// clipping.
 func mapRect(m *geom.Matrix, r geom.Rect) geom.Rect {
 	if r.IsEmpty() {
 		return geom.Rect{}
@@ -84,12 +84,10 @@ func mapRect(m *geom.Matrix, r geom.Rect) geom.Rect {
 	return mapped
 }
 
-// mapPoint maps point p through m.
 func mapPoint(m *geom.Matrix, p geom.Point) geom.Point {
 	return m.MapPoint(p)
 }
 
-// mapVector maps vector v through m (translation-invariant).
 func mapVector(m *geom.Matrix, v geom.Point) geom.Point {
 	return m.MapVector(v)
 }
@@ -115,8 +113,8 @@ func invertOrIdentity(m *geom.Matrix) geom.Matrix {
 	return geom.IdentityMatrix()
 }
 
-// mapMatrix re-expresses a transform m (operating in space C1) in the space C2 that 'matrix' maps C1 into: matrix * m *
-// matrix^-1.
+// mapMatrix returns matrix * transform * matrix^-1: transform (operating in space C1) re-expressed in the space C2 that
+// matrix maps C1 into.
 func mapMatrix(transform, matrix *geom.Matrix) geom.Matrix {
 	inv := invertOrIdentity(matrix)
 	inv.PostConcat(transform)
@@ -376,9 +374,6 @@ func periodicAxisTransform(tileMode shaders.TileMode, crop, output geom.IRect) (
 	return geom.Matrix{}, false
 }
 
-///////////////////////////////////////////////////////////////////////////////
-// Mapping
-
 // MatrixCapability describes how complex a layer matrix a filter (or filter DAG) can handle.
 type MatrixCapability int32
 
@@ -514,8 +509,8 @@ func (m *Mapping) ParamToLayerMatrix(t *geom.Matrix) geom.Matrix {
 	return mapMatrix(t, &m.paramToLayerMatrix)
 }
 
-// DeviceToLayerIRect maps a device-space rect into layer space. Inverse mapping back to layer space derives the 3x3
-// inverse of the flattened layer-to-device matrix; a non-invertible flattened matrix maps to empty.
+// DeviceToLayerIRect maps a device-space rect into layer space through a freshly derived inverse of the layer-to-device
+// matrix; a non-invertible matrix maps to empty.
 func (m *Mapping) DeviceToLayerIRect(r geom.IRect) geom.IRect {
 	devToLayer, ok := m.layerToDevMatrix.Invert()
 	if !ok {

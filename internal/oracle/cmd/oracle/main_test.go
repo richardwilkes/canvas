@@ -29,9 +29,8 @@ func writeTestSet(t *testing.T, dir string, render func(scenario.Scenario) []byt
 	}
 }
 
-// TestGenWritesBlessableSchema pins gen's manifest schema to the one bless writes. bless refuses to overwrite a set
-// carrying any other schema, so stamping one on freshly rendered output poisons the directory against every later
-// capture.
+// TestGenWritesBlessableSchema pins gen's manifest schema to the one bless writes, since bless refuses to overwrite a
+// set carrying any other schema.
 func TestGenWritesBlessableSchema(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "gen")
 	writeTestSet(t, dir, solidRender(10))
@@ -96,8 +95,8 @@ func TestDiffReadsPassingGoldenPNGs(t *testing.T) {
 
 // TestDiffCrossChecksPNGsWhenManifestsDiffer is the regression test for the manifest/PNG cross-check that used to run
 // only inside the equal-hashes branch. A golden PNG replaced without updating manifest.json leaves that side's entry
-// hash permanently stale, so the two manifest hashes never match, the pixel comparison is the only thing that ever
-// runs, and the desynchronization reports ok forever — the entry's integrity hash written but never verified.
+// hash stale, so the two manifest hashes never match, only the pixel comparison runs, and the desynchronization reports
+// ok forever.
 func TestDiffCrossChecksPNGsWhenManifestsDiffer(t *testing.T) {
 	root := t.TempDir()
 	aDir := filepath.Join(root, "a")

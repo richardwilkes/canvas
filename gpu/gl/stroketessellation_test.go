@@ -7,9 +7,9 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// Hermetic tests for the stroke tessellation stack: StrokeIterator's verb/cap conversion, the stroke PatchWriter's join
-// deferral and encodings, FixedCountStrokes' heuristics, StrokesHaveEqualParams, and StrokeTessellateOp's record-time
-// merging (dynamic stroke/color promotion) on the fake driver.
+// Hermetic tests for the stroke tessellation stack: strokeIterator's verb/cap conversion, the stroke patchWriter's join
+// deferral and encodings, the fixed-count stroke heuristics, strokesHaveEqualParams, and strokeTessellateOp's
+// record-time merging (dynamic stroke/color promotion) on the fake driver.
 
 package gl
 
@@ -127,7 +127,7 @@ func TestStrokeIteratorOpenContourCaps(t *testing.T) {
 		return p
 	}
 
-	// Butt caps: a kMoveWithinContour barrier, then the repeated first verb.
+	// Butt caps: a strokeIterVerbMoveWithinContour barrier, then the repeated first verb.
 	rec := strokeRec(4, stroke.CapButt, stroke.JoinBevel, 4)
 	verbs, _ := collectStrokeIter(newStrokeIterator(mkPath(), &rec, &identity))
 	want := []strokeIterVerb{
@@ -140,7 +140,7 @@ func TestStrokeIteratorOpenContourCaps(t *testing.T) {
 		}
 	}
 
-	// Round caps: two kCircle verbs — the contour's end point then its start point.
+	// Round caps: two strokeIterVerbCircle verbs — the contour's end point then its start point.
 	rec = strokeRec(4, stroke.CapRound, stroke.JoinBevel, 4)
 	it := newStrokeIterator(mkPath(), &rec, &identity)
 	verbs, firstPts := collectStrokeIter(it)
@@ -467,7 +467,7 @@ func TestFixedCountStrokes(t *testing.T) {
 	if got := fixedCountStrokesPreallocCount(10); got != 28 {
 		t.Fatalf("prealloc count = %d, want 28", got)
 	}
-	// Vertex count is 2x the required stroke edges, clamped to kMaxEdges.
+	// Vertex count is 2x the required stroke edges, clamped to fixedCountStrokesMaxEdges.
 	var tol linearTolerances
 	rec := strokeRec(10, stroke.CapButt, stroke.JoinRound, 4)
 	params := makeStrokeParams(&rec)

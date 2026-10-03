@@ -88,7 +88,6 @@ func makeLighting(l light, mat material, input filtercore.Filter, cropRect *geom
 	if !geom.IsFinite(mat.k, mat.shininess, mat.surfaceDepth) || mat.k < 0 {
 		return nil
 	}
-	// Ensure light values are finite and the cosine is between -1 and 1.
 	if !geom.IsFinite(l.locationXY.X, l.locationXY.Y, l.directionXY.X, l.directionXY.Y,
 		l.falloffExponent, l.cosCutoffAngle, l.locationZ, l.directionZ) ||
 		l.cosCutoffAngle < -1 || l.cosCutoffAngle > 1 {
@@ -153,7 +152,6 @@ func SpotLitSpecular(location, target geom.Point3, falloffExponent, cutoffAngle 
 		input, cropRect)
 }
 
-// cosDegrees returns the cosine of degrees, converting from degrees to radians first.
 func cosDegrees(degrees float32) float32 {
 	return float32(math.Cos(float64(degrees * (math.Pi / 180))))
 }
@@ -182,7 +180,6 @@ func mapZToLayer(mapping *filtercore.Mapping, z float32) float32 {
 //
 //nolint:gocritic // hugeParam: ctx is by value per the interface; see filtercore.Filter.OnFilterImage
 func (f *lightingFilter) OnFilterImage(ctx filtercore.Context) filtercore.FilterResult {
-	// Map lighting and material parameters into layer space.
 	surfaceDepth := mapZToLayer(ctx.Mapping(), f.material.surfaceDepth)
 	lightLocationXY := ctx.Mapping().ParamToLayerPoint(f.light.locationXY)
 	lightLocationZ := mapZToLayer(ctx.Mapping(), f.light.locationZ)
@@ -223,11 +220,9 @@ func (f *lightingFilter) OnFilterImage(ctx filtercore.Context) filtercore.Filter
 	lgt := f.light
 	mat := f.material
 	return builder.Eval(func(inputs []shaders.Shader) shaders.Shader {
-		// The normal shader's edge bounds are clampRect inset by half a pixel on each side.
 		normals := shaders.NewNormal(inputs[0], clampRect.ToRect().Inset(0.5, 0.5), -surfaceDepth)
 
-		// Pack the lighting shader's uniforms. Pre-normalize the light direction; (0,0,0) for point lights stays zero
-		// (the uniform is unused).
+		// Pre-normalize the light direction; (0,0,0) for point lights stays zero (the uniform is unused).
 		dir := [3]float32{lightDirXY.X, lightDirXY.Y, lightDirZ}
 		invDirLen := sqrtf(dir[0]*dir[0] + dir[1]*dir[1] + dir[2]*dir[2])
 		if invDirLen != 0 {

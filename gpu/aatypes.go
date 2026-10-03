@@ -7,9 +7,6 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// GPU-wide anti-aliasing types: a boolean AA request, the resolved AAType a draw ends up using once the target's sample
-// count and the caps are known, and per-edge QuadAAFlags for a quadrilateral.
-
 package gpu
 
 // AA is a boolean "should a draw be anti-aliased" request.

@@ -16,7 +16,7 @@ package gl
 import "math"
 
 // TextureResetTimestamp identifies a context-reset generation; a texture's cached parameters are stale if their stamped
-// timestamp doesn't match the context's current one.
+// timestamp is older than the context's current one.
 type TextureResetTimestamp uint64
 
 // SamplerOverriddenState is texture parameter state that is overridden when a non-zero sampler object is bound.

@@ -18,7 +18,7 @@ import (
 )
 
 // calculatePathGap returns the left/right extent of p's crossings with the two band edges plus any on/off-curve points
-// strictly inside the band. Returns (ScalarMax, ScalarMin) when nothing intersects.
+// strictly inside the band. Returns (scalarMax, scalarMin) when nothing intersects.
 func calculatePathGap(topOffset, bottomOffset float32, p *path.Path) (left, right float32) {
 	left = scalarMax
 	right = scalarMin
@@ -70,7 +70,6 @@ func calculatePathGap(topOffset, bottomOffset float32, p *path.Path) (left, righ
 		case path.VerbLine:
 			lineTop := min(pts[0].Y, pts[1].Y)
 			lineBottom := max(pts[0].Y, pts[1].Y)
-			// The y-coordinates of the points intersect the top and bottom offsets.
 			if topOffset <= lineBottom && lineTop <= bottomOffset {
 				addLine(&pts, topOffset)
 				addLine(&pts, bottomOffset)

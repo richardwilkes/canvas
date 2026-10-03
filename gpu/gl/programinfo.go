@@ -7,9 +7,6 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// ProgramInfo is the bundle handed to program building and GL state flushing for one draw — target
-// format/origin/samples, pipeline, geometry processor, stencil settings, and primitive type.
-
 package gl
 
 import (

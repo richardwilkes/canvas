@@ -9,8 +9,9 @@
 
 // The image filter contract: the Filter interface every image filter implements (the OnX methods), the FilterBase
 // struct carrying the input DAG edges, the recursion helpers, and the public aggregate entry points (FilterImage with
-// caching, GetInputBounds/GetOutputBounds, AffectsTransparentBlack, CTMCapability, AsAColorFilter, computeFastBounds).
-// Concrete filters live in the imagefilter package; the canvas layer machinery consumes this interface.
+// caching, GetInputBounds/GetOutputBounds, AffectsTransparentBlack, CTMCapability, AsAColorFilter,
+// DefaultComputeFastBounds). Concrete filters live in the imagefilter package; the canvas layer machinery consumes this
+// interface.
 
 package filtercore
 
@@ -116,8 +117,8 @@ func (b *FilterBase) InputLayerBounds(index int, mapping *Mapping, desiredOutput
 	if child := b.inputs[index]; child != nil {
 		return child.OnInputLayerBounds(mapping, desiredOutput, contentBounds)
 	}
-	// NOTE: We don't calculate the intersection between content and the root desired output because the desired output
-	// can expand or contract as it propagates through the filter graph.
+	// The content is not intersected with the root desired output because the desired output can expand or contract as
+	// it propagates through the filter graph.
 	visibleContent := desiredOutput
 	if contentBounds != nil && !visibleContent.Intersect(*contentBounds) {
 		return geom.IRect{}

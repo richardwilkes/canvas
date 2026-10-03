@@ -18,14 +18,14 @@ package gl
 
 import "github.com/ebitengine/purego"
 
-// glCallState is this lane's per-Functions call state. There is none: purego.SyscallN allocates its own argument block
-// on the heap (its runtime.cgocall linkname carries no //go:noescape), so nothing has to be kept off the goroutine
-// stack (contrast the SysV lane's glcall9 trampoline, which writes its result back through a block pointer).
+// glCallState is this lane's per-Functions call state. There is none: purego.SyscallN marshals through its own
+// heap-resident argument block, so nothing has to be kept off the goroutine stack (contrast the SysV lane's glcall9
+// trampoline, which writes its result back through a block pointer).
 type glCallState struct{}
 
 // glCall invokes the GL proc fn with up to nine integer-class arguments and returns the proc's integer result.
-// purego.SyscallN carries //go:uintptrescapes itself, but the tag is repeated here so this lane's GC-stack contract
-// matches the fixed-arity lanes exactly.
+// purego.SyscallN's own //go:uintptrescapes tag only covers conversions written at its direct call site, so the tag is
+// repeated here to give glCall's call sites the same GC-stack contract as the fixed-arity lanes.
 //
 //go:uintptrescapes
 func (*Functions) glCall(fn, a1, a2, a3, a4, a5, a6, a7, a8, a9 uintptr) uintptr {

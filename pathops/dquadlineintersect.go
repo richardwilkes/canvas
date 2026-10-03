@@ -8,8 +8,8 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // Quadratic/line intersection: the general intersect plus the axis-aligned horizontal/vertical lanes and the ray form,
-// driven through the lineQuadraticIntersections helper. Also includes the quad case of the curve near-point test,
-// reached by the near-endpoint handling: it drops a perpendicular from a point and ray-intersects the quad.
+// driven through the lineQuadraticIntersections helper. Also includes nearPointForQuad, the quad case of the curve
+// near-point test used by the near-endpoint handling.
 
 package pathops
 
@@ -40,7 +40,6 @@ func newLineQuadraticIntersections(q dQuad, l *dLine, i *intersections) *lineQua
 	return &lineQuadraticIntersections{quad: q, line: l, intersections: i, allowNear: true}
 }
 
-// setAllowNear sets whether near (not just exact) endpoint coincidences are reported.
 func (lq *lineQuadraticIntersections) setAllowNear(allow bool) { lq.allowNear = allow }
 
 // checkCoincident scans the accumulated intersections for adjacent pairs whose quad-T midpoint also lies on the line,
@@ -145,9 +144,8 @@ func (lq *lineQuadraticIntersections) horizontalIntersect(axisIntercept, left, r
 	return lq.intersections.used
 }
 
-// uniqueAnswer reports whether (quadT, pt) is not already represented among the accumulated intersections — either by
-// an identical quad T at the same point, or by the quad's midpoint between the two T values also landing on pt (which
-// would make the new answer redundant).
+// uniqueAnswer reports whether (quadT, pt) is not already represented among the accumulated intersections, either by an
+// identical quad T at the same point or by the quad's midpoint between the two T values also landing on pt.
 func (lq *lineQuadraticIntersections) uniqueAnswer(quadT float64, pt dPoint) bool {
 	for inner := 0; inner < lq.intersections.used; inner++ {
 		if !lq.intersections.pt(inner).equals(pt) {
@@ -157,7 +155,6 @@ func (lq *lineQuadraticIntersections) uniqueAnswer(quadT float64, pt dPoint) boo
 		if quadT == existingQuadT {
 			return false
 		}
-		// check if midway on quad is also same point. If so, discard this
 		quadMidT := (existingQuadT + quadT) / 2
 		quadMidPt := lq.quad.ptAtT(quadMidT)
 		if quadMidPt.approximatelyEqual(pt) {

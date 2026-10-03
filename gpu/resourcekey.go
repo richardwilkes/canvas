@@ -49,10 +49,8 @@ func (k *resourceKey) domain() uint32 {
 // Size returns the total key size in bytes including metadata.
 func (k *resourceKey) Size() int { return int(k.key[1] >> 16) }
 
-// data returns the caller data words (excluding metadata).
 func (k *resourceKey) data() []uint32 { return k.key[keyMetaDataCount:] }
 
-// equalTo reports whether two keys hold identical words.
 func (k *resourceKey) equalTo(that *resourceKey) bool {
 	if len(k.key) != len(that.key) {
 		return false
@@ -65,15 +63,9 @@ func (k *resourceKey) equalTo(that *resourceKey) bool {
 	return true
 }
 
-// mapKey returns the key's full contents as a string for use as a Go map key, memoizing the result on the key so
-// repeated uses share one allocation. Only valid keys may be used. The metadata words participate the same way they do
-// in the resource-cache lookups (two keys compare equal iff hash, domain, size, and data all match).
-//
-// The memo exists so the resource-cache scratch keying avoids per-frame allocation churn: a resource's own scratch key
-// is built once at registration and reused on every per-frame scratch insert/remove, and reused lookup keys cache after
-// their first use. Because the cached string is byte-identical to a freshly built one, the scratch/unique map key set,
-// eviction, and reuse order are unchanged — a map assignment or delete with an already-allocated string variable does
-// not allocate a new string, which is what removes the per-frame churn.
+// mapKey returns the key's full contents, metadata words included, as a string for use as a Go map key. Only valid keys
+// may be used. The result is memoized so a key reused for per-frame resource-cache inserts, removes, and lookups
+// allocates its string once rather than on every use.
 func (k *resourceKey) mapKey() string {
 	if k.str == "" && k.key != nil {
 		k.str = mapKeyBytes(k.key)
@@ -81,9 +73,8 @@ func (k *resourceKey) mapKey() string {
 	return k.str
 }
 
-// mapKeyBytes packs the key words little-endian into a string for use as a hash-table byte comparison. A valid key
-// always has at least the two metadata words, so the result is never empty (which lets mapKey use "" as the
-// not-yet-computed sentinel).
+// mapKeyBytes packs the key words little-endian into a string. A valid key always has at least the two metadata words,
+// so the result is never empty, which lets mapKey use "" as the not-yet-computed sentinel.
 func mapKeyBytes(key []uint32) string {
 	buf := make([]byte, 0, len(key)*4)
 	for _, v := range key {
@@ -92,8 +83,7 @@ func mapKeyBytes(key []uint32) string {
 	return string(buf)
 }
 
-// ResourceKeyBuilder initializes a key's storage. Callers assign the data words via Slice or indexed writes and then call
-// Finish.
+// ResourceKeyBuilder initializes a key's storage. Callers assign the data words via Slice and then call Finish.
 type ResourceKeyBuilder struct {
 	target *resourceKey
 }
@@ -110,7 +100,7 @@ func makeKeyBuilder(key *resourceKey, domain uint32, data32Count int) ResourceKe
 // Slice returns the caller-writable data words.
 func (b ResourceKeyBuilder) Slice() []uint32 { return b.target.key[keyMetaDataCount:] }
 
-// Finish computes and stores the key's hash word from its data words.
+// Finish computes and stores the key's hash word, which covers the domain-and-size word and the data words.
 func (b ResourceKeyBuilder) Finish() {
 	b.target.key[0] = hash32U32s(b.target.key[1:])
 }
@@ -166,8 +156,8 @@ func GenerateUniqueKeyDomain() UniqueKeyDomain {
 	return UniqueKeyDomain(d)
 }
 
-// UniqueKey identifies a resource that at most one resource may hold at a time, and a resource holds at most one.
-// Unique keys preempt scratch keys.
+// UniqueKey is a key that at most one resource may hold at a time, and a resource holds at most one. Unique keys
+// preempt scratch keys.
 type UniqueKey struct {
 	resourceKey
 	tag        string

@@ -33,10 +33,8 @@ func mustPath(s string) *path.Path {
 
 // --- path ops ---
 //
-// These return the oracle's result already materialized as a canvas path. Live, the probe had to ferry Skia's result
-// across through the SVG emit/parse pair — the C API exposes no path iterator, so that was the only readable form. The
-// fixture stores the geometry directly, so the bridge (and with it the last reason for the SVG parser to exist) is
-// gone.
+// These return the oracle's result already materialized as a canvas path. Capture read Skia's result through the SVG
+// emit/parse pair (the C API exposes no path iterator); the fixture stores the resulting geometry directly.
 
 func refPathOpsOp(a, b *scenario.PathSpec, op int) (*path.Path, bool) {
 	res, ok := split2(refGet("PathOpsOp", hashKey(encSpec(a)+"|"+encSpec(b)+"|"+strconv.Itoa(op))))
@@ -63,10 +61,9 @@ func refPathOpsBuilder(adds []builderAdd) (*path.Path, bool) {
 	return mustPath(res), true
 }
 
-// The bit-exact path-ops lanes freeze the oracle's raw point stream and fill type rather than a rebuilt path. The
-// rebuilt form would not do: capture reads a C path through SVG emit/parse, which re-approximates conics with last-ULP
-// float noise — fine for the area-sampled comparisons, fatal for a probe whose whole point is bit-exactness. Points
-// come straight off the C path instead, no encoding in between.
+// The bit-exact path-ops lanes freeze the oracle's raw point stream and fill type rather than a rebuilt path: capture
+// read a C path through SVG emit/parse, which re-approximates conics with last-ULP float noise, fine for the
+// area-sampled comparisons but fatal for a bit-exact probe. These points come straight off the C path.
 
 func decExact(s string) ([]geom.Point, int, bool) {
 	ptsEnc, rest := split2(s)

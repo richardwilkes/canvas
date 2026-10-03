@@ -8,14 +8,13 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // Shape is the data-only union of the specialized geometries the GPU backend handles (rect, round rect, line, point,
-// path) with lossless simplification — plus round-rect helpers the clip stack consumes (corner containment / contains /
-// inner bounds / conservative intersect / is-simple-circular), specialized to geom.RRect's uniform-radii storage (the
-// only form publicly reachable). Trims: an arc shape type is dropped (no public entry point creates arc shapes; the
-// drawArc lanes go through ovals/paths instead); path→rrect detection is absent from the path package, so round-rect
-// clip paths stay Type Path and take the mask lanes instead of the analytic rrect FP (visually equivalent); rect
-// detection from paths reports no start index, so simplified rects carry the default winding params (winding params
-// only matter for the styling lanes, and the clip stack always simplifies with ignore-winding, which resets them
-// anyway).
+// path) with lossless simplification — plus round-rect helpers the clip stack consumes, specialized to geom.RRect's
+// uniform-radii storage (the only form publicly reachable). Trims: an arc shape type is dropped (no public entry point
+// creates arc shapes; the drawArc lanes go through ovals/paths instead); path→rrect detection is absent from the path
+// package, so round-rect clip paths stay Type Path and take the mask lanes instead of the analytic rrect FP (visually
+// equivalent); rect detection from paths reports no start index, so simplified rects carry the default winding params
+// (winding params only matter for the styling lanes, and the clip stack always simplifies with ignore-winding, which
+// resets them anyway).
 
 package gl
 
@@ -53,7 +52,6 @@ const (
 	ShapeSimplifyAll uint32 = 0b111
 )
 
-// Shape defaults.
 const (
 	shapeDefaultDir   = geom.DirectionCW
 	shapeDefaultStart = uint8(0)
@@ -151,7 +149,6 @@ func (s *Shape) Dir() geom.PathDirection {
 // StartIndex returns the shape's winding start index.
 func (s *Shape) StartIndex() uint8 { return s.start }
 
-// setPathWindingParams sets the shape's winding direction and start index.
 func (s *Shape) setPathWindingParams(dir geom.PathDirection, start uint8) {
 	s.cw = dir == geom.DirectionCW
 	s.start = start
@@ -217,7 +214,6 @@ func (s *Shape) setType(typ ShapeType) {
 	s.typ = typ
 }
 
-// resetTo resets the shape to typ with default winding params and no inversion.
 func (s *Shape) resetTo(typ ShapeType) {
 	s.setType(typ)
 	s.setPathWindingParams(shapeDefaultDir, shapeDefaultStart)
@@ -362,7 +358,6 @@ func (s *Shape) simplifyLine(p1, p2 geom.Point, flags uint32) {
 	}
 }
 
-// simplifyPoint simplifies a point shape.
 func (s *Shape) simplifyPoint(pt geom.Point, flags uint32) {
 	if flags&ShapeSimplifyFill != 0 {
 		s.setType(ShapeTypeEmpty)
@@ -608,7 +603,6 @@ func rrectRadii(rr geom.RRect) geom.Point {
 	}
 }
 
-// rrectIsSimpleCircular reports whether rr is a simple round rect with equal x/y radii.
 func rrectIsSimpleCircular(rr geom.RRect) bool {
 	return rr.Type == geom.RRectSimple && rr.RadiusX == rr.RadiusY
 }
@@ -648,12 +642,10 @@ func rrectCheckCornerContainment(rr geom.RRect, x, y float32) bool {
 	return dist <= (r.X*r.Y)*(r.X*r.Y)
 }
 
-// rrectContainsPoint reports whether pt is inside rr.
 func rrectContainsPoint(rr geom.RRect, pt geom.Point) bool {
 	return rr.Rect.ContainsPoint(pt.X, pt.Y) && rrectCheckCornerContainment(rr, pt.X, pt.Y)
 }
 
-// rrectContainsRect reports whether rect is entirely inside rr.
 func rrectContainsRect(rr geom.RRect, rect geom.Rect) bool {
 	if !rr.Rect.ContainsRect(rect) {
 		return false
@@ -740,7 +732,7 @@ func rrectInsideCorner(corner int, a, b geom.Point) bool {
 // rrectConservativeIntersect conservatively intersects two round rects for uniform-radii inputs. A true intersection
 // can require per-corner radii mixes that geom.RRect cannot store; those results report empty (not-an-rrect), which is
 // a legal conservative answer for both consumers (the containment test compares against a uniform rrect, which a mixed
-// result could never equal, and the combine lane simply keeps both elements).
+// result could never equal, and the combine lane keeps both elements).
 func rrectConservativeIntersect(a, b geom.RRect) geom.RRect {
 	var radii [4]geom.Point
 

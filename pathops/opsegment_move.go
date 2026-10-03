@@ -10,10 +10,7 @@
 // The per-segment coincidence-maintenance phase: the trio handleCoincidence (common.go) interleaves with the
 // coincidence resolution machinery — moveMultiples (merge multi-intersection spans onto the segments that missed them),
 // moveNearby (collapse tiny gaps so nearby t values and points hang off one span), and missingCoincidence (find
-// coincident runs that pairwise intersection missed) — plus their helpers spansNearby/testForCoincidence and the
-// clearAll/clearOne/clearVisited span cleanup they call. Every t value is a float64, matching the precision the
-// boolean-op math needs throughout this package. The walking phase (activeOp/findNext*) arrives with the op/simplify
-// drivers.
+// coincident runs that pairwise intersection missed) — plus their helpers.
 
 package pathops
 
@@ -33,7 +30,6 @@ func (s *opSegment) clearAll() {
 	s.globalState().coincidence.releaseSegment(s)
 }
 
-// clearOne zeros one span's winding and marks it done.
 func (s *opSegment) clearOne(span *opSpan) {
 	span.setWindValue(0)
 	span.setOppValue(0)
@@ -90,9 +86,8 @@ func (s *opSegment) missingCoincidence() bool {
 				continue
 			}
 			span := spanBase.upCastable()
-			// Assumption: an opposite segment already recorded as coincident here needs no further coincidence
-			// detection. Unproven, and inherited as a hedge rather than a known break -- but it is the documented
-			// suspect if a span ever turns up with coincidence that this walk failed to find.
+			// Assumes an opposite segment already recorded as coincident here needs no further coincidence detection.
+			// Unproven (a Skia FIXME): suspect it first if a span turns up with coincidence this walk failed to find.
 			if span != nil && span.containsCoincidenceSeg(opp) {
 				continue
 			}
@@ -136,7 +131,6 @@ func (s *opSegment) missingCoincidence() bool {
 			rootOppEnd := oppEnd.span.ptTPtr()
 			if !coincidences.containsPtTs(rootPriorPtT, rootPtT, rootOppStart, rootOppEnd) {
 				if s.testForCoincidence(rootPriorPtT, rootPtT, &prior.opSpanBase, spanBase, opp) {
-					// mark coincidence
 					if !coincidences.extend(rootPriorPtT, rootPtT, rootOppStart, rootOppEnd) {
 						coincidences.add(rootPriorPtT, rootPtT, rootOppStart, rootOppEnd)
 					}
@@ -261,7 +255,6 @@ func (s *opSegment) moveMultiplesMerge(oppTest, oppSpan *opSpanBase, startPtT *o
 		if !matched {
 			return false
 		}
-		// merge oppTest and oppSpan
 		oppTest.mergeMatches(oppSpan)
 		oppTest.addOpp(oppSpan)
 		return true
@@ -269,8 +262,8 @@ func (s *opSegment) moveMultiplesMerge(oppTest, oppSpan *opSpanBase, startPtT *o
 	return false
 }
 
-// spansNearby checks whether adjacent spans have points close by. It reports whether a near pairing was found (found)
-// alongside an ok flag that is false only when the escape hatch tripped.
+// spansNearby reports whether adjacent spans have points close by (found). ok is false only when the escape hatch
+// tripped.
 func (s *opSegment) spansNearby(refSpan, checkSpan *opSpanBase) (found, ok bool) {
 	refHead := &refSpan.ptT
 	checkHead := &checkSpan.ptT
@@ -279,7 +272,7 @@ func (s *opSegment) spansNearby(refSpan, checkSpan *opSpanBase) (found, ok bool)
 		return false, true
 	}
 	// check only unique points
-	distSqBest := float32(math.MaxFloat32) // largest representable float32, as a "no best yet" sentinel
+	distSqBest := float32(math.MaxFloat32) // "no best yet" sentinel
 	var refBest, checkBest *opPtT
 	ref := refHead
 	for {
@@ -410,7 +403,6 @@ func (s *opSegment) moveNearby() bool {
 // on opp, by projecting the perpendicular through the mid-point of this segment's sub-curve and seeing whether it meets
 // opp at (nearly) the same point.
 func (s *opSegment) testForCoincidence(priorPtT, ptT *opPtT, prior, spanBase *opSpanBase, opp *opSegment) bool {
-	// average t, find mid pt
 	midT := (prior.t() + spanBase.t()) / 2
 	midPt := s.ptAtT(midT)
 	coincident := true

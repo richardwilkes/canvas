@@ -148,7 +148,7 @@ func (rgn *Region) setRunsTrimmed(runs []int32) bool {
 			runs[start] = newTop
 		}
 		// now check for a trailing empty span
-		if runs[stop-5] == regionSentinel { // eek, stop[-4] was a bottom with no x-runs
+		if runs[stop-5] == regionSentinel { // runs[stop-4] is a bottom with no x-runs
 			runs[stop-4] = regionSentinel // kill empty last span
 			stop -= 3
 		}
@@ -163,7 +163,6 @@ func (rgn *Region) setRunsTrimmed(runs []int32) bool {
 		return rgn.SetRect(bounds)
 	}
 
-	// if we get here, we need to become a complex region
 	head := &regionRunHead{runs: slices.Clone(trimmed)}
 	rgn.head = head
 	rgn.bounds = head.computeRunBounds()
@@ -245,7 +244,7 @@ func (rgn *Region) ContainsPoint(x, y int32) bool {
 	}
 	runs := rgn.head.runs
 	i := rgn.head.findScanline(y) + 2 // skip Bottom and IntervalCount
-	// Just walk this scanline, checking each interval; the x-sentinel appears as a left and aborts.
+	// Walk this scanline, checking each interval; the x-sentinel appears as a left and aborts.
 	for {
 		if x < runs[i] {
 			return false
@@ -384,7 +383,6 @@ func (rgn *Region) IntersectsRegion(other *Region) bool {
 	if theyAreARect {
 		return rgn.Intersects(other.bounds)
 	}
-	// both of us are complex
 	return regionOper(rgn, other, RegionIntersect, nil)
 }
 
@@ -478,11 +476,9 @@ func (rgn *Region) getRuns(tmp *[rectRegionRuns]int32) (runs []int32, intervals 
 	case rgn.IsEmpty():
 		// A well-formed zero-scanline run list, not the bare sentinel upstream writes here. getRuns' only consumer,
 		// operate, reads a full scanline header (top, bottom, interval count) from each side before it inspects any
-		// sentinel and then drives that side's walk from those values, so a bare sentinel in a length-1 slice is an
-		// immediate index-out-of-range and a bare sentinel over a zeroed tail instead walks off the end of the
-		// interval list. A sentinel top *and* bottom make the empty side contribute nothing and never flush, which is
-		// exactly what an empty operand means. regionOper's per-op early-outs mean nothing reaches this today, but
-		// they must not be the only thing keeping it safe.
+		// sentinel, so a bare sentinel would index out of range or walk off the end of the interval list. A sentinel
+		// top *and* bottom make the empty side contribute nothing and never flush. regionOper's per-op early-outs keep
+		// this unreached today, but they must not be the only thing keeping it safe.
 		tmp[0] = regionSentinel // top
 		tmp[1] = regionSentinel // bottom
 		tmp[2] = 0              // interval count
@@ -637,7 +633,6 @@ func operateOnSpan(aRuns []int32, aIdx int, bRuns []int32, bIdx int, array *runA
 				dst += 2
 				firstInterval = false
 			} else {
-				// update the right edge
 				array.buf[dst-1] = rite
 			}
 		}
@@ -647,8 +642,7 @@ func operateOnSpan(aRuns []int32, aIdx int, bRuns []int32, bIdx int, array *runA
 	return dst
 }
 
-// gOpMinMax gives the inside-count range that should be kept for each op (indexed by RegionOp
-// Difference/Intersect/Union/Xor).
+// gOpMinMax gives the inside-count range kept for each op, indexed by RegionOp (Difference/Intersect/Union/Xor).
 var gOpMinMax = [4]struct{ min, max int32 }{
 	{min: 1, max: 1}, // Difference
 	{min: 3, max: 3}, // Intersection
@@ -691,7 +685,6 @@ func (o *rgnOper) addSpan(bottom int32, aRuns []int32, aIdx int, bRuns []int32, 
 			o.array.buf[start:start+length-1])
 	}
 	if sameAsPrev {
-		// update Y value
 		o.array.buf[o.prevDst-2] = bottom
 	} else { // accept the new span
 		if length == 1 && o.prevLen == 0 {
@@ -813,7 +806,7 @@ func operate(aRunsIn, bRunsIn []int32, dst *runArray, op RegionOp, quickExit boo
 			aTop = aBot
 			aBot = aRunsIn[aIdx]
 			aIdx++
-			aIdx++ // skip uninitialized intervalCount
+			aIdx++ // skip the intervalCount
 			if aBot == regionSentinel {
 				aTop = aBot
 			}
@@ -823,7 +816,7 @@ func operate(aRunsIn, bRunsIn []int32, dst *runArray, op RegionOp, quickExit boo
 			bTop = bBot
 			bBot = bRunsIn[bIdx]
 			bIdx++
-			bIdx++ // skip uninitialized intervalCount
+			bIdx++ // skip the intervalCount
 			if bBot == regionSentinel {
 				bTop = bBot
 			}
@@ -976,7 +969,7 @@ func (rgn *Region) SetRects(rects []geom.IRect) bool {
 ///////////////////////////////////////////////////////////////////////////////
 // Iterators
 
-// RegionIterator returns the region's rects in Y-X order.
+// RegionIterator iterates the region's rects in Y-X order.
 type RegionIterator struct {
 	rgn  *Region
 	runs []int32 // nil for the rect case
@@ -1008,7 +1001,7 @@ func (it *RegionIterator) Reset(rgn *Region) {
 	runs := rgn.head.runs
 	it.rect = geom.IRectLTRB(runs[3], runs[0], runs[4], runs[1])
 	it.runs = runs
-	it.idx = 5 // now idx points at the 2nd interval (or x-sentinel)
+	it.idx = 5 // the 2nd interval (or x-sentinel)
 }
 
 // Done reports whether the iterator has exhausted the region's rects.
@@ -1054,9 +1047,8 @@ func (it *RegionIterator) Next() {
 	it.idx = i
 }
 
-// RegionCliperator iterates the region's rects intersected with clip. The iterator is embedded by value (not by
-// pointer) so a stack-allocated cliperator needs no separate heap object; hot per-draw loops can keep one on the stack
-// via Init.
+// RegionCliperator iterates the region's rects intersected with clip. It holds its iterator by value, so a cliperator
+// that hot per-draw loops keep on the stack via Init needs no heap object.
 type RegionCliperator struct {
 	iter RegionIterator
 	clip geom.IRect
@@ -1165,7 +1157,7 @@ func (s *RegionSpanerator) Next() (left, right int32, ok bool) {
 		return 0, 0, false
 	}
 	if s.runs == nil { // we're a rect
-		s.done = true // ok, now we're done
+		s.done = true
 		return s.left, s.right, true
 	}
 	if s.runs[s.idx] >= s.right {

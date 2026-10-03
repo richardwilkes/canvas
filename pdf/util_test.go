@@ -34,8 +34,7 @@ func TestColorToDecimal(t *testing.T) {
 			t.Errorf("appendColorComponent(%d) = %q, want %q", c.in, got, c.want)
 		}
 	}
-	// Every value must reproduce round(1000*value/255) trimmed of trailing zeros, and parse back within a permil of
-	// value/255.
+	// Every value must parse back within a permil of value/255.
 	for v := 0; v < 256; v++ {
 		got := string(appendColorComponent(nil, uint8(v)))
 		f, err := strconv.ParseFloat("0"+got, 64)

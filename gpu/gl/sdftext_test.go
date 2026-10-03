@@ -58,7 +58,6 @@ func drawSDFTestText(t *testing.T, sdc *SurfaceDrawContext, size, rotateDeg floa
 	return op
 }
 
-// flushAndFragmentSources flushes and returns the captured fragment-shader sources.
 func flushAndFragmentSources(dc *DirectContext) []string {
 	recCounts = map[string]int{}
 	dc.FlushAndSubmit(false)
@@ -76,7 +75,7 @@ func TestSDFTextGrayscaleDF(t *testing.T) {
 	sdc := newDrawTestSDC(t, dc, 512, 512)
 	defer sdc.Release()
 
-	// 200px rotated text sits in the default SDFT window (162 <= size <= glyphsAsPathsFontSize on every platform).
+	// 200px rotated text sits in the default SDFT window (162 <= size <= GlyphsAsPathsFontSize on every platform).
 	op := drawSDFTestText(t, sdc, 200, 30, font.EdgingAntiAlias, "SD")
 	if op.maskType != maskTypeGrayscaleDistanceField {
 		t.Fatalf("mask type = %d, want grayscale distance field", op.maskType)
@@ -103,7 +102,6 @@ func TestSDFTextGrayscaleDF(t *testing.T) {
 		counts("glDrawArrays"); draws != 1 {
 		t.Fatalf("draw calls = %d, want 1", draws)
 	}
-	// The GP must be the A8 distance-field processor.
 	if _, ok := op.gp.(*distanceFieldA8TextGeoProc); !ok {
 		t.Fatalf("gp is %T, want *distanceFieldA8TextGeoProc", op.gp)
 	}
@@ -201,7 +199,6 @@ func TestSDFTextLCDDF(t *testing.T) {
 			t.Errorf("LCD DF fragment shader missing %q:\n%s", want, df)
 		}
 	}
-	// The DistanceAdjust uniform is uploaded (Set3f) during the draw.
 	if counts("glUniform3f") == 0 {
 		t.Error("expected the DistanceAdjust glUniform3f upload")
 	}
@@ -225,7 +222,7 @@ func TestSDFTextSmallTextKeepsBitmapGP(t *testing.T) {
 	}
 }
 
-// TestGLDeviceTextLaneBoundariesPerOS pins the per-OS fGlyphsAsPathsFontSize boundary through the device path with each
+// TestGLDeviceTextLaneBoundariesPerOS pins the per-OS GlyphsAsPathsFontSize boundary through the device path with each
 // OS's option value injected explicitly, so every GOOS runs every variant (the local simulation of the non-darwin CI
 // legs: 300px text is path-lane under the mac 256 threshold but rides the SDFT atlas under the linux/windows 324
 // threshold).

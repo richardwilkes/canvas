@@ -9,7 +9,6 @@
 
 // A8CoverageBlitter writes coverage directly into an A8 mask with overwrite (not blend) semantics. This is how paths
 // get rasterized into masks: the input to mask filters (blur), glyph mask generation, and software path-renderer masks.
-// (Drawing color into A8 *surfaces* belongs to the color-type matrix and arrives with its consumers.)
 
 package raster
 
@@ -107,7 +106,7 @@ func (a *A8CoverageBlitter) BlitAntiV2(x, y int32, a0, a1 Alpha) {
 }
 
 // FillPathToMask rasterizes p's coverage into a fresh A8 mask covering bounds (device space), with or without
-// antialiasing (the wrapper with matrix handling and mask-filter integration arrives with its consumers).
+// antialiasing.
 func FillPathToMask(p *path.Path, bounds geom.IRect, aa bool) *Mask {
 	mask := &Mask{
 		Image:    make([]uint8, int(bounds.Width())*int(bounds.Height())),

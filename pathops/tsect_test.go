@@ -9,9 +9,9 @@
 
 // The end-to-end driver for the tSect quad/quad solver. Every intersection the solver reports must be a real touch
 // point (the two quads' points at the reported T pair coincide within approximatelyEqual), and the coincident corpus
-// must yield at least two coincident entries whose point pairs coincide. Some quad control points below were originally
-// float32 literals and are widened through float32 (f32d) to reproduce that precision exactly; the rest are full
-// doubles. dq/f32d live in dquad_test.go / dcubiclineintersect_test.go.
+// must yield at least two coincident entries whose point pairs coincide. Some quad control points below go through f32d
+// to reproduce upstream's float32 literals exactly; the rest are full doubles. dq/f32d live in dquad_test.go /
+// dcubiclineintersect_test.go.
 
 package pathops
 

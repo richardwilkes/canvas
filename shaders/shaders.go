@@ -7,10 +7,9 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// Package shaders implements the shader model: the shader descriptors (color, blend, local-matrix, and the four
-// gradient families) and their CPU evaluation. Descriptors are kept cleanly separated from evaluation — the GPU
-// fragment processors consume the same descriptor data — and evaluation builds the raster-pipeline highp stages each
-// shader appends, assembled into a Pipeline by Compile.
+// Package shaders implements the shader model: the shader descriptors and their CPU evaluation. Descriptors are kept
+// separate from evaluation — the GPU fragment processors consume the same descriptor data — and evaluation builds the
+// raster-pipeline highp stages each shader appends, assembled into a Pipeline by Compile.
 package shaders
 
 import (
@@ -29,7 +28,6 @@ const (
 	TileDecal
 )
 
-// tileModeCount is the number of TileMode values.
 const tileModeCount = 4
 
 // Shader is the common contract every shader implements. Concrete shaders are immutable descriptors; evaluation happens
@@ -42,17 +40,17 @@ type Shader interface {
 	IsConstant() bool
 
 	// appendStages appends this shader's raster-pipeline stages. It returns false if the shader cannot draw (the empty
-	// shader, a non-invertible total matrix). m is deliberately passed by value: a pointer handed through this
-	// interface call would defeat escape analysis and heap-allocate a MatrixRec at every level of the shader tree on
-	// every compile, so implementations suppress gocritic's hugeParam check instead.
+	// shader, a non-invertible total matrix). m is passed by value because a pointer handed through this interface call
+	// would escape and heap-allocate a MatrixRec at every level of the shader tree on every compile; implementations
+	// suppress gocritic's hugeParam check instead.
 	appendStages(p *Pipeline, m MatrixRec) bool
 }
 
-// MatrixRec tracks, for the raster-pipeline leg, the CTM and the local matrices accumulated by wrapper shaders between
-// the root and the point where a shader consumes coordinates, plus whether the total matrix still describes the
-// coordinates in the registers (a runtime-effect kernel sampling a child at computed coordinates invalidates it).
-// totalLocal holds every local matrix, including those apply has already folded into the pipeline, so the total matrix
-// stays ctm * totalLocal for a child that is reached after an apply; pendingLocal holds only the ones not yet folded in.
+// MatrixRec tracks the CTM and the local matrices wrapper shaders accumulate between the root and the shader that
+// consumes coordinates, plus whether the total matrix still describes the register coordinates (a shader kernel
+// sampling a child at computed coordinates invalidates it). totalLocal holds every local matrix, including those apply
+// has already folded into the pipeline, so the total matrix stays ctm * totalLocal for a child reached after an apply;
+// pendingLocal holds only those not yet folded in.
 type MatrixRec struct {
 	ctm          geom.Matrix
 	totalLocal   geom.Matrix
@@ -61,7 +59,6 @@ type MatrixRec struct {
 	totalInvalid bool
 }
 
-// newMatrixRec builds a MatrixRec seeded with ctm.
 func newMatrixRec(ctm geom.Matrix) MatrixRec {
 	return MatrixRec{ctm: ctm, totalLocal: geom.IdentityMatrix(), pendingLocal: geom.IdentityMatrix()}
 }
@@ -78,7 +75,6 @@ func (m *MatrixRec) concat(lm *geom.Matrix) MatrixRec {
 	return out
 }
 
-// coordsSeeded reports whether the pipeline's registers already hold seeded coordinates.
 func (m *MatrixRec) coordsSeeded() bool { return m.ctmApplied }
 
 // markTotalMatrixInvalid returns a modified copy with the total matrix marked invalid: a shader kernel applies it to
@@ -90,13 +86,12 @@ func (m *MatrixRec) markTotalMatrixInvalid() MatrixRec {
 	return out
 }
 
-// totalMatrixValid reports whether the tracked total matrix still describes the register coordinates.
 func (m *MatrixRec) totalMatrixValid() bool { return !m.totalInvalid }
 
 // apply appends seed_shader (if the coords are not yet seeded) and a matrix stage for postInv * (ctm *
-// pendingLocal)^-1, returning the updated copy: pendingLocal resets to identity (it is now in the pipeline) while
-// totalLocal carries over untouched, so totalInverse keeps reporting the full transform. Returns ok=false when the
-// total matrix is not invertible.
+// pendingLocal)^-1, omitting ctm once it has been applied, and returns the updated copy: pendingLocal resets to
+// identity (it is now in the pipeline) while totalLocal carries over, so totalInverse keeps reporting the full
+// transform. Returns ok=false when that matrix is not invertible.
 func (m *MatrixRec) apply(p *Pipeline, postInv *geom.Matrix) (MatrixRec, bool) {
 	total := m.pendingLocal
 	if !m.ctmApplied {
@@ -120,11 +115,10 @@ func (m *MatrixRec) apply(p *Pipeline, postInv *geom.Matrix) (MatrixRec, bool) {
 	return out, true
 }
 
-// totalInverse returns the inverse of the total matrix, ctm * totalLocal — the full shader-space-to-device transform,
-// which is why it reads totalLocal rather than pendingLocal: a parent that already applied the CTM (and its own local
-// matrices) leaves pendingLocal identity, but the coordinates it hands down are still described by the whole chain.
-// Callers must check totalMatrixValid first — a shader kernel sampling a child at explicit coordinates invalidates the
-// tracked total.
+// totalInverse returns the inverse of the total matrix, ctm * totalLocal (shader space to device). It reads totalLocal
+// rather than pendingLocal because a parent that already applied the CTM and its own local matrices leaves pendingLocal
+// identity, yet the coordinates it hands down are still described by the whole chain. Callers must check
+// totalMatrixValid first.
 func (m *MatrixRec) totalInverse() (geom.Matrix, bool) {
 	var total geom.Matrix
 	total.SetConcat(&m.ctm, &m.totalLocal)
@@ -138,15 +132,13 @@ func NewMatrixRec(ctm geom.Matrix) MatrixRec { return newMatrixRec(ctm) }
 // Concat is the exported form of concat, for the GPU FP leg.
 func (m *MatrixRec) Concat(lm geom.Matrix) MatrixRec { return m.concat(&lm) }
 
-// ApplyForFragmentProcessor returns the inverted pending local matrix (with postInv post-applied) that a GPU
-// matrix-effect wrapper applies to the FP's sample coords. The coordinates provided to the root shader's FP are already
-// in local space, so the CTM is never inverted here — only the pending local matrix is. Returns ok=false when it is not
-// invertible.
+// ApplyForFragmentProcessor returns postInv * pendingLocal^-1, which a GPU matrix-effect wrapper applies to the FP's
+// sample coords. The root shader's FP receives local-space coordinates, so the CTM is never inverted here. Returns
+// ok=false when pendingLocal is not invertible.
 //
 // It panics when the record has already applied the CTM: that record belongs to the CPU raster-pipeline lane (apply),
-// and mixing the two lanes' matrix state would silently double-transform the sample coordinates. Callers on the GPU leg
-// always start from NewMatrixRec/Concat, which never set the flag, so the panic reports a programming error rather than
-// a runtime condition to recover from.
+// and mixing the two lanes' matrix state would silently double-transform the sample coordinates. GPU-leg callers start
+// from NewMatrixRec/Concat, which never set the flag, so the panic reports a programming error.
 func (m *MatrixRec) ApplyForFragmentProcessor(postInv *geom.Matrix) (geom.Matrix, bool) {
 	if m.ctmApplied {
 		panic("CTM already applied (FPs always receive raw local coords)")

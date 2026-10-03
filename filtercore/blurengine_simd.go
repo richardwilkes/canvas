@@ -15,25 +15,23 @@ import "simd/archsimd"
 
 // The goexperiment.simd blur kernels, written against archsimd's 128-bit types — the widest shape arm64 and amd64
 // share, and a natural fit here because an RGBA sample is exactly four lanes. Both passes vectorize across the four
-// channels and nothing else: each output sample depends on the sample before it (the Gaussian pass through the
-// circular buffer's rotation, the three-box pass through a genuine loop-carried prefix sum), so there is no
-// across-samples axis to take without changing the arithmetic. Vectorizing across taps would change it too — floats do
-// not reassociate, and a tree reduction over the window is a different sum than the scalar's ascending-tap chain — so
-// the Gaussian kernel keeps the scalar's tap order exactly and only widens each tap from four scalar operations to one.
+// channels and nothing else: each output sample depends on the sample before it (the Gaussian pass through the circular
+// buffer's rotation, the three-box pass through a loop-carried prefix sum), and vectorizing across taps would
+// reassociate the float sum, so the Gaussian kernel keeps the scalar's ascending tap order exactly and only widens each
+// tap from four scalar operations to one.
 //
-// Every operation below was picked for bit-exactness with the portable form, not for convenience:
+// Every operation below was picked for bit-exactness with the portable form:
 //
-//   - The window walk. The scalar indexes the circular buffer as (i+base)%window for ascending i. Ascending i visits
-//     slots base..window-1 and then 0..base-1, both contiguous, so the kernel splits the walk into those two runs and
-//     drops the modulo. That is a re-spelling of the same index sequence in the same order, not a reassociation: tap k
-//     of the vector loop is tap k of the scalar loop, with the same weight, added to the same partial sum.
+//   - The window walk. The scalar indexes the circular buffer as (i+base)%window for ascending i, which visits slots
+//     base..window-1 and then 0..base-1, so the kernel splits the walk into those two contiguous runs and drops the
+//     modulo. Tap k of the vector loop is still tap k of the scalar loop, with the same weight, added to the same
+//     partial sum.
 //   - The accumulation. "sum += buf[s]*k" and "sum*255 + 0.5" are plain Go expressions, which the language permits an
 //     implementation to contract into a fused multiply-add. This build's arm64 compiler does (both disassemble to
-//     FMADDS) and its amd64 compiler at the module's GOAMD64=v1 baseline does not (MULSS then ADDSS), so exprMulAdd4
-//     is spelled per arch to reproduce whichever lowering the scalar twin in the same binary got. Getting that backwards
+//     FMADDS) and its amd64 compiler at the module's GOAMD64=v1 baseline does not (MULSS then ADDSS), so exprMulAdd4 is
+//     spelled per arch to reproduce whichever lowering the scalar twin in the same binary got. Getting that backwards
 //     diverges on hostile inputs, and TestBlurEngineSIMDContractionNegativeControl proves the equivalence fuzz's corpus
-//     is strong enough to see that divergence — byte-quantized output hides small ones, so the corpus is built to
-//     surface them rather than merely assumed to.
+//     can see that divergence, which byte-quantized output would otherwise hide.
 //   - The clamps. "if v > 255 {255} else if v < 0 {0}" leaves NaN alone (both comparisons are false for it), which the
 //     hardware Min/Max would not — they propagate NaN — so the clamps are compare + IfElse, applied in the scalar's
 //     order. x.IfElse(mask, y) keeps x where mask is true.
@@ -45,8 +43,8 @@ import "simd/archsimd"
 //   - The integer pipeline. Uint32x4.Add/Sub are wrapping lane operations, which is what the scalar's uint32 arithmetic
 //     is, and ScaledDividerU32's "(v*factor)>>32" is an exact 32x32->64 high half (divideVec, spelled per arch).
 //
-// The byte gathers are per-arch for the reason imagecore's and maskfilter's are: every pack-and-narrow method archsimd
-// offers for them is AVX-512 on amd64. See packLowBytes.
+// The byte gathers are per-arch because every pack-and-narrow method archsimd offers for them is AVX-512 on amd64. See
+// packLowBytes.
 //
 // Both kernels are locked against their portable twins by TestBlurEngineSIMDMatchesScalar, which fuzzes whole segments
 // and requires bit-identical output words and bit-identical residual pass state.
@@ -78,9 +76,6 @@ const maxGaussianWindow = 13
 func unpackWord(w uint32) archsimd.Uint32x4 {
 	return archsimd.BroadcastUint32x4(w).ReshapeToUint8s().ExtendLo8ToUint16().ExtendLo4ToUint32()
 }
-
-///////////////////////////////////////////////////////////////////////////////
-// GaussianPass
 
 // gaussianBlurSegmentSIMD is gaussianBlurSegmentGeneric with the per-sample window walk in vector registers: the four
 // channels of one buffer slot are one Float32x4, so a tap is one 16-byte load, one weight load and one multiply-add
@@ -155,9 +150,6 @@ func gaussianBlurSegmentSIMD(p *gaussianPass, n int32, src []uint32, srcStride i
 	}
 	p.base = base
 }
-
-///////////////////////////////////////////////////////////////////////////////
-// ThreeBoxApproxPass
 
 // threeBoxBlurSegmentSIMD is threeBoxBlurSegmentGeneric with the four channels in one Uint32x4. The three running sums
 // and the three circular buffers all hold [4]uint32 already, so each of them becomes one register and one 16-byte

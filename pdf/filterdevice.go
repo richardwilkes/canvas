@@ -17,8 +17,6 @@
 //   - an image-filter layer restores through the canvas's internalDrawDeviceWithFilter, which snaps the raster layer,
 //     evaluates the whole filter DAG on the CPU raster backend (CreateFilterBackend), and draws the resolved result
 //     back through this filterDevice adapter's DrawSpecial (again internalDrawImageRect at the given device matrix).
-//
-// Filtered layers are always rasterized first and then embedded as pixels.
 
 package pdf
 
@@ -31,11 +29,10 @@ import (
 	"github.com/richardwilkes/canvas/shaders"
 )
 
-// drawRasterLayerBack draws a raster saveLayer device (CreateDevice's color-filter/image-filter lane) back onto this
-// PDF device as an Image XObject: this is the fallback taken whenever the saveLayer's device turns out to hold raster
-// pixels rather than PDF content. The layer paint's color filter is baked into the image by internalDrawImageRect; its
-// alpha and blend mode apply through the scoped content entry. The relative transform is the (integer-translation)
-// layer→page mapping, so the WxH layer image lands at the layer's origin.
+// drawRasterLayerBack draws a raster saveLayer device back onto this PDF device as an Image XObject. The layer paint's
+// color filter is baked into the image by internalDrawImageRect; its alpha and blend mode apply through the scoped
+// content entry. The relative transform is the (integer-translation) layer→page mapping, so the WxH layer image lands
+// at the layer's origin.
 func (d *Device) drawRasterLayerBack(bd *canvas.BitmapDevice, paint *canvas.Paint) {
 	special := bd.SnapSpecial(geom.IRectWH(bd.Width(), bd.Height()))
 	if special == nil {
@@ -50,11 +47,9 @@ func (d *Device) drawRasterLayerBack(bd *canvas.BitmapDevice, paint *canvas.Pain
 	d.internalDrawImageRect(newKeyedImage(img), nil, dst, paint, matrix)
 }
 
-// filterDevice adapts a PDF Device to filtercore.Device: the intermediate image-filter DAG evaluates on CPU raster
-// devices (CreateFilterBackend returns the raster backend), so this adapter only bridges the final composite — drawing
-// the resolved raster result back as a PDF Image XObject (DrawSpecial) — plus the shader-tiling DrawPaint/DrawRect
-// lanes used for layer-filling effects. SnapSpecial returns nil: a PDF device has no pixels to snap, and it is never a
-// filter source (its image-filter layers are the raster BitmapDevice, which is the source).
+// filterDevice adapts a PDF Device to filtercore.Device. The image-filter DAG evaluates on CPU raster devices, so this
+// adapter only bridges the final composite (DrawSpecial) plus the shader-tiling DrawPaint/DrawRect lanes used for
+// layer-filling effects. It is never a filter source: an image-filter layer's source is the raster BitmapDevice.
 type filterDevice struct {
 	dev *Device
 }

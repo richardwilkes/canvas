@@ -48,9 +48,7 @@ func (t *DistanceFieldAdjustTable) GetAdjustment(lum int) float32 {
 	return t.table[lum>>distanceAdjustLumShift]
 }
 
-// build fills the table: for each mask-gamma row, find the mask value whose adjusted coverage is 0.5, invert the
-// smoothstep to a t value, and convert that to a distance. Rows with no 0.5 crossing keep adjustment 0 (no valid data
-// means no adjustment).
+// build fills the table from the mask-gamma rows. Rows with no 0.5 crossing keep adjustment 0.
 func (t *DistanceFieldAdjustTable) build() {
 	data := font.GammaLUTData()
 	for row := range t.table {

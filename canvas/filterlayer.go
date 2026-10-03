@@ -179,7 +179,6 @@ func computeDecompositionCenter(dstToLocal *geom.Matrix, contentBounds *geom.Rec
 	return center
 }
 
-// pin64To32 clamps an int64 to the int32 range.
 func pin64To32(v int64) int32 {
 	if v > math.MaxInt32 {
 		return math.MaxInt32
@@ -332,9 +331,7 @@ func (c *Canvas) internalDrawDeviceWithFilter(src, dst Device, filter filtercore
 	var requiredInput geom.IRect
 	if compat != compatUnknown {
 		// Use the relative transform from src to dst and the src's whole image; internalSaveLayer already determined
-		// what was necessary. Only the source must be snappable; the destination needs only RelativeTransform (a plain
-		// Device method), so a non-pixel target like the PDF device qualifies and draws the filtered result back
-		// through AsFilterDevice.
+		// what was necessary. Only the source must be snappable (see filterSnapDevice).
 		if _, okSrc := src.(filterSnapDevice); !okSrc {
 			return
 		}
@@ -417,7 +414,6 @@ func imageToColorFilter(paint *Paint) bool {
 		return false
 	}
 	if paint.ColorFilter != nil {
-		// Combine the paint's color filter with the image filter's color filter.
 		imgCF = colorfilter.NewCompose(imgCF, paint.ColorFilter)
 	}
 	paint.ColorFilter = imgCF
@@ -457,6 +453,3 @@ func (c *Canvas) aboutToDraw(paint *Paint, rawBounds *geom.Rect) (*Paint, func()
 		c.internalRestore()
 	}, true
 }
-
-// (Color-type selection for filter intermediates reduces to the identity here: everything ≤32bpp upgrades to N32, the
-// library's only surface format.)

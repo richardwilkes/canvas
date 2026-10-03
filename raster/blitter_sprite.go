@@ -57,7 +57,7 @@ func (s *spriteBase) blitHVia(b Blitter, x, y, width int32) {
 	b.BlitRect(x, y, width, 1)
 }
 
-// BlitAntiH is unreachable for sprites: no fallback strategy.
+// BlitAntiH is unreachable for sprites.
 func (s *spriteBase) BlitAntiH(_, _ int32, _ []Alpha, _ []int16) {}
 
 // BlitV is unreachable for sprites (would lower to BlitAntiH, which is a no-op).
@@ -66,7 +66,7 @@ func (s *spriteBase) BlitV(_, _, _ int32, _ Alpha) {}
 // BlitAntiRect is unreachable for sprites.
 func (s *spriteBase) BlitAntiRect(_, _, _, _ int32, _, _ Alpha) {}
 
-// BlitMask is unreachable for sprites (no-op for this reachable set).
+// BlitMask is unreachable for sprites.
 func (s *spriteBase) BlitMask(_ *Mask, _ geom.IRect) {}
 
 // BlitAntiH2 is unreachable for sprites.
@@ -220,9 +220,9 @@ func (s *spriteD32S32) BlitRect(x, y, width, height int32) {
 		}
 		switch {
 		case s.srcOpaque && s.alpha == 255:
-			copy(dstRow, srcRow) // opaque source, full alpha: verbatim copy
+			copy(dstRow, srcRow)
 		case s.srcOpaque:
-			interp256RowFn(dstRow, srcRow, alpha256) // opaque source, scaled by paint alpha
+			interp256RowFn(dstRow, srcRow, alpha256)
 		case s.alpha == 255:
 			pmSrcOverRowFn(dstRow, srcRow)
 		default:
@@ -443,8 +443,6 @@ func (ib *ImageSpriteBlitter) BlitAntiV2(x, y int32, a0, a1 Alpha) {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-///////////////////////////////////////////////////////////////////////////////
-
 // ChooseSprite selects the fastest sprite blitter for the N32 destination/source pair: the memcpy sprite when the paint
 // copies pixels verbatim (BlendSrc, or src-over with an opaque source), the legacy src-over sprite otherwise for
 // src-over, and the raster-pipeline-equivalent sprite for everything else. left/top position the source in destination
@@ -452,12 +450,10 @@ func (ib *ImageSpriteBlitter) BlitAntiV2(x, y int32, a0, a1 Alpha) {
 // source is premultiplied inside whichever blitter runs, so the only lane it cannot take is the verbatim copy — its
 // bytes are not yet in the destination's premultiplied form.
 func ChooseSprite(dst, src *Pixmap, left, top int32, alpha uint8, mode BlendMode, srcAlpha SpriteAlphaType) Blitter {
-	// Full alpha and BlendSrc, or src-over with an opaque source: premultiplied pixels copy verbatim.
 	if alpha == 0xFF && srcAlpha != SpriteAlphaUnpremul &&
 		(mode == BlendSrc || (mode == BlendSrcOver && srcAlpha == SpriteAlphaOpaque)) {
 		return &spriteMemcpy{spriteBase: spriteBase{dst: dst, src: src, left: left, top: top}}
 	}
-	// src-over takes the legacy blitter (it handles alpha, but no other blend mode).
 	if mode == BlendSrcOver {
 		return &spriteD32S32{
 			spriteBase:  spriteBase{dst: dst, src: src, left: left, top: top},

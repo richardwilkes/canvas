@@ -7,10 +7,8 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// This file backs the bitmap→texture upload lane the FP catalog (dither LUT, gradient texture colorizer) needs: small
-// uniquely-keyed textures created directly from CPU pixels. The pixels ride a lazy proxy whose callback creates the
-// texture with initial data at flush, so instantiation is deferred until the proxy is actually needed. The image lanes
-// will generalize this over imagecore bitmaps (mipmaps, color-type fallback).
+// This file backs the bitmap→texture upload lane: uniquely-keyed textures created directly from CPU pixels. The pixels
+// ride a lazy proxy whose callback creates the texture with initial data at flush.
 
 package gl
 
@@ -31,14 +29,13 @@ func FindOrCreatePixelsProxyView(ctx *DirectContext, key *gpu.UniqueKey, dims ge
 	swizzle := caps.ReadSwizzle(format, colorType)
 
 	proxyProvider := ctx.ProxyProvider()
-	// Registering the key with the context's LUT cache is what eventually unregisters it: these keys are per shader
-	// instance or per ramp bake, so nothing else ever invalidates them (see lutproxycache.go).
+	// Registering the key with the context's LUT cache is what eventually unregisters it: nothing else ever invalidates
+	// these keys (see lutproxycache.go).
 	ctx.lutProxyKeys.track(proxyProvider, key)
 	if proxy := proxyProvider.FindOrCreateProxyByUniqueKey(key, UseAllocatorYes); proxy != nil {
 		return MakeSurfaceProxyView(proxy, gpu.OriginTopLeft, swizzle)
 	}
 
-	// A lazy proxy whose callback creates the texture with the pixel data, so instantiation is deferred until flush.
 	data := pixels
 	rb := rowBytes
 	ct := colorType

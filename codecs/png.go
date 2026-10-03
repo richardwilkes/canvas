@@ -26,11 +26,10 @@ var (
 	pngTypeIEND = []byte("IEND")
 )
 
-// pngHasTRNS reports whether the stream carries a tRNS chunk. png.DecodeConfig stops parsing at IHDR for every
-// non-paletted PNG, so the color model it reports never accounts for tRNS even though png.Decode honors it — a
-// grayscale or truecolor image with tRNS decodes to an *image.NRGBA/*image.NRGBA64, not to the *image.Gray/*image.RGBA
-// the config implies. Sniffing the chunk stream restores the alpha that lane drops. Paletted PNGs need no sniff:
-// DecodeConfig runs on to IDAT for those, so the tRNS alpha is already folded into the palette it reports.
+// pngHasTRNS reports whether the stream carries a tRNS chunk. png.DecodeConfig stops at IHDR for a non-paletted PNG, so
+// the color model it reports ignores tRNS even though png.Decode honors it: a grayscale or truecolor image with tRNS
+// decodes to an *image.NRGBA/*image.NRGBA64, not to the *image.Gray/*image.RGBA the config implies. Paletted PNGs need
+// no sniff: DecodeConfig reads on through tRNS for those and folds its alpha into the palette it reports.
 func pngHasTRNS(data []byte) bool {
 	for off := len(pngMagic); off+8 <= len(data); {
 		length := int(binary.BigEndian.Uint32(data[off:]))
@@ -45,10 +44,9 @@ func pngHasTRNS(data []byte) bool {
 	return false
 }
 
-// pngModelInfo maps a decoded/DecodeConfig color model to the reported info: grayscale PNGs are Gray8; everything else
-// is N32, opaque unless the PNG carries alpha (an alpha channel, gray+alpha, a tRNS chunk, or a translucent palette
-// entry). trns must come from pngHasTRNS: for the gray and truecolor models DecodeConfig reports, the model alone
-// cannot say whether tRNS is present, yet its presence changes both the decoded image type and the alpha type.
+// pngModelInfo maps a DecodeConfig color model to the reported info: grayscale PNGs are Gray8; everything else is
+// RGBA_8888, opaque unless the PNG carries alpha (an alpha channel, a tRNS chunk, or a translucent palette entry). trns
+// must come from pngHasTRNS, because the gray and truecolor models cannot say whether tRNS is present.
 func pngModelInfo(w, h int, model color.Model, palette color.Palette, trns bool) imagecore.ImageInfo {
 	gray := model == color.GrayModel || model == color.Gray16Model
 	alpha := model == color.NRGBAModel || model == color.NRGBA64Model

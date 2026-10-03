@@ -8,7 +8,7 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // Computes the x-intervals a blob's glyph outlines carve out of a horizontal band (underline carve-outs), through the
-// canonical-size path strike with the paint's stroke applied.
+// canonical-size path strike. The outlines are always filled: the paint's stroke and path effect are not applied.
 
 package textblob
 
@@ -20,9 +20,8 @@ import (
 
 // GetIntercepts computes the intercepts of the blob's glyph outlines against a horizontal band: bounds is the [top,
 // bottom] band relative to the blob origin; paint may be nil. The (entry, exit) pairs are appended to intervals, which
-// is returned along with the number of scalars appended. Pass a nil intervals to count only: nothing is appended (not
-// even to a fresh slice) and the returned slice is nil, but the count still reports how many scalars a non-nil
-// intervals would have received.
+// is returned along with the number of scalars appended. A nil intervals only counts: the returned slice stays nil and
+// count is what a non-nil intervals would have received.
 func (b *Blob) GetIntercepts(bounds [2]float32, intervals []float32, paint *stroke.PaintSpec) (result []float32, count int) {
 	builder := NewGlyphRunBuilder()
 	glyphRunList := builder.BlobToGlyphRunList(b, geom.Pt(0, 0))
@@ -34,7 +33,6 @@ func (b *Blob) GetIntercepts(bounds [2]float32, intervals []float32, paint *stro
 	return intervals, intervalCount
 }
 
-// getGlyphRunIntercepts computes the intercepts for one glyph run.
 func getGlyphRunIntercepts(glyphRun *GlyphRun, paint *stroke.PaintSpec, bounds [2]float32, intervals []float32, intervalCount *int) []float32 {
 	scale := float32(1)
 	var interceptPaint stroke.PaintSpec
@@ -52,8 +50,8 @@ func getGlyphRunIntercepts(glyphRun *GlyphRun, paint *stroke.PaintSpec, bounds [
 		interceptFont.SetSubpixel(true)
 		scale = interceptFont.Size() / canonicalTextSizeForPaths
 		interceptFont.SetSize(canonicalTextSizeForPaths)
-		// Note: scale can be zero here (even if it wasn't before the divide). IEEE divide semantics carry through;
-		// downstream checks for non-finite coordinates handle it.
+		// scale can be zero here (even if it wasn't before the divide). IEEE divide semantics carry through; downstream
+		// checks for non-finite coordinates handle it.
 		if interceptPaint.Width > 0 && interceptPaint.Style != stroke.PaintStyleFill {
 			interceptPaint.Width /= scale
 		}

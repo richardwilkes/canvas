@@ -56,7 +56,7 @@ const (
 	FormatDEPTH24STENCIL8
 )
 
-// ColorFormatCount is the number of Format values usable as color formats.
+// ColorFormatCount is the length of a table indexed by the color Format values, FormatUnknown included.
 const ColorFormatCount = int(FormatLastColorFormat) + 1
 
 // FormatFromEnum returns the Format corresponding to a sized GL internal-format enum, or FormatUnknown if the enum

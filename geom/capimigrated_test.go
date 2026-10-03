@@ -16,7 +16,6 @@ import (
 	"testing"
 )
 
-// TestRadiansToDegrees pins the radians→degrees conversion at the quarter/half turn and zero.
 func TestRadiansToDegrees(t *testing.T) {
 	cases := []struct{ rad, deg float32 }{
 		{rad: 0, deg: 0},

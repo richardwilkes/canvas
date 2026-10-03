@@ -108,8 +108,7 @@ func filter246(pix []uint8, n, level, ilevel, hlevel, index, iStep, jStep int, f
 	}
 }
 
-// filterParams computes the per-macroblock filter thresholds (§15.4). j is 1 when the macroblock's inner edges must be
-// filtered.
+// filterParams computes the filter thresholds (§15.4), which are frame-wide here: one segment, no per-mode deltas.
 func (e *encoder) filterParams() (level2, ilevel, hlevel int) {
 	level := e.filterLevel
 	if level == 0 {

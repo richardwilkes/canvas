@@ -20,11 +20,9 @@ import (
 	"github.com/richardwilkes/canvas/path"
 )
 
-// The edge builders are pooled across fills (and across the concurrent bands of FillPathParallel, which is why a
-// sync.Pool rather than a single shared instance): each fill Gets a builder, whose arenas and list slice are reset and
-// reused, so steady-state curve/stroke fills allocate no edges at all. The edges never outlive the fill (they are
-// built, sorted, walked, and discarded within fillPath / aaaFillPath), so returning the builder on function exit is
-// safe.
+// The edge builders are pooled (in a sync.Pool, since FillPathParallel's bands build concurrently) so their arenas and
+// list slice are reused and steady-state curve/stroke fills allocate no edges. The edges are built, sorted, walked, and
+// discarded within fillPath / aaaFillPath, so returning the builder on function exit is safe.
 var (
 	basicBuilderPool    = sync.Pool{New: func() any { return new(edgeBuilder) }}
 	analyticBuilderPool = sync.Pool{New: func() any { return new(analyticEdgeBuilder) }}
@@ -103,13 +101,11 @@ func buildPolyEdges(b edgeSink, p *path.Path, iclip *geom.IRect, canCullToTheRig
 	}
 }
 
-// edgeScratch holds the reusable per-build temporaries the edge builders would otherwise allocate: iter (the path edge
-// iterator, one *EdgeIter per build otherwise), clip (ClipPath's iterator + clipper + conic->quad scratch, reused
-// across clipped builds), chop (>= 10 points) for the clipper output and Y-extrema chopping, lines for buildPolyEdges'
-// per-segment line clipper output, and conic for the conic->quad approximation, sized to the worst case
-// (geom.MaxConicToQuadPointCount). Both builders embed one and pass it to the build drivers; because these buffers flow
-// into the edgeSink interface calls (which forces them to escape), a reused builder field turns per-segment/per-build
-// heap allocations into one-time, pooled ones.
+// edgeScratch holds the per-build temporaries the edge builders reuse: iter (the path edge iterator), clip (ClipPath's
+// iterator, clipper, and conic->quad scratch), chop (the clipper output and Y-extrema chopping), lines (buildPolyEdges'
+// line clipper output), and conic (the conic->quad output, sized to geom.MaxConicToQuadPointCount). These buffers flow
+// into edgeSink interface calls and so escape; keeping them on the pooled builder turns per-segment and per-build heap
+// allocations into one-time ones.
 type edgeScratch struct {
 	iter  path.EdgeIter
 	clip  path.EdgeClipScratch
@@ -229,8 +225,8 @@ func (b *edgeBuilder) reset() {
 	b.lines.reset()
 	b.quads.reset()
 	b.cubics.reset()
-	// Drop the sentinel links, the inverse blitter's wrapped blitter and the scratch iterators' path so the idle pooled
-	// builder pins none of arena edges, a caller's blitter or a caller's path.
+	// Drop the sentinel links, the inverse blitter's wrapped blitter, and the scratch iterators' path so the idle
+	// pooled builder pins no arena edge, caller blitter, or caller path.
 	b.head = Edge{}
 	b.tail = Edge{}
 	b.inv = inverseBlitter{}
@@ -322,7 +318,6 @@ func (b *edgeBuilder) buildEdges(p *path.Path, shiftedClip *geom.IRect) int {
 	// If we're convex, then we need both edges, even if the right edge is past the clip.
 	canCullToTheRight := !p.IsConvex()
 
-	// We can use the buildPoly optimization if all the segments are lines.
 	if p.SegmentMasks() == path.SegmentLine {
 		buildPolyEdges(b, p, shiftedClip, canCullToTheRight, &b.scratch)
 		return len(b.list)
@@ -336,15 +331,12 @@ func (b *edgeBuilder) buildEdges(p *path.Path, shiftedClip *geom.IRect) int {
 ///////////////////////////////////////////////////////////////////////////////
 // Analytic (AA) edge builder
 
-// analyticEdgeBuilder converts a path into the edge list the analytic-AA scan converter walks. As with the basic
-// builder, edges are bump-allocated from per-type arenas rather than one heap object per segment, and the builder is
-// pooled (analyticBuilderPool) so a stroked/curve fill's hundreds of edges reallocate nothing in steady state.
+// analyticEdgeBuilder converts a path into the edge list the analytic-AA scan converter walks. It is arena-allocated
+// and pooled (analyticBuilderPool) the same way as edgeBuilder.
 type analyticEdgeBuilder struct {
 	list []*AnalyticEdge
-	// head and tail are the sorted-list boundary sentinels aaaFillPath threads through the edges. They live on the
-	// pooled builder rather than as aaaFillPath locals because the list's real edges (also on this builder) point back
-	// at them, which would otherwise force the locals to escape to the heap per fill. reset zeroes them so each reused
-	// fill sees the same clean state a fresh `var` would.
+	// head and tail are aaaFillPath's sorted-list sentinels. The list's edges point back at them, so as aaaFillPath
+	// locals they would escape to the heap per fill. reset zeroes them so a reused fill sees what a fresh `var` would.
 	head    AnalyticEdge
 	tail    AnalyticEdge
 	lines   edgeArena[AnalyticEdge]

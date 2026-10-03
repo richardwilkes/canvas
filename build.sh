@@ -67,11 +67,9 @@ if [ -n "$CGO_USERS" ]; then
 	exit 1
 fi
 
-# Build the Go code
 echo -e "\033[33mBuilding Go code...\033[0m"
 go build -v ./...
 
-# Run the tests
 if [ "$TEST"x == "1x" ]; then
 	TEST_CGO=0
 	if [ -n "$RACE" ]; then
@@ -127,9 +125,9 @@ fi
 #     exists in some permutations. -composites=false matches the govet "composites" disable in .golangci.yml.
 #   - A guard fails the build if a platform- or experiment-constrained file appears outside the scoped directories, so
 #     this pruning cannot silently lose coverage as code moves around.
-# internal/oracle has no platform-sensitive files of its own; the per-platform value of its old loop was the typecheck
-# against the per-platform main module, which the go vet matrix now gives, so it lints once, host-shaped.
-# internal/tools is fully portable, so a single host-shaped pass covers it.
+# internal/oracle has no platform-sensitive files of its own, and the go vet matrix typechecks it against each
+# per-platform main module, so it lints once, host-shaped. internal/tools is fully portable, so one host-shaped pass
+# covers it too.
 LINT_PLATFORMS="linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64 windows/arm64"
 LINT_ARCH_SCOPE="./codecs/internal/vp8enc/... ./filtercore/... ./imagecore/... ./maskfilter/... ./raster/... ./shaders/..."
 if [ "$LINT"x == "1x" ]; then

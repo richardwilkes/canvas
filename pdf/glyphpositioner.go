@@ -43,7 +43,6 @@ func newGlyphPositioner(content stream.WStream, textSkewX float32, origin geom.P
 	}
 }
 
-// flush closes an open Tj string.
 func (g *glyphPositioner) flush() {
 	if g.inText {
 		writeText(g.content, "> Tj\n")

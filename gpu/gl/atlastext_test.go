@@ -259,7 +259,7 @@ func TestBitmapTextGeoProcKeysAndStrides(t *testing.T) {
 	}
 }
 
-// lcdTestSDC builds an SDC whose surface props carry RGB_H pixel geometry (the E.4 LCD enablement).
+// lcdTestSDC builds an SDC whose surface props carry RGB_H pixel geometry, enabling LCD text.
 func lcdTestSDC(t *testing.T, dc *DirectContext, w, h int32) *SurfaceDrawContext {
 	t.Helper()
 	props := surface.Props{PixelGeometry: surface.PixelGeometryRGBH}
@@ -319,8 +319,7 @@ func TestAtlasTextOpLCD(t *testing.T) {
 		t.Fatalf("atlas page format = %v, want RGB565", got)
 	}
 
-	// The same text with kAntiAlias edging stays on the grayscale lane even on the LCD surface props path when drawn
-	// into a layer-like unknown-geometry SDC.
+	// The same subpixel-edged text stays on the grayscale lane when drawn into a layer-like unknown-geometry SDC.
 	plainSDC := newDrawTestSDC(t, dc, 128, 128)
 	defer plainSDC.Release()
 	c2 := canvas.New(NewDevice(plainSDC))
@@ -391,8 +390,8 @@ func TestLCDXferProcessorLanes(t *testing.T) {
 }
 
 // TestGetPackedGlyphImageLCD16 pins the A565 atlas packing lanes: the row copy for LCD16 glyphs into a 565 page, and
-// the 565→8888 expansion for drivers without a 565 format (bit-replicated channels, opaque alpha, and RGBA word order —
-// N32 is RGBA8888 on every leg, so the native-BGRA flag is constant false).
+// the 565→8888 expansion for drivers without a 565 format (bit-replicated channels, opaque alpha, and RGBA word order,
+// since N32 is RGBA8888 on every leg).
 func TestGetPackedGlyphImageLCD16(t *testing.T) {
 	g := &font.Glyph{Width: 2, Height: 2, Format: font.MaskLCD16}
 	g.Image16 = []uint16{0xF800, 0x07E0, 0x001F, 0x1234}

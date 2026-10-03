@@ -7,11 +7,10 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// Tests for the per-segment coincidence-maintenance phase (opsegment_move.go): moveMultiples, moveNearby,
-// missingCoincidence, spansNearby, testForCoincidence, and the clearAll/clearOne/clearVisited span cleanup. The small
-// helpers are exercised directly; the trio is exercised both standalone (right after addIntersections, reproducing the
-// head of handleCoincidence) and through a full-sequence driver, with a structural model-validity invariant checked
-// after each run.
+// Tests for the per-segment coincidence-maintenance phase (opsegment_move.go). The small helpers are exercised
+// directly; the trio is exercised both standalone (right after addIntersections, reproducing the head of
+// handleCoincidence) and through the full handleCoincidence sequence, with a structural model-validity invariant
+// checked after each run.
 
 package pathops
 
@@ -25,7 +24,7 @@ import (
 
 // validateModel walks every real contour's segments head->tail, asserting the span list threads correctly (monotonic
 // non-decreasing t, consistent next/prev linkage, reaches the tail) and that the walked opSpan count matches the
-// segment's fCount (which moveNearby may have lowered by releasing spans).
+// segment's count (which moveNearby may have lowered by releasing spans).
 func validateModel(t *testing.T, head *opContourHead) {
 	t.Helper()
 	for _, c := range realContours(head) {
@@ -151,9 +150,8 @@ func TestClearVisited(t *testing.T) {
 	}
 }
 
-// TestCurveDDDispatch checks the dCurve-based dispatch helpers (curveDDPointAtT/curveDDSlopeAtT/ curveDIntersectRay)
-// against their already-verified point-array siblings (curveDPointAtT/curveDSlopeAtT/ curveIntersectRay) across all
-// four verbs.
+// TestCurveDDDispatch checks the dCurve-based dispatch helpers (curveDDPointAtT/curveDDSlopeAtT/curveDIntersectRay)
+// against their point-array siblings (curveDPointAtT/curveDSlopeAtT/curveIntersectRay) across all four verbs.
 func TestCurveDDDispatch(t *testing.T) {
 	cases := []struct {
 		pts  []geom.Point
@@ -165,7 +163,7 @@ func TestCurveDDDispatch(t *testing.T) {
 		{verb: path.VerbConic, pts: []geom.Point{pt(0, 0), pt(5, 10), pt(10, 0)}, w: 0.7},
 		{verb: path.VerbCubic, pts: []geom.Point{pt(0, 0), pt(3, 9), pt(7, 9), pt(10, 0)}, w: 1},
 	}
-	ray := dLine{pts: [2]dPoint{{x: 5, y: -1}, {x: 5, y: 11}}} // vertical ray at x=5
+	ray := dLine{pts: [2]dPoint{{x: 5, y: -1}, {x: 5, y: 11}}}
 	for _, c := range cases {
 		var dc dCurve
 		for i, p := range c.pts {
@@ -205,7 +203,7 @@ func TestCurveDDDispatch(t *testing.T) {
 func TestTestForCoincidence(t *testing.T) {
 	head, _ := newTestContourHead()
 	this := head.addLine([]geom.Point{pt(0, 0), pt(10, 0)})
-	opp := head.addLine([]geom.Point{pt(0, 0), pt(10, 0)}) // identical / coincident
+	opp := head.addLine([]geom.Point{pt(0, 0), pt(10, 0)})
 	if !this.testForCoincidence(opp.head.ptTPtr(), opp.tail.ptTPtr(),
 		&this.head.opSpanBase, &this.tail, opp) {
 		t.Fatal("collinear identical segments should test coincident")
@@ -213,7 +211,7 @@ func TestTestForCoincidence(t *testing.T) {
 
 	head2, _ := newTestContourHead()
 	this2 := head2.addLine([]geom.Point{pt(0, 0), pt(10, 0)})
-	opp2 := head2.addLine([]geom.Point{pt(0, 5), pt(10, 5)}) // parallel, offset by 5
+	opp2 := head2.addLine([]geom.Point{pt(0, 5), pt(10, 5)})
 	if this2.testForCoincidence(opp2.head.ptTPtr(), opp2.tail.ptTPtr(),
 		&this2.head.opSpanBase, &this2.tail, opp2) {
 		t.Fatal("parallel offset segments should not test coincident")
@@ -271,8 +269,8 @@ func TestClearOneClearAll(t *testing.T) {
 	}
 }
 
-// TestSpansNearbyFarApart checks the WayRoughlyEqual short-circuit: a segment's head and tail (far apart) report
-// found=false with ok=true and no escape.
+// TestSpansNearbyFarApart checks the dPointWayRoughlyEqual short-circuit: a segment's head and tail (far apart) report
+// found=false with ok=true.
 func TestSpansNearbyFarApart(t *testing.T) {
 	p := path.New()
 	p.MoveTo(0, 0).LineTo(100, 0).LineTo(100, 100).Close()
@@ -320,7 +318,7 @@ func TestSpansNearbyCheckDirect(t *testing.T) {
 }
 
 // TestMoveMultiplesMergeGuards covers moveMultiplesMerge's two no-merge branches: a candidate that only holds this
-// segment (oppPtTSegment == this), and a candidate whose segment is absent from the start loop.
+// segment (oppPtTSegment == s), and a candidate whose segment is absent from the start loop.
 func TestMoveMultiplesMergeGuards(t *testing.T) {
 	// Branch 1: oppTest's loop contains only 'this' -> return false.
 	h1, s1 := newTestContourHead()
@@ -430,8 +428,8 @@ func buildPair(t *testing.T, pair opPair) (*opContourHead, *opCoincidence) {
 	return head, co
 }
 
-// TestMoveStepsPreserveModel runs the standalone head of HandleCoincidence (addExpanded, then move_multiples, then
-// move_nearby) over the corpus and asserts each step succeeds and the model stays structurally valid.
+// TestMoveStepsPreserveModel runs the standalone head of handleCoincidence (addExpanded, then moveMultiples, then
+// moveNearby) over the corpus and asserts each step succeeds and the model stays structurally valid.
 func TestMoveStepsPreserveModel(t *testing.T) {
 	for _, pair := range moveCorpus() {
 		t.Run(pair.name, func(t *testing.T) {

@@ -8,7 +8,7 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // Live-context tests for GPU images & surfaces: TextureFromImage upload + readback round trips, MakeNonTextureImage,
-// the RenderTargetSurface snapshot/compatible-surface/ readback lanes, and the snapshot-is-frozen (copy-on-snapshot)
+// the RenderTargetSurface snapshot/compatible-surface/readback lanes, and the snapshot-is-frozen (copy-on-snapshot)
 // guarantee. Skips when no GL context is available.
 
 package gl_test
@@ -23,7 +23,6 @@ import (
 	"github.com/richardwilkes/canvas/imagecore"
 )
 
-// rgba8888Premul builds the imagecore info for a w×h RGBA8888-premul readback buffer.
 func rgba8888Premul(w, h int32) imagecore.ImageInfo {
 	info, _ := imagecore.MakeInfo(w, h, imagecore.ColorTypeRGBA8888, imagecore.AlphaTypePremul)
 	return info
@@ -53,7 +52,6 @@ func assertBytesEqual(t *testing.T, got, want []byte, tol int, tag string) {
 	}
 }
 
-// assertUniformRGBA checks every pixel of an RGBA8888 buffer equals want within tol.
 func assertUniformRGBA(t *testing.T, data []byte, want [4]byte, tol int, tag string) {
 	t.Helper()
 	for off := 0; off+4 <= len(data); off += 4 {

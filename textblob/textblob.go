@@ -31,7 +31,6 @@ const (
 	FullPositioning       Positioning = 2 // two scalars per glyph
 )
 
-// scalarsPerGlyph returns the number of position scalars per glyph for pos.
 func scalarsPerGlyph(pos Positioning) int {
 	switch pos {
 	case HorizontalPositioning:
@@ -43,7 +42,6 @@ func scalarsPerGlyph(pos Positioning) int {
 	}
 }
 
-// runRecord holds one glyph run: the font state captured at alloc time, the run offset, and the glyph/position buffers.
 type runRecord struct {
 	font        font.Font // captured by value
 	glyphs      []uint16
@@ -236,13 +234,11 @@ func conservativeRunBounds(run *runRecord) geom.Rect {
 		return tightRunBounds(run)
 	}
 
-	// Expand by typeface glyph bounds.
 	bounds.Left += fontBounds.Left
 	bounds.Top += fontBounds.Top
 	bounds.Right += fontBounds.Right
 	bounds.Bottom += fontBounds.Bottom
 
-	// Offset by run position.
 	return bounds.Offset(run.offset.X, run.offset.Y)
 }
 

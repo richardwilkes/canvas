@@ -7,13 +7,11 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// Mask-gamma tables for the LCD16 lane: the per-channel gamma correcting LUTs ("pre-blend") keyed by the paint's
-// luminance color, three luminance bits per channel, built from a fixed text contrast over the sRGB curve. Neither the
-// contrast nor the device gamma is exposed at the API, so the tables are built once at the defaults: contrast 0.5,
-// quantized the same 0.8+1 fixed-point way a scaler rec would store it, and the default gamma of 0, which selects the
-// sRGB luminance curve. That curve is hardcoded into srgbToLuma/srgbFromLuma rather than carried as an exponent, so
-// there is no gamma knob (and no gamma constant) anywhere below. The A8 lane never sees a pre-blend: it is ignored for
-// every non-LCD rec.
+// Mask-gamma tables for the LCD16 lane: the per-channel gamma-correcting LUTs ("pre-blend") keyed by the paint's
+// luminance color at three luminance bits per channel. Neither the contrast nor the device gamma is exposed at the API,
+// so the tables are built once at the defaults: contrast 0.5, quantized the 0.8+1 fixed-point way a scaler rec would
+// store it, and gamma 0, which selects the sRGB luminance curve. That curve is hardcoded in srgbToLuma/srgbFromLuma, so
+// there is no gamma exponent anywhere below. The A8 lane never sees a pre-blend: it is ignored for every non-LCD rec.
 
 package font
 
@@ -31,9 +29,8 @@ const (
 	maskGammaLumShift  = 8 - maskGammaLumBits  // 5
 )
 
-// maskGammaContrast is the fixed default text contrast, quantized the same way a scaler rec's internal fixed-point
-// field would store it: contrast 0.5 quantizes to 128/255. It has no gamma companion — the default device gamma of 0
-// means "the sRGB curve", which srgbToLuma/srgbFromLuma below implement directly rather than through an exponent.
+// maskGammaContrast is the default text contrast, 0.5, quantized as a scaler rec's fixed-point field would store it
+// (128/255).
 const maskGammaContrast = float32(128) / 255
 
 // scale255Lum3 scales a 3-bit value to [0, 255] by bit replication.
@@ -72,7 +69,7 @@ func srgbFromLuma(luma float32) float32 {
 	return 1.055*float32(math.Pow(float64(luma), 1/2.4)) - 0.055
 }
 
-// applyContrast boosts srca's coverage by contrast, more so as srca approaches 1.
+// applyContrast boosts srca's coverage by contrast, most at mid coverage; 0 and 1 are unchanged.
 func applyContrast(srca, contrast float32) float32 {
 	return srca + (1.0-srca)*contrast*srca
 }
@@ -85,11 +82,10 @@ func roundToU8(x float32) uint8 {
 // buildCorrectingLUT builds a gamma-correcting LUT using the sRGB luminance curve on both sides (the paint color is
 // always in the device color space, so the source and destination conversions are the same curve).
 //
-// Upstream's generic build opens with a "src is close to dst" stability branch — a plain contrast ramp whenever
-// |src - dst| < 1/256 — because it serves any luminance-bit count and the final divide by (src - dst) goes unstable as
-// that difference vanishes. Here the table geometry is fixed at 3 bits: maskGammaInit only ever passes scale255Lum3(i)
-// for i in 0..7, so srcI is one of {0, 36, 73, 109, 146, 182, 219, 255} and |src - dst| = |2*src - 1| never drops
-// below 0.1451, ~37x the threshold. The divide is therefore always well conditioned and the branch is omitted;
+// Upstream guards the final divide by (src - dst) with a "src is close to dst" branch, a plain contrast ramp whenever
+// |src - dst| < 1/256, because it serves any luminance-bit count. Here the geometry is fixed at 3 bits: maskGammaInit
+// only passes scale255Lum3(i) for i in 0..7, so srcI is one of {0, 36, 73, 109, 146, 182, 219, 255} and |2*src - 1|,
+// which is |src - dst|, never drops below 0.1451, ~37x the threshold. The branch is therefore omitted;
 // TestMaskGammaStabilityBranchUnneeded pins the margin, so a change to the table geometry fails there rather than
 // silently reaching an unguarded divide.
 func buildCorrectingLUT(table *[256]uint8, srcI uint32, contrast float32) {
@@ -152,15 +148,12 @@ func getMaskPreBlend(lumBits colorcore.Color) maskPreBlend {
 	}
 }
 
-// GammaLUTData returns a copy of the data block for the single reachable configuration (the fixed contrast + sRGB
-// device gamma; see the file comment): 8 rows by 256 entries, row i built for luminance scale255Lum3(i). The E.1
-// distance-field adjust table (gpu/text) derives its per-luminance distance corrections from these rows.
+// GammaLUTData returns a copy of the mask-gamma tables (see the file comment): 8 rows by 256 entries, row i built for
+// luminance scale255Lum3(i). The distance-field adjust table (gpu/text) derives its per-luminance distance corrections
+// from these rows.
 //
-// The block is returned by value, not by pointer: the tables are built once under sync.Once and then read concurrently
-// by scaler contexts on any goroutine (getMaskPreBlend hands out row pointers into this same array), so a caller
-// writing through a pointer here would both break the consistency of already-rendered glyphs and be an unsynchronized
-// data race. Copying two kilobytes costs nothing at the one call site, which reads the rows once behind its own
-// sync.Once.
+// The block is returned by value because scaler contexts read the tables concurrently through the row pointers
+// getMaskPreBlend hands out: a caller writing through a pointer would corrupt later glyphs and race with those reads.
 func GammaLUTData() [maskGammaNumTables][256]uint8 {
 	maskGammaOnce.Do(maskGammaInit)
 	return maskGammaTables

@@ -8,11 +8,10 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // Package gltest creates headless desktop-GL contexts for the GPU test suites, without cgo. It stands in for the
-// context unison provides in production ("using unison-created contexts"): tests bring their own context exactly the
-// way unison will, then hand the current context to gpu/gl. The darwin (CGL), Linux (GLX over Xvfb/llvmpipe), and
-// Windows (WGL over a Mesa3D opengl32.dll drop-in) legs are all implemented; when no core-profile context can be
-// created (headless host, or a Windows runner with only the stock GL 1.1 opengl32.dll), New returns an error and the
-// GPU tests skip.
+// context unison provides in production: tests create their own context, then hand the current context to gpu/gl. There
+// are darwin (CGL), Linux (GLX over Xvfb/llvmpipe), and Windows (WGL over a Mesa3D opengl32.dll drop-in) legs; when no
+// core-profile context can be created (headless host, or a Windows runner with only the stock GL 1.1 opengl32.dll), New
+// returns an error and the GPU tests skip.
 package gltest
 
 // Context is a headless GL context that is current on the calling goroutine's OS thread from New until Destroy. The OS

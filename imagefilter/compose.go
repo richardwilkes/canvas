@@ -49,7 +49,7 @@ func (f *composeFilter) OnCTMCapability() filtercore.MatrixCapability {
 // GPUEvaluable implements filtercore.GPUEvaluable: pure plumbing — the node itself draws nothing.
 func (f *composeFilter) GPUEvaluable() bool { return true }
 
-// OnFilterImage evaluates the inner filter first, then re-evaluates the outer filter with the inner's result rebound as
+// OnFilterImage evaluates the inner filter first, then evaluates the outer filter with the inner's result rebound as
 // the context's source image.
 //
 //nolint:gocritic // hugeParam: ctx is by value per the interface; see filtercore.Filter.OnFilterImage
@@ -61,7 +61,6 @@ func (f *composeFilter) OnFilterImage(ctx filtercore.Context) filtercore.FilterR
 	outerRequiredInput := f.base.InputLayerBounds(composeOuter, ctx.Mapping(),
 		ctx.DesiredOutput(), innerOutputBounds)
 
-	// Evaluate the inner filter and pass that to the outer filter as its source.
 	innerCtx := ctx.WithNewDesiredOutput(outerRequiredInput)
 	innerResult := f.base.ChildOutput(composeInner, &innerCtx)
 	outerCtx := ctx.WithNewSource(&innerResult)

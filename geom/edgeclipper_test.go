@@ -20,7 +20,7 @@ import (
 // math reports. edgeClipperMaxVerbs/Points are sized from this.
 const structuralMaxPieces = 3 * 3
 
-// collectClipped drains the clipper into (verb, points) records.
+// clippedSeg is one (verb, points) record drained from the clipper.
 type clippedSeg struct {
 	pts  []Point
 	verb ClipVerb

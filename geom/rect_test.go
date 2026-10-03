@@ -41,7 +41,6 @@ func TestRectIntersect(t *testing.T) {
 	if r != RectLTRB(5, 5, 10, 10) {
 		t.Errorf("intersection = %+v", r)
 	}
-	// Failure leaves the rect unchanged.
 	r2 := RectLTRB(0, 0, 10, 10)
 	if r2.Intersect(RectLTRB(20, 20, 30, 30)) {
 		t.Fatal("expected no intersection")
@@ -49,14 +48,12 @@ func TestRectIntersect(t *testing.T) {
 	if r2 != RectLTRB(0, 0, 10, 10) {
 		t.Errorf("failed intersect modified rect: %+v", r2)
 	}
-	// Empty operand always fails.
 	if r2.Intersect(Rect{}) {
 		t.Error("intersect with empty should fail")
 	}
-	// NaN semantics follow the max/min operand ordering used by Intersect: the *other* rect's edges are passed first,
-	// so its NaN survives max/min (a false comparison returns the first operand) and fails the L<R check, while NaN in
-	// the receiver's edges is silently discarded and the intersection degenerates to the other rect's edge. Verified by
-	// the oracle probe TestRectIntersectProbe (an earlier version of this test had the direction backwards).
+	// NaN in the other rect's edges fails the intersection, while NaN in the receiver's edges is silently discarded and
+	// the intersection degenerates to the other rect's edge (see Rect.Intersect). Verified by the oracle probe
+	// TestRectIntersectProbe (an earlier version of this test had the direction backwards).
 	nan := float32(math.NaN())
 	nr := RectLTRB(nan, 0, 10, 10)
 	if !nr.Intersect(RectLTRB(0, 0, 10, 10)) || nr != RectLTRB(0, 0, 10, 10) {
@@ -78,12 +75,10 @@ func TestRectJoin(t *testing.T) {
 	if r != RectLTRB(0, 0, 30, 30) {
 		t.Errorf("join = %+v", r)
 	}
-	// Joining an empty rect is a no-op.
 	r.Join(Rect{})
 	if r != RectLTRB(0, 0, 30, 30) {
 		t.Errorf("join with empty modified rect: %+v", r)
 	}
-	// Joining onto an empty rect adopts the operand.
 	var e Rect
 	e.Join(RectLTRB(1, 2, 3, 4))
 	if e != RectLTRB(1, 2, 3, 4) {
@@ -113,12 +108,10 @@ func TestRectSetBounds(t *testing.T) {
 	if !ok || r != RectLTRB(-1, -7, 5, 4) {
 		t.Errorf("SetBounds = %+v ok=%v", r, ok)
 	}
-	// Non-finite input collapses to empty and returns false.
 	ok = r.SetBounds([]Point{{X: 1, Y: 1}, {X: float32(math.Inf(1)), Y: 0}})
 	if ok || r != (Rect{}) {
 		t.Errorf("SetBounds with inf = %+v ok=%v", r, ok)
 	}
-	// NaN is a failure too.
 	ok = r.SetBounds([]Point{{X: 1, Y: 1}, {X: 2, Y: float32(math.NaN())}})
 	if ok || r != (Rect{}) {
 		t.Errorf("SetBounds with NaN = %+v ok=%v", r, ok)
@@ -190,7 +183,6 @@ func TestRRect(t *testing.T) {
 	if rr.Type != RRectRect || rr.RadiusX != 0 || rr.RadiusY != 0 {
 		t.Errorf("rect rrect = %+v", rr)
 	}
-	// Empty rect yields empty.
 	rr = MakeRRect(RectLTRB(5, 5, 5, 5), 10, 10)
 	if rr.Type != RRectEmpty {
 		t.Errorf("empty rrect = %+v", rr)
@@ -233,7 +225,6 @@ func TestIRectIntersectRejectsInt32Overflow(t *testing.T) {
 			t.Errorf("Intersect(%+v, %+v) stored %+v, which IsEmpty() reports empty", pair[0], pair[1], got)
 		}
 	}
-	// A normal intersection still works.
 	ok := IRect{Left: 0, Top: 0, Right: 100, Bottom: 100}
 	if !ok.Intersect(IRect{Left: 50, Top: 50, Right: 200, Bottom: 200}) {
 		t.Fatal("expected a normal intersection to succeed")
@@ -261,7 +252,6 @@ func TestIRectContainsRectRejectsInt32Overflow(t *testing.T) {
 	if huge.ContainsRect(huge) {
 		t.Error("an overflowing rect must not contain itself")
 	}
-	// Normal containment still works.
 	outer := IRect{Left: 0, Top: 0, Right: 100, Bottom: 100}
 	if !outer.ContainsRect(inner) {
 		t.Error("expected normal containment to hold")

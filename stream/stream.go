@@ -7,10 +7,9 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// Package stream provides the write-stream types that are publicly reachable: a dynamic memory stream with read-back
-// and a file stream. Writes report success as a bool, and a failed file stream latches into an error state rather than
-// returning Go errors per call; FileWStream.Failed reads that latched state, including a failure that first surfaced at
-// Flush or Close.
+// Package stream provides write streams: a dynamic memory stream with read-back and a file stream. Writes report
+// success as a bool, and a failed file stream latches into an error state rather than returning Go errors per call;
+// FileWStream.Failed reads that state, including a failure that first surfaced at Flush or Close.
 package stream
 
 import (
@@ -136,7 +135,8 @@ func (s *FileWStream) Failed() bool {
 	return s.err
 }
 
-// Flush syncs any buffered writes to the underlying file. A failed sync latches the error state.
+// Flush syncs the underlying file to storage (os.File does no buffering of its own). A failed sync latches the error
+// state.
 func (s *FileWStream) Flush() {
 	if s.f != nil {
 		if err := s.f.Sync(); err != nil {
@@ -154,8 +154,6 @@ func (s *FileWStream) Close() {
 		s.f = nil
 	}
 }
-
-// Write helpers shared by the PDF backend and encoders.
 
 // WriteU16LE writes a little-endian uint16.
 func WriteU16LE(s WStream, v uint16) bool {

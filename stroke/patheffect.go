@@ -7,8 +7,8 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// The PathEffect contract. The interface lives here (below the concrete effects) so that FillPathWithPaint and the
-// canvas paint can consume effects without depending on the patheffect package.
+// The PathEffect contract lives here, below the concrete effects, so FillPathWithPaint and the canvas paint can consume
+// effects without depending on the patheffect package.
 
 package stroke
 
@@ -26,10 +26,9 @@ type PointData struct {
 	Flags  uint32       // flags that impact the drawing of the points
 }
 
-// PointData flags. CirclesPointFlag is the only flag defined; a "use path" or "use clip" flag is not supported here.
-// None of the effects implemented in this module set it — dash's AsPoints, the only AsPoints implementation, accepts
-// butt caps only, so it always reports square points — but the canvas honors it, so an effect supplied by a caller can
-// request the circle form.
+// PointData flags. CirclesPointFlag is the only one; Skia's "use path" and "use clip" flags are not supported. No
+// effect in this module sets it (dash, the only AsPoints implementation, accepts butt caps only and so reports square
+// points), but the canvas honors it for caller-supplied effects.
 const (
 	CirclesPointFlag uint32 = 0x01 // draw points as circles (instead of rects)
 )

@@ -15,10 +15,9 @@ import (
 	"github.com/richardwilkes/canvas/geom"
 )
 
-// TestRecycleRestoresFreshState covers Borrow's "same state as a freshly-constructed one" contract. The volatile flag
-// is the one Rewind deliberately leaves alone (it describes the object, not its contents), so Recycle has to clear it:
-// callers such as the GPU styled-shape path mark a borrowed path volatile, and that must not leak into the next
-// borrower's unrelated geometry.
+// TestRecycleRestoresFreshState covers Borrow's fresh-state contract. Rewind leaves the volatile flag alone, so Recycle
+// must clear it: callers such as the GPU styled-shape path mark a borrowed path volatile, and that must not leak to the
+// next borrower.
 func TestRecycleRestoresFreshState(t *testing.T) {
 	p := Borrow()
 	p.AddOval(geom.RectLTRB(0, 0, 10, 20), geom.DirectionCW)

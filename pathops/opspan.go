@@ -7,10 +7,9 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// The point-and-t records threaded through a segment: opPtT, opSpanBase, and opSpan. Provides the structures and their
-// construction/addT surface (the pt-t loop machinery, the span linked list, containment queries) plus the
-// intersection-time methods that fold spans together and carry the walk's bookkeeping (addOpp, merge, mergeMatches,
-// release, setWindSum/setOppSum). The angle loops those spans point at are built in opsegment.go.
+// The point-and-t records threaded through a segment (opPtT, opSpanBase, opSpan): the pt-t loops, the span linked list,
+// containment queries, the methods that fold spans together (addOpp, merge, mergeMatches, release), and the winding
+// bookkeeping. The angle loops those spans point at are built in opsegment.go.
 
 package pathops
 
@@ -201,13 +200,10 @@ func (p *opPtT) prev() *opPtT {
 	return result
 }
 
-// segment returns the segment owning this pt-t's span.
 func (p *opPtT) segment() *opSegment { return p.span.segment }
 
-// setCoincident flags this pt-t as pointed to by a coincident span.
 func (p *opPtT) setCoincident() { p.coincident = true }
 
-// setDeleted flags this pt-t as removed from active use.
 func (p *opPtT) setDeleted() { p.deleted = true }
 
 // starter returns whichever of this pt-t and end has the smaller t.
@@ -253,7 +249,6 @@ func (b *opSpanBase) setFromAngle(angle *opAngle) { b.fromAngleP = angle }
 func (b *opSpanBase) fromAngle() *opAngle         { return b.fromAngleP }
 func (b *opSpanBase) setChased(chased bool)       { b.chased = chased }
 
-// deleted reports whether the span's primary pt-t has been removed from active use.
 func (b *opSpanBase) deleted() bool { return b.ptT.deleted }
 
 // spanCollapsed is the result of testing whether a [s, e] t-range on a span's segment has collapsed onto a single point
@@ -266,8 +261,8 @@ const (
 	spanCollapsedError
 )
 
-// collapsed walks this span's pt-t loop, tracking the min/max t seen on the same segment; if the whole [s, e] range
-// falls inside a single already-visited pt-t loop, it reports spanCollapsedYes.
+// collapsed walks this span's pt-t loop, tracking the min/max t of the pt-ts on the same segment, and reports
+// spanCollapsedYes once [s, e] lies within that range. A corrupt loop reports spanCollapsedError.
 func (b *opSpanBase) collapsed(s, e float64) spanCollapsed {
 	start := &b.ptT
 	var startNext *opPtT
@@ -301,7 +296,6 @@ func (b *opSpanBase) collapsed(s, e float64) spanCollapsed {
 	return spanCollapsedNo
 }
 
-// ptTPtr returns the address of the span's primary pt-t record.
 func (b *opSpanBase) ptTPtr() *opPtT { return &b.ptT }
 
 // upCast returns the enclosing opSpan; valid only when !final().
@@ -315,7 +309,7 @@ func (b *opSpanBase) upCastable() *opSpan {
 	return b.up
 }
 
-// simple reports whether the pt-t loop has exactly two entries (no other segment shares this point).
+// simple reports whether the pt-t loop has at most two entries, so at most one other pt-t shares this point.
 func (b *opSpanBase) simple() bool { return b.ptT.next.next == &b.ptT }
 
 // step returns 1 if this span's t is less than end's, else -1 — the direction to walk from b toward end.
@@ -387,8 +381,7 @@ func (b *opSpanBase) insertCoinEnd(coin *opSpanBase) {
 }
 
 // addOpp splices opp's pt-t loop into this one, merging duplicate spans first. Returns false only when mergeMatches
-// trips its safety hatch. Part of the intersection-time span surface consumed by moveNearby and the coincidence walker;
-// addT-driven wiring uses the ptT-level addOpp directly.
+// trips its safety hatch.
 func (b *opSpanBase) addOpp(opp *opSpanBase) bool {
 	oppPrev := b.ptT.oppPrev(&opp.ptT)
 	if oppPrev == nil {
@@ -402,9 +395,7 @@ func (b *opSpanBase) addOpp(opp *opSpanBase) bool {
 	return true
 }
 
-// merge folds span's pt-t records into this span's loop, dropping duplicates. This does not compute the best t or pt;
-// it merely moves all data into a single list. Part of the deferred intersection-time surface (consumed by opSegment's
-// moveNearby in a later slice).
+// merge folds span's pt-t records into this span's loop, dropping duplicates. It does not compute the best t or pt.
 func (b *opSpanBase) merge(span *opSpan) {
 	spanPtT := &span.ptT
 	span.release(&b.ptT)
@@ -565,10 +556,8 @@ func (s *opSpan) setOppSum(oppSum int) {
 	s.oppSum = oppSum
 }
 
-// isCanceled reports whether both the wind value and opposite-operand value are zero.
 func (s *opSpan) isCanceled() bool { return s.windValue == 0 && s.oppValue == 0 }
 
-// isCoincident reports whether this span has been linked into a coincident-span loop.
 func (s *opSpan) isCoincident() bool { return s.coincident != s }
 
 // containsCoincidenceSpan reports whether coin appears in this span's coincident loop.
@@ -595,10 +584,8 @@ func (s *opSpan) containsCoincidenceSeg(segment *opSegment) bool {
 	}
 }
 
-// setWindValue sets the wind value.
 func (s *opSpan) setWindValue(windValue int) { s.windValue = windValue }
 
-// setOppValue sets the opposite-operand wind value.
 func (s *opSpan) setOppValue(oppValue int) { s.oppValue = oppValue }
 
 // insertCoincidenceSpan splices coin into this span's coincident loop, if it isn't already present.
@@ -656,8 +643,7 @@ func (s *opSpan) insertCoincidenceSeg(segment *opSegment, flipped, ordered bool)
 }
 
 // release unlinks this span from the segment's list, fixes up any coincidence referencing its pt-t, marks the pt-t
-// deleted, and repoints every pt-t alias that named this span at the kept span instead. Part of the intersection-time
-// surface used by mergeMatches and merge.
+// deleted, and repoints every pt-t alias that named this span at the kept span instead.
 func (s *opSpan) release(kept *opPtT) {
 	prev := s.prev
 	next := s.next

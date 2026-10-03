@@ -8,9 +8,9 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // The common base for shaders in the GPU tessellator: pipeline/program helpers and Wang's-formula GLSL library, the
-// standard Redbook stencil settings, and the two path-fill shaders — the simple triangle shader (inner fans and
-// bounding boxes) and the fixed-count "middle-out" instanced curve shader. Shader bodies are emitted directly as GLSL,
-// with fma() (GLSL 4.00+) written as mul-add so one body serves GLSL 1.50 contexts too (a tolerance-only difference).
+// standard Redbook stencil settings, and the two path-fill shaders — the simple triangle shader (inner fans) and the
+// fixed-count "middle-out" instanced curve shader. Shader bodies are emitted directly as GLSL, with fma() (GLSL 4.00+)
+// written as mul-add so one body serves GLSL 1.50 contexts too (a tolerance-only difference).
 
 package gl
 
@@ -36,8 +36,6 @@ type tessProgramArgs struct {
 	usesMSAASurface  bool
 }
 
-// makeTessProgramArgs gathers the tessProgramArgs fields from the flush state, matching the argument lists at the ops'
-// onPrepare call sites.
 func makeTessProgramArgs(state *OpFlushState) tessProgramArgs {
 	args := state.OpArgs()
 	return tessProgramArgs{
@@ -50,8 +48,6 @@ func makeTessProgramArgs(state *OpFlushState) tessProgramArgs {
 	}
 }
 
-// tessellationShaderBase holds the state shared by every tessellation geometry processor: the primitive type, view
-// matrix, and paint color.
 type tessellationShaderBase struct {
 	GPBase
 	primitiveType gpu.PrimitiveType
@@ -76,7 +72,6 @@ func tessMakePipeline(args *tessProgramArgs, processors *ProcessorSet, appliedCl
 	}, processors, appliedClip)
 }
 
-// tessMakeProgram builds the program info for a tessellation draw.
 func tessMakeProgram(args *tessProgramArgs, shader GeometryProcessor, primitiveType gpu.PrimitiveType, pipeline *Pipeline, stencil *UserStencilSettings) *ProgramInfo {
 	return NewProgramInfo(args.caps, args.writeView, args.usesMSAASurface, pipeline, stencil,
 		shader, primitiveType, args.xferBarrierFlags, args.colorLoadOp)
@@ -201,13 +196,11 @@ type pathTessShaderImpl struct {
 	colorUniform        UniformHandle
 }
 
-// onEmitCode implements GPProgramImpl: emits the shared affineMatrix/translate uniform plumbing, then delegates the
-// vertex body to emitVertexCode.
+// onEmitCode implements GPProgramImpl.
 func (i *pathTessShaderImpl) onEmitCode(args *GPEmitArgs, gpArgs *GPArgs) {
 	shader := args.GeomProc.(pathTessShader)
 	args.VaryingHandler.EmitAttributes(shader)
 
-	// Vertex shader.
 	var affineMatrix, translate string
 	i.affineMatrixUniform, affineMatrix = args.UniformHandler.AddUniform(nil, ShaderFlagVertex,
 		GLSLTypeFloat4, "affineMatrix")
@@ -218,7 +211,6 @@ func (i *pathTessShaderImpl) onEmitCode(args *GPEmitArgs, gpArgs *GPArgs) {
 	args.VertBuilder.CodeAppendf("vec2 TRANSLATE = %s;", translate)
 	i.emitVertexCode(args, i, gpArgs)
 
-	// Fragment shader.
 	if shader.shaderAttribs()&PatchAttribColor == 0 {
 		var color string
 		i.colorUniform, color = args.UniformHandler.AddUniform(nil, ShaderFlagFragment,
@@ -247,13 +239,12 @@ func (i *pathTessShaderImpl) SetData(pdman *ProgramDataManager, _ *gpu.ShaderCap
 //////////////////////////////////////////////////////////////////////////////
 // SimpleTriangleShader
 
-// simpleTriangleShader draws a simple array of triangles.
 type simpleTriangleShader struct {
 	attrs [1]Attribute
 	tessellationShaderBase
 }
 
-// makeSimpleTriangleShader returns a shader for drawing a plain triangle array (inner fans and bounding boxes).
+// makeSimpleTriangleShader returns a shader for drawing a plain triangle array (inner fans).
 func makeSimpleTriangleShader(viewMatrix *geom.Matrix, color colorcore.PMColor4f) *simpleTriangleShader {
 	s := &simpleTriangleShader{}
 	s.initTessellationShader(TessellateSimpleTriangleShaderClassID, gpu.PrimitiveTypeTriangles,
@@ -371,7 +362,6 @@ func (s *middleOutShader) MakeProgramImpl(*gpu.ShaderCaps) GPProgramImpl {
 	}
 }
 
-// middleOutShaderEmitVertexCode emits the vertex-stage GLSL for middleOutShader.
 func middleOutShaderEmitVertexCode(args *GPEmitArgs, impl *pathTessShaderImpl, gpArgs *GPArgs) {
 	shader := args.GeomProc.(*middleOutShader)
 	v := args.VertBuilder

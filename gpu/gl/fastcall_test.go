@@ -28,9 +28,8 @@ import (
 
 // TestGLCallLaneLive drives the glCall lane against a live context: results must agree with purego.SyscallN on the same
 // proc address, out-parameters and the 9th-argument stack slot must land (glTexImage2D with a pixel upload), and a call
-// must not allocate on the trampoline platforms (on fallback platforms glCall is SyscallN, so the allocation assertion
-// is skipped there by construction — this file only builds where the repo builds, and the trampoline covers every
-// platform the library supports).
+// must not allocate. The allocation assertion assumes a fixed-arity lane (on the fallback lane glCall is SyscallN,
+// which allocates); those lanes cover every platform the library supports.
 func TestGLCallLaneLive(t *testing.T) {
 	ctx, err := gltest.New()
 	if err != nil {
@@ -143,13 +142,10 @@ func TestGLCallArityCoverage(t *testing.T) {
 	t.Logf("audited %d glCall dispatches, all at the fixed arity of 9", calls)
 }
 
-// TestGLCallResultSurvivesStackMove pins the reason glCall's argument block is heap-resident rather than a local.
-//
-// The glcall9 trampoline stashes the block pointer across its call to the GL proc and writes the proc's result back
-// through it. A purego.NewCallback proc — every fake driver in this package — re-enters Go through cgocallbackg,
-// which calls exitsyscall and runs on this goroutine's stack; if that re-entry has to grow the stack, copystack moves
-// the frame and a stack-resident block would be left behind, so the result would land in the abandoned copy and the
-// caller would read a stale zero.
+// TestGLCallResultSurvivesStackMove pins the reason glCall's argument block is heap-resident rather than a local (see
+// glCall in fastcall_sysv.go): a purego.NewCallback proc — every fake driver in this package — re-enters Go on this
+// goroutine's stack, and if that re-entry has to grow the stack, the trampoline would write its result to the abandoned
+// copy of a stack-resident block and the caller would read a stale zero.
 //
 // The fake glClientWaitSync installed by newRecordingGpu unconditionally answers ALREADY_SIGNALED, so every poll below
 // must report the fence signaled. A background goroutine hammers GC to keep shrinking this goroutine's stack, forcing

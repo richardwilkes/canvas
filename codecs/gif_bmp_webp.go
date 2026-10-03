@@ -26,9 +26,8 @@ import (
 // GIF — first frame only, per the public surface's contract.
 
 // gifFirstFrame composites frame 0 onto the full logical canvas (frames may be smaller than the canvas; uncovered area
-// is transparent). gif.Decode stops after frame 0 rather than LZW-decoding and retaining every frame of an animation
-// the way gif.DecodeAll does, so an animated GIF from untrusted input costs one frame of memory rather than the whole
-// animation; gif.DecodeConfig supplies the logical screen size that frame is composited onto.
+// is transparent). gif.Decode stops after frame 0, unlike gif.DecodeAll, so an animated GIF from untrusted input costs
+// one frame of memory rather than the whole animation; gif.DecodeConfig supplies the canvas size.
 func gifFirstFrame(data []byte) (image.Image, error) {
 	cfg, err := gif.DecodeConfig(bytes.NewReader(data))
 	if err != nil {

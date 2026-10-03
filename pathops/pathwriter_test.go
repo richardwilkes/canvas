@@ -21,7 +21,7 @@ import (
 	"github.com/richardwilkes/canvas/path"
 )
 
-// selfPtT builds a standalone opPtT with a self-referential loop (contains(anything else) is false).
+// selfPtT builds a standalone opPtT with a self-referential loop (containsPtT is false for any argument).
 func selfPtT(x, y float32) *opPtT {
 	p := &opPtT{pt: geom.Point{X: x, Y: y}}
 	p.next = p
@@ -50,7 +50,7 @@ func TestPathWriterMatchedLast(t *testing.T) {
 	// a node whose loop contains defers[1] also matches
 	b := &opPtT{pt: geom.Point{X: 3, Y: 4}}
 	b.next = a
-	a.next = b // a<->b share a loop; b.contains(a) is true
+	a.next = b // a<->b share a loop; b.containsPtT(a) is true
 	w.defers[1] = a
 	if !w.matchedLast(b) {
 		t.Fatal("matchedLast should be true when the test node's loop contains the deferred line")
@@ -210,7 +210,6 @@ func TestPathWriterAssembleClearsPartials(t *testing.T) {
 	}
 }
 
-// pathVerbs returns the verb sequence of p.
 func pathVerbs(p *path.Path) []path.Verb {
 	var verbs []path.Verb
 	it := path.NewRawIter(p)

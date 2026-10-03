@@ -60,8 +60,8 @@ func TestLiveBlendModeSwatches(t *testing.T) {
 	identity := geom.Matrix{}
 	identity.SetIdentity()
 
-	// NOTE: no t.Run subtests here — the GL context is current on this test's locked OS thread and subtests run on
-	// other goroutines.
+	// No t.Run subtests here: the GL context is current on this test's locked OS thread and subtests run on other
+	// goroutines.
 	for mode := raster.BlendClear; mode <= raster.BlendScreen; mode++ {
 		sdc := newLiveSDC(t, dc, 16)
 		sdc.Clear([4]float32{dstColor.R, dstColor.G, dstColor.B, dstColor.A})
@@ -108,7 +108,7 @@ func TestLiveFPTreeSwatches(t *testing.T) {
 				raster.BlendMultiply), gpu.SwizzleBGRA)
 		}},
 		{name: "override-input", fp: func() gl.FragmentProcessor {
-			// The child sees teal instead of the paint color; srcin keeps input*child.a.
+			// The child sees teal instead of the paint color and blends a translucent gray over it.
 			return gl.OverrideInputFP(gl.BlendFP(gl.MakeColorFP(colorcore.PMColor4f{
 				R: 0.5,
 				G: 0.5, B: 0.5, A: 0.5,
@@ -217,9 +217,7 @@ func TestLiveProgramCacheMetrics(t *testing.T) {
 	red := colorcore.PMColor4f{R: 1, A: 1}
 	blue := colorcore.PMColor4f{B: 0.5, A: 0.5}
 	draw(raster.BlendSrcOver, blue) // miss (new program)
-	draw(raster.BlendSrcOver, red)  // hit: only the color uniform changed... but red is opaque
-	// NOTE: opaque + no-coverage may collapse src-over to src on some caps, producing a second program; use translucent
-	// colors for the hit check instead.
+	draw(raster.BlendSrcOver, red)  // hit, unless opaque + no-coverage collapses src-over to src (a second program)
 	draw(raster.BlendSrcOver, blue) // hit (identical key)
 	draw(raster.BlendClear, blue)   // miss (different XP outputs)
 

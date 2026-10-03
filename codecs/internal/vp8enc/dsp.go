@@ -7,30 +7,24 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// Encoding DSP: forward/inverse transforms, intra predictors, SSE metrics and quantization (the inverse WHT is shared
-// with the decoder side).
+// Encoding DSP: forward/inverse transforms, intra predictors, SSE metrics and quantization.
 
 package vp8enc
 
-// Kernel dispatch. The four hot DSP entry points below (fTransform, iTransformOne, getSSE and quantizeBlock) each have
-// a portable "Generic" implementation here and, in the goexperiment.simd build on arm64 and amd64, an archsimd kernel
-// in dsp_simd.go. The entry point itself is a thin wrapper defined per build mode — dsp_portable.go for builds without
-// the kernels, dsp_simd.go for builds with them — which branches on a package-level bool that init sets from the CPU
-// check and the per-arch preference constants.
+// Kernel dispatch. The four hot DSP entry points (fTransform, iTransformOne, getSSE and quantizeBlock) each have a
+// portable "Generic" implementation here and, in the goexperiment.simd build on arm64 and amd64, an archsimd kernel in
+// dsp_simd.go. The entry point itself is a thin wrapper defined per build mode: dsp_portable.go calls the portable form
+// directly, and dsp_simd.go branches on a package-level bool that init sets from the CPU check and the per-arch
+// preference constants.
 //
 // This is deliberately NOT the function-variable dispatch the raster, maskfilter, imagecore and shaders packages use,
-// and the reason is escape analysis rather than taste. Those packages hand their kernels slices of already-heap-backed
-// pixel buffers, so routing the call through a package-level func variable — which escape analysis must treat as
-// leaking every pointer argument — costs nothing. This package's hot kernels instead take pointers into the caller's
-// *stack*: reconstructIntra16's tmp [16][16]int16 and dcTmp [16]int16, reconstructIntra4's tmp [16]int16 (160 calls
-// per macroblock) and reconstructUV's tmp [8][16]int16. Switching quantizeBlock and fTransform alone to func variables
-// moves all four to the heap ("go build -gcflags=-m": moved to heap: tmp/dcTmp at frame.go:140,141,176,188) and costs
-// ~3% of whole-encode time in fresh allocation and GC before a single kernel has run. Branching on a bool keeps the
-// call graph static, so escape analysis still sees that neither implementation leaks its arguments and every one of
-// those blocks stays on the stack.
-//
-// The bools are variables rather than constants because the equivalence tests flip them to run a whole encode down
-// each lane and compare the emitted bitstreams byte for byte (TestDSPSIMDEncodeMatchesScalar).
+// because of escape analysis. Those packages hand their kernels slices of already-heap-backed pixel buffers, so routing
+// the call through a package-level func variable — which escape analysis must treat as leaking every pointer argument —
+// costs nothing. This package's hot kernels instead take pointers into the caller's *stack*: reconstructIntra16's tmp
+// [16][16]int16 and dcTmp [16]int16, reconstructIntra4's tmp [16]int16 (160 calls per macroblock) and reconstructUV's
+// tmp [8][16]int16. Switching quantizeBlock and fTransform alone to func variables moves all four to the heap (per
+// -gcflags=-m) and costs ~3% of whole-encode time in allocation and GC. Branching on a bool keeps the call graph
+// static, so escape analysis sees that neither implementation leaks its arguments and those blocks stay on the stack.
 
 // bps is the stride of all the macroblock work caches.
 const bps = 32
@@ -79,7 +73,7 @@ const (
 )
 
 // predI16ModeOffsets, predUVModeOffsets and predI4ModeOffsets locate each mode's prediction in yuvP, ordered by the
-// mode enums above.
+// mode enums in tables.go.
 var (
 	predI16ModeOffsets = [numPredModes]int{i16DC16, i16TM16, i16VE16, i16HE16}
 	predUVModeOffsets  = [numPredModes]int{c8DC8, c8TM8, c8VE8, c8HE8}
@@ -180,12 +174,12 @@ func fTransformGeneric(src, ref []uint8, out []int16) {
 	}
 }
 
-// fTransformWHT computes the forward Walsh-Hadamard transform of the 16 DC coefficients. in is the [16][16]int16 luma
-// coefficient array flattened; it reads entry 0 of each block.
+// fTransformWHT computes the forward Walsh-Hadamard transform of the 16 luma DC coefficients, entry 0 of each block of
+// in.
 //
 // Neither WHT is a dispatch point. The butterflies are 32 adds, but the operands are one int16 out of every 32-byte
 // block, so a vector form would spend more on the strided gather (and, for the inverse, the scatter) than the whole
-// transform costs; and where fTransform runs 64 times per macroblock, these run four.
+// transform costs; and an intra16 mode search runs each of these four times against fTransform's 64.
 func fTransformWHT(in *[16][16]int16, out *[16]int16) {
 	var tmp [16]int
 	for i := 0; i < 4; i++ {
@@ -602,8 +596,8 @@ func sse4x4(a, b []uint8) int64   { return getSSE(a, b, 4, 4) }
 
 // isFlatSource16 reports whether the 16x16 source block is a single uniform color. This one is deliberately not a
 // dispatch point: its scalar loop exits at the first differing sample, which on real content is the second sample of
-// the block, so a vector form that must always read all sixteen rows would lose. It is also called once per
-// macroblock, against the ~1500 calls per macroblock the quantizer sees.
+// the block, so a vector form that must always read all sixteen rows would lose. It is also called once per mode
+// decision, against the hundreds of calls the quantizer sees.
 func isFlatSource16(src []uint8) bool {
 	v := src[0]
 	for j := 0; j < 16; j++ {

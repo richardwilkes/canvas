@@ -30,7 +30,7 @@ import (
 // set rather than one hot line, and a power of two so the index wraps with a mask.
 const benchDSPBlocks = 64
 
-// benchDSPSamples returns a sample plane of blockCount 16x16 blocks at stride bps, filled with photo-like content.
+// benchDSPSamples returns a sample plane of benchDSPBlocks 16x16 blocks at stride bps, filled with photo-like content.
 func benchDSPSamples(seed uint64) []uint8 {
 	rng := rand.New(rand.NewPCG(seed, seed+1))
 	buf := make([]uint8, benchDSPBlocks*16*bps+16)
@@ -42,8 +42,8 @@ func benchDSPSamples(seed uint64) []uint8 {
 	return buf
 }
 
-// benchDSPCoeffs returns blockCount coefficient blocks: the forward transform of successive 4x4 sample blocks, which
-// is exactly what quantizeBlock is handed.
+// benchDSPCoeffs returns benchDSPBlocks coefficient blocks: the forward transform of successive 4x4 sample blocks,
+// which is exactly what quantizeBlock is handed.
 func benchDSPCoeffs(seed uint64) [][16]int16 {
 	src := benchDSPSamples(seed)
 	ref := benchDSPSamples(seed + 100)

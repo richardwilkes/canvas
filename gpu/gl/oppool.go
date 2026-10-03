@@ -10,36 +10,28 @@
 // Op-recording free lists: a per-op-type free list so a steady-state frame allocates essentially no op storage. A draw
 // borrows its op shell from the pool instead of heap allocating a fresh one, and the ops-task machinery recycles each
 // op back to its pool the instant it becomes dead (surviving ops once execution completes, merged-away ops at the merge
-// points in the op chain's combine logic — see opstask.go). This is the GPU counterpart of the CPU pooled-temporaries
-// machinery.
+// points in the op chain's combine logic — see opstask.go).
 //
-// Lifetime safety (the whole reason this is delicate — recycling a live op corrupts a frame):
-//   - recycle fully zeroes the op via `var zero T; *o = zero` before returning it to the pool. A complete zero — not a
-//     hand-written field reset — is used deliberately: it makes stale state on reuse *impossible* (the classic
-//     "corrupts a later frame" failure mode of incomplete resets cannot occur), and it drops every reference the op
-//     held (ProcessorSet, program info, GPU buffers, any heap-grown instance slice) so the pool retains only empty
-//     shells. The one deliberate exception is recycleKeepingBacking (below), used by the batchable geometry ops: it
-//     preserves *only* the heap-grown instance-slice backing (reset to length 0 and cleared) so a later merge-heavy op
-//     reuses it instead of re-growing, while every other field is still provably zeroed — see that function for why the
-//     exception is safe.
+// Lifetime safety (recycling a live op corrupts a frame):
+//   - recycle zeroes the whole op (`var zero T; *o = zero`) before returning it to the pool. A complete zero, rather
+//     than a hand-written field reset, makes stale state on reuse impossible and drops every reference the op held
+//     (ProcessorSet, program info, GPU buffers, any heap-grown instance slice), so the pool retains only empty shells.
+//     The one exception is recycleKeepingBacking (below), which preserves only the heap-grown instance-slice backing;
+//     see that function for why it is safe.
 //   - An op is recycled only when it is provably dead: a survivor is recycled at deleteOps, which the drawing manager
 //     calls in EndFlush strictly after OnExecute; a merged-away op is recycled right where the batching machinery drops
-//     it, after CombineIfPossible has *copied* its instances into the surviving op (append copies element values, so
-//     the survivor never aliases the recycled op's storage). Nothing else in the library retains an op pointer past its
-//     chain — the program/resource/ thread-safe caches are keyed on descriptors and shapes, not ops.
+//     it, after CombineIfPossible has copied its instances into the surviving op (append copies element values, so the
+//     survivor never aliases the recycled op's storage). Nothing else in the library retains an op pointer past its
+//     chain — the program/resource/thread-safe caches are keyed on descriptors and shapes, not ops.
 //   - Because a merge and its recycle happen during recording/close, an op recycled here may be re-borrowed by a later
-//     draw *in the same frame*; that is safe for the same reason (the recycled op is dead, its data already copied out)
-//     and is exactly the arena's within-frame reuse.
-//   - If this analysis were ever wrong and a still-live op were recycled, the zero would corrupt that op's own draw in
-//     the *current* frame, which the single-frame live render/compare suite catches; TestOpPoolCrossFrameStability adds
-//     a same-context A/B/A pixel-equality check on top so a stale reused shell (were the reset ever incomplete) is
-//     caught too.
+//     draw in the same frame; that is safe for the same reason (the recycled op is dead, its data already copied out).
+//   - If a still-live op were ever recycled, the zero would corrupt that op's own draw in the current frame, which the
+//     single-frame live render/compare suite catches; TestOpPoolCrossFrameStability adds a same-context A/B/A
+//     pixel-equality check so a stale reused shell (were the reset ever incomplete) is caught too.
 //
 // The pool is a package-level sync.Pool per op type, matching paintpool.go: it is safe for the single recording
-// goroutine per context, cooperates with the GC (entries may be dropped under pressure, harmlessly falling back to a
-// fresh allocation), and realizes the intended "free lists (+sync.Pool for spillover)" shape. The Arenas stub in
-// proxy.go tracks the same per-frame flush protocol, kept as a separate type for structural clarity even though it
-// holds no arena storage of its own.
+// goroutine per context and cooperates with the GC (entries may be dropped under pressure, harmlessly falling back to a
+// fresh allocation). The Arenas type in proxy.go carries only the per-frame flush protocol and holds no arena storage.
 
 package gl
 
@@ -50,8 +42,8 @@ type opPool[T any] struct {
 	pool sync.Pool
 }
 
-// borrow returns a zeroed op, reusing a recycled shell when one is available and otherwise allocating a fresh one. The
-// result is always zero-initialized, so op constructors that previously relied on `&T{}` behave identically.
+// borrow returns a recycled shell when one is available and otherwise allocates a fresh one. The result is zero except
+// for a slice backing preserved by recycleKeepingBacking.
 func (p *opPool[T]) borrow() *T {
 	if v := p.pool.Get(); v != nil {
 		return v.(*T)
@@ -67,25 +59,21 @@ func (p *opPool[T]) recycle(o *T) {
 	p.pool.Put(o)
 }
 
-// recycleKeepingBacking returns dead value o to the pool after a full-zero reset that *preserves* its heap-grown
-// slice backing, so a later user reuses the backing instead of re-growing it. Two callers: the batchable geometry ops
-// (this file's op pools) bootstrap their instance slice from an inline [1] array and grow past it into the heap when
-// OnCombineIfPossible merges instances in — a plain recycle would drop that grown backing, making a merge-heavy op
-// re-grow it every frame; and the pipeline pool (programinfopool.go) preserves a Pipeline's fragmentProcessors backing
-// the same way. getBacking reads the slice before the zero and setBacking re-installs the preserved backing on the
-// freshly zeroed value; both are non-capturing (static funcs), so this allocates nothing.
+// recycleKeepingBacking returns dead value o to the pool after a full-zero reset that preserves its heap-grown slice
+// backing, so a later user reuses the backing instead of re-growing it. Two callers: the batchable geometry ops (this
+// file's op pools), whose instance slice starts in an inline [1] array and grows into the heap when OnCombineIfPossible
+// merges instances in, and the pipeline pool (programinfopool.go), which preserves a Pipeline's fragmentProcessors
+// backing the same way. getBacking reads the slice before the zero and setBacking re-installs it on the zeroed value;
+// both are non-capturing, so this allocates nothing.
 //
-// Safety — this is the sole exception to the file comment's "full zero" rule, and it keeps that rule's guarantee intact
-// for everything that matters:
-//   - Only the slice backing survives, and it survives as an *empty* buffer: reset to length 0 and clear()ed. So no
-//     stale state (an op's ProcessorSet/program info/GPU buffers/bounds/flags, or a pipeline's XP/dst proxy/flags) can
-//     reach a reused shell — every field except the length-0 backing is provably zero, exactly as with plain recycle.
+// Safety — this is the sole exception to the file comment's "full zero" rule:
+//   - Only the slice backing survives, reset to length 0 and clear()ed, so every other field is zero exactly as with
+//     plain recycle and no stale state can reach a reused shell.
 //   - The backing carries no stale data: the live [:len] range is always overwritten before it is read (ops via
 //     OnCombineIfPossible's append; a pipeline via NewPipeline's append), and clear() zeroes the reserved capacity
-//     regardless. For the op instance slices the element types are pointer-free POD (TestInstanceTypesArePointerFree),
-//     so a preserved backing pins nothing and clear() is defensive; for the pipeline the element type is the
-//     FragmentProcessor interface (pointer-carrying), so clear() is load-bearing — it drops every retained FP
-//     reference.
+//     regardless. The op instance element types are pointer-free (TestInstanceTypesArePointerFree), so there a
+//     preserved backing pins nothing and clear() is defensive; the pipeline's element type is the pointer-carrying
+//     FragmentProcessor interface, so there clear() is load-bearing: it drops every retained FP reference.
 //   - A slice that never grew past one element (cap ≤ 1) is dropped to nil, keeping the clean full zero for the common
 //     single-instance op / trivial-paint pipeline; bootstrapInstances re-bootstraps ops from the inline array on the
 //     next borrow, and NewPipeline re-grows the pipeline's from nil.
@@ -108,8 +96,7 @@ func (p *opPool[T]) recycleKeepingBacking[E any](o *T, getBacking func(*T) []E, 
 
 // bootstrapInstances returns the slice a batchable op's constructor should start its instance field from: a heap-grown
 // backing preserved by a prior recycleKeepingBacking (reset to length 0) if one survived in the borrowed shell,
-// otherwise the op's inline single-element backing array. It pairs with recycleKeepingBacking to reuse grown backings
-// across frames; a fresh (new(T)) or inline-recycled shell has a nil/cap-1 field and falls through to the inline array.
+// otherwise the op's inline single-element backing array.
 func bootstrapInstances[E any](preserved, inline []E) []E {
 	if cap(preserved) > 1 {
 		return preserved[:0]

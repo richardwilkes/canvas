@@ -32,7 +32,7 @@ type morphologyFilter struct {
 
 func makeMorphology(dilate bool, radii geom.Size, input filtercore.Filter, cropRect *geom.Rect) filtercore.Filter {
 	if radii.Width < 0 || radii.Height < 0 {
-		return nil // invalid
+		return nil
 	}
 	filter := input
 	if radii.Width > 0 || radii.Height > 0 {
@@ -40,8 +40,7 @@ func makeMorphology(dilate bool, radii geom.Size, input filtercore.Filter, cropR
 		f.base = filtercore.NewFilterBase(filter)
 		filter = f
 	}
-	// Otherwise both radii are 0, so the kernel is always the identity function, in which case we just need to apply
-	// the 'cropRect' to the 'input'.
+	// Otherwise both radii are 0 and the kernel is the identity, so only cropRect needs applying to input.
 	if cropRect != nil {
 		filter = Crop(*cropRect, shaders.TileDecal, filter)
 	}
@@ -116,8 +115,6 @@ func morphologyPass(ctx *filtercore.Context, input *filtercore.FilterResult, dil
 			return filtercore.FilterResult{} // eroded or dilated transparent black is still transparent
 		}
 
-		// The first iteration uses up to the max linear radius with a linear accumulation pass; after that the radius
-		// doubles each step until the target radius is reached.
 		var stepRadius int32
 		if appliedRadius == 0 {
 			stepRadius = min(maxLinearMorphologyRadius, radius)

@@ -11,7 +11,7 @@
 // package dependencies. The package data comes from "go list", so the diagram always reflects the current source;
 // re-run this after adding, removing, or re-pointing an import.
 //
-// Usage, from anywhere inside the repository:
+// Usage, from the repository root:
 //
 //	go -C internal/tools run ./cmd/pkgdeps
 //

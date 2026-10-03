@@ -9,9 +9,8 @@
 
 // Tests for the coincidence resolution machinery (opcoincidence_resolve.go) and its supporting span/segment methods:
 // the targeted helpers at the unit level, plus end-to-end from real coincident paths through the handleCoincidence
-// coincidence sub-sequence (addExpanded/correctEnds/addEndMovedSpans/addMissing/expand/ mark/apply/findOverlaps). The
-// moveMultiples/moveNearby/calcAngles steps that handleCoincidence interleaves arrive with the walking-phase slice;
-// these tests exercise the coincidence-only calls.
+// coincidence sub-sequence (addExpanded/correctEnds/addEndMovedSpans/addMissing/expand/mark/apply/findOverlaps),
+// leaving out the moveMultiples/moveNearby/calcAngles steps handleCoincidence interleaves.
 
 package pathops
 
@@ -214,7 +213,7 @@ func TestCoincidenceMarkAndApply(t *testing.T) {
 	}
 }
 
-// TestCoincidenceHandleSequenceIdenticalRects runs the full HandleCoincidence coincidence sub-sequence over two
+// TestCoincidenceHandleSequenceIdenticalRects runs the full handleCoincidence coincidence sub-sequence over two
 // identical rectangles (every edge coincides). The sequence must complete and leave every span with a valid
 // (non-negative) winding value.
 func TestCoincidenceHandleSequenceIdenticalRects(t *testing.T) {
@@ -239,8 +238,7 @@ func TestCoincidenceHandleSequenceIdenticalRects(t *testing.T) {
 }
 
 // runCoincidenceResolution executes the coincidence-only portion of handleCoincidence, failing the test if any step
-// aborts. It skips the interleaved moveMultiples/moveNearby/missingCoincidence steps (walking-phase slice, not yet
-// implemented here).
+// aborts. It skips the interleaved moveMultiples/moveNearby/missingCoincidence steps.
 func runCoincidenceResolution(t *testing.T, co *opCoincidence) {
 	t.Helper()
 	if !co.addExpanded() {
@@ -339,11 +337,8 @@ func allSpans(head *opContourHead) []*opSpan {
 	return out
 }
 
-// TestAddIfMissingSwallowsAddOrOverlapFailure pins the deliberate discard in addIfMissing. addOrOverlap returns false
-// for "nothing to add" as well as for genuine trouble, and its two callers read that oppositely: addEndMovedSpans
-// aborts on false, addIfMissing must not, because addMissing turns any false from addIfMissing into a fatal abort of
-// the whole Op/Simplify. Upstream discards the result the same way (`(void) this->addOrOverlap(...)` in
-// SkOpCoincidence::addIfMissing), so propagating it here would fail operations Skia completes.
+// TestAddIfMissingSwallowsAddOrOverlapFailure pins the deliberate discard of addOrOverlap's result in addIfMissing (see
+// its doc comment); propagating it would fail operations Skia completes.
 //
 // The setup wires an "over" segment to two collinear segments through shared pt-t loops so trange maps a real range
 // onto each, then leaves co.top nil -- addOrOverlap's first check, and the one place a false cannot mean anything but

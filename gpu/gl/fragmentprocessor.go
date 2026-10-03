@@ -9,9 +9,8 @@
 
 // The fragment-processor (FP) tree model and its program-impl counterpart: child registration with sample usage, the
 // optimization/private flag machinery, key generation, program-impl tree construction, and the
-// invokeChild/invokeChildWithMatrix code emission helpers. Each concrete FP is a Go interface value with an embedded
-// FPBase, and children are plain (GC-owned) interface values. Emitted code is GLSL, so a missing input color defaults
-// to the literal "vec4(1.0)".
+// InvokeChild/InvokeChildWithMatrix code emission helpers. Each concrete FP embeds FPBase, and children are plain
+// (GC-owned) interface values.
 
 package gl
 
@@ -57,7 +56,7 @@ type FragmentProcessor interface {
 	onMakeProgramImpl() FPProgramImpl
 	// onAddToKey appends this FP's subclass-specific key bytes to b.
 	onAddToKey(caps *gpu.ShaderCaps, b *gpu.KeyBuilder)
-	// onIsEqual reports whether other (same ClassID) is equivalent to this FP; only called when ClassIDs match.
+	// onIsEqual reports whether other is equivalent to this FP; only called when ClassIDs match.
 	onIsEqual(other FragmentProcessor) bool
 	// constantOutputForConstantInput computes the FP's output for a constant input; only legal when the
 	// FPConstantOutputForConstantInput flag is set.
@@ -85,7 +84,6 @@ func (b *FPBase) initFP(classID ClassID, optimizationFlags uint32) {
 
 func (b *FPBase) fpBase() *FPBase { return b }
 
-// constantOutputForConstantInput is the base "must override" default.
 func (b *FPBase) constantOutputForConstantInput(colorcore.PMColor4f) colorcore.PMColor4f {
 	panic("subclass must override constantOutputForConstantInput to advertise this optimization")
 }
@@ -129,8 +127,7 @@ func (b *FPBase) HasConstantOutputForConstantInput() bool {
 	return b.flags&FPConstantOutputForConstantInput != 0
 }
 
-// ClearConstantOutputForConstantInputFlag drops the FPConstantOutputForConstantInput flag, e.g. once a caller has
-// consumed the constant-folded value and the FP is retained for other reasons.
+// ClearConstantOutputForConstantInputFlag drops the FPConstantOutputForConstantInput flag.
 func (b *FPBase) ClearConstantOutputForConstantInputFlag() {
 	b.flags &^= FPConstantOutputForConstantInput
 }
@@ -138,13 +135,10 @@ func (b *FPBase) ClearConstantOutputForConstantInputFlag() {
 // optimizationFlags returns the FP's public optimization flags, masking off the private bits.
 func (b *FPBase) optimizationFlags() uint32 { return b.flags & FPAllOptimizationFlags }
 
-// setUsesSampleCoordsDirectly marks this FP as reading its own sample coordinates.
 func (b *FPBase) setUsesSampleCoordsDirectly() { b.flags |= fpUsesSampleCoordsDirectly }
 
-// setWillReadDstColor marks this FP as reading the destination color.
 func (b *FPBase) setWillReadDstColor() { b.flags |= fpWillReadDstColor }
 
-// setIsBlendFunction marks this FP as taking a destination color as a second input.
 func (b *FPBase) setIsBlendFunction() { b.flags |= fpIsBlendFunction }
 
 // mergeOptimizationFlags narrows this FP's optimization flags to the intersection with flags, leaving the private bits
@@ -171,10 +165,8 @@ func (b *FPBase) registerChild(child FragmentProcessor, sampleUsage SampleUsage)
 		panic("child already attached to another FP")
 	}
 
-	// Configure child's sampling state first.
 	cb.usage = sampleUsage
 
-	// Propagate the "will read dest-color" flag up to parent FPs.
 	if cb.WillReadDstColor() {
 		b.setWillReadDstColor()
 	}
@@ -185,8 +177,8 @@ func (b *FPBase) registerChild(child FragmentProcessor, sampleUsage SampleUsage)
 		b.flags |= fpUsesSampleCoordsIndirectly
 	}
 
-	// The child's parent pointer is set to the owner by registerChildOf (Go cannot recover the owning interface value
-	// from the embedded base). See registerChildOf.
+	// registerChildOf sets the child's parent pointer, since Go cannot recover the owning interface value from the
+	// embedded base.
 	b.children = append(b.children, child)
 }
 
@@ -347,7 +339,6 @@ type FPImplBase struct {
 
 func (b *FPImplBase) fpImplBase() *FPImplBase { return b }
 
-// onSetData is the default no-op.
 func (b *FPImplBase) onSetData(*ProgramDataManager, FragmentProcessor) {}
 
 // NumChildProcessors returns the number of child impls.
@@ -404,22 +395,22 @@ func makeFPEmitArgs(fragBuilder *FragmentShaderBuilder, uniformHandler *UniformH
 	}
 }
 
-// InvokeChild emits a call to the given child with the default dest color and parent coords.
+// InvokeChild returns a call to the given child with the default dest color and parent coords.
 func (b *FPImplBase) InvokeChild(childIndex int, args *FPEmitArgs) string {
 	return b.InvokeChildFull(childIndex, "", "", args, "")
 }
 
-// InvokeChildWithColor emits a call to the given child with an explicit input color.
+// InvokeChildWithColor returns a call to the given child with an explicit input color.
 func (b *FPImplBase) InvokeChildWithColor(childIndex int, inputColor string, args *FPEmitArgs) string {
 	return b.InvokeChildFull(childIndex, inputColor, "", args, "")
 }
 
-// InvokeChildWithCoords emits a call to the given child with an explicit input color and sample coordinate expression.
+// InvokeChildWithCoords returns a call to the given child with an explicit input color and coordinate expression.
 func (b *FPImplBase) InvokeChildWithCoords(childIndex int, inputColor string, args *FPEmitArgs, coords string) string {
 	return b.InvokeChildFull(childIndex, inputColor, "", args, coords)
 }
 
-// InvokeChildFull emits a call to the given child with explicit input color, dest color, and sample coordinate
+// InvokeChildFull returns a call to the given child with explicit input color, dest color, and sample coordinate
 // expression. Empty strings mean "use the default for this parameter".
 func (b *FPImplBase) InvokeChildFull(childIndex int, inputColor, destColor string, args *FPEmitArgs, coords string) string {
 	if childIndex < 0 {
@@ -431,7 +422,6 @@ func (b *FPImplBase) InvokeChildFull(childIndex int, inputColor, destColor strin
 
 	childProc := args.FP.fpBase().ChildProcessor(childIndex)
 	if childProc == nil {
-		// If no child processor is provided, return the input color as-is.
 		return inputColor
 	}
 
@@ -449,7 +439,6 @@ func (b *FPImplBase) InvokeChildFull(childIndex int, inputColor, destColor strin
 		invocation += ", " + destColor
 	}
 
-	// A uniform-matrix sample call would go through InvokeChildWithMatrix, not here.
 	if childProc.fpBase().SampleUsage().IsUniformMatrix() {
 		panic("uniform-matrix sampled child must use InvokeChildWithMatrix")
 	}
@@ -472,12 +461,12 @@ func (b *FPImplBase) InvokeChildFull(childIndex int, inputColor, destColor strin
 	return invocation
 }
 
-// InvokeChildWithMatrix emits a call to a uniform-matrix-sampled child with the default input and dest color.
+// InvokeChildWithMatrix returns a call to a uniform-matrix-sampled child with the default input and dest color.
 func (b *FPImplBase) InvokeChildWithMatrix(childIndex int, args *FPEmitArgs) string {
 	return b.InvokeChildWithMatrixColor(childIndex, "", args)
 }
 
-// InvokeChildWithMatrixColor emits a call to a uniform-matrix-sampled child with an explicit input color.
+// InvokeChildWithMatrixColor returns a call to a uniform-matrix-sampled child with an explicit input color.
 func (b *FPImplBase) InvokeChildWithMatrixColor(childIndex int, inputColor string, args *FPEmitArgs) string {
 	if childIndex < 0 {
 		panic("negative child index")

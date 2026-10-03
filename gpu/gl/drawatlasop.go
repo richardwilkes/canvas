@@ -36,10 +36,8 @@ type drawAtlasGeometry struct {
 	hasColors bool
 }
 
-// drawAtlasOp draws a batch of sprites from an atlas image.
 type drawAtlasOp struct {
 	drawOpNoClipToShape
-	// Prepared state.
 	vertexBuffer AnyBuffer
 	programInfo  *ProgramInfo
 	indexBuffer  *Buffer
@@ -147,7 +145,6 @@ func NewDrawAtlasOp(paint *Paint, viewMatrix *geom.Matrix, aaType gpu.AAType, xf
 	return o
 }
 
-// putAtlasF32 writes a little-endian float32 at off.
 func putAtlasF32(dst []byte, off int, v float32) {
 	binary.LittleEndian.PutUint32(dst[off:], math.Float32bits(v))
 }
@@ -163,7 +160,6 @@ func pmColorToByte(v float32) uint8 {
 	return uint8(f)
 }
 
-// growToInclude returns r expanded (if needed) to contain pt.
 func growToInclude(r geom.Rect, pt geom.Point) geom.Rect {
 	return geom.Rect{
 		Left:   min(r.Left, pt.X),
@@ -209,8 +205,6 @@ func (o *drawAtlasOp) Finalize(caps *gpu.Caps, clip *AppliedClip, clampType gpu.
 	return result
 }
 
-// createProgramInfo builds the program info for this op's draw: the default geometry processor with explicit local
-// coords, solid coverage, and either the uniform paint color or the premul per-vertex color attribute.
 func (o *drawAtlasOp) createProgramInfo(state *OpFlushState) {
 	colorType := ColorTypePremulUniform
 	if o.hasColors {
@@ -232,7 +226,6 @@ func (o *drawAtlasOp) OnPrepare(state *OpFlushState) {
 	stride := atlasVertexStride(o.hasColors)
 	vdata, vertexBuffer, baseVertex := state.MakeVertexSpace(uint64(stride), 4*o.quadCount)
 	if vdata == nil {
-		// Could not allocate vertices.
 		return
 	}
 	o.vertexBuffer = vertexBuffer
@@ -245,11 +238,10 @@ func (o *drawAtlasOp) OnPrepare(state *OpFlushState) {
 			offset += copy(vdata[offset:], g.verts)
 			continue
 		}
-		// Finalize dropped the color attribute after this geometry was baked with interleaved colors (g.hasColors &&
-		// !o.hasColors — the only possible mismatch, since Finalize never adds colors): re-copy per vertex, skipping
-		// the 4 color bytes. A naive copy of the baked bytes against the new stride here would corrupt the stream; the
-		// mismatch is unreachable in practice (it needs an analysis that overrides an unknown input color), but the
-		// copy is made safe regardless.
+		// Finalize dropped the color attribute after this geometry was baked with interleaved colors (the only possible
+		// mismatch, since Finalize never adds colors), so copy per vertex, skipping the 4 color bytes; a plain copy
+		// against the new stride would corrupt the stream. The mismatch needs an analysis that overrides an unknown
+		// input color, which is unreachable in practice.
 		bakedStride := atlasVertexStride(true)
 		for v := 0; v*bakedStride < len(g.verts); v++ {
 			src := g.verts[v*bakedStride:]
@@ -261,8 +253,8 @@ func (o *drawAtlasOp) OnPrepare(state *OpFlushState) {
 	o.indexBuffer = GetQuadIndexBuffer(state, IndexBufferOptionIndexedRects)
 }
 
-// OnExecute implements Op over this codebase's flush machinery. The draw is the QuadHelper mesh: an indexed-pattern
-// draw over the shared non-AA quad index buffer, chunked by its 4096-quad repetition limit.
+// OnExecute implements Op. The draw is the QuadHelper mesh: an indexed-pattern draw over the shared non-AA quad index
+// buffer, chunked by its 4096-quad repetition limit.
 func (o *drawAtlasOp) OnExecute(state *OpFlushState, chainBounds geom.Rect) {
 	if o.vertexBuffer == nil || o.indexBuffer == nil {
 		return

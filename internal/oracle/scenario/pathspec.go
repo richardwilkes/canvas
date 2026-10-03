@@ -14,8 +14,8 @@ import (
 	"github.com/richardwilkes/canvas/path"
 )
 
-// PathOpKind identifies one recorded path-building operation. The set matches the sk_path_* builder entry points
-// exactly (note: the public surface has no rquad_to, so neither does this).
+// PathOpKind identifies one recorded path-building operation. The set matches the sk_path_* C builder entry points the
+// corpus was built against, which have no rquad_to, so neither does this.
 type PathOpKind uint8
 
 // PathOpKind values.

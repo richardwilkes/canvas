@@ -33,7 +33,6 @@ func TestDocumentDrawPaintAndClear(t *testing.T) {
 	}
 	// Clear: opaque color, kSrc — checkFastPathIsSrcOver's solid lane folds it to kSrcOver.
 	c.Clear(0xFF204080)
-	// DrawPaint proper: fills the clip with the paint.
 	p := canvas.NewPaint()
 	p.Color = 0x80FF8040
 	c.DrawPaint(p)

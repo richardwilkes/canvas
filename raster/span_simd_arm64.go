@@ -20,23 +20,20 @@ import "simd/archsimd"
 func simdKernelsSupported() bool { return true }
 
 // simdKernelsPreferred reports whether the simd span kernels are the fastest lane on this hardware, which is what the
-// init-time dispatch gates on — supported is what the equivalence tests gate on, so the arm64 test runs still lock the
-// kernels bit-for-bit even though dispatch declines them. On arm64 the answer today is no: the hand-written NEON
-// kernels in span_arm64.s beat the archsimd forms by 1.1-1.6x on these four (measured M4 Max, 256-px rows — the
-// archsimd loop pays per-iteration bounds checks and assembles some idioms, like FCVTN2 and the byte gathers, from
-// several instructions), so the default arm64 dispatch stays. Unlike the shader stages, where archsimd beats the
-// assembly because it inlines into the dispatch call, these kernels do a full row per call and the call overhead the
-// stages save is noise here. Revisit if the codegen improves; the shaders package needs no such split because its simd
-// kernels won everywhere.
+// init-time dispatch gates on; the equivalence tests gate on supported, so arm64 test runs still lock the kernels
+// bit-for-bit. On arm64 the answer is no: the NEON kernels in span_arm64.s beat the archsimd forms by 1.1-1.6x on all
+// four (M4 Max, 256-px rows), since the archsimd loop pays per-iteration bounds checks and builds some idioms, like
+// FCVTN2 and the byte gathers, from several instructions. In the shader stages archsimd wins by inlining into the
+// dispatch call, but these kernels do a full row per call, so that saved call overhead is noise here. Revisit if the
+// codegen improves.
 func simdKernelsPreferred() bool { return false }
 
-// The lane shifts of the two integer kernels go through a hoisted count because arm64 has no shift-by-immediate in this
-// API: ShiftAllLeft/ShiftAllRight lower to a VDUP of the (negated) count plus VUSHL, and the compiler re-materializes
-// that VDUP on every iteration instead of lifting it out of the loop — three instructions per shift in a body that has
-// half a dozen of them. Broadcasting the count once and issuing the bare VUSHL is worth roughly 2-3x on the integer
-// kernels here. It is also exactly the instruction ShiftAllRight would have emitted, so the results are unchanged: a
-// negative count is a logical right shift for an unsigned vector, and every count these kernels use (8, 16, 24) is
-// inside the lane width.
+// The lane shifts go through a hoisted count because arm64 has no shift-by-immediate in this API:
+// ShiftAllLeft/ShiftAllRight lower to a VDUP of the (negated) count plus VUSHL, and the compiler re-materializes that
+// VDUP on every iteration instead of lifting it out of the loop — three instructions per shift in a body that has half
+// a dozen of them. Broadcasting the count once and issuing the bare VUSHL is worth roughly 2-3x on the integer kernels.
+// It is the instruction ShiftAllRight would have emitted, so results are unchanged: a negative count is a logical right
+// shift for an unsigned vector, and every count these kernels use (8, 16, 24) is inside the lane width.
 type (
 	shiftCount16 = archsimd.Int16x8
 	shiftCount32 = archsimd.Int32x4

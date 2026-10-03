@@ -28,7 +28,7 @@ const (
 )
 
 // ProcessorAnalysis is the result of finalizing a ProcessorSet: what the analysis learned about the color/coverage
-// processors and transfer processor, as plain fields.
+// processors and transfer processor.
 type ProcessorAnalysis struct {
 	usesLocalCoords               bool
 	compatibleWithCoverageAsAlpha bool
@@ -55,7 +55,7 @@ func (a ProcessorAnalysis) IsInitialized() bool { return a.isInitialized }
 // UsesLocalCoords reports whether any analyzed processor samples local (pre-transform) coordinates.
 func (a ProcessorAnalysis) UsesLocalCoords() bool { return a.usesLocalCoords }
 
-// RequiresDstTexture reports whether the transfer processor needs a copy of the destination.
+// RequiresDstTexture reports whether the transfer processor or a color FP needs a copy of the destination.
 func (a ProcessorAnalysis) RequiresDstTexture() bool { return a.requiresDstTexture }
 
 // RequiresNonOverlappingDraws reports whether overlapping ops must be kept from chaining or combining: a barrier or a
@@ -166,21 +166,19 @@ func (s *ProcessorSet) XferProcessor() XferProcessor {
 // IsFinalized reports whether Finalize has been called.
 func (s *ProcessorSet) IsFinalized() bool { return s.finalized }
 
-// detachColorFragmentProcessor removes and returns the set's color FP, leaving it unset.
 func (s *ProcessorSet) detachColorFragmentProcessor() FragmentProcessor {
 	fp := s.colorFragmentProcessor
 	s.colorFragmentProcessor = nil
 	return fp
 }
 
-// detachCoverageFragmentProcessor removes and returns the set's coverage FP, leaving it unset.
 func (s *ProcessorSet) detachCoverageFragmentProcessor() FragmentProcessor {
 	fp := s.coverageFragmentProcessor
 	s.coverageFragmentProcessor = nil
 	return fp
 }
 
-// Equal reports whether two finalized processor sets are equivalent (only legal on finalized sets).
+// Equal reports whether two processor sets are equivalent (only legal on finalized sets).
 func (s *ProcessorSet) Equal(that *ProcessorSet) bool {
 	if !s.finalized || !that.finalized {
 		panic("comparisons are only legal on finalized processor sets")
@@ -229,7 +227,7 @@ func (s *ProcessorSet) Finalize(colorInput ProcessorAnalysisColor, coverageInput
 	if s.finalized {
 		panic("processor set already finalized")
 	}
-	_ = userStencil // consulted only by DMSAA lanes; kept for signature fidelity
+	_ = userStencil // unused, as upstream; kept for signature fidelity
 
 	var analysis ProcessorAnalysis
 	analysis.compatibleWithCoverageAsAlpha = coverageInput != AnalysisCoverageLCD

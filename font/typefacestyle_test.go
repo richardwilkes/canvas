@@ -9,8 +9,8 @@
 
 // computeStyle is the one place a face's weight/width/slant is derived from, and three consumers have to agree with it:
 // Typeface.Style (what the PDF FontDescriptor's italic flag comes from), FaceInfo.Style (what the font manager ranks
-// candidates by), and the macStyle fallback for a face with no usable OS/2 table. Every font in testdata is upright with
-// a modern OS/2 table, so these cases are synthesized.
+// candidates by), and the macStyle fallback for a face with no usable OS/2 table. Every font in testdata is upright
+// with a modern OS/2 table, so these cases are synthesized.
 
 package font
 

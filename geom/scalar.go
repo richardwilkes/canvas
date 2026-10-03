@@ -141,18 +141,18 @@ func ScalarAbs(x float32) float32 {
 	return float32(math.Abs(float64(x)))
 }
 
-// ScalarSqrt computes sqrt(x) in float32 (Go's math.Sqrt on the widened value is correctly rounded, and rounding the
-// exact double result to float32 gives a correctly-rounded float32 sqrt).
+// ScalarSqrt computes sqrt(x) in float32 (Go's math.Sqrt on the widened value is correctly rounded, and rounding that
+// double result to float32 gives a correctly-rounded float32 sqrt).
 func ScalarSqrt(x float32) float32 {
 	return float32(math.Sqrt(float64(x)))
 }
 
-// ScalarSin computes sin(radians), in double precision truncated to float32.
+// ScalarSin computes sin(radians), in double precision rounded to float32.
 func ScalarSin(radians float32) float32 {
 	return float32(math.Sin(float64(radians)))
 }
 
-// ScalarCos computes cos(radians), in double precision truncated to float32.
+// ScalarCos computes cos(radians), in double precision rounded to float32.
 func ScalarCos(radians float32) float32 {
 	return float32(math.Cos(float64(radians)))
 }

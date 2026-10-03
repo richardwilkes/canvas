@@ -183,10 +183,10 @@ func borrowPipeline() *Pipeline {
 	return pipelinePool.Get().(*Pipeline)
 }
 
-// RecyclePipeline returns a Pipeline obtained from Compile to the shared pool. It drops the compiled stage closures
-// (they capture per-draw data) and every reference to per-draw external data the stages or their contexts held, so an
-// idle pooled pipeline pins nothing, but it retains the register-file, stages, and gradient scratch storage for reuse.
-// After RecyclePipeline the caller must treat p as invalid.
+// RecyclePipeline returns a Pipeline obtained from Compile to the shared pool. It drops the compiled stages and every
+// reference to per-draw external data the stages or their contexts held, so an idle pooled pipeline pins nothing, but
+// it retains the register-file, stages, and context scratch storage for reuse. After RecyclePipeline the caller must
+// treat p as invalid.
 func RecyclePipeline(p *Pipeline) {
 	if p == nil {
 		return
@@ -315,8 +315,8 @@ func (p *Pipeline) appendSeed() {
 	p.append(seedStageFn)
 }
 
-// seedStage is the portable seed_shader stage; on arm64 seedStageFn points at the NEON form instead (stage_arm64.go),
-// which writes the same lanes with the same per-lane rounding.
+// seedStage is the portable seed_shader stage; seedStageFn may instead select the NEON or simd form (see
+// stage_generic.go), which writes the same lanes with the same per-lane rounding.
 func seedStage(z *lanes) {
 	fx := float32(uint32(z.dx))
 	fy := float32(uint32(z.dy)) + 0.5
@@ -347,8 +347,8 @@ func (p *Pipeline) nextMatrixCtx(m *geom.Matrix) *matrixCtx {
 	return c
 }
 
-// appendMatrix picks the matrix stage by type mask. The translate/scale-translate/affine stages dispatch through
-// per-arch fn variables (NEON on arm64, the portable forms elsewhere); perspective stays portable.
+// appendMatrix picks the matrix stage by type mask. The translate/scale-translate/affine stages dispatch through fn
+// variables that may select NEON or simd forms (see stage_generic.go); perspective stays portable.
 func (p *Pipeline) appendMatrix(m *geom.Matrix) {
 	mt := m.Type()
 	switch {
@@ -521,7 +521,7 @@ func (p *Pipeline) appendClampX1() {
 	p.append(clampX1StageFn)
 }
 
-// clampX1Stage is the portable clamp_x_1 stage; clampX1StageFn selects the NEON form on arm64.
+// clampX1Stage is the portable clamp_x_1 stage; clampX1StageFn may select the NEON or simd form instead.
 func clampX1Stage(z *lanes) {
 	for i := range z.n {
 		z.r[i] = clamp01(z.r[i])

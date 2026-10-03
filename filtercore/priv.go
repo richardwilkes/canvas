@@ -8,8 +8,7 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // Matrix decomposition helpers (decomposeScale, differentialAreaScale, minMaxScales) and homogeneous quad-containment
-// tests (quadContainsRect/quadContainsRectMask) that filtercore consumes. These stay private to filtercore until
-// another package needs them.
+// tests (quadContainsRect/quadContainsRectMask) that filtercore consumes.
 
 package filtercore
 
@@ -33,7 +32,6 @@ func roundToScalar(v float32) float32 { return float32(math.Round(float64(v))) }
 func ieeeFloatDivide(a, b float32) float32 { return a / b }
 
 func pin32(v, lo, hi int32) int32 {
-	// Clamp v to [lo, hi].
 	return max(lo, min(v, hi))
 }
 
@@ -69,7 +67,7 @@ func differentialAreaScale(m *geom.Matrix, p geom.Point) float32 {
 	a10, a11, a12 := float64(m.Get(geom.MScaleX)), float64(m.Get(geom.MSkewY)), float64(m.Get(geom.MPersp0))
 	a20, a21, a22 := float64(m.Get(geom.MSkewX)), float64(m.Get(geom.MScaleY)), float64(m.Get(geom.MPersp1))
 	det := a00*(a11*a22-a12*a21) - a01*(a10*a22-a12*a20) + a02*(a10*a21-a11*a20)
-	denom := 1.0 / float64(w) // 1/w
+	denom := 1.0 / float64(w)
 	denom = denom * denom * denom
 	return absf32(float32(det * denom))
 }

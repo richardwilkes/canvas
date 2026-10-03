@@ -102,8 +102,8 @@ func (c Color) PreMultiply() PMColor {
 	return PreMultiplyARGB(c.A(), c.R(), c.G(), c.B())
 }
 
-// unpremulScale returns the 8.24 fixed-point reciprocal (255 << 24) / alpha with round-to-nearest division ((255<<24) +
-// a/2) / a, which lets un-premultiplication replace a per-channel divide with a multiply.
+// unpremulScale returns 255/a in 8.24 fixed point, rounded to nearest, which lets un-premultiplication replace a
+// per-channel divide with a multiply.
 func unpremulScale(a uint8) uint32 {
 	if a == 0 {
 		return 0
@@ -112,9 +112,9 @@ func unpremulScale(a uint8) uint32 {
 }
 
 // applyUnpremulScale un-premultiplies one channel: (component*scale + 2^23) >> 24, saturated to 255. The shifted
-// product only stays within a byte for a canonical premultiplied color (component <= alpha); PMColorARGB is exported
-// and validates nothing, so a caller can hand UnPreMultiply a color whose channel exceeds its alpha. Saturating there
-// keeps the result a valid color rather than letting the uint8 conversion wrap it to an unrelated value.
+// product only fits a byte for a canonical premultiplied color (component <= alpha), and PMColorARGB validates nothing,
+// so saturating keeps a non-canonical color valid rather than letting the uint8 conversion wrap it to an unrelated
+// value.
 func applyUnpremulScale(scale uint32, component uint8) uint8 {
 	if v := (uint64(component)*uint64(scale) + 1<<23) >> 24; v < 255 {
 		return uint8(v)
@@ -123,8 +123,8 @@ func applyUnpremulScale(scale uint32, component uint8) uint8 {
 }
 
 // UnPreMultiply converts the premultiplied color back to an unpremultiplied Color, dividing each color channel by alpha
-// with round-to-nearest arithmetic. A zero alpha yields transparent black. A channel that exceeds the alpha — possible
-// only for a non-canonical premultiplied color, which PMColorARGB does not reject — saturates to 255.
+// with round-to-nearest arithmetic. A zero alpha yields transparent black. A channel that exceeds the alpha (a
+// non-canonical color, which PMColorARGB does not reject) saturates to 255.
 func (c PMColor) UnPreMultiply() Color {
 	a := c.A()
 	if a == 0 {
@@ -159,13 +159,11 @@ func Color4fFromColor(c Color) Color4f {
 	}
 }
 
-// toUnorm8 converts one float channel to a byte: v = x*255 + 0.5, pinned to [0, 255], then a truncating cast — the +0.5
-// makes the truncation round half away from zero for the expected positive inputs (a 76.5 tie goes to 77 where
-// round-to-even would give 76). The explicit float32 conversion around the multiply keeps the two roundings the doc
-// describes from being contracted into one: without it arm64 emits FMADDS while amd64 emits a separate multiply and
-// add, so the executed arithmetic differs by platform. Both forms happen to agree on every one of the 2^32 float32
-// inputs (TestToUnorm8MatchesTwoStepRounding pins the contract), but the library pins goldens on bit-exact output, so
-// the arithmetic is written so that agreement does not depend on which instructions a back end chooses to emit.
+// toUnorm8 converts one float channel to a byte: v = x*255 + 0.5, pinned to [0, 255], then truncated, so ties round
+// away from zero (76.5 goes to 77 where round-to-even would give 76). The explicit float32 conversion around the
+// multiply keeps it from being fused with the add: without it arm64 emits FMADDS while amd64 emits a separate multiply
+// and add. Both forms agree on every one of the 2^32 float32 inputs, but goldens are bit-exact, so the arithmetic must
+// not depend on which instructions a back end emits (TestToUnorm8MatchesTwoStepRounding pins the two-step rounding).
 func toUnorm8(x float32) uint8 {
 	v := float32(x*255) + 0.5
 	if !(v > 0) { // handles NaN

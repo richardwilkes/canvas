@@ -8,8 +8,7 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // Chunks of vertex (or instance) data written out when the final vertex count is not known up front, plus the builder
-// that allocates them from the flush-time vertex pool. Each chunk's data is a []byte window into the pool buffer; the
-// builder must have close() called explicitly when writing is complete.
+// that allocates them from the flush-time vertex pool. Each chunk's data is a []byte window into the pool buffer.
 
 package gl
 
@@ -49,8 +48,7 @@ func newVertexChunkBuilder(target *OpFlushState, chunks *[]vertexChunk, stride u
 	}
 }
 
-// close returns the unused reserve to the vertex pool and finalizes the current chunk's count. It must be called once
-// writing is complete.
+// close returns the unused reserve to the vertex pool and finalizes the current chunk's count.
 func (b *vertexChunkBuilder) close() {
 	if b.currChunkOpen {
 		b.target.PutBackVertices(b.currChunkVertexCapacity-b.currChunkVertexCount, b.stride)

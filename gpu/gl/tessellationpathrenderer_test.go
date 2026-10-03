@@ -24,11 +24,10 @@ func makeFillShape(p *path.Path) StyledShape {
 	return MakeStyledShapePath(p, MakeStyle(stroke.NewStrokeRec(stroke.InitStyleFill)), DoSimplifyNo)
 }
 
-// TestOnStencilPathChopGuards covers the guards OnStencilPath relies on via tessChopPathIfNecessary. Historically
-// OnStencilPath called preChopPathCurves unconditionally once the device bounds were large, which panics
-// ("preChopPathCurves viewport is too large") for a large straight-line-only non-convex stencil/clip element — a shape
-// OnCanDrawPath accepts. The shared helper must instead skip line-only paths and bail out gracefully when the
-// conservative clip viewport is too large for preChopPathCurves.
+// TestOnStencilPathChopGuards covers the guards OnStencilPath relies on via tessChopPathIfNecessary: it must skip
+// line-only paths and bail out gracefully when the conservative clip viewport is too large for preChopPathCurves. An
+// unconditional preChopPathCurves call panicked ("preChopPathCurves viewport is too large") for a large
+// straight-line-only non-convex stencil/clip element — a shape OnCanDrawPath accepts.
 func TestOnStencilPathChopGuards(t *testing.T) {
 	identity := geom.IdentityMatrix()
 
@@ -68,10 +67,8 @@ func TestOnStencilPathChopGuards(t *testing.T) {
 	}
 }
 
-// TestOnStencilPathHugeLineOnly drives OnStencilPath end-to-end for the exact case the issue describes: a large
-// straight-line-only non-convex simple-fill clip element. Before the fix OnStencilPath called preChopPathCurves
-// unconditionally and panicked ("preChopPathCurves viewport is too large"); now it must record a draw op without
-// panicking.
+// TestOnStencilPathHugeLineOnly drives OnStencilPath end-to-end for a large straight-line-only non-convex simple-fill
+// clip element (see TestOnStencilPathChopGuards): it must record a draw op without panicking.
 func TestOnStencilPathHugeLineOnly(t *testing.T) {
 	dc := newShaderRecordingContext(t)
 	sdc := newDrawTestSDC(t, dc, 64, 64)

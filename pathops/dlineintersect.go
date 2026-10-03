@@ -7,10 +7,9 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// Line/line intersection: the bounded intersect (intersectLineLine), the unbounded ray form (intersectRayLine — its
-// first curve consumer is the quad subdivision control-point recovery in dquad.go's subDivideCtrl), the axis-aligned
-// horizontal/vertical lanes, and the coincident-line cleanup. These are the base cases the curve-vs-line intersections
-// reduce to.
+// Line/line intersection, the base case the curve/line intersections reduce to: the bounded intersect
+// (intersectLineLine), the unbounded ray form (intersectRayLine), the horizontal/vertical lanes, and the
+// coincident-line cleanup.
 
 package pathops
 
@@ -88,8 +87,8 @@ func (in *intersections) intersectRayLine(a, b dLine) int {
 }
 
 // intersectLineLine computes the bounded intersection of two line segments: a proper crossing point, plus (for
-// coincident or near-coincident lines) up to two shared endpoints. It assumes the two lines are not both exactly
-// horizontal or both exactly vertical in the degenerate sense the coincident cleanup below handles.
+// coincident or near-coincident lines) up to two shared endpoints. Per upstream, it only works if both lines are
+// neither horizontal nor vertical.
 func (in *intersections) intersectLineLine(a, b dLine) int {
 	in.max = 3 // note that we clean up so that there is no more than two in the end
 	// see if end points intersect the opposite line

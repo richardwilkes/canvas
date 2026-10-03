@@ -9,8 +9,8 @@
 
 // Caps' accessors and format-level query methods, plus the base-caps query logic those build on — with a single backend
 // the two layers are flattened here. A backend format is represented by (Format, gpu.TextureType) parameters rather
-// than a backend-surface type. The surface/proxy-level entry points (surfaceSupportsReadPixels, canCopySurface,
-// dst-copy restrictions, program descriptors) live here too.
+// than a backend-surface type. The surface/proxy-level entry points (SurfaceSupportsReadPixels, CanCopySurface) live in
+// surfacecaps.go.
 
 package gl
 
@@ -266,8 +266,8 @@ func (c *Caps) InternalMultisampleCount(format Format) int {
 }
 
 // SupportsDynamicMSAA reports whether a single-sample render target whose format supports internal multisampling can be
-// promoted to a DMSAA attachment. The disallow-dynamic-MSAA flag some backends set only applies to ANGLE-D3D11 and
-// WebGL driver paths — both outside the desktop trim — so it is constant true here.
+// promoted to a DMSAA attachment. Skia's disallow-dynamic-MSAA flag is only set on ANGLE-D3D11 and WebGL driver paths,
+// both outside the desktop trim, so it is not consulted here.
 func (c *Caps) SupportsDynamicMSAA(rtProxy *RenderTargetProxy) bool {
 	return rtProxy.NumSamples() == 1 &&
 		c.InternalMultisampleCount(rtProxy.Proxy().Format()) > 1
@@ -527,7 +527,7 @@ func (c *Caps) SupportedWritePixelsColorType(surfaceColorType gpu.ColorType, sur
 					OffsetAlignmentForTransferBuffer: transferOffsetAlignment,
 				}
 			}
-			// Currently we just pick the first supported format that we find as our fallback.
+			// The fallback is the first supported format found.
 			if fallbackCT == gpu.ColorTypeUnknown {
 				fallbackCT = iof.colorType
 			}
@@ -546,8 +546,7 @@ func (c *Caps) SupportedWritePixelsColorType(surfaceColorType gpu.ColorType, sur
 func (c *Caps) SupportedReadPixelsColorType(srcColorType gpu.ColorType, srcFormat Format, dstColorType gpu.ColorType) gpu.SupportedRead {
 	read := c.onSupportedReadPixelsColorType(srcColorType, srcFormat, dstColorType)
 
-	// There are known problems with 24 vs 32 bit BPP with this color type. Just fail for now if using a transfer
-	// buffer.
+	// There are known problems with 24 vs 32 bit BPP with this color type, so fail if using a transfer buffer.
 	if read.ColorType == gpu.ColorTypeRGB888x {
 		read.OffsetAlignmentForTransferBuffer = 0
 	}
@@ -599,7 +598,7 @@ func (c *Caps) onSupportedReadPixelsColorType(srcColorType gpu.ColorType, srcFor
 					OffsetAlignmentForTransferBuffer: transferOffsetAlignment,
 				}
 			}
-			// Currently we just pick the first supported format that we find as our fallback.
+			// The fallback is the first supported format found.
 			if fallbackRead.ColorType == gpu.ColorTypeUnknown {
 				fallbackRead = gpu.SupportedRead{
 					ColorType:                        iof.colorType,
@@ -631,7 +630,7 @@ func (c *Caps) ValidateSurfaceParams(dimensions geom.ISize, format Format, rende
 		maxRTSize := int32(c.MaxRenderTargetSize)
 		return dimensions.Width <= maxRTSize && dimensions.Height <= maxRTSize
 	}
-	// We currently do not support multisampled textures.
+	// Multisampled textures are not supported.
 	if renderTargetSampleCnt != 1 {
 		return false
 	}

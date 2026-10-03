@@ -59,13 +59,12 @@ func HairLineRgn(pts []geom.Point, clip *Region, origBlitter Blitter) {
 		seg[0] = pts[i]
 		seg[1] = pts[i+1]
 
-		// We have to pre-clip the line to fit in a Fixed, so we just chop the line.
+		// Pre-clip the line so it fits in a Fixed.
 		if !geom.IntersectLine(&seg, fixedBounds, &clipped) {
 			continue
 		}
 
-		// Perform a clip in scalar space, so we catch huge values which might be missed after we convert to FDot6
-		// (overflow).
+		// Clip in scalar space to catch huge values that would overflow on conversion to FDot6.
 		if clip != nil && !geom.IntersectLine(&clipped, clipBounds, &clipped) {
 			continue
 		}
@@ -76,15 +75,14 @@ func HairLineRgn(pts []geom.Point, clip *Region, origBlitter Blitter) {
 		y1 := FloatToFDot6(clipped[1].Y)
 
 		if clip != nil {
-			// now perform clipping again, as the rounding to dot6 can wiggle us. our rects are really dot6 rects, but
-			// since we've already used lineclipper, we know they will fit in 32bits (26.6)
+			// Clip again, since rounding to dot6 can wiggle the endpoints. These are dot6 rects; the line clip above
+			// guarantees they fit in 32 bits (26.6).
 			bounds := clip.Bounds()
 
 			clipR := geom.IRectLTRB(bounds.Left<<6, bounds.Top<<6, bounds.Right<<6, bounds.Bottom<<6)
 			ptsR := geom.IRectLTRB(int32(x0), int32(y0), int32(x1), int32(y1)).Sorted()
 
-			// outset the right and bottom, to account for how hairlines are actually drawn, which may hit the pixel to
-			// the right or below of the coordinate
+			// Outset the right and bottom: a hairline may hit the pixel right of or below the coordinate.
 			ptsR.Right += int32(FDot6One)
 			ptsR.Bottom += int32(FDot6One)
 
@@ -131,22 +129,18 @@ func HairLineRgn(pts []geom.Point, clip *Region, origBlitter Blitter) {
 	}
 }
 
-// HairRect draws a non-AA hairline rectangle. We don't just draw 4 lines, 'cause that can leave a gap in the
-// bottom-right and double-hit the top-left.
+// HairRect draws a non-AA hairline rectangle. It does not draw 4 lines, which can leave a gap in the bottom-right and
+// double-hit the top-left.
 func HairRect(rect geom.Rect, clip *Clip, blitter Blitter) {
 	var wrapper AAClipBlitterWrapper
 	var clipper blitterClipper
-	// Create the enclosing bounds of the hairrect. i.e. we will stroke the interior of r.
+	// The enclosing bounds of the hairrect; the interior of r is stroked.
 	r := geom.IRectLTRB(geom.FloorToInt(rect.Left), geom.FloorToInt(rect.Top),
 		geom.FloorToInt(rect.Right+1), geom.FloorToInt(rect.Bottom+1))
 
-	// Note: r might be crazy big, if rect was huge, possibly getting pinned to max/min s32. We need to trim it back to
-	// something reasonable before we can query its width etc. since r.fRight - r.fLeft might wrap around to negative
-	// even if fRight > fLeft.
-	//
-	// We outset the clip bounds by 1 before intersecting, since r is being stroked and not filled so we don't want to
-	// pin an edge of it to the clip. The intersect's job is mostly to just get the actual edge values into a reasonable
-	// range (e.g. so width() can't overflow).
+	// A huge rect can pin r to max/min int32, where r.Right - r.Left wraps negative, so trim r to the clip before
+	// taking its width. The clip is outset by 1 first because r is stroked, not filled, and must not have an edge
+	// pinned to the clip.
 	if !r.Intersect(clip.Bounds().Inset(-1, -1)) {
 		return
 	}
@@ -194,18 +188,14 @@ const (
 // computeIntQuadDist estimates, in whole pixels, how far the quad's control point is from the line connecting its
 // endpoints.
 func computeIntQuadDist(pts []geom.Point) uint32 {
-	// compute the vector between the control point ([1]) and the middle of the line connecting the start and end ([0]
-	// and [2])
 	dx := (pts[0].X+pts[2].X)/2 - pts[1].X
 	dy := (pts[0].Y+pts[2].Y)/2 - pts[1].Y
-	// we want everyone to be positive
 	dx = geom.ScalarAbs(dx)
 	dy = geom.ScalarAbs(dy)
-	// convert to whole pixel values (use ceiling to be conservative). assign to unsigned so we can safely add 1/2 of
-	// the smaller and still fit in uint32, since CeilToInt returns 31 bits at most.
+	// Ceiling to be conservative. Unsigned so adding half the smaller still fits: CeilToInt returns 31 bits at most.
 	idx := uint32(geom.CeilToInt(dx))
 	idy := uint32(geom.CeilToInt(dy))
-	// use the cheap approx for distance
+	// cheap distance approximation
 	if idx > idy {
 		return idx + (idy >> 1)
 	}
@@ -218,7 +208,7 @@ func computeIntQuadDist(pts []geom.Point) uint32 {
 func computeQuadLevel(pts []geom.Point) int {
 	d := computeIntQuadDist(pts)
 	level := (33 - bits.LeadingZeros32(d)) >> 1
-	// safety check on level (from the previous version)
+	// safety clamp
 	if level > maxQuadSubdivideLevel {
 		level = maxQuadSubdivideLevel
 	}
@@ -409,8 +399,7 @@ func hairCubic(pts []geom.Point, clip *Region, insetClip, outsetClip *geom.Rect,
 ///////////////////////////////////////////////////////////////////////////////
 // hair path walking
 
-// capOutsets holds the per-cap extension amounts used by extendPts: the area of a circle is PI*R*R; for a unit circle R
-// = 1/2, and the cap covers half of that.
+// Per-cap extension amounts for extendPts. A round cap covers half of a circle of radius 1/2, whose area is PI*R*R.
 const (
 	squareCapOutset = float32(0.5)
 	roundCapOutset  = float32(math.Pi / 8)
@@ -524,25 +513,15 @@ func hairPath(p *path.Path, rclip *Clip, blitter Blitter, capStyle HairCap, line
 			clip = wrap.Rgn()
 		}
 
-		// We now cache two scalar rects, to use for culling per-segment (e.g. cubic). Since we're hairlining, the
-		// "bounds" of the control points isn't necessarily the limit of where a segment can draw (it might draw up to 1
-		// pixel beyond in aa-hairs).
-		//
-		// Compute the pt-bounds per segment is easy, so we do that, and then inversely adjust the culling bounds so we
-		// can just do a straight compare per segment.
-		//
-		// insetClip is use for quick-accept (i.e. the segment is not clipped), so we inset it from the clip-bounds
-		// (since segment bounds can be off by 1).
-		//
-		// outsetClip is used for quick-reject (i.e. the segment is entirely outside), so we outset it from the
-		// clip-bounds.
+		// Cache two scalar rects for per-segment culling. A hairline segment can draw up to 1 pixel beyond its
+		// control-point bounds (AA hairs), so instead of adjusting each segment's bounds, the culling rects are
+		// adjusted: insetClip (clip bounds inset by 1) is for quick-accept, outsetClip (outset by 1) for quick-reject.
 		insetStorage = clip.Bounds().ToRect()
 		outsetStorage = insetStorage.Outset(1, 1)
 		insetStorage = insetStorage.Outset(-1, -1)
 		if isInverted(insetStorage) {
-			// our bounds checks assume the rects are never inverted. If insetting has created that, we assume that the
-			// area is too small to safely perform a quick-accept, so we just mark the rect as empty (so the
-			// quick-accept check will always fail).
+			// The bounds checks assume non-inverted rects. An inverted inset means the area is too small to
+			// quick-accept safely, so empty it to make quick-accept always fail.
 			insetStorage = geom.Rect{}
 		}
 		if rclip.IsRect() {

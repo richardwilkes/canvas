@@ -11,9 +11,9 @@
 // axis-aligned box with non-empty degenerate-line bounds), the opVerbToPoints helper, and the verb-indexed curve
 // evaluation dispatch. These back the op data model (opContour/opSegment/opSpan) behind the Op/Simplify engine.
 //
-// There is no arena allocator here (Go's GC manages the span/segment/contour graph) and no debug-only ID counters.
-// Pathops computes in double precision throughout; float32 is used only where a value is stored/compared in the host
-// geometry's native float precision.
+// Unlike Skia there is no arena allocator (the GC manages the span/segment/contour graph) and no debug-only ID
+// counters. Pathops computes in double precision; float32 is used only where a value is stored or compared in the host
+// geometry's precision.
 
 package pathops
 
@@ -32,7 +32,7 @@ const (
 	opPhaseFixWinding
 )
 
-const maxWindingTries = 10 // cap on retries when fixing up inconsistent winding sums
+const maxWindingTries = 10 // cap on findSortableTop's ray-cast retries when seeding winding sums
 
 // opGlobalState is the state shared by every contour/segment/span in one pathops run.
 type opGlobalState struct {
@@ -56,7 +56,6 @@ func (g *opGlobalState) clearNested() { g.nested = 0 }
 
 func (g *opGlobalState) setContourHead(head *opContourHead) { g.contourHead = head }
 
-// setCoincidence records the coincidence tracker used by this run.
 func (g *opGlobalState) setCoincidence(coincidence *opCoincidence) { g.coincidence = coincidence }
 
 // setPhase updates the walker's phase; opPhaseNoChange leaves the phase untouched.
@@ -87,13 +86,11 @@ type pathOpsBounds struct {
 	left, top, right, bottom float32
 }
 
-// setLTRB sets the four edges directly.
 func (b *pathOpsBounds) setLTRB(l, t, r, bottom float32) {
 	b.left, b.top, b.right, b.bottom = l, t, r, bottom
 }
 
-// setBoundsPoints computes the min/max box of the points. Used for the line segment, whose two points are finite and
-// distinct.
+// setBoundsPoints computes the min/max box of the points. Only line segments use it.
 func (b *pathOpsBounds) setBoundsPoints(pts []geom.Point) {
 	if len(pts) == 0 {
 		*b = pathOpsBounds{}

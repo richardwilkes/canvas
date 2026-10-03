@@ -42,7 +42,6 @@ type gradientKey struct {
 // rather than the default unpremultiplied sRGB.
 const gradientInterpolateInPremulFlag = 1
 
-// isPremul reports whether info's gradient interpolates stop colors in premultiplied space.
 func isPremul(info *shaders.GradientInfo) bool {
 	return info.GradientFlags&gradientInterpolateInPremulFlag != 0
 }
@@ -76,8 +75,7 @@ func absf(x float32) float32 {
 	return x
 }
 
-// gradientKeyString serializes a key into a collision-free byte string suitable for use as a map key in
-// Document.gradientPatternMap.
+// gradientKeyString serializes k into a collision-free string for use as a Document.gradientPatternMap key.
 func gradientKeyString(k *gradientKey) string {
 	var b []byte
 	putU32 := func(v uint32) { b = append(b, byte(v), byte(v>>8), byte(v>>16), byte(v>>24)) }
@@ -349,7 +347,6 @@ func gradientStitchCode(info *shaders.GradientInfo) *Dict {
 		colorOffsets[i-1] -= 0.00001
 	}
 
-	// No need for a stitch function if there are only two stops.
 	if colorCount == 2 {
 		return createInterpolationFunction(colors[0], colors[1])
 	}
@@ -413,9 +410,9 @@ func applyPerspectiveToCoordinates(inversePerspectiveMatrix geom.Matrix, code st
 	writeScalar(code, p1)       // x y y p1
 	code.Write([]byte(" mul " + // x y y*p1
 		" 2 index ")) // x y y*p1 x
-	writeScalar(code, p0)       // x y y p1 x p0
+	writeScalar(code, p0)       // x y y*p1 x p0
 	code.Write([]byte(" mul ")) // x y y*p1 x*p0
-	writeScalar(code, p2)       // x y y p1 x*p0 p2
+	writeScalar(code, p2)       // x y y*p1 x*p0 p2
 	code.Write([]byte(" add " + // x y y*p1 x*p0+p2
 		"add " + // x y y*p1+x*p0+p2
 		"3 1 roll " + // y*p1+x*p0+p2 x y
@@ -523,8 +520,8 @@ func twoPointConicalCode(info *shaders.GradientInfo, perspectiveRemover geom.Mat
 	function.Write([]byte("} {0 0 0} ifelse }"))
 }
 
-// sweepCode emits the Type 4 PostScript function body for a sweep (angular) gradient. perspectiveRemover is unused:
-// sweep gradients have no perspective-dependent coordinate mapping.
+// sweepCode emits the Type 4 PostScript function body for a sweep (angular) gradient. As in Skia, it applies no
+// perspective removal.
 func sweepCode(info *shaders.GradientInfo, function stream.WStream) {
 	function.Write([]byte("{exch atan 360 div\n"))
 	bias := info.Point[1].Y
@@ -542,8 +539,8 @@ func sweepCode(info *shaders.GradientInfo, function stream.WStream) {
 	function.Write([]byte("}"))
 }
 
-// fixUpRadius nudges just-touching circles apart slightly so the PDF rendering matches the raster rendering at the
-// boundary.
+// fixUpRadius grows the outer of two (nearly) internally tangent circles slightly so the inner one lies just inside it,
+// matching the raster rendering.
 func fixUpRadius(p1 geom.Point, r1 float32, p2 geom.Point, r2 float32) (newR1, newR2 float32) {
 	distance := p1.Sub(p2).Length()
 	subtractRadii := absf(r1 - r2)
@@ -586,16 +583,15 @@ func makePSFunction(doc *Document, psCode []byte, domain, rangeObj *Array) Indir
 	return doc.StreamOut(dict, psCode, true)
 }
 
-// pdfShadingType enumerates the PDF shading dictionary types this package can emit.
+// The PDF ShadingType values this package emits.
 const (
 	shadingFunction = 1
 	shadingAxial    = 2
 	shadingRadial   = 3
 )
 
-// makeFunctionShader emits the PDF pattern object for a gradient, choosing between a native axial/radial shading (with
-// a stitched color function) and a Function-based shading whose PostScript function computes t and maps it to a color,
-// depending on the gradient's tile mode, perspective, and interpolation space.
+// makeFunctionShader emits the PDF pattern object for a gradient as either a native axial/radial shading or a
+// Function-based shading; the file comment says which gradients take which form.
 func makeFunctionShader(doc *Document, state *gradientKey) IndirectReference {
 	info := &state.info
 	finalMatrix := state.canvasTransform
@@ -745,7 +741,6 @@ func createPatternFillContent(gsIndex, patternIndex int, bounds geom.Rect) []byt
 	return content.Bytes()
 }
 
-// gradientHasAlpha reports whether any stop color in the gradient key has alpha less than 1.
 func gradientHasAlpha(key *gradientKey) bool {
 	for _, c := range key.info.Colors {
 		if c.A != 1 {
@@ -795,7 +790,6 @@ func makeAlphaFunctionShader(doc *Document, state *gradientKey) IndirectReferenc
 	if !colorShader.IsValid() {
 		return IndirectReference{}
 	}
-	// Resource dict: alpha graphic state as the graphic state, color shading as the pattern.
 	alphaGsRef := createSMaskGraphicState(doc, state)
 	resourceDict := getGradientResourceDict(colorShader, alphaGsRef)
 	colorStream := createPatternFillContent(int(alphaGsRef.value), int(colorShader.value), bbox)

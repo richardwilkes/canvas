@@ -52,7 +52,7 @@ func squarePath(l, t, r, b float32) *path.Path {
 //////////////////////////////////////////////////////////////////////////////
 // Path utility helpers
 
-// QuadUVMatrix must map the quad's control points to the canonical (0,0), (1/2,0), (1,1).
+// quadUVMatrix must map the quad's control points to the canonical (0,0), (1/2,0), (1,1).
 func TestQuadUVMatrixCanonical(t *testing.T) {
 	qpts := [3]geom.Point{{X: 10, Y: 20}, {X: 30, Y: 5}, {X: 50, Y: 40}}
 	var m quadUVMatrix
@@ -221,7 +221,7 @@ func TestAAConvexGetSegmentsDegenerate(t *testing.T) {
 	}
 }
 
-// Direction detection: a CCW path flips the normal side; a negative-determinant matrix flips the direction.
+// Direction detection: a negative-determinant matrix flips the direction.
 func TestAAConvexGetDirection(t *testing.T) {
 	cw := squarePath(0, 0, 10, 10)
 	identity := geom.IdentityMatrix()
@@ -253,7 +253,7 @@ func TestAAConvexAddQuadSegment(t *testing.T) {
 	}
 }
 
-// create_vertices fills exactly the predicted vertex/index counts with draw-relative indices in range.
+// aaConvexCreateVertices fills exactly the predicted vertex/index counts with draw-relative indices in range.
 func TestAAConvexCreateVertices(t *testing.T) {
 	p := convexPentagonPath()
 	identity := geom.IdentityMatrix()
@@ -876,8 +876,7 @@ func TestPathRendererChainOrderWithAARenderers(t *testing.T) {
 		t.Fatalf("convex coverage fill without AAConvex selects %q want AALinear", got)
 	}
 	// With both AA renderers disabled nothing in the chain takes a convex coverage-AA fill: Triangulating leaves convex
-	// paths "to simpler algorithms" and Tessellation/Default reject coverage AA, so it falls to the SW mask fallback —
-	// exactly the pre-part-5 behavior.
+	// paths "to simpler algorithms" and Tessellation/Default reject coverage AA, so it falls to the SW mask fallback.
 	neither := noConvex &^ gpu.PathRenderersAALinearizing
 	fill3 := MakeStyledShapePath(convexPentagonPath(), SimpleFillStyle(), DoSimplifyYes)
 	if got := sel(neither, &fill3); got != "<none>" {

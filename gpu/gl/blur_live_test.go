@@ -38,7 +38,7 @@ func blurSquareSource(t *testing.T, canvas, sqLeft, sqTop, sqSize int32) (img *i
 	for y := int32(0); y < canvas; y++ {
 		for x := int32(0); x < canvas; x++ {
 			if x >= sqLeft && x < sqLeft+sqSize && y >= sqTop && y < sqTop+sqSize {
-				pm.Pix[y*canvas+x] = 0xFFFFFFFF // opaque white (R=G=B=A=255)
+				pm.Pix[y*canvas+x] = 0xFFFFFFFF
 				field[y*canvas+x] = 1
 			}
 		}
@@ -186,7 +186,6 @@ func TestLiveGaussianBlurTwoPass(t *testing.T) {
 func TestLiveGaussianBlurAlpha8(t *testing.T) {
 	_, dc := newLiveDirectContext(t)
 	const canvas = 40
-	// A8 source: opaque square [12,28) x [12,28), transparent elsewhere.
 	info, _ := imagecore.MakeInfo(canvas, canvas, imagecore.ColorTypeAlpha8, imagecore.AlphaTypePremul)
 	data := make([]byte, canvas*canvas)
 	field := make([]float64, canvas*canvas)

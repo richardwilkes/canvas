@@ -113,8 +113,7 @@ func TestBlessWritesSchema2(t *testing.T) {
 }
 
 // TestBlessRefusesNondeterminism injects a session factory whose second session renders differently from the first and
-// verifies bless refuses and writes nothing — the permanent capture-time determinism guard over fresh-session corpus
-// passes.
+// verifies bless refuses and writes nothing.
 func TestBlessRefusesNondeterminism(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "goldens", "raster", "test_platform")
 	sessions := 0
@@ -395,9 +394,8 @@ func TestBlessCapturePassFailureStaysASkip(t *testing.T) {
 	}
 }
 
-// TestBlessCapturesOverDamagedPriorGolden checks that a damaged prior golden cannot abort a capture. The change summary
-// is purely informational and runs after both render passes have verified the new set, and a damaged golden set is the
-// one situation where re-blessing is most needed — refusing there would also delete the staged capture on the way out.
+// TestBlessCapturesOverDamagedPriorGolden checks that a damaged prior golden cannot abort a capture: the change summary
+// is informational, and a damaged golden set is where re-blessing is most needed.
 func TestBlessCapturesOverDamagedPriorGolden(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "goldens", "raster", "test_platform")
 	cfg := blessOverPrior(t, dir)
@@ -680,9 +678,8 @@ func assertPriorSetIntact(t *testing.T, dir string) {
 }
 
 // TestBlessRestoresPriorSetWhenSwapFails drives the commit swap's failure path: the staged set cannot be renamed into
-// place after the prior set has been moved aside. The prior set must come back in full — the documented "on any error
-// the target directory is untouched" guarantee — rather than being left destroyed alongside a deleted staging
-// directory.
+// place after the prior set has been moved aside. The prior set must come back in full, per bless's documented "on any
+// error the target directory keeps the prior set" guarantee.
 func TestBlessRestoresPriorSetWhenSwapFails(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "goldens", "raster", "test_platform")
 	cfg := blessOverPrior(t, dir)

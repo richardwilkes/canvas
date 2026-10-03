@@ -336,9 +336,9 @@ func TestBlurEngineSIMDMatchesScalar(t *testing.T) {
 		blurSIMDRunGaussian(t, "gaussianOversized", rng, build(), build(), 32, blurSIMDBandFor(rng))
 	})
 
-	// The three-box pass over its whole reachable window range: 2 (the smallest evalBlurPasses will run) through 254
-	// (the largest makeThreeBoxPassMaker accepts), odd and even alike, since the parity picks a different third-buffer
-	// size, border and divisor.
+	// The three-box pass over its whole window range: 2 (the smallest evalBlurPasses will run) through 254 (the largest
+	// makeThreeBoxPassMaker accepts), odd and even alike, since the parity picks a different third-buffer size, border
+	// and divisor.
 	t.Run("threeBox", func(t *testing.T) {
 		for _, window := range []int32{2, 3, 4, 5, 8, 9, 16, 17, 63, 64, 127, 128, 253, 254} {
 			sigma := float32(window) * 4 / (3 * sqrtf32(2*math.Pi))

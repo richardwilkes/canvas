@@ -125,10 +125,8 @@ func (cv *colrV1Canvas) layerBytes() int64 { return int64(cv.w) * int64(cv.h) * 
 // device is the pixmap draws currently target (the top of the device stack).
 func (cv *colrV1Canvas) device() *raster.Pixmap { return cv.devs[len(cv.devs)-1] }
 
-// saveCount returns the current save depth (relative form; only used with restoreToCount).
 func (cv *colrV1Canvas) saveCount() int { return len(cv.saves) }
 
-// save pushes the current CTM and clip state onto the save stack.
 func (cv *colrV1Canvas) save() {
 	cv.saves = append(cv.saves, colrV1SaveRec{ctm: cv.ctm})
 	cv.clips.Save()
@@ -173,14 +171,12 @@ func (cv *colrV1Canvas) restore() {
 	cv.ctm = rec.ctm
 }
 
-// restoreToCount pops saves until the save stack depth reaches count.
 func (cv *colrV1Canvas) restoreToCount(count int) {
 	for len(cv.saves) > count {
 		cv.restore()
 	}
 }
 
-// concat pre-concatenates m onto the current CTM.
 func (cv *colrV1Canvas) concat(m *geom.Matrix) { cv.ctm.PreConcat(m) }
 
 // clipPath intersects the current clip with an anti-aliased fill of a layer-space path.
@@ -245,12 +241,11 @@ type colrV1Walker struct {
 // translation including the sub-pixel phase (translate(-left, -top) then translate(subX, subY)); startGlyph then
 // applies the root transform and the optional ClipList clip.
 //
-// A refused traversal blanks the mask. Refusal is all-or-nothing by contract — a guard fired, or a node named artwork
-// the tables cannot produce — and the walk refuses partway through, after the layers before the refusal have already
-// painted. Keeping those would cache a fragment of the glyph under a strike that measures it at full size: the bounds
-// pass applies the same guards to the same graph and refuses with it (colrV1Bounds then zaps the glyph), but only when
-// it walks the graph at all — a ClipList box answers the metrics lane without a traversal, which is exactly the case
-// that reaches here with a non-empty mask.
+// A refused traversal (a guard fired, or a node named artwork the tables cannot produce) blanks the mask: the layers
+// before the refusal have already painted, and keeping them would cache a fragment of the glyph under a strike that
+// measures it at full size. The bounds pass applies the same guards to the same graph and refuses with it (colrV1Bounds
+// then zaps the glyph), but a ClipList box answers the metrics lane without a traversal, which is the case that reaches
+// here with a non-empty mask.
 func (c *ScalerContext) renderCOLRv1(g *Glyph) {
 	colr := c.typeface.colrTable()
 	if colr == nil {
@@ -391,7 +386,6 @@ func (w *colrV1Walker) traverse(paint tables.PaintTable) bool {
 	return w.traverseBounds(paint)
 }
 
-// traverseDraw dispatches paint to its draw-mode handler.
 func (w *colrV1Walker) traverseDraw(paint tables.PaintTable) bool {
 	switch p := paint.(type) {
 	case tables.PaintColrLayers:
@@ -450,9 +444,8 @@ func (w *colrV1Walker) traverseDraw(paint tables.PaintTable) bool {
 		// The fill lane: fill the current clip. configurePaint refuses only for a fill the tables cannot produce — an
 		// out-of-range CPAL index, an empty color line — and that skips this layer, exactly as renderCOLRv0 continues
 		// past a layer with a bad palette index and as drawPath/drawPaint already no-op on a shader that will not
-		// compile. Failing instead would unwind through every enclosing PaintColrLayers loop, abandoning the layers
-		// after the bad one and caching the partial mask: a 20-layer glyph with one bad stop in layer 5 would lose
-		// layers 5 through 20 rather than the one layer that is actually unpaintable.
+		// compile. Failing instead would refuse the whole traversal and blank the mask (see renderCOLRv1): a 20-layer
+		// glyph with one bad stop in layer 5 would lose every layer rather than the one that is actually unpaintable.
 		if fill, ok := w.configurePaint(paint); ok {
 			w.canvas.drawPaint(&fill)
 		}
@@ -565,8 +558,7 @@ func colrIsFillPaint(p tables.PaintTable) bool {
 
 // colrTransform converts a transform-format paint into its layer-space matrix and child paint. Every conversion applies
 // the same y-down conjugation: negated off-diagonal terms and y translations, negated rotation angles, negated y-skew,
-// negated center y. Each table format (including the AroundCenter/Uniform variants) maps directly to the same matrix
-// construction.
+// negated center y.
 func colrTransform(paint tables.PaintTable) (m geom.Matrix, child tables.PaintTable, ok bool) {
 	switch p := paint.(type) {
 	case tables.PaintTransform:
@@ -648,8 +640,8 @@ func colrAffine(a tables.Affine2x3) geom.Matrix {
 	return m
 }
 
-// colrSkewTan converts a skew angle in F2Dot14 half-turns to a tangent, snapping near-zero results to zero to match the
-// matrix builder's own rotation-snapping behavior.
+// colrSkewTan converts a skew angle in half-turns to a tangent, snapping near-zero results to zero to match the matrix
+// builder's own rotation-snapping behavior.
 func colrSkewTan(halfTurns float32) float32 {
 	t := float32(math.Tan(float64(geom.DegreesToRadians(halfTurns * 180))))
 	if geom.ScalarNearlyZero(t) {
@@ -723,7 +715,6 @@ func colrBlendMode(mode tables.CompositeMode) raster.BlendMode {
 	}
 }
 
-// colrTileMode maps a color-line extend mode to the shader tile mode.
 func colrTileMode(extend tables.Extend) shaders.TileMode {
 	switch extend {
 	case tables.ExtendRepeat:
@@ -974,11 +965,10 @@ type colrRadialGradient struct {
 
 // resolveNegativeRadius rewrites a gradient whose start or end radius is negative into an equivalent one the two-point
 // conical shader accepts, reporting false when the resolution is "draw nothing". Negative radii are not a
-// variations-only case as the COLR radii being UFWORD suggests: radialPaint's stop rescale computes
-// startRadius + (endRadius-startRadius)*stops[0], so a stop offset outside [0, 1] — ordinary F2Dot14, e.g. offsets
-// [-1, 0] over radii 0 and 100 — drives an unsigned pair negative. The shader rejects a negative radius by returning
-// nil, which would fail the paint node and drop the rest of the glyph's paint graph mid-draw, so the radius is resolved
-// here instead, following the resolution upstream Skia adopted for
+// variations-only case as the COLR radii being UFWORD suggests: radialPaint's stop rescale computes startRadius +
+// (endRadius-startRadius)*stops[0], so a stop offset outside [0, 1] — ordinary F2Dot14, e.g. offsets [-1, 0] over radii
+// 0 and 100 — drives an unsigned pair negative. The shader rejects a negative radius by returning nil, which would skip
+// the layer, so the radius is resolved here instead, following the resolution upstream Skia adopted for
 // https://github.com/googlefonts/colr-gradients-spec/issues/367: clamp truncates the color line at the stop where the
 // radius reaches zero, while repeat/reflect project the circle pair forward by whole gradient periods (which the tile
 // mode makes equivalent) until both radii are non-negative.

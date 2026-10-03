@@ -15,8 +15,8 @@
 //	blitMask:  the same per pixel with the A8 coverage (scale_u8 / lerp_u8)
 //
 // The prescale split follows blendShouldPreScaleCoverage exactly as blitAntiH assembles it. Unlike the solid blitters,
-// a ShaderBlitter carries mutable per-span state, so it must not be shared across goroutines (FillPathParallel requires
-// per-worker blitters).
+// a ShaderBlitter carries mutable per-span state, so it must not be shared across goroutines (it cannot be passed to
+// FillPathParallel; banded fills build one per worker).
 
 package raster
 
@@ -206,8 +206,7 @@ func (sb *ShaderBlitter) BlitMask(mask *Mask, clip geom.IRect) {
 				d := loadPM4f(span[i])
 				s := pmColor4f{r: buf[i].R, g: buf[i].G, b: buf[i].B, a: buf[i].A}
 				if prescale {
-					// Somewhat unusually, scale_565 needs dst loaded first (its ca term compares the source alpha
-					// against the dst alpha).
+					// scale_565 needs dst loaded first: its ca term compares the source alpha against the dst alpha.
 					ca := alphaCoverageFromRGBCoverage(s.a, d.a, cr, cg, cb)
 					s = pmColor4f{r: s.r * cr, g: s.g * cg, b: s.b * cb, a: s.a * ca}
 					span[i] = storeWord(blendHighpAll(sb.mode, s, d))
@@ -275,7 +274,7 @@ func NewBlendBlitterPM4f(dev *Pixmap, c colorcore.PMColor4f, mode BlendMode) *Bl
 		0 <= cf.r && cf.r <= cf.a &&
 		0 <= cf.g && cf.g <= cf.a &&
 		0 <= cf.b && cf.b <= cf.a
-	// To make loads more direct, we store 8-bit values in 16-bit slots.
+	// The lowp lanes: (uint16)(v*255 + 0.5)
 	sc := pm8{
 		r: uint32(cf.r*255 + 0.5),
 		g: uint32(cf.g*255 + 0.5),

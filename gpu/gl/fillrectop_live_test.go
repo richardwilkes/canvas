@@ -118,8 +118,7 @@ func TestLiveFillRectRotatedAA(t *testing.T) {
 	rb := 64 * 4
 	greenAt := func(x, y int32) int { return int(data[int(y)*rb+int(x)*4+1]) }
 
-	// Interior points (well inside the rotated square) are fully green; far exterior points stay black; every pixel is
-	// within [0, 255] green with red/blue untouched.
+	// Interior points (well inside the rotated square) are fully green; far exterior points stay black.
 	for _, p := range [][2]int32{{32, 32}, {32, 26}, {26, 32}, {32, 38}, {38, 32}} {
 		if got := greenAt(p[0], p[1]); got != 255 {
 			t.Fatalf("interior (%d,%d) green = %d, want 255", p[0], p[1], got)
@@ -130,8 +129,8 @@ func TestLiveFillRectRotatedAA(t *testing.T) {
 			t.Fatalf("exterior (%d,%d) green = %d, want 0", p[0], p[1], got)
 		}
 	}
-	// The diagonal edge midpoint lands half-covered (the rotated edge passes through pixel centers along x+y =
-	// 32+14.14...): sample the edge band and require partial coverage somewhere within it.
+	// The diagonal edge midpoint lands half-covered (the rotated top-right edge runs along x-y = 14.14...): sample the
+	// edge band and require partial coverage somewhere within it.
 	partial := false
 	for d := int32(-2); d <= 2; d++ {
 		g := greenAt(32+7+d, 32-7-d)

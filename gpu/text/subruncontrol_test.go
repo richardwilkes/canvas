@@ -7,8 +7,8 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// Unit tests pinning the SubRunControl decision functions: the isSDFT/isDirect size gates (incl. the
-// useSDFTForSmallText MinSDFTRange rule), the paint-style and mask-filter gates, the perspective rules, the getSDFFont
+// Unit tests pinning the SubRunControl decision functions: the IsSDFT/IsDirect size gates (incl. the
+// useSDFTForSmallText minSDFTRange rule), the paint-style and mask-filter gates, the perspective rules, the GetSDFFont
 // bucket sizes/matrix ranges (with the extra-large bucket on darwin), and SDFTMatrixRange reuse.
 
 package text
@@ -27,7 +27,7 @@ func TestSubRunControlIsSDFTBoundaries(t *testing.T) {
 	identity := geom.IdentityMatrix()
 	p := canvas.NewPaint()
 
-	// useSDFTForSmallText=false raises the min to kLargeDFFontLimit (162).
+	// useSDFTForSmallText=false raises the min to largeDFFontLimit (162).
 	cases := []struct {
 		size float32
 		want bool
@@ -36,9 +36,9 @@ func TestSubRunControlIsSDFTBoundaries(t *testing.T) {
 		{size: 17, want: false},
 		{size: 18, want: false}, // below the raised min
 		{size: 161.9, want: false},
-		{size: 162, want: true}, // fMinDistanceFieldFontSize <= size
+		{size: 162, want: true}, // minDistanceFieldFontSize <= size
 		{size: 200, want: true},
-		{size: 324, want: true}, // size <= fMaxDistanceFieldFontSize
+		{size: 324, want: true}, // size <= maxDistanceFieldFontSize
 		{size: 324.1, want: false},
 	}
 	for _, tc := range cases {
@@ -61,7 +61,7 @@ func TestSubRunControlIsSDFTBoundaries(t *testing.T) {
 }
 
 func TestSubRunControlPerOSMaxSizeBoundary(t *testing.T) {
-	// The per-OS fGlyphsAsPathsFontSize defaults (mac 256, linux/windows 324) pinned explicitly so every GOOS checks
+	// The per-OS GlyphsAsPathsFontSize defaults (mac 256, linux/windows 324) pinned explicitly so every GOOS checks
 	// every variant: 300px device text is path-lane (neither SDFT nor direct) under the mac threshold and SDFT under
 	// the others.
 	identity := geom.IdentityMatrix()
@@ -87,14 +87,12 @@ func TestSubRunControlIsSDFTPaintGates(t *testing.T) {
 	c := NewSubRunControl(true, false, true, 18, 324, false)
 	identity := geom.IdentityMatrix()
 
-	// A mask filter rejects.
 	p := canvas.NewPaint()
 	p.MaskFilter = maskfilter.NewBlur(maskfilter.BlurNormal, 2, true)
 	if c.IsSDFT(200, p, &identity) {
 		t.Error("mask filter must reject SDFT")
 	}
 
-	// Hairline stroke rejects; a wide stroke is allowed; stroke-and-fill rejects.
 	p = canvas.NewPaint()
 	p.Style = canvas.StyleStroke
 	p.StrokeWidth = 0
@@ -121,12 +119,10 @@ func TestSubRunControlIsSDFTPerspective(t *testing.T) {
 	if !c.IsSDFT(30, p, &persp) {
 		t.Error("perspective must bypass the min-size gate")
 	}
-	// The disable-perspective workaround rejects.
 	noPersp := NewSubRunControl(true, false, false, 18, 324, false)
 	if noPersp.IsSDFT(200, p, &persp) {
 		t.Error("perspective SDFT must be rejected when disabled by the caps")
 	}
-	// isDirect never accepts perspective.
 	if c.IsDirect(30, p, &persp) {
 		t.Error("isDirect must reject perspective")
 	}
@@ -146,7 +142,7 @@ func TestSubRunControlIsDirect(t *testing.T) {
 		{size: 161.9, want: true},  // below the SDFT min: direct
 		{size: 162, want: false},   // SDFT window starts
 		{size: 255.9, want: false}, // still SDFT
-		{size: 256, want: false},   // kSkSideTooBigForAtlas
+		{size: 256, want: false},   // font.SideTooBigForAtlas
 		{size: 400, want: false},
 	}
 	for _, tc := range cases {
@@ -190,7 +186,7 @@ func TestGetSDFFontBucketsAndMatrixRange(t *testing.T) {
 	}
 
 	// scaledTextSize = 20*scale. Buckets: <=32 small, <=72 medium, then per-OS.
-	check(1, 32, 162, 32) // 20px: small bucket; floor = fMinDistanceFieldFontSize (162 here)
+	check(1, 32, 162, 32) // 20px: small bucket; floor = minDistanceFieldFontSize (162 here)
 	check(3, 72, 32, 72)  // 60px: medium bucket
 	if runtime.GOOS == "darwin" {
 		check(6, 162, 72, 162)   // 120px: mac large bucket

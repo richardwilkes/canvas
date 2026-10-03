@@ -8,9 +8,9 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // Builds the /ToUnicode CMap that maps a font's glyph IDs back to Unicode so PDF text can be copied/searched. The map
-// is built from the typeface's reverse cmap (font.Typeface.GlyphToUnicodeMap); the extended (cluster-text) map a full
-// clusterator would populate is always empty here because glyph runs carry no source text (unison does its own line
-// layout, so no cluster text reaches the public surface), so the bfchar-ex section is dropped.
+// is built from the typeface's reverse cmap (font.Typeface.GlyphToUnicodeMap). Skia's extended (cluster-text) map would
+// always be empty here, since glyph runs carry no source text (unison does its own line layout), so the bfchar-ex
+// section is dropped.
 
 package pdf
 
@@ -34,7 +34,6 @@ func appendToUnicodeHeader(cmap stream.WStream, multibyte bool) {
 	writeText(cmap, "endcodespacerange\n")
 }
 
-// appendCmapFooter writes the CMap's standard closing boilerplate.
 func appendCmapFooter(cmap stream.WStream) {
 	writeText(cmap, "endcmap\nCMapName currentdict /CMap defineresource pop\nend\nend")
 }
@@ -97,7 +96,7 @@ func appendBFRangeSection(bfrange []bfRange, multiByte bool, cmap stream.WStream
 }
 
 // appendCmapSections generates the <bfchar> and <bfrange> tables from the reverse cmap, guaranteeing the two do not
-// overlap and that all bfchar entries precede bfrange entries.
+// overlap.
 func appendCmapSections(glyphToUnicode []int32, subset *glyphUse, cmap stream.WStream, multiByteGlyphs bool, firstGlyphID, lastGlyphID uint16) {
 	glyphOffset := 0
 	if !multiByteGlyphs {

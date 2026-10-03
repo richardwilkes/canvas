@@ -39,9 +39,8 @@ func findFirstInterval(intervals []float32, phase float32) (dashLength float32, 
 			return gap - phase, i
 		}
 	}
-	// If we get here, phase "appears" to be larger than our length. This shouldn't happen with perfect precision, but
-	// we can accumulate errors during the initial length computation (rounding can make the sum too big or too
-	// small). In that event, the error just has to be absorbed here.
+	// Getting here means phase appears larger than the total length. That cannot happen with perfect precision, but
+	// rounding in the length sum can make it too big or too small, and the error has to be absorbed here.
 	return intervals[0], 0
 }
 
@@ -53,8 +52,8 @@ func calcDashParameters(phase float32, intervals []float32) (initialDashLength f
 		length += interval
 	}
 	intervalLength = length
-	// Adjust phase to be between 0 and len, "flipping" phase if negative. e.g., if len is 100, then phase of -20 (or
-	// -120) is equivalent to 80
+	// Adjust phase to be between 0 and length, "flipping" it if negative: with a length of 100, a phase of -20 (or
+	// -120) is equivalent to 80.
 	if phase < 0 {
 		phase = -phase
 		if phase > length {
@@ -62,8 +61,8 @@ func calcDashParameters(phase float32, intervals []float32) (initialDashLength f
 		}
 		phase = length - phase
 
-		// Due to finite precision, it's possible that phase == len, even after the subtract (if len >>> phase), so fix
-		// that here. This fixes http://crbug.com/124652 .
+		// With finite precision, phase can equal length even after the subtract (if length >>> phase). See
+		// http://crbug.com/124652.
 		if phase == length {
 			phase = 0
 		}
@@ -154,8 +153,8 @@ func clipLine(pts *[2]geom.Point, bounds geom.Rect, intervalLength, priorPhase f
 		return false
 	}
 
-	// Now we actually perform the chop, removing the excess to the left/top and right/bottom of the bounds (keeping our
-	// new line "in phase" with the dash, hence the (mod intervalLength).
+	// Chop off the excess to the left/top and right/bottom of the bounds, keeping the new line in phase with the dash
+	// (hence the mod intervalLength).
 
 	if minXY < leftTop {
 		minXY = leftTop - geom.ScalarMod(leftTop-minXY, intervalLength)
@@ -219,7 +218,7 @@ func cullPath(srcPath *path.Path, rec *stroke.Rec, cullRect *geom.Rect, interval
 			if !ok || verb != path.VerbLine {
 				break
 			}
-			// Notice this vector v and accum work with the original unclipped length.
+			// v and accum work with the original unclipped length.
 			v := itPts[1].Sub(itPts[0])
 
 			pts := [2]geom.Point{itPts[0], itPts[1]}
@@ -232,7 +231,7 @@ func cullPath(srcPath *path.Path, rec *stroke.Rec, cullRect *geom.Rect, interval
 				builder.LineToPt(pts[1])
 			}
 
-			// We either just traveled v.fX horizontally or v.fY vertically.
+			// We either just traveled v.X horizontally or v.Y vertically.
 			accum += float64(geom.ScalarAbs(v.X + v.Y))
 		}
 		return !builder.IsEmpty()
@@ -280,9 +279,8 @@ func (r *specialLineRec) init(src *path.Path, rec *stroke.Rec, intervalCount int
 	r.normal = r.tangent.RotateCCW()
 	r.normal = r.normal.Scaled(0.5 * rec.Width())
 
-	// now estimate how many quads will be added to the path
-	//     resulting segments = pathLen * intervalCount / intervalLen
-	//     resulting points = 4 * segments
+	// Estimate how many dash segments will be added to the path. Upstream reserves four points per segment from this;
+	// here it only serves to reject a NaN.
 	ptCount := pathLength * float32(intervalCount) / intervalLength
 	ptCount = min(ptCount, maxDashCount)
 	if ptCount != ptCount { // NaN
@@ -295,7 +293,6 @@ func (r *specialLineRec) init(src *path.Path, rec *stroke.Rec, intervalCount int
 }
 
 func (r *specialLineRec) addSegment(d0, d1 float32, dst *path.Path) {
-	// clamp the segment to our length
 	if d1 > r.pathLength {
 		d1 = r.pathLength
 	}
@@ -326,14 +323,13 @@ func dashInternalFilter(dst, src *path.Path, rec *stroke.Rec, cullRect *geom.Rec
 
 	dashCount := float32(0)
 
-	// The maxDashCount bail-out below throws away everything this call produced, so when dst already holds output from
-	// an earlier effect (MakeSum hands the same dst to both of its children) the dashed segments have to accumulate in a
-	// scratch path that can be dropped on its own. Otherwise the bail-out would erase the caller's contribution too,
-	// violating the "appending the result to dst" contract in stroke.PathEffect. The scratch starts as a copy of what
-	// dst already holds and is copied back wholesale at the end, rather than starting empty and being appended:
-	// Path.AddPath replaces a destination holding a single verb instead of appending to it (a lone MoveTo counts as
-	// effectively empty), which would silently drop that contour. dst is empty in the common case, so the scratch path
-	// (and the two copies it costs) is only paid for when it is actually needed.
+	// The maxDashCount bail-out below discards everything this call produced. When dst already holds output from an
+	// earlier effect (MakeSum hands the same dst to both of its children), the dashes therefore accumulate in a scratch
+	// path that can be dropped on its own; otherwise the bail-out would erase the caller's contribution too, violating
+	// the "appending the result to dst" contract in stroke.PathEffect. The scratch starts as a copy of dst and is
+	// copied back wholesale at the end, rather than starting empty and being appended, because Path.AddPath replaces a
+	// destination holding a single verb (a lone MoveTo counts as effectively empty) and would silently drop that
+	// contour. dst is empty in the common case, so the scratch path and its two copies are only paid for when needed.
 	out := dst
 	if !dst.IsEmpty() {
 		out = path.Borrow()
@@ -344,8 +340,8 @@ func dashInternalFilter(dst, src *path.Path, rec *stroke.Rec, cullRect *geom.Rec
 	builder := &path.Path{}
 	srcPtr := src
 	if cullPath(src, rec, cullRect, intervalLength, builder) {
-		// if rect is closed, starts in a dash, and ends in a dash, add the initial join potentially a better fix is
-		// described here: skbug.com/40038693
+		// If the rect is closed, starts in a dash, and ends in a dash, add the initial join. A potentially better fix
+		// is described at skbug.com/40038693.
 		if _, isRect := src.IsRect(); isRect && src.IsLastContourClosed() && isEven(initialDashIndex) {
 			pathLength := contour.NewPathMeasure(src, false, rec.ResScale()).Length()
 			endPhase := geom.ScalarMod(pathLength+startPhase, intervalLength)
@@ -354,9 +350,9 @@ func dashInternalFilter(dst, src *path.Path, rec *stroke.Rec, cullRect *geom.Rec
 				endPhase -= intervals[index]
 				index++
 				if index == count {
-					// We have run out of intervals. endPhase "should" never get to this point, but it could if the
-					// subtracts underflowed. Hence we will pin it as if it perfectly ran through the intervals. See
-					// crbug.com/875494 (and skbug.com/40039544)
+					// We have run out of intervals. endPhase should never get here, but can if the subtracts
+					// underflowed, so pin it as if it ran through the intervals perfectly. See crbug.com/875494 (and
+					// skbug.com/40039544).
 					endPhase = 0
 					break
 				}
@@ -401,9 +397,7 @@ func dashInternalFilter(dst, src *path.Path, rec *stroke.Rec, cullRect *geom.Rec
 		length := meas.Length()
 		index := initialDashIndex
 
-		// Since the path length / dash length ratio may be arbitrarily large, we can exert significant memory pressure
-		// while attempting to build the filtered path. To avoid this, we simply give up dashing beyond a certain
-		// threshold (see maxDashCount).
+		// Give up dashing past the maxDashCount threshold.
 		dashCount += length * float32(count>>1) / intervalLength
 		if dashCount > maxDashCount {
 			out.Rewind()
@@ -431,13 +425,11 @@ func dashInternalFilter(dst, src *path.Path, rec *stroke.Rec, cullRect *geom.Rec
 			// clear this so we only respect it the first time around
 			skipFirstSegment = false
 
-			// wrap around our intervals array if necessary
 			index++
 			if index == count {
 				index = 0
 			}
 
-			// fetch our next dlen
 			dlen = float64(intervals[index])
 		}
 
@@ -456,10 +448,6 @@ func dashInternalFilter(dst, src *path.Path, rec *stroke.Rec, cullRect *geom.Rec
 	return true
 }
 
-///////////////////////////////////////////////////////////////////////////////
-// dash path effect
-
-// dashEffect is the dash path effect implementation.
 type dashEffect struct {
 	intervals         []float32
 	phase             float32
@@ -496,13 +484,12 @@ func (d *dashEffect) ComputeFastBounds(*geom.Rect) bool {
 	return true
 }
 
-// scalarIsInt reports whether x has no fractional part.
 func scalarIsInt(x float32) bool {
 	return x == geom.FloorToScalar(x)
 }
 
-// cullLine attempts to trim the line to minimally cover the cull rect (currently only works for horizontal and vertical
-// lines). Return true if processing should continue.
+// cullLine trims a horizontal or vertical line to minimally cover the cull rect, reporting whether processing should
+// continue.
 func cullLine(pts *[2]geom.Point, rec *stroke.Rec, ctm *geom.Matrix, cullRect *geom.Rect, intervalLength float32) bool {
 	if cullRect == nil {
 		return false
@@ -535,8 +522,7 @@ func cullLine(pts *[2]geom.Point, rec *stroke.Rec, ctm *geom.Matrix, cullRect *g
 			return false
 		}
 
-		// Now we actually perform the chop, removing the excess to the left and right of the bounds (keeping our new
-		// line "in phase" with the dash, hence the (mod intervalLength).
+		// Chop off the excess, keeping the line in phase with the dash (see clipLine).
 		if minX < bounds.Left {
 			minX = bounds.Left - geom.ScalarMod(bounds.Left-minX, intervalLength)
 		}
@@ -558,8 +544,6 @@ func cullLine(pts *[2]geom.Point, rec *stroke.Rec, ctm *geom.Matrix, cullRect *g
 			return false
 		}
 
-		// Now we actually perform the chop, removing the excess to the top and bottom of the bounds (keeping our new
-		// line "in phase" with the dash, hence the (mod intervalLength).
 		if minY < bounds.Top {
 			minY = bounds.Top - geom.ScalarMod(bounds.Top-minY, intervalLength)
 		}
@@ -576,10 +560,10 @@ func cullLine(pts *[2]geom.Point, rec *stroke.Rec, ctm *geom.Matrix, cullRect *g
 	return true
 }
 
-// AsPoints implements the point-representation acceleration for a dashed line. Currently more restrictive than it needs
-// to be: it requires a two-interval integer on==off pattern on an axis-aligned line with butt caps under a
-// rect-stays-rect matrix. Because round caps are rejected outright, the returned points are always the square form and
-// results.Flags is always 0 (see the TODOs below for the circle form upstream also leaves unimplemented).
+// AsPoints implements the point-representation acceleration for a dashed line. It is more restrictive than it needs to
+// be: it requires a two-interval integer on==off pattern on an axis-aligned line with butt caps under a rect-stays-rect
+// matrix. Because round caps are rejected outright, the returned points are always the square form and results.Flags is
+// always 0 (see the TODOs below for the circle form upstream also leaves unimplemented).
 func (d *dashEffect) AsPoints(results *stroke.PointData, src *path.Path, rec *stroke.Rec, ctm *geom.Matrix, cullRect *geom.Rect) bool {
 	// width < 0 -> fill && width == 0 -> hairline so requiring width > 0 rules both out
 	if rec.Width() <= 0 {

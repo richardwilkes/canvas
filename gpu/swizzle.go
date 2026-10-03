@@ -12,8 +12,8 @@
 
 package gpu
 
-// Swizzle is the 16-bit swizzle key. Note that the Go zero value is "rrrr", not "rgba"; code that stores swizzles must
-// initialize them explicitly (use SwizzleRGBA for the identity).
+// Swizzle is the 16-bit swizzle key. The Go zero value is "rrrr", not "rgba"; code that stores swizzles must initialize
+// them explicitly (use SwizzleRGBA for the identity).
 type Swizzle uint16
 
 // The named swizzles used by the caps tables.
@@ -105,7 +105,6 @@ func ConcatSwizzles(a, b Swizzle) Swizzle {
 	for i := uint(0); i < 4; i++ {
 		idx := (b >> (4 * i)) & 0xF
 		if idx != 4 && idx != 5 { // not the '0'/'1' constants
-			// Get the index value stored in a at location idx.
 			idx = (a >> (4 * idx)) & 0xF
 		}
 		key |= idx << (4 * i)

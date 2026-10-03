@@ -86,11 +86,10 @@ func TestFillTriangleConvexWalker(t *testing.T) {
 		t.Fatal("triangle should be convex")
 	}
 	got := fillToMask(t, p, 8, 8)
-	// Each row's span follows the rounded edge crossings; verify symmetry and monotonic growth instead of exact pixels,
-	// then spot-check against the general walker.
+	// Rather than pinning exact pixels, compare against the even-odd fill of the same triangle, which must match.
 	p2 := p.Clone()
-	p2.SetFillType(path.FillEvenOdd) // even-odd of a simple triangle fills identically...
-	got2 := fillToMask(t, p2, 8, 8)  // ...but routes through walkEdges (non-convex path? still convex)
+	p2.SetFillType(path.FillEvenOdd)
+	got2 := fillToMask(t, p2, 8, 8)
 	for y := range got {
 		if got[y] != got2[y] {
 			t.Errorf("row %d: winding %q vs even-odd %q", y, got[y], got2[y])
@@ -198,9 +197,8 @@ func TestFillCurvedPathContainment(t *testing.T) {
 }
 
 func TestFillCubicMatchesFlattenedReference(t *testing.T) {
-	// A cubic blob: verify every span is within the path per Contains at pixel centers (Contains uses the
-	// analytically-correct winding machinery from the library, so agreement within a small band around the boundary
-	// validates the forward-differencing edges).
+	// A cubic blob: every pixel away from the boundary must agree with Contains at its center. Contains uses the exact
+	// winding machinery, so this validates the forward-differencing edges.
 	p := path.New()
 	p.MoveTo(2, 8)
 	p.CubicTo(2, 2, 14, 2, 14, 8)

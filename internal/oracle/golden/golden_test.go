@@ -78,9 +78,8 @@ func TestManifestSchema2RoundTrip(t *testing.T) {
 	}
 }
 
-// TestManifestOptionalFieldsAbsent reads a manifest carrying only the always-written keys and verifies the optional
-// ones come back zero-valued rather than erroring — a raster set records no GL stack, so this is the shape half the
-// committed manifests have on disk.
+// TestManifestOptionalFieldsAbsent reads a manifest carrying only the always-written keys (the shape `oracle gen`
+// writes) and verifies the optional ones come back zero-valued rather than erroring.
 func TestManifestOptionalFieldsAbsent(t *testing.T) {
 	dir := t.TempDir()
 	raw := `{

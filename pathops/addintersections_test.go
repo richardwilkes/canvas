@@ -42,8 +42,8 @@ func segsOf(c *opContour) []*opSegment {
 	return out
 }
 
-// spanBaseAtPt returns the span whose primary pt-t point equals pt, or nil. The head/tail always match their endpoints;
-// interior spans are inserted by intersection.
+// spanBaseAtPt returns the span whose primary pt-t point equals target, or nil. The head/tail always match their
+// endpoints; interior spans are inserted by intersection.
 func spanBaseAtPt(s *opSegment, target geom.Point) *opSpanBase {
 	for base := &s.head.opSpanBase; ; {
 		if base.pt() == target {
@@ -156,8 +156,8 @@ func TestAddIntersectTwoRects(t *testing.T) {
 	}
 }
 
-// checkLinkedCrossing asserts that both segments carry an interior span at the crossing point and that their pt-t
-// records share a loop; it returns the linked pt-t on segB (nil if the assertion setup failed).
+// checkLinkedCrossing fails the test unless both segments have a span at the crossing point and segA's is interior. It
+// returns the pt-t of segB's span that shares a loop with segA's, or nil if the two are not linked.
 func checkLinkedCrossing(t *testing.T, segA, segB *opSegment, cross geom.Point) *opPtT {
 	t.Helper()
 	aSpan := spanBaseAtPt(segA, cross)
@@ -265,10 +265,9 @@ func TestAddIntersectQuadLine(t *testing.T) {
 }
 
 // TestAddIntersectResultsMalformedInsert drives addIntersectResults over a result set whose middle entry carries a t
-// outside [0,1]. addTPt has no span to hand back for such a t — it walks off the head or the tail and returns nil, as
-// documented — so the caller has to skip that entry the way every other addT/addTPt caller does. The intersections
-// insert() refuses an out-of-range t, so the entry is planted directly: the guard is a consistency guarantee, not a
-// reachable input today.
+// outside [0,1]. addTPt walks off the head or the tail for such a t and returns nil, so the caller has to skip that
+// entry the way every other addT/addTPt caller does. The intersections insert() refuses an out-of-range t, so the entry
+// is planted directly: the guard is a consistency guarantee, not a reachable input today.
 func TestAddIntersectResultsMalformedInsert(t *testing.T) {
 	p := path.New()
 	p.MoveTo(0, 0).LineTo(20, 0).LineTo(20, 20).LineTo(0, 20).Close()

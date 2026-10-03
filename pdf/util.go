@@ -7,9 +7,9 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// The object-serialization helpers: color/scalar formatting, UTF-16 hex, RectToArray, together with the stream integer
+// The object-serialization helpers: color/scalar formatting, UTF-16 hex, rectToArray, together with the stream integer
 // text writers (writeDecAsText / writeBigDecAsText) those routines and the document serializer depend on. Path
-// emission, matrix transforms, and the graphic state helpers arrive with the PDF device.
+// emission, matrix transforms, and the graphic state helpers are in content.go.
 
 package pdf
 
@@ -21,13 +21,10 @@ import (
 	"github.com/richardwilkes/canvas/stream"
 )
 
-// hexUpper is the uppercase hex digit alphabet.
 const hexUpper = "0123456789ABCDEF"
 
-// writeText writes text's bytes to the stream.
 func writeText(s stream.WStream, text string) { s.Write([]byte(text)) }
 
-// writeDecAsText writes dec as a base-10 string.
 func writeDecAsText(s stream.WStream, dec int) { s.Write([]byte(strconv.Itoa(dec))) }
 
 // writeBigDecAsText writes dec as a base-10 string, left-padded with '0' to at least minDigits characters. dec is
@@ -54,7 +51,7 @@ func appendColorComponent(dst []byte, value uint8) []byte {
 		}
 		return append(dst, '0')
 	}
-	// int x = 0.5 + (1000.0 / 255.0) * value, computed in 16.16 fixed point then rounded to int.
+	// x = round(1000/255 * value), computed in 16.16 fixed point.
 	x := int(permilFactor*int32(value)+(1<<15)) >> 16
 	return printPermilAsDecimal(dst, x, 3)
 }
@@ -66,7 +63,7 @@ const floatColorDecimalCount = 4
 func appendColorComponentF(dst []byte, value float32) []byte {
 	const factor = 10 * 10 * 10 * 10 // 10^4, the four significant digits
 	x := int(geom.RoundToInt(value * factor))
-	if x >= factor || x <= 0 { // clamp to 0-1
+	if x >= factor || x <= 0 {
 		if x > 0 {
 			return append(dst, '1')
 		}
@@ -116,7 +113,6 @@ func writeUTF16beHex(s stream.WStream, utf32 rune) {
 	}
 }
 
-// rectToArray builds the four-element PDF array [left top right bottom].
 func rectToArray(r geom.Rect) *Array {
 	return makeArrayScalars(r.Left, r.Top, r.Right, r.Bottom)
 }

@@ -14,11 +14,10 @@ import (
 	"github.com/richardwilkes/canvas/geom"
 )
 
-// Blend-mode coverage. blend-modes-basic samples 8 modes; these grids cover all 29 sk_blend_mode_t
-// values (12 Porter-Duff, 13 separable, 4 HSL), grouped by family, each cell compositing a translucent source circle
-// over a translucent destination rect inside its own clip cell (the blend-modes-basic cell recipe, kept so the grids
-// read uniformly). A separate scenario blends over a gradient destination to catch coefficient errors an axis-aligned
-// flat dst would mask, and one drives DrawColor's blend argument.
+// Blend-mode coverage. blend-modes-basic samples 8 modes; these grids cover all 29 BlendMode values (12 Porter-Duff, 13
+// separable, 4 HSL), grouped by family, each cell compositing a translucent source circle over a translucent
+// destination rect inside its own clip cell (the blend-modes-basic cell recipe). A separate scenario blends over a
+// gradient destination to catch coefficient errors a flat dst would mask, and one drives DrawColor's blend argument.
 
 // The three grids' mode lists, split by family. Together they must name every BlendMode exactly once; see
 // TestBlendGridsCoverEveryMode.
@@ -64,8 +63,8 @@ func init() {
 	})
 
 	reg("blend-modes-hsl", func(c Canvas) {
-		// The four non-separable HSL modes get bigger cells (128x128) — their per-pixel luminosity/ saturation math is
-		// where implementations drift, so give the gate more pixels.
+		// The four non-separable HSL modes get bigger cells (128x128): their per-pixel luminosity/saturation math is
+		// where implementations drift, so the gate gets more pixels.
 		c.Clear(white)
 		for i, mode := range hslBlendModes {
 			x := float32(i%2) * 128

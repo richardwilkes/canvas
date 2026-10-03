@@ -13,14 +13,13 @@
 // creation/uploads, readbacks, and sync objects live in the sibling gpu*.go files.
 //
 // Scope notes: program flushing works in terms of raw program IDs — the program type and the program cache live in
-// glprogram.go and programcache.go; stencil shadowing here is the enable/disable tri-state plus invalidation, with the
-// full stencil-settings type in stencilsettings.go; window rectangles support only the disable/invalidate paths, since
-// EXT_window_rectangles is outside the desktop trim and exclusion is never enabled. Dropped with the desktop trim: the
-// flush-on-framebuffer-change and unbind-attachments-on-bound-render-fbo-delete workarounds, the
-// force-update-scissor-state-when-binding-fbo0 and never-disable-color-writes workarounds, the
-// must-reset-blend-func-between-dual-source-and-disable workaround, the ARM advanced-blend disable dance, and the
-// bind-texture0-when-changing-texture-fbo-multisample-count workaround (only reachable through a render-to-texture FBO
-// reconfiguration path that desktop GL never takes).
+// glprogram.go and programcache.go; the stencil-settings type shadowed here lives in stencilsettings.go; window
+// rectangles support only the disable/invalidate paths, since EXT_window_rectangles is outside the desktop trim and
+// exclusion is never enabled. Dropped with the desktop trim: the flush-on-framebuffer-change and
+// unbind-attachments-on-bound-render-fbo-delete workarounds, the force-update-scissor-state-when-binding-fbo0 and
+// never-disable-color-writes workarounds, the must-reset-blend-func-between-dual-source-and-disable workaround, the ARM
+// advanced-blend disable dance, and the bind-texture0-when-changing-texture-fbo-multisample-count workaround (only
+// reachable through a render-to-texture FBO reconfiguration path that desktop GL never takes).
 
 package gl
 
@@ -138,7 +137,6 @@ func (t *textureUnitBindings) invalidateAllTargets(markUnmodified bool) {
 	}
 }
 
-// hwBlendState shadows the GL blend equation/coefficients/enable state.
 type hwBlendState struct {
 	equation        gpu.BlendEquation
 	srcCoeff        gpu.BlendCoeff
@@ -156,7 +154,6 @@ func (s *hwBlendState) invalidate() {
 	s.enabled = triUnknown
 }
 
-// hwVertexArrayState shadows the currently bound vertex array object and its attribute state.
 type hwVertexArrayState struct {
 	defaultVertexArrayAttribState *AttribArrayState
 	// coreProfileVertexArray is the placeholder VAO used for internal draws on core profiles (where VAO zero does not
@@ -242,16 +239,15 @@ type Gpu struct {
 	finishCallbacks                    []finishCallback
 	hwTextureUnitBindings              []textureUnitBindings
 	resetTimestampForTextureParameters TextureResetTimestamp
-	// GL state shadow.
+	// hwActiveTextureUnitIdx is the active texture unit, or -1 when unknown.
 	hwActiveTextureUnitIdx int
 	// numGLDraws counts the GL geometry draw calls issued (glDrawArrays/glDrawElements and their instanced/range
-	// variants) since the last ResetGLDrawStats. It is the "GL draws issued" side of the batching metric (batching
-	// effectiveness = ops recorded vs GL draws issued). It is touched only from didDrawTo on the GL context thread, so
-	// it needs no synchronization.
+	// variants) since the last ResetGLDrawStats: the "GL draws issued" side of the batching metric (ops recorded vs GL
+	// draws issued). It is touched only on the GL context thread, so it needs no synchronization.
 	numGLDraws    int
 	hwBufferState [gpu.BufferTypeCount]hwBufferState
-	// The manual mipmap-regeneration programs, built lazily outside the program cache, plus their shared unit-quad
-	// vertex buffer. See mipmapprogram.go.
+	// The manual mipmap-regeneration programs, built lazily outside the program cache; mipmapProgramArrayBuffer is
+	// their shared unit-quad vertex buffer. See mipmapprogram.go.
 	mipmapPrograms    [4]mipmapProgram
 	hwStencilSettings StencilSettings
 	hwBlendState      hwBlendState
@@ -346,7 +342,6 @@ func (g *Gpu) AbandonContext() {
 		return
 	}
 	g.abandoned = true
-	// Disconnect every cached GL object without touching the (assumed-dead) context.
 	g.hwProgram = nil
 	g.hwProgramID = 0
 	g.programCache.Abandon()
@@ -374,7 +369,6 @@ func (g *Gpu) ReleaseResourcesAndAbandonContext() {
 		return
 	}
 	g.abandoned = true
-	// Disconnect every cached GL object, freeing each one via a real GL call first.
 	if g.hwProgramID != 0 {
 		g.fns().UseProgram(0)
 		g.hwProgramID = 0
@@ -552,7 +546,6 @@ func (g *Gpu) ResetTextureBindings() {
 	}
 }
 
-// setTextureUnit makes the given texture unit active, skipping the GL call if it already is.
 func (g *Gpu) setTextureUnit(unit int) {
 	if unit < 0 || unit >= g.numTextureUnits() {
 		panic("texture unit out of range")
@@ -829,7 +822,6 @@ func (g *Gpu) DeleteFramebuffer(fboID uint32) {
 // InvalidateBoundRenderTarget forgets the tracked bound render target, forcing the next draw to rebind it.
 func (g *Gpu) InvalidateBoundRenderTarget() { g.hwBoundRenderTargetUniqueID = 0 }
 
-// flushScissorTest enables or disables the scissor test, skipping the GL call if it is already in the requested state.
 func (g *Gpu) flushScissorTest(enabled bool) {
 	if enabled {
 		if g.hwScissorEnabled != triYes {
@@ -855,7 +847,6 @@ func (g *Gpu) flushScissorRect(scissor geom.IRect, rtHeight int32, origin gpu.Su
 	}
 }
 
-// flushScissor enables or disables the scissor test and, when enabled, sets its rect.
 func (g *Gpu) flushScissor(state *gpu.ScissorState, rtHeight int32, origin gpu.SurfaceOrigin) {
 	g.flushScissorTest(state.Enabled())
 	if state.Enabled() {
@@ -883,8 +874,6 @@ func (g *Gpu) disableWindowRectangles() {
 	g.hwWindowRectsDisabledKnown = true
 }
 
-// flushColorWrite enables or disables writing to the color buffer, skipping the GL call if it is already in the
-// requested state.
 func (g *Gpu) flushColorWrite(writeColor bool) {
 	if !writeColor {
 		if g.hwWriteToColor != triNo {
@@ -906,8 +895,6 @@ func (g *Gpu) flushClearColor(color [4]float32) {
 	}
 }
 
-// flushFramebufferSRGB enables or disables FRAMEBUFFER_SRGB, skipping the GL call if it is already in the requested
-// state.
 func (g *Gpu) flushFramebufferSRGB(enable bool) {
 	if enable && g.hwSRGBFramebuffer != triYes {
 		g.fns().Enable(FRAMEBUFFER_SRGB)
@@ -918,7 +905,6 @@ func (g *Gpu) flushFramebufferSRGB(enable bool) {
 	}
 }
 
-// disableStencil turns off the stencil test, skipping the GL call if it is already disabled.
 func (g *Gpu) disableStencil() {
 	if g.hwStencilTestEnabled != triNo {
 		g.fns().Disable(STENCIL_TEST)
@@ -927,7 +913,6 @@ func (g *Gpu) disableStencil() {
 	}
 }
 
-// stencilTestToGL translates a StencilTest to its GL comparison function enum.
 func stencilTestToGL(test StencilTest) uint32 {
 	switch test {
 	case StencilTestAlways:
@@ -950,7 +935,6 @@ func stencilTestToGL(test StencilTest) uint32 {
 	panic("invalid stencil test")
 }
 
-// stencilOpToGL translates a StencilOp to its GL stencil-op enum.
 func stencilOpToGL(op StencilOp) uint32 {
 	switch op {
 	case StencilOpKeep:
@@ -1013,8 +997,6 @@ func (g *Gpu) flushStencil(stencilSettings *StencilSettings, origin gpu.SurfaceO
 	}
 }
 
-// flushConservativeRasterState enables or disables conservative rasterization (when supported), skipping the GL call if
-// it is already in the requested state.
 func (g *Gpu) flushConservativeRasterState(enabled bool) {
 	if g.Caps().ConservativeRasterSupport {
 		if enabled {
@@ -1029,8 +1011,6 @@ func (g *Gpu) flushConservativeRasterState(enabled bool) {
 	}
 }
 
-// flushWireframeState toggles wireframe polygon mode (when supported), skipping the GL call if it is already in the
-// requested state.
 func (g *Gpu) flushWireframeState(enabled bool) {
 	if g.Caps().WireframeSupport {
 		if enabled {

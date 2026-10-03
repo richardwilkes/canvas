@@ -7,20 +7,18 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// Headless GLX context creation via purego (no cgo). This is the Linux counterpart of context_darwin.go's CGL leg:
-// unison creates its GL contexts through GLX on Linux (see gpu/gl/native_linux.go, which resolves entry points through
-// glXGetProcAddress and requires a current GLX context), so the test context is built the same way. It creates an
-// offscreen core-profile context bound to a 1x1 pbuffer — no window is needed, all rendering goes to framebuffer
-// objects — which matches how the GPU backend uses the context.
+// Headless GLX context creation via purego (no cgo), the Linux counterpart of context_darwin.go's CGL leg. unison
+// creates its GL contexts through GLX on Linux (see gpu/gl/native_linux.go, which resolves entry points through
+// glXGetProcAddress and requires a current GLX context), so the test context is built the same way: an offscreen
+// core-profile context bound to a 1x1 pbuffer, with all rendering going to framebuffer objects.
 //
 // It needs a running X server (Xvfb in CI) and a GL stack that offers GLX (Mesa; llvmpipe when LIBGL_ALWAYS_SOFTWARE=1
 // is set, the non-hardware GL stack CI runners use). When no display or no core-profile context is available, init
-// returns an error and the GPU tests skip, exactly as they do on a headless host.
+// returns an error and the GPU tests skip.
 //
 // Software-renderer selection: unlike CGL (which takes a renderer-id pixel-format attribute), GLX has no "use the
 // software rasterizer" attribute — Mesa selects llvmpipe from the LIBGL_ALWAYS_SOFTWARE=1 environment variable, which
-// CI sets for the whole job. CANVAS_GLTEST_RENDERER=software (honored by the darwin leg) is therefore a no-op here; the
-// env var governs. This is documented on gpu/gl/gltest and in the CI wiring.
+// CI sets for the whole job. CANVAS_GLTEST_RENDERER=software (honored by the darwin leg) is therefore a no-op here.
 
 package gltest
 
@@ -104,10 +102,9 @@ func ptrFromUintptr(p uintptr) unsafe.Pointer {
 	return *(*unsafe.Pointer)(unsafe.Pointer(&p))
 }
 
-// The X error handler installed during setup is stateless (it swallows the error and returns 0), so a single
-// process-wide callback is created once and shared by every context, rather than leaking a purego.NewCallback slot per
-// New(). purego never releases callback slots and hard-caps them at 2000, panicking once they are exhausted, so a
-// per-context callback would eventually take down a process that cycles New()/Destroy() enough times. This mirrors the
+// The X error handler installed during setup is stateless (it swallows the error and returns 0), so one process-wide
+// callback is shared by every context. purego never releases callback slots and panics once all 2000 are used, so a
+// per-context purego.NewCallback would eventually take down a process that cycles New()/Destroy(). This mirrors the
 // windows leg's shared window procedure.
 var (
 	xErrorHandlerOnce sync.Once
@@ -121,12 +118,11 @@ func xErrorHandlerCallback() uintptr {
 	return xErrorHandlerCB
 }
 
-// initTeardown runs init's teardown steps in the one order that is safe: the failure teardown first, then the X error
-// handler restore. Tearing down a half-built context/pbuffer is the most likely place for a follow-on X protocol error,
-// which must still be swallowed by the handler installed during setup — with the default Xlib handler back in place it
-// would exit() the process instead of letting the GPU tests skip. Registering the two as separate defers would run them
-// in LIFO order, i.e. restore first, which is exactly the window this ordering closes. The restore also runs on the
-// success path, which is why it is unconditional.
+// initTeardown runs init's teardown steps in the only safe order: the failure teardown, then the X error handler
+// restore. Tearing down a half-built context/pbuffer can raise an X protocol error, which the handler installed during
+// setup must still swallow; the default Xlib handler would exit() the process instead of letting the GPU tests skip.
+// Two separate defers would run in LIFO order, restoring the handler first. The restore is unconditional because it
+// also runs on the success path.
 func initTeardown(ok bool, destroy, restoreXErrorHandler func()) {
 	if !ok {
 		destroy()
@@ -138,8 +134,8 @@ func (p *platformContext) init() error {
 	runtime.LockOSThread()
 	p.locked = true
 	ok := false
-	// restoreXErrorHandler is installed below, once xSetErrorHandler has been resolved. Both teardown steps run from one
-	// defer (see initTeardown) because their order matters and two defers would run in the wrong one.
+	// restoreXErrorHandler is replaced below, once xSetErrorHandler has been resolved. Both teardown steps run from one
+	// defer because their order matters (see initTeardown).
 	restoreXErrorHandler := func() {}
 	defer func() { initTeardown(ok, p.destroy, restoreXErrorHandler) }()
 
@@ -184,7 +180,7 @@ func (p *platformContext) init() error {
 
 	// Ignore X protocol errors during setup so an unsupported context/pbuffer request returns NULL instead of the
 	// default Xlib handler calling exit(). glXCreateContextAttribsARB is the classic offender: a rejected
-	// version/profile raises a GLXBadFBConfig/BadMatch X error, which would otherwise terminate the process.
+	// version/profile raises a GLXBadFBConfig/BadMatch X error.
 	prevHandler := glxRawCall(p.xSetErrorHandler, xErrorHandlerCallback())
 	restoreXErrorHandler = func() { glxRawCall(p.xSetErrorHandler, prevHandler) }
 
@@ -195,8 +191,8 @@ func (p *platformContext) init() error {
 	}
 	screen := glxRawCall(p.xDefaultScreen, p.display)
 
-	// Choose a pbuffer-capable, RGBA8 (+depth24/stencil8) framebuffer config. The pbuffer only exists so the context
-	// can be made current; the GPU backend renders to its own FBOs, so the config's depth/stencil are unused.
+	// Choose a pbuffer-capable, RGBA8 (+depth24/stencil8) framebuffer config. The GPU backend renders to its own FBOs,
+	// so the config's depth/stencil are unused.
 	fbAttribs := []int32{
 		glxDrawableType, glxPbufferBit,
 		glxRenderType, glxRGBABit,

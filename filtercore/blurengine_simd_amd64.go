@@ -13,18 +13,17 @@ package filtercore
 
 import "simd/archsimd"
 
-// simdKernelsSupported reports whether the CPU can run the simd blur kernels. The gate is AVX2 only: these kernels
-// execute no FMA anywhere — exprMulAdd4 below multiplies and adds separately, because that is what the scalar body
-// compiles to at this module's GOAMD64=v1 baseline — so the rule this package follows is the one raster, imagecore and
-// maskfilter follow, "gate on what the kernels actually execute". Requiring FMA would be inaccurate and would disable
-// the path, and skip its equivalence tests, under Rosetta 2, which offers AVX2 without FMA. Everything they compile to
-// is SSE4.1 or below (VMULPS, VADDPS, VCMPPS, VBLENDVPS, VCVTDQ2PS, VCVTTPS2DQ, VPMOVZXBW, VPMOVZXWD, VPADDD, VPSUBD,
-// VPMULUDQ, VPSRLQ, VPSLLQ, VPOR, VPSHUFB and the 128-bit loads/stores) except the broadcasts, which archsimd emulates
-// at AVX2. Unqualified CPUs keep the portable dispatch.
+// simdKernelsSupported reports whether the CPU can run the simd blur kernels. The gate is AVX2 only, following the rule
+// "gate on what the kernels actually execute": they use no FMA (exprMulAdd4 below multiplies and adds separately,
+// because that is what the scalar body compiles to at this module's GOAMD64=v1 baseline), and requiring it would
+// disable the path, and skip its equivalence tests, under Rosetta 2, which offers AVX2 without FMA. Everything they
+// compile to is SSE4.1 or below (VMULPS, VADDPS, VCMPPS, VBLENDVPS, VCVTDQ2PS, VCVTTPS2DQ, VPMOVZXBW, VPMOVZXWD,
+// VPADDD, VPSUBD, VPMULUDQ, VPSRLQ, VPSLLQ, VPOR, VPSHUFB and the 128-bit loads/stores) except the broadcasts, which
+// archsimd emulates at AVX2.
 //
-// Note what is deliberately *not* used here: Uint32x4.TruncToUint8 and SaturateToUint8 are AVX-512 in archsimd, so the
-// word-to-byte gather goes through VPSHUFB (see packLowBytes), and the 0..255 widen goes through the signed convert
-// (identical over that range) rather than Uint32x4.ConvertToFloat32, which is AVX-512 as well.
+// Deliberately not used here: Uint32x4.TruncToUint8 and SaturateToUint8 are AVX-512 in archsimd, so the word-to-byte
+// gather goes through VPSHUFB (see packLowBytes), and the 0..255 widen goes through the signed convert (identical over
+// that range) rather than Uint32x4.ConvertToFloat32, which is AVX-512 as well.
 func simdKernelsSupported() bool { return archsimd.X86.AVX2() }
 
 // Per-kernel dispatch preference: whether the simd kernel is at least as fast as this build's default lane. On amd64
@@ -34,7 +33,7 @@ func simdKernelsSupported() bool { return archsimd.X86.AVX2() }
 //
 // Measured on real amd64 hardware (Xeon W-2191B, darwin/amd64, benchstat n=10, 2026-08-20, via simd-bench.sh): the
 // Gaussian segment wins -73% at every window, the three-box segment -71% at both windows, and the end-to-end passes
-// -73% (Gaussian) and -69% (three-box) — confirming and widening the Rosetta 2 estimates this landed with.
+// -73% (Gaussian) and -69% (three-box).
 const (
 	preferSIMDGaussianSegment = true
 	preferSIMDThreeBoxSegment = true

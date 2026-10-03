@@ -27,8 +27,8 @@ func makeDropShadowGraph(dx, dy, sigmaX, sigmaY float32, color colorcore.Color, 
 	filter := input
 	filter = Blur(sigmaX, sigmaY, shaders.TileDecal, filter, nil)
 	filter = ColorFilter(colorfilter.NewBlend(color, raster.BlendSrcIn), filter, nil)
-	// Offset would take sampling options too, but linear filtering is needed to hide nearest-neighbor artifacts from
-	// fractional offsets applied post-blur.
+	// MatrixTransform is used rather than Offset because linear filtering is needed to hide nearest-neighbor artifacts
+	// from fractional offsets applied post-blur.
 	var t geom.Matrix
 	t.SetTranslate(dx, dy)
 	filter = MatrixTransform(&t, shaders.SamplingOptions{Filter: shaders.FilterLinear}, filter)

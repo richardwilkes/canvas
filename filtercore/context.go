@@ -9,9 +9,9 @@
 
 // The Backend, Context, Stats, and FilterCache types. The Context carries no color space (everything is sRGB) and the
 // Backend's color type is pinned to N32; surface props / pixel-geometry plumbing is likewise dropped (filter surfaces
-// have unknown geometry, so text inside them renders grayscale AA per the layer-props rule, E.4). The cache is scoped
-// to the Backend instance, which one canvas filter evaluation owns — enough for the same within-DAG reuse (e.g. drop
-// shadow referencing its input twice) without needing a global byte budget.
+// have unknown geometry, so text inside them renders grayscale AA per the layer-props rule). The cache is scoped to the
+// Backend instance, which one canvas filter evaluation owns — enough for the same within-DAG reuse (e.g. drop shadow
+// referencing its input twice) without needing a global byte budget.
 
 package filtercore
 
@@ -34,9 +34,8 @@ type PaintParams struct {
 	Dither      bool
 }
 
-// Device is the canvas surface filtercore renders through. The canvas package implements it over BitmapDevice; a GPU
-// implementation arrives with the GL backend. Methods correspond to the draw entry points FilterResult.Draw and
-// autoSurface consume.
+// Device is the canvas surface filtercore renders through. The canvas package implements it over BitmapDevice and
+// gpu/gl over its Device. Methods correspond to the draw entry points FilterResult.Draw and autoSurface consume.
 type Device interface {
 	// Size returns the device's pixel dimensions.
 	Size() geom.ISize
@@ -181,9 +180,6 @@ func (c *Context) markShaderBasedTilingRequired(tileMode shaders.TileMode) {
 		}
 	}
 }
-
-///////////////////////////////////////////////////////////////////////////////
-// FilterCache
 
 // filterCacheKey identifies a memoized filter evaluation: filter unique ID, layer matrix, desired output, and the
 // source image's generation ID + subset (when the filter graph references the source).

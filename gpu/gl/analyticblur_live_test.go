@@ -8,12 +8,12 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // Live-context tests for the analytic rect/circle/rrect blur lanes (MakeRectBlur / MakeCircleBlur / MakeRRectBlur). A
-// normal-blurred fill of an axis-aligned rect, a circle, or a simple-circular rrect now renders through a single
-// textured coverage draw (an integral/profile/nine-patch-mask texture sampled by the corresponding blur FP) instead of
-// the general render-mask + separable-convolution path. These tests confirm the analytic output is a true Gaussian
-// blur: the rect lane is compared against the closed-form normal-distribution integral (erf) along a corner-free
-// centerline, the circle lane is checked for radial symmetry and falloff, and the rrect lane is checked for symmetry
-// plus the rounded-corner signature. Skips when no GL context is available.
+// normal-blurred fill of an axis-aligned rect, a circle, or a simple-circular rrect renders through a single textured
+// coverage draw (an integral/profile/nine-patch-mask texture sampled by the corresponding blur FP) instead of the
+// general render-mask + separable-convolution path. These tests confirm the analytic output is a true Gaussian blur:
+// the rect lane is compared against the closed-form normal-distribution integral (erf) along a corner-free centerline,
+// the circle lane is checked for radial symmetry and falloff, and the rrect lane is checked for symmetry plus the
+// rounded-corner signature. Skips when no GL context is available.
 
 package gl_test
 

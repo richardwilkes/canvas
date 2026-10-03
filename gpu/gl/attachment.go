@@ -59,7 +59,7 @@ func (a *Attachment) ResourceType() string {
 	return "Surface"
 }
 
-// OnGpuMemorySize implements gpu.Resource: only non-texture, non-memoryless attachments report their own size.
+// OnGpuMemorySize implements gpu.Resource: only non-texture attachments report their own size.
 func (a *Attachment) OnGpuMemorySize() uint64 {
 	if a.usage&AttachmentUsageTexture == 0 {
 		return uint64(a.dims.Width) * uint64(a.dims.Height) *
@@ -117,7 +117,8 @@ func ComputeAttachmentScratchKey(caps *Caps, format Format, dims geom.ISize, usa
 
 // ComputeSharedAttachmentUniqueKey computes the key under which stencil attachments of the same dimensions, usage, and
 // sample count are shared between render targets. The key carries no render-target identity, so a render pass can never
-// assume anything about the contents an attachment reaches it with — see OpsTask.OnExecute's kUserBitsCleared case.
+// assume anything about the contents an attachment reaches it with (see OpsTask.OnExecute's
+// StencilContentUserBitsCleared case).
 func ComputeSharedAttachmentUniqueKey(caps *Caps, format Format, dims geom.ISize, usage AttachmentUsage, sampleCnt int, key *gpu.UniqueKey) {
 	b := gpu.UniqueKeyBuilder(key, attachmentUniqueKeyDomain, 5, "SharedAttachment")
 	attachmentKeyData(caps, format, dims, usage, sampleCnt, b.Slice())

@@ -30,21 +30,19 @@ func TestCanUseDirect(t *testing.T) {
 		t.Fatalf("integer translate: ok=%v tr=%v", ok, tr)
 	}
 
-	// Fractional translation is not.
 	var fracTranslate geom.Matrix
 	fracTranslate.SetTranslate(0.5, 0)
 	if ok, _ := canUseDirect(&identity, &fracTranslate); ok {
 		t.Fatal("fractional translate must not be direct-compatible")
 	}
 
-	// A 2x2 change is not.
 	var scaled geom.Matrix
 	scaled.SetScale(2, 2)
 	if ok, _ := canUseDirect(&identity, &scaled); ok {
 		t.Fatal("scale change must not be direct-compatible")
 	}
 
-	// Same scale with integer translation difference is.
+	// The same scale with an integer translation difference is direct-compatible.
 	var a, b geom.Matrix
 	a.SetScaleTranslate(2, 2, 1, 2)
 	b.SetScaleTranslate(2, 2, 5, -4)
@@ -52,7 +50,6 @@ func TestCanUseDirect(t *testing.T) {
 		t.Fatalf("scaled integer translate: ok=%v tr=%v", ok, tr)
 	}
 
-	// Perspective is never direct.
 	p := identity
 	p.Set(geom.MPersp0, 0.001)
 	if ok, _ := canUseDirect(&identity, &p); ok {

@@ -13,10 +13,9 @@
 // so the N32 requirement is enforced by the consumers that actually depend on pixel storage rather than here:
 // FilterResult.rescale re-renders a non-N32 image into an N32 surface (rescale.go) and the raster blur algorithm, which
 // reads pixel storage as 32-bit words, rejects anything else (blurengine.go). The backing store is polymorphic (the
-// DrawableImage pattern): raster-backed views hold imagecore.Pixels in RGBA8888 and drawable-backed views hold an
+// DrawableImage pattern): raster-backed views hold imagecore.Pixels and drawable-backed views hold an
 // imagecore.DrawableImage — in practice the GPU backend's texture-backed image — resolving to CPU pixels only if a
-// raster consumer demands them (a readback, counted by ResolveToRasterCount so the visibility contract survives the GPU
-// lane).
+// raster consumer demands them (a readback, counted by ResolveToRasterCount).
 
 package filtercore
 
@@ -61,8 +60,8 @@ type SpecialImage struct {
 	id       uint32                  // generation ID for cache keys
 }
 
-// NewSpecialImage wraps the subset of pixels as a SpecialImage: subset must be contained in the pixel bounds. Returns
-// nil for an empty subset or invalid subset.
+// NewSpecialImage wraps the subset of pixels as a SpecialImage. Returns nil if pixels is nil or subset is empty or not
+// contained in the pixel bounds.
 func NewSpecialImage(subset geom.IRect, pixels *imagecore.Pixels) *SpecialImage {
 	if pixels == nil || subset.IsEmpty() ||
 		!geom.IRectWH(pixels.Info.Width, pixels.Info.Height).ContainsRect(subset) {

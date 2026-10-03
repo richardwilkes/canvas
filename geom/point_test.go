@@ -42,15 +42,13 @@ func TestDistanceToLineBetween(t *testing.T) {
 	if got := p.DistanceToLineBetween(a, b); math.Abs(float64(got)-3) > 1e-6 {
 		t.Fatalf("line distance %v want 3", got)
 	}
-	// Degenerate line vector: falls back to the squared distance to a.
 	if got := p.DistanceToLineBetweenSqd(a, a); math.Abs(float64(got)-(25*25+9)) > 1e-2 {
 		t.Fatalf("degenerate line distance sqd %v want %v", got, 25*25+9)
 	}
 }
 
-// setPointLength is documented as "the double-precision path", which means the scale is applied in double and rounded
-// to float32 exactly once. Rounding the scale to float32 before the multiply adds a second rounding step that lands 1
-// ulp off the true result for a large fraction of inputs.
+// setPointLength must apply the scale in double and round to float32 exactly once. Rounding the scale to float32 before
+// the multiply adds a second rounding step that lands 1 ulp off the true result for a large fraction of inputs.
 func TestSetPointLengthRoundsOnce(t *testing.T) {
 	scaleRef := func(x, y, length float32) (float32, float32) {
 		xx := float64(x)

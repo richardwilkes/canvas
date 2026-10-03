@@ -180,7 +180,7 @@ func (s *ShaderBuilder) finalize(visibility ShaderFlags) {
 	s.compiled = append(s.compiled, header...)
 	s.programBuilder.appendUniformDecls(visibility, &s.shaderStrings[sectionUniforms])
 	s.onFinalize()
-	// Append the 'footer' to code.
+	// Close main().
 	s.code().append("}")
 
 	for i := 0; i <= s.codeIndex; i++ {
@@ -236,9 +236,7 @@ func (v *VertexShaderBuilder) vsOnFinalize() {
 		v.CodeAppend("gl_PointSize = 1.0;")
 	}
 	if v.usedPosition {
-		// Declare the local _position at the top of main and append the RT-adjust fixup:
-		//   _position = float4(_position.xy * rtAdjust.xz + _position.ww * rtAdjust.yw, 0, _position.w);
-		// followed by the write to gl_Position.
+		// Declare the local _position at the top of main and append the RT-adjust fixup that writes gl_Position.
 		v.main().append("vec4 _position;")
 		rtAdjust := v.programBuilder.uniformHandler.GetUniformCStr(
 			v.programBuilder.uniformHandles.RTAdjustmentUni,

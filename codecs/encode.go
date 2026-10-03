@@ -7,10 +7,9 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// The image encoders: PNG via image/png with the zlib level mapped onto Go's coarser scale (encode parity is
-// decode-back equality, not byte equality), JPEG via image/jpeg (quality passthrough; alpha is ignored on premul input,
-// which feeding Go's encoder premul bytes as RGBA matches), and WebP: lossless through the pure-Go VP8L encoder, lossy
-// through the pure-Go VP8 encoder (codecs/internal/vp8enc + webplossy.go).
+// The image encoders: PNG via image/png (encode parity is decode-back equality, not byte equality), JPEG via
+// image/jpeg, and WebP: lossless through the pure-Go VP8L encoder, lossy through the pure-Go VP8 encoder
+// (codecs/internal/vp8enc + webplossy.go).
 
 package codecs
 
@@ -25,11 +24,10 @@ import (
 	"github.com/richardwilkes/canvas/imagecore"
 )
 
-// readbackSize returns img's dimensions, ok=false when its reported info is not a valid one. The read-back buffer below
-// is sized from those dimensions, and ReadPixels — which validates them, through ValidConversion — only runs after the
-// buffer exists, so the validation would otherwise be defeated by the allocation that precedes it: an image reporting
-// hostile dimensions panics in image.New*RGBA's make, and a merely large one silently attempts a multi-gigabyte
-// allocation before being rejected.
+// readbackSize returns img's dimensions, ok=false when its reported info is not a valid one. The callers size their
+// read-back buffer from those dimensions before ReadPixels validates them (through ValidConversion), so without this
+// check an image reporting hostile dimensions panics in image.New*RGBA's make, and a merely large one silently attempts
+// a multi-gigabyte allocation before being rejected.
 func readbackSize(img *imagecore.Image) (w, h int, ok bool) {
 	info := img.Info()
 	if !info.IsValid() {
@@ -38,8 +36,7 @@ func readbackSize(img *imagecore.Image) (w, h int, ok bool) {
 	return int(info.Width), int(info.Height), true
 }
 
-// readNRGBA reads the image back as unpremultiplied RGBA bytes (the encoders' source form; the premul→unpremul
-// conversion runs through the standard pixel-conversion steps).
+// readNRGBA reads the image back as unpremultiplied RGBA bytes, the PNG and WebP encoders' source form.
 func readNRGBA(img *imagecore.Image) *image.NRGBA {
 	w, h, ok := readbackSize(img)
 	if !ok {

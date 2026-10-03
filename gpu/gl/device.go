@@ -10,10 +10,8 @@
 // The GPU device behind the canvas device interface — a SurfaceDrawContext plus a ClipStack, canvas.Paint→Paint
 // conversion at every draw, and the drawEdgeAAImage texture lanes. Trims: paints with path effects devolve to styled
 // paths at the device (the device's style carries no path effect); general paths and points go through the shape funnel
-// and the path-renderer chain; mask filters run through DrawShapeWithMaskFilter: large blurs generate and blur the mask
-// on the GPU, small blurs and non-blur filters take the CPU DrawToMask+filterMask lane; the analytic direct-filter-mask
-// rect/rrect/circle profiles are deferred. Image filters evaluate through glfilter.go; tiled huge-image draws and cubic
-// image sampling degrade (cubic → linear).
+// and the path-renderer chain; mask filters run through DrawShapeWithMaskFilter (see blurmaskfilter.go for its lanes).
+// Image filters evaluate through glfilter.go; tiled huge-image draws and cubic image sampling degrade (cubic → linear).
 
 package gl
 
@@ -61,15 +59,13 @@ func NewDevice(sdc *SurfaceDrawContext) *Device {
 // SDC exposes the device's draw context (tests and the surface plumbing).
 func (d *Device) SDC() *SurfaceDrawContext { return d.sdc }
 
-// Release drops what the device owns that outlives it on its own: the clip stack's live SW masks, which are cached in the
-// resource cache under unique keys (see ClipStack.Release). Go has no destructor to run this, so a device that is used
-// and discarded — a saveLayer device from CreateDevice, an image-filter intermediate from filterBackend.MakeDevice — is
-// released explicitly by whoever discarded it; canvas.Canvas does so at restore through the optional interface. The
-// device's own render target is owned by the SurfaceDrawContext and is not touched here, so already-recorded draws that
-// reference it (a layer being composited back at restore) remain valid. Safe to call more than once.
+// Release invalidates the clip stack's live SW masks, which would otherwise outlive the device in the resource cache
+// (see ClipStack.Release). Go has no destructor, so whoever discards a device (a saveLayer device from CreateDevice, an
+// image-filter intermediate from filterBackend.MakeDevice) must release it; canvas.Canvas does so at restore. The
+// render target is owned by the SurfaceDrawContext and is not touched, so already-recorded draws that reference it (a
+// layer being composited back at restore) remain valid. Safe to call more than once.
 func (d *Device) Release() { d.clipStack.Release() }
 
-// clip returns the device's clip stack as a Clip.
 func (d *Device) clip() Clip { return d.clipStack }
 
 // Width implements canvas.Device.
@@ -176,7 +172,6 @@ func (d *Device) DevClipBounds() geom.IRect { return d.clipStack.GetConservative
 //////////////////////////////////////////////////////////////////////////////
 // Paint conversion.
 
-// paintParams converts a canvas paint to the paint-conversion parameter set.
 func paintParams(paint *canvas.Paint) PaintParams {
 	return PaintParams{
 		Color:          colorcore.Color4fFromColor(paint.Color),
@@ -194,8 +189,7 @@ func (d *Device) chooseAA(paint *canvas.Paint) gpu.AA {
 	return gpu.AA(paint.AntiAlias || d.sdc.alwaysAntialias())
 }
 
-// strokeRecFromPaint builds the SDC style from the paint (the style's stroke rec; the path effect is handled separately
-// at the device).
+// strokeRecFromPaint builds the stroke rec from the paint; the path effect is handled separately at the device.
 func strokeRecFromPaint(paint *canvas.Paint) stroke.Rec {
 	spec := stroke.PaintSpec{
 		Style:      stroke.PaintStyle(paint.Style),
@@ -354,7 +348,6 @@ func (d *Device) DrawPoints(mode canvas.PointMode, pts []geom.Point, paint *canv
 	}
 }
 
-// drawLine draws a single stroked line segment.
 func (d *Device) drawLine(p0, p1 geom.Point, paint *canvas.Paint) {
 	if paint.MaskFilter == nil && paint.PathEffect == nil && paint.StrokeWidth > 0 &&
 		paint.Cap != canvas.StrokeCap(stroke.CapRound) && paint.AntiAlias {
@@ -395,7 +388,6 @@ func (d *Device) drawStyledShapeSlow(p *path.Path, paint *canvas.Paint) {
 	rec := strokeRecFromPaint(paint)
 	src := p
 	if paint.PathEffect != nil {
-		// Devolve the path effect (and its interaction with the stroke) on the CPU.
 		spec := stroke.PaintSpec{
 			PathEffect: paint.PathEffect,
 			Style:      stroke.PaintStyle(paint.Style),
@@ -424,9 +416,8 @@ func (d *Device) drawStyledShapeSlow(p *path.Path, paint *canvas.Paint) {
 		&rec)
 }
 
-// drawShapeWithMaskFilter routes a shape + mask filter through DrawShapeWithMaskFilter: large blurs generate and blur
-// the A8 mask on the GPU, while small blurs and non-blur filters render the filtered mask on the CPU and upload it. The
-// style carried by 'rec' is applied inside DrawShapeWithMaskFilter via the styled shape.
+// drawShapeWithMaskFilter routes a shape + mask filter through DrawShapeWithMaskFilter, which applies the style carried
+// by rec via the styled shape.
 func (d *Device) drawShapeWithMaskFilter(src *path.Path, rec *stroke.Rec, gpuPaint *Paint, mf maskfilter.MaskFilter) {
 	shape := MakeStyledShapePath(src, MakeStyle(*rec), DoSimplifyYes)
 	DrawShapeWithMaskFilter(d.sdc, d.clip(), gpuPaint, &d.localToDevice, mf, &shape)
@@ -480,10 +471,9 @@ func imageAsView(ctx *DirectContext, img *imagecore.Image) (SurfaceProxyView, gp
 }
 
 // drawableAsView resolves a polymorphic drawable image to a texture proxy view for drawing on ctx. A texture-backed
-// image already living on ctx contributes its own view directly — no readback, no re-upload (the GPU-native lane). Any
-// other image — a CPU raster image, or a texture image from a different direct context — is read back to CPU pixels
-// (identity for a raster image) and uploaded through the shared image-proxy cache, exactly as imageAsView does. Returns
-// an invalid view on a failed readback/upload.
+// image already living on ctx contributes its own view directly, with no readback or re-upload. Any other image (a CPU
+// raster image, or a texture image from a different direct context) is read back to CPU pixels and uploaded through the
+// shared image-proxy cache, as imageAsView does. Returns an invalid view on a failed readback/upload.
 func drawableAsView(ctx *DirectContext, img imagecore.DrawableImage) (SurfaceProxyView, gpu.ColorType) {
 	if tex, ok := img.(*TextureImage); ok && tex.Context() == ctx {
 		return tex.View(), tex.ColorType()
@@ -678,7 +668,6 @@ func (d *Device) DrawAtlas(xforms []geom.RSXform, tex []geom.Rect, colors []colo
 //////////////////////////////////////////////////////////////////////////////
 // Layers.
 
-// clearAll clears the device to transparent black.
 func (d *Device) clearAll() {
 	dims := d.sdc.Dimensions()
 	d.sdc.ClearAtLeast(geom.IRect{Right: dims.Width, Bottom: dims.Height}, [4]float32{})
@@ -690,7 +679,7 @@ func (d *Device) clearAll() {
 // backing.
 func (d *Device) CreateDevice(width, height int32, _ *canvas.Paint) canvas.Device {
 	// Clone the parent's surface props with the layer's pixel geometry — always "unknown" here (surface props preserve
-	// geometry only for opaque LCD-text layers, E.4) — so a DMSAA parent gets DMSAA layers.
+	// geometry only for opaque LCD-text layers) — so a DMSAA parent gets DMSAA layers.
 	props := d.sdc.SurfaceProps()
 	props.PixelGeometry = surface.PixelGeometryUnknown
 	sdc := MakeSurfaceDrawContextWithProps(d.sdc.Context(), d.sdc.ColorType(),
@@ -774,9 +763,9 @@ func rectToRectFillMatrix(src, dst geom.Rect) geom.Matrix {
 	return m
 }
 
-// DrawGlyphRunList implements canvas.Device, delegating to SurfaceDrawContext.DrawGlyphRunList. Some designs route
-// glyph-run lists without a blob through a cached "slug" object; slugs are unreachable here, so those lists ride the
-// same coordinator path uncached, producing the identical SubRunContainer staging either way.
+// DrawGlyphRunList implements canvas.Device. Some designs route glyph-run lists without a blob through a cached "slug"
+// object; slugs are unreachable here, so those lists ride the same coordinator path uncached, producing the identical
+// SubRunContainer staging either way.
 func (d *Device) DrawGlyphRunList(c *canvas.Canvas, glyphRunList *textblob.GlyphRunList, paint *canvas.Paint) {
 	d.sdc.DrawGlyphRunList(c, d.clip(), &d.localToDevice, glyphRunList, paint)
 }

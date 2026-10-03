@@ -69,7 +69,7 @@ func TestGradientContextReuseIsClean(t *testing.T) {
 // clobber the first's factors/biases at ShadeSpan time.
 func TestBlendTwoGradientsUseDistinctContexts(t *testing.T) {
 	id := geom.IdentityMatrix()
-	// Both children are 3-stop gradients. Every fill lane now draws its context from nextGradCtx (the 2-stop fast lane
+	// Both children are 3-stop gradients. Every fill lane draws its context from nextGradCtx (the 2-stop fast lane
 	// included), so two gradient fill stages in one pipeline must receive distinct ones.
 	g0 := NewLinearGradient(geom.Point{}, geom.Point{X: 100},
 		[]colorcore.Color{0xFFFF0000, 0xFF00FF00, 0xFF0000FF}, []float32{0, 0.3, 1}, TileClamp, nil)
@@ -335,7 +335,7 @@ func TestColorFuncTwoStagesUseDistinctContexts(t *testing.T) {
 	colorNear(t, out[0], colorcore.PMColor4f{R: 0.375, G: 0.75, B: 0.75, A: 1}, 0, "two-color-func output")
 }
 
-// TestRecyclePipelineResetsNewCounters locks that RecyclePipeline resets the laneMask/blend/colorFunc/ image-sampling
+// TestRecyclePipelineResetsNewCounters locks that RecyclePipeline resets the laneMask/blend/colorFunc/image-sampling
 // free-list counters (so a reused pipeline hands out fresh contexts) while retaining their storage.
 func TestRecyclePipelineResetsNewCounters(t *testing.T) {
 	p := borrowPipeline()
@@ -489,9 +489,8 @@ func filterKernelCases(child Shader) []struct {
 }
 
 // TestFilterKernelsCompileAllocFree pins that every image-filter runtime kernel compiles with zero per-draw heap
-// allocations once the pipeline pool is warm — static stages reading pooled contexts, rather than capturing closures
-// and new(...) scratch. Measured through the real
-// Compile → RecyclePipeline pool path with an allocation-free child.
+// allocations once the pipeline pool is warm (static stages reading pooled contexts). Measured through the real Compile
+// → RecyclePipeline pool path with an allocation-free child.
 func TestFilterKernelsCompileAllocFree(t *testing.T) {
 	if raceEnabled {
 		t.Skip("testing.AllocsPerRun over-reports under the race detector's allocation instrumentation")
@@ -671,10 +670,9 @@ func TestFilterKernelsUseDistinctContexts(t *testing.T) {
 
 // TestNextGatherCtxResetsStaleFields locks that nextGatherCtx returns a fully-zeroed gatherCtx even when the retained
 // storage carries a prior compile's stale conditional fields (roundDownAtInteger, weights, setRGB): appendStages sets
-// those only for some sampling modes, so a reused ctx that kept them would mis-sample a later draw of a different mode.
-// (The end-to-end cross-mode transition through the pool — e.g. a nearest draw's stale roundDownAtInteger leaking into
-// a following linear/cubic draw — was demonstrated by the oracle's since-removed image-shader render probe with this
-// reset deleted; this test pins the reset directly.)
+// those only for some sampling modes, so a reused ctx that kept them would mis-sample a later draw of a different mode
+// (e.g. a nearest draw's stale roundDownAtInteger leaking into a following linear/cubic draw, as an oracle render probe
+// once showed with this reset deleted).
 func TestNextGatherCtxResetsStaleFields(t *testing.T) {
 	p := &Pipeline{}
 	poison := &gatherCtx{

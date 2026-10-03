@@ -8,10 +8,10 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // The oval-drawing ops: CircleOp (with the arc clip planes and round caps), EllipseOp, DIEllipseOp, CircularRRectOp,
-// EllipticalRRectOp, and the factory functions the SurfaceDrawContext draw entry points dispatch through. The
-// mesh/pattern-helper/quad-helper machinery shared mesh-draw ops rely on reduces to the simpleMesh struct below. Trims:
-// styling reduces to stroke.Rec (path effects devolve to paths at the device), so MakeCircleOp's dashed lanes and
-// a butt-cap-dashed-circle variant are unreachable.
+// EllipticalRRectOp, and the factory functions the SurfaceDrawContext draw entry points dispatch through. Skia's
+// mesh/pattern-helper/quad-helper machinery reduces to simpleMesh and its helpers below. Styling reduces to stroke.Rec
+// (path effects devolve to paths at the device), so MakeCircleOp's dashed lanes and the butt-cap dashed-circle op are
+// not ported.
 
 package gl
 
@@ -27,11 +27,7 @@ import (
 	"github.com/richardwilkes/canvas/stroke"
 )
 
-// circleStaysCircle reports whether m maps circles to circles (rather than ellipses).
 func circleStaysCircle(m *geom.Matrix) bool { return m.IsSimilarity() }
-
-//////////////////////////////////////////////////////////////////////////////
-// A single mesh draw, recorded at prepare time and replayed at execute time.
 
 // simpleMesh holds the buffers and draw parameters recorded at prepare time and replayed at execute time.
 type simpleMesh struct {
@@ -62,7 +58,6 @@ const (
 
 func (m *simpleMesh) isValid() bool { return m.kind != simpleMeshInvalid }
 
-// setIndexed configures the mesh for a single indexed draw.
 func (m *simpleMesh) setIndexed(indexBuffer AnyBuffer, indexCount, baseIndex int, minIndexValue, maxIndexValue uint16, vertexBuffer AnyBuffer, baseVertex int) {
 	m.indexBuffer = indexBuffer
 	m.vertexBuffer = vertexBuffer
@@ -74,7 +69,6 @@ func (m *simpleMesh) setIndexed(indexBuffer AnyBuffer, indexCount, baseIndex int
 	m.kind = simpleMeshIndexed
 }
 
-// setIndexedPatterned configures the mesh for a repeated indexed draw over a patterned index buffer.
 func (m *simpleMesh) setIndexedPatterned(indexBuffer AnyBuffer, indexCount, vertexCount, patternRepeatCount, maxPatternRepetitionsInIndexBuffer int, vertexBuffer AnyBuffer, baseVertex int) {
 	m.indexBuffer = indexBuffer
 	m.vertexBuffer = vertexBuffer
@@ -86,7 +80,6 @@ func (m *simpleMesh) setIndexedPatterned(indexBuffer AnyBuffer, indexCount, vert
 	m.kind = simpleMeshPatterned
 }
 
-// draw replays the mesh on the render pass.
 func (m *simpleMesh) draw(renderPass *OpsRenderPass) {
 	renderPass.BindBuffers(m.indexBuffer, nil, m.vertexBuffer)
 	switch m.kind {
@@ -126,10 +119,9 @@ func makeQuadHelper(state *OpFlushState, vertexStride uint64, quadsToDraw int, m
 		NumVertsPerNonAAQuad, NumIndicesPerNonAAQuad, quadsToDraw, MaxNumNonAAQuads, mesh)
 }
 
-// findOrCreatePatternedIndexBuffer returns the cached index buffer for the given pattern key, creating it if it doesn't
-// already exist. The returned buffer is borrowed, not owned, matching RefNonAAQuadIndexBuffer: the creation ref is
-// retained for the context's lifetime, so exactly one ref exists no matter how many ops ask for it. Callers must not
-// unref it.
+// findOrCreatePatternedIndexBuffer returns the cached index buffer for key, creating it if needed. The returned buffer
+// is borrowed, not owned, matching RefNonAAQuadIndexBuffer: the creation ref is retained for the context's lifetime, so
+// exactly one ref exists no matter how many ops ask for it. Callers must not unref it.
 func (rp *ResourceProvider) findOrCreatePatternedIndexBuffer(pattern []uint16, patternSize, reps, vertCount int, key *gpu.UniqueKey) *Buffer {
 	if buffer, ok := rp.FindByUniqueKey(key).(*Buffer); ok && buffer != nil {
 		// FindByUniqueKey hands back a caller-owned ref. The creation ref below keeps the buffer alive, so release this
@@ -140,7 +132,6 @@ func (rp *ResourceProvider) findOrCreatePatternedIndexBuffer(pattern []uint16, p
 	return rp.createPatternedIndexBuffer(pattern, patternSize, reps, vertCount, key)
 }
 
-// putU16Indices writes uint16 indices into a MakeIndexSpace allocation.
 func putU16Indices(dst []byte, offset int, indices []uint16, indexAdjust int) int {
 	for _, v := range indices {
 		binary.LittleEndian.PutUint16(dst[offset:], uint16(int(v)+indexAdjust))
@@ -162,7 +153,6 @@ func (drawOpNoClipToShape) ClipToShape(raster.ClipOp, *geom.Matrix, *Shape, gpu.
 
 // In the case of a normal fill, we draw geometry for the circle as an octagon.
 var fillCircleIndices = []uint16{
-	// enter the octagon
 	0, 1, 8, 1, 2, 8,
 	2, 3, 8, 3, 4, 8,
 	4, 5, 8, 5, 6, 8,
@@ -171,7 +161,6 @@ var fillCircleIndices = []uint16{
 
 // For stroked circles, we use two nested octagons.
 var strokeCircleIndices = []uint16{
-	// enter the octagon
 	0, 1, 9, 0, 9, 8,
 	1, 2, 10, 1, 10, 9,
 	2, 3, 11, 2, 11, 10,
@@ -197,7 +186,6 @@ var octagonOuter = [8]geom.Point{
 	{X: -1, Y: -octOffset},
 }
 
-// Cosine and sine of pi/8.
 const (
 	cosPi8 = 0.923579533
 	sinPi8 = 0.382683432
@@ -245,7 +233,6 @@ func circleTypeToIndices(stroked bool) []uint16 {
 
 var circleOpClassID = GenOpClassID()
 
-// circleOpPool is the free list of circleOp shells (see oppool.go).
 var circleOpPool opPool[circleOp]
 
 // ArcParams holds optional extra params to render a partial arc rather than a full circle.
@@ -255,7 +242,6 @@ type ArcParams struct {
 	UseCenter         bool
 }
 
-// circleGeom holds one circle instance's per-draw geometry and color.
 type circleGeom struct {
 	color           colorcore.PMColor4f
 	innerRadius     float32
@@ -278,9 +264,7 @@ type circleOp struct {
 	mesh       simpleMesh
 	vertCount  int
 	indexCount int
-	// circlesArr backs circles for the common single-instance case (see the aaStrokeRectOp.rectsArr note): the
-	// constructor always appends exactly one geom, so a fresh op needs no separate backing array; combining grows past
-	// it into the heap as normal.
+	// circlesArr backs circles for the common single-instance case (see aaStrokeRectOp.rectsArr).
 	circlesArr                   [1]circleGeom
 	viewMatrixIfUsingLocalCoords geom.Matrix
 	clipPlane                    bool
@@ -299,7 +283,6 @@ func NewCircleOp(paint *Paint, viewMatrix *geom.Matrix, center geom.Point, radiu
 	}
 	recStyle := strokeRec.Style()
 	if arcParams != nil {
-		// Arc support depends on the style.
 		switch recStyle {
 		case stroke.StyleStrokeAndFill:
 			// This produces a strange result that this op doesn't implement.
@@ -327,7 +310,6 @@ func NewCircleOp(paint *Paint, viewMatrix *geom.Matrix, center geom.Point, radiu
 	return newCircleOp(processors, color, viewMatrix, center, radius, strokeRec, arcParams)
 }
 
-// newCircleOp is the CircleOp constructor.
 func newCircleOp(processors *ProcessorSet, color colorcore.PMColor4f, viewMatrix *geom.Matrix, center geom.Point, radius float32, strokeRec *stroke.Rec, arcParams *ArcParams) *circleOp {
 	o := circleOpPool.borrow()
 	o.circles = bootstrapInstances(o.circles, o.circlesArr[:0])
@@ -358,10 +340,9 @@ func newCircleOp(processors *ProcessorSet, color colorcore.PMColor4f, viewMatrix
 		}
 	}
 
-	// The radii are outset for two reasons. First, it allows the shader to simply perform simpler computation because
-	// the computed alpha is zero, rather than 50%, at the radius. Second, the outer radius is used to compute the verts
-	// of the bounding box that is rendered and the outset ensures the box will cover all pixels partially covered by
-	// the circle.
+	// The radii are outset for two reasons. First, the shader's computation is simpler because the computed alpha is
+	// zero, rather than 50%, at the radius. Second, the outer radius is used to compute the verts of the bounding box
+	// that is rendered and the outset ensures the box will cover all pixels partially covered by the circle.
 	outerRadius += 0.5
 	innerRadius -= 0.5
 	stroked := isStrokeOnly && innerRadius > 0
@@ -538,7 +519,6 @@ func (o *circleOp) Finalize(caps *gpu.Caps, clip *AppliedClip, clampType gpu.Cla
 		AnalysisCoverageSingleChannel, &o.circles[0].color, &o.wideColor)
 }
 
-// createProgramInfo builds the geometry processor and program info for this circle op.
 func (o *circleOp) createProgramInfo(state *OpFlushState) {
 	args := state.OpArgs()
 	if args.UsesMSAASurface() {
@@ -655,7 +635,6 @@ func (o *circleOp) OnPrepare(state *OpFlushState) {
 		}
 
 		if circle.stroked {
-			// Compute the inner ring.
 			for i := range 8 {
 				w.putF32(center.X + octagonInner[i].X*circle.innerRadius)
 				w.putF32(center.Y + octagonInner[i].Y*circle.innerRadius)
@@ -667,7 +646,6 @@ func (o *circleOp) OnPrepare(state *OpFlushState) {
 				o.writeCircleExtras(&w, circle)
 			}
 		} else {
-			// Filled.
 			w.putF32(center.X)
 			w.putF32(center.Y)
 			w.putColor(circle.color, o.wideColor)
@@ -703,8 +681,8 @@ func (o *circleOp) OnExecute(state *OpFlushState, chainBounds geom.Rect) {
 	o.mesh.draw(renderPass)
 }
 
-// OnCombineIfPossible implements Op: it merges o with another circleOp when their processors, bounds, and vertex budget
-// are compatible.
+// OnCombineIfPossible implements Op: it merges o with another circleOp when their processors and (if using local
+// coords) view matrix match and the combined vertices fit 16-bit indices.
 func (o *circleOp) OnCombineIfPossible(t Op) CombineResult {
 	that, ok := t.(*circleOp)
 	if !ok {
@@ -745,10 +723,8 @@ func (o *circleOp) OnCombineIfPossible(t Op) CombineResult {
 
 var ellipseOpClassID = GenOpClassID()
 
-// ellipseOpPool is the free list of ellipseOp shells (see oppool.go).
 var ellipseOpPool opPool[ellipseOp]
 
-// ellipseGeom holds one ellipse instance's per-draw geometry and color.
 type ellipseGeom struct {
 	color        colorcore.PMColor4f
 	xRadius      float32
@@ -777,7 +753,6 @@ type ellipseOp struct {
 // NewEllipseOp returns a DrawOp that fills or strokes an axis-aligned ellipse under a scale+translate matrix, or nil if
 // the ellipse/stroke combination isn't supported. The paint is consumed.
 func NewEllipseOp(caps *Caps, paint *Paint, viewMatrix *geom.Matrix, ellipse geom.Rect, strokeRec *stroke.Rec) DrawOp {
-	// Do any matrix crunching before we reset the draw state for device coords.
 	center := viewMatrix.MapPoint(geom.Point{
 		X: (ellipse.Left + ellipse.Right) / 2,
 		Y: (ellipse.Top + ellipse.Bottom) / 2,
@@ -903,7 +878,6 @@ func (o *ellipseOp) Finalize(caps *gpu.Caps, clip *AppliedClip, clampType gpu.Cl
 		AnalysisCoverageSingleChannel, &o.ellipses[0].color, &o.wideColor)
 }
 
-// createProgramInfo builds the geometry processor and program info for this ellipse op.
 func (o *ellipseOp) createProgramInfo(state *OpFlushState) {
 	localMatrix, ok := o.viewMatrixIfUsingLocalCoords.Invert()
 	if !ok {
@@ -1035,10 +1009,8 @@ func (o *ellipseOp) OnCombineIfPossible(t Op) CombineResult {
 
 var diEllipseOpClassID = GenOpClassID()
 
-// diEllipseOpPool is the free list of diEllipseOp shells (see oppool.go).
 var diEllipseOpPool opPool[diEllipseOp]
 
-// diEllipseGeom holds one device-independent ellipse instance's per-draw geometry and color.
 type diEllipseGeom struct {
 	viewMatrix   geom.Matrix
 	color        colorcore.PMColor4f
@@ -1111,7 +1083,6 @@ func NewDIEllipseOp(caps *Caps, paint *Paint, viewMatrix *geom.Matrix, ellipse g
 			return nil
 		}
 
-		// Set the inner radius (if needed).
 		if recStyle == stroke.StyleStroke {
 			innerXRadius = xRadius - strokeWidth
 			innerYRadius = yRadius - strokeWidth
@@ -1206,7 +1177,6 @@ func (o *diEllipseOp) Finalize(caps *gpu.Caps, clip *AppliedClip, clampType gpu.
 		AnalysisCoverageSingleChannel, &o.ellipses[0].color, &o.wideColor)
 }
 
-// createProgramInfo builds the geometry processor and program info for this device-independent ellipse op.
 func (o *diEllipseOp) createProgramInfo(state *OpFlushState) {
 	gp := makeDIEllipseGeometryProcessor(o.wideColor, o.useScale, o.viewMatrix(), o.style())
 	args := state.OpArgs()
@@ -1336,7 +1306,7 @@ func (o *diEllipseOp) OnCombineIfPossible(t Op) CombineResult {
 // geometry marks out the rectangle in the center; the shared vertices are duplicated so we can set a different outer
 // radius for the fill calculation.
 var overstrokeRRectIndices = []uint16{
-	// overstroke quads we place this at the beginning so that we can skip these indices when rendering normally
+	// Overstroke quads, placed first so that normal rendering can skip these indices.
 	16, 17, 19, 16, 19, 18,
 	19, 17, 23, 19, 23, 21,
 	21, 23, 22, 21, 22, 20,
@@ -1354,7 +1324,7 @@ var overstrokeRRectIndices = []uint16{
 	6, 7, 11, 6, 11, 10,
 	9, 10, 14, 9, 14, 13,
 
-	// center we place this at the end so that we can ignore these indices when not rendering as filled
+	// Center, placed last so that non-fill rendering can skip these indices.
 	5, 6, 10, 5, 10, 9,
 }
 
@@ -1374,7 +1344,6 @@ const (
 	vertsPerOverstrokeRRect = 24
 )
 
-// rrectGeomType distinguishes the different rounded-rect corner/stroke configurations a rrect op can draw.
 type rrectGeomType int8
 
 const (
@@ -1453,10 +1422,8 @@ func getRRectIndexBuffer(t rrectGeomType, rp *ResourceProvider) *Buffer {
 
 var circularRRectOpClassID = GenOpClassID()
 
-// circularRRectOpPool is the free list of circularRRectOp shells (see oppool.go).
 var circularRRectOpPool opPool[circularRRectOp]
 
-// circularRRectGeom holds one circular-cornered rounded-rect instance's per-draw geometry and color.
 type circularRRectGeom struct {
 	color       colorcore.PMColor4f
 	innerRadius float32
@@ -1476,16 +1443,15 @@ type circularRRectOp struct {
 	mesh       simpleMesh
 	vertCount  int
 	indexCount int
-	// rrectsArr backs rrects for the common single-instance case so a freshly constructed op does not heap-allocate a
-	// separate backing array (see the aaStrokeRectOp.rectsArr note). Combining grows past it into the heap as normal.
+	// rrectsArr backs rrects for the common single-instance case (see aaStrokeRectOp.rectsArr).
 	rrectsArr                    [1]circularRRectGeom
 	viewMatrixIfUsingLocalCoords geom.Matrix
 	allFill                      bool
 	wideColor                    bool
 }
 
-// newCircularRRectOp is the CircularRRectOp constructor (Make is trivial). A devStrokeWidth <= 0 indicates fill only;
-// otherwise strokeOnly indicates whether the rrect is only stroked or stroked and filled. The paint is consumed.
+// newCircularRRectOp builds a circularRRectOp. A devStrokeWidth <= 0 indicates fill only; otherwise strokeOnly
+// indicates whether the rrect is only stroked or stroked and filled. The paint is consumed.
 func newCircularRRectOp(paint *Paint, viewMatrix *geom.Matrix, devRect geom.Rect, devRadius, devStrokeWidth float32, strokeOnly bool) *circularRRectOp {
 	color := paint.Color4f()
 	var processors *ProcessorSet
@@ -1533,10 +1499,7 @@ func newCircularRRectOp(paint *Paint, viewMatrix *geom.Matrix, devRect geom.Rect
 		bounds = bounds.Outset(halfWidth, halfWidth)
 	}
 
-	// The radii are outset for two reasons. First, it allows the shader to simply perform simpler computation because
-	// the computed alpha is zero, rather than 50%, at the radius. Second, the outer radius is used to compute the verts
-	// of the bounding box that is rendered and the outset ensures the box will cover all pixels partially covered by
-	// the rrect corners.
+	// The radii are outset for the same two reasons as in newCircleOp.
 	outerRadius += 0.5
 	innerRadius -= 0.5
 
@@ -1619,7 +1582,6 @@ func fillInOverstrokeVerts(w *quadVertexWriter, bounds geom.Rect, smInset, bigIn
 	put(bounds.Right-smInset, bounds.Bottom-smInset, xOffset)
 }
 
-// createProgramInfo builds the geometry processor and program info for this circular rrect op.
 func (o *circularRRectOp) createProgramInfo(state *OpFlushState) {
 	args := state.OpArgs()
 	if args.UsesMSAASurface() {
@@ -1732,8 +1694,8 @@ func (o *circularRRectOp) OnExecute(state *OpFlushState, chainBounds geom.Rect) 
 	o.mesh.draw(renderPass)
 }
 
-// OnCombineIfPossible implements Op: it merges o with another circularRRectOp when their processors, bounds, and vertex
-// budget are compatible.
+// OnCombineIfPossible implements Op: it merges o with another circularRRectOp when their processors and (if using local
+// coords) view matrix match and the combined index and vertex counts do not overflow.
 func (o *circularRRectOp) OnCombineIfPossible(t Op) CombineResult {
 	that, ok := t.(*circularRRectOp)
 	if !ok {
@@ -1769,10 +1731,8 @@ func (o *circularRRectOp) OnCombineIfPossible(t Op) CombineResult {
 
 var ellipticalRRectOpClassID = GenOpClassID()
 
-// ellipticalRRectOpPool is the free list of ellipticalRRectOp shells (see oppool.go).
 var ellipticalRRectOpPool opPool[ellipticalRRectOp]
 
-// ellipticalRRectGeom holds one elliptical-cornered rounded-rect instance's per-draw geometry and color.
 type ellipticalRRectGeom struct {
 	color        colorcore.PMColor4f
 	xRadius      float32
@@ -1798,9 +1758,9 @@ type ellipticalRRectOp struct {
 	useScale                     bool
 }
 
-// newEllipticalRRectOp returns an op that fills or strokes an elliptical-cornered rounded rect. If devStrokeWidths
-// values are <= 0 then fill only; otherwise strokeOnly indicates whether the rrect is only stroked or stroked and
-// filled. The paint is consumed.
+// newEllipticalRRectOp returns an op that fills or strokes an elliptical-cornered rounded rect, or nil if it cannot
+// represent the stroke. If devStrokeWidths values are <= 0 then fill only; otherwise strokeOnly indicates whether the
+// rrect is only stroked or stroked and filled. The paint is consumed.
 func newEllipticalRRectOp(paint *Paint, viewMatrix *geom.Matrix, devRect geom.Rect, devXRadius, devYRadius float32, devStrokeWidths geom.Point, strokeOnly bool) DrawOp {
 	if (devXRadius < 0.5 || devYRadius < 0.5) && !strokeOnly {
 		panic("elliptical rrect radii must be >= 0.5 for fills")
@@ -1911,7 +1871,6 @@ func (o *ellipticalRRectOp) Finalize(caps *gpu.Caps, clip *AppliedClip, clampTyp
 		AnalysisCoverageSingleChannel, &o.rrects[0].color, &o.wideColor)
 }
 
-// createProgramInfo builds the geometry processor and program info for this elliptical rrect op.
 func (o *ellipticalRRectOp) createProgramInfo(state *OpFlushState) {
 	localMatrix, ok := o.viewMatrixIfUsingLocalCoords.Invert()
 	if !ok {
@@ -2077,8 +2036,7 @@ func MakeCircularRRectOp(paint *Paint, viewMatrix *geom.Matrix, rrect geom.RRect
 		panic("circular rrect op requires circular corners")
 	}
 
-	// RRect ops only handle simple, but not too simple, rrects. Do any matrix crunching before we reset the draw state
-	// for device coords.
+	// RRect ops only handle simple, but not too simple, rrects.
 	bounds, _ := viewMatrix.MapRect(rrect.Rect)
 
 	radius := rrect.RadiusX
@@ -2114,8 +2072,8 @@ func MakeCircularRRectOp(paint *Paint, viewMatrix *geom.Matrix, rrect geom.RRect
 		isStrokeOnly)
 }
 
-// makeRRectOpInternal builds the DrawOp for a single stroked or filled rrect, choosing between the circular and
-// elliptical corner op implementations.
+// makeRRectOpInternal builds an elliptical rrect op for a stroked or filled simple rrect, or returns nil when the op
+// cannot represent the draw.
 func makeRRectOpInternal(paint *Paint, viewMatrix *geom.Matrix, rrect geom.RRect, strokeRec *stroke.Rec) DrawOp {
 	if !viewMatrix.RectStaysRect() {
 		panic("rrect op requires a rect-stays-rect matrix")
@@ -2124,8 +2082,7 @@ func makeRRectOpInternal(paint *Paint, viewMatrix *geom.Matrix, rrect geom.RRect
 		panic("rrect op requires a simple rrect")
 	}
 
-	// RRect ops only handle simple, but not too simple, rrects. Do any matrix crunching before we reset the draw state
-	// for device coords.
+	// RRect ops only handle simple, but not too simple, rrects.
 	bounds, _ := viewMatrix.MapRect(rrect.Rect)
 
 	xRadius := geom.ScalarAbs(viewMatrix.Get(geom.MScaleX)*rrect.RadiusX +
@@ -2152,7 +2109,7 @@ func makeRRectOpInternal(paint *Paint, viewMatrix *geom.Matrix, rrect geom.RRect
 				viewMatrix.Get(geom.MScaleY)))
 		}
 
-		// If half of the stroke width is greater than the radius, we don't handle that right now.
+		// If half of the stroke width is greater than the radius, we don't handle that.
 		if 0.5*scaledStroke.X > xRadius || 0.5*scaledStroke.Y > yRadius {
 			return nil
 		}
@@ -2170,13 +2127,12 @@ func makeRRectOpInternal(paint *Paint, viewMatrix *geom.Matrix, rrect geom.RRect
 		return nil
 	}
 
-	// If the corners are circles, use the circle renderer.
 	return newEllipticalRRectOp(paint, viewMatrix, bounds, xRadius, yRadius, scaledStroke,
 		isStrokeOnly)
 }
 
-// MakeRRectOp builds a draw op for a round rect, dispatching to the oval op for a full ellipse or to the
-// circular/elliptical rrect op otherwise. The paint is consumed.
+// MakeRRectOp builds a draw op for a round rect, dispatching to the oval op for a full ellipse or to the elliptical
+// rrect op otherwise. The paint is consumed. Returns nil when no op can represent the draw.
 func MakeRRectOp(caps *Caps, paint *Paint, viewMatrix *geom.Matrix, rrect geom.RRect, strokeRec *stroke.Rec) DrawOp {
 	if rrect.Type == geom.RRectOval {
 		return MakeOvalOp(caps, paint, viewMatrix, rrect.Rect, strokeRec)
@@ -2209,7 +2165,6 @@ func MakeOvalOp(caps *Caps, paint *Paint, viewMatrix *geom.Matrix, oval geom.Rec
 		return NewEllipseOp(caps, paint, viewMatrix, oval, strokeRec)
 	}
 
-	// Otherwise, if we have shader derivative support, render as device-independent.
 	if caps.ShaderCaps.ShaderDerivativeSupport {
 		a := viewMatrix.Get(geom.MScaleX)
 		b := viewMatrix.Get(geom.MSkewX)

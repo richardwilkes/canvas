@@ -8,12 +8,12 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // The GPU device's image-filter hooks: the GPU-native filtercore backend plus the staging that routes filter DAGs
-// between it and the readback→CPU→upload fallback. GPU-evaluable DAGs (per filtercore.CanEvaluateOnGPU — every node's
-// shaders convert to FPs) evaluate entirely on the GPU: snapSpecial wraps the device's texture in a drawable-backed
-// SpecialImage (no readback), intermediate surfaces are offscreen GPU devices, blur runs through GaussianBlur, and
-// drawSpecial samples result textures directly. Everything else takes the readback→CPU→upload fallback — the DAG
-// evaluates on the CPU raster backend — with a process-global visibility counter; the fallback's source snap is also
-// texture-wrapped now, resolving to CPU pixels lazily inside filtercore (counted by filtercore.ResolveToRasterCount).
+// between it and the readback→CPU→upload fallback. GPU-evaluable DAGs (per filtercore.CanEvaluateOnGPU) evaluate
+// entirely on the GPU: SnapSpecial wraps the device's texture in a drawable-backed SpecialImage (no readback),
+// intermediate surfaces are offscreen GPU devices, blur runs through GaussianBlur, and DrawSpecial samples result
+// textures directly. Everything else evaluates on the CPU raster backend, counted by FilterReadbackCount; the
+// fallback's source snap is texture-wrapped too, resolving to CPU pixels lazily inside filtercore (counted by
+// filtercore.ResolveToRasterCount).
 
 package gl
 
@@ -30,25 +30,19 @@ import (
 	"github.com/richardwilkes/canvas/shaders"
 )
 
-// filterReadbackCount tracks how many image-filter evaluations the GPU device has routed through the
-// readback→CPU→upload fallback. It is a process-global visibility counter so the cost of any CPU-only filter DAG stays
-// observable; GPU-evaluable DAGs bypass it. Now that the last six filter kernels have landed (morphology, displacement,
-// lighting, arithmetic, matrix-convolution, magnifier — gpu/gl/filterkernelfp.go), every publicly reachable image
-// filter evaluates GPU-natively, and the fallback remains only as the safety net for future non-evaluable nodes.
+// filterReadbackCount counts the image-filter evaluations the GPU device has routed through the readback→CPU→upload
+// fallback, so the cost of any CPU-only filter DAG stays observable. Every publicly reachable image filter evaluates
+// GPU-natively, so the fallback remains only as the safety net for future non-evaluable nodes.
 var filterReadbackCount atomic.Int64
 
-// FilterReadbackCount returns the running count of GPU-device image-filter evaluations that took the
-// readback→CPU→upload fallback — the visibility counter.
+// FilterReadbackCount returns how many GPU-device image-filter evaluations took the readback→CPU→upload fallback.
 func FilterReadbackCount() int64 { return filterReadbackCount.Load() }
 
-// AsFilterDevice implements canvas.Device: the filtercore.Device adapter that lowers filter draws, source snaps, and
-// final composites through this GPU device; with the GPU backend it is also the intermediate-surface device the DAG
-// renders through.
+// AsFilterDevice implements canvas.Device, returning the filterDevice adapter for this GPU device.
 func (d *Device) AsFilterDevice() filtercore.Device { return &filterDevice{dev: d} }
 
-// CreateFilterBackend implements canvas.Device: with the staged filter lowering, a DAG whose nodes all evaluate
-// GPU-natively gets the GPU-native filtercore backend; anything else evaluates on the CPU raster backend, with the
-// visibility counter firing once per fallback evaluation.
+// CreateFilterBackend implements canvas.Device: a DAG whose nodes all evaluate GPU-natively gets the GPU-native
+// filtercore backend; anything else gets the CPU raster backend and bumps filterReadbackCount.
 func (d *Device) CreateFilterBackend(filter filtercore.Filter) filtercore.Backend {
 	if filtercore.CanEvaluateOnGPU(filter) {
 		return &filterBackend{dev: d, cache: filtercore.NewFilterCache()}
@@ -128,7 +122,6 @@ func (im *TextureImage) MakeSubsetDrawable(subset geom.IRect) imagecore.Drawable
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// The GPU filtercore backend
 
 // filterBackend is the GPU-native filtercore backend: intermediate devices are offscreen GPU render targets, images
 // wrap textures, and blur runs on the GPU.
@@ -159,9 +152,9 @@ func (b *filterBackend) MakeDevice(size geom.ISize) filtercore.Device {
 	return dev.AsFilterDevice()
 }
 
-// Release tears down the intermediate devices this backend created, once the filter evaluation that owns it is done (the
-// canvas calls it there). Their clip stacks are the reason: a mask left live in one would sit in the resource cache under
-// a unique key with nothing left to invalidate it. Safe to call more than once.
+// Release tears down the intermediate devices this backend created, once the filter evaluation that owns it is done
+// (the canvas calls it there). Their clip stacks are the reason: a mask left live in one would sit in the resource
+// cache under a unique key with nothing left to invalidate it. Safe to call more than once.
 func (b *filterBackend) Release() {
 	for _, dev := range b.intermediates {
 		dev.Release()
@@ -193,7 +186,6 @@ func (b *filterBackend) BlurEngine() filtercore.BlurEngine {
 func (b *filterBackend) Cache() *filtercore.FilterCache { return b.cache }
 
 ///////////////////////////////////////////////////////////////////////////////
-// The GPU blur engine
 
 // maxBlurSigma is the largest sigma this algorithm handles directly; above it, filtercore pre-rescales the input before
 // invoking the algorithm, keeping kernel widths bounded.
@@ -264,7 +256,6 @@ func (a *blurAlgorithm) Blur(sigma geom.Size, src *filtercore.SpecialImage, srcB
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// The filtercore.Device adapter
 
 // filterDevice adapts the GPU Device to filtercore.Device: on the GPU backend it is both the intermediate-surface
 // device the DAG renders through and the endpoint adapter; on the CPU fallback it bridges only the endpoints (source

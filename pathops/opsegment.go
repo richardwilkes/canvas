@@ -7,11 +7,9 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// The segment construction surface: a monotonic curve of a contour holding the span list threaded from head (t==0) to
-// tail (t==1). This slice builds the data model and inserts intersection t values: init,
-// addLine/addQuad/addConic/addCubic, addT, insert, subDivide, the geometry accessors, the point-matching helpers, and
-// the angle-loop build/sort (calcAngles, sortAngles). The walking/winding/coincidence machinery (activeOp, findNext*,
-// moveNearby, …) lives with its consumers.
+// Segment construction: the data model, intersection t insertion (addT), subDivide, the geometry accessors, the
+// point-matching helpers, and the angle-loop build/sort (calcAngles, sortAngles). Walking (activeOp, findNext*) lives
+// in opsegment_walk.go, winding in winding.go, and coincidence maintenance (moveNearby, …) in opsegment_move.go.
 
 package pathops
 
@@ -21,7 +19,7 @@ import (
 )
 
 // opSegment is a monotonic curve of a contour: the span list runs from head (t==0) to tail (t==1). head/tail are stored
-// by value; pts is a slice into the point array owned by the edge builder's arena that may be tweaked in place.
+// by value; pts is not copied and may alias the edge builder's point array.
 type opSegment struct {
 	tail        opSpanBase    // fTail: t==1
 	contour     *opContour    // fContour
@@ -47,7 +45,6 @@ func (s *opSegment) visited() bool {
 	return true
 }
 
-// resetVisited clears the visited flag.
 func (s *opSegment) resetVisited() { s.visitedFlag = false }
 
 func (s *opSegment) globalState() *opGlobalState { return s.contour.state }
@@ -57,10 +54,8 @@ func (s *opSegment) bumpCount()                  { s.count++ }
 func (s *opSegment) setNext(next *opSegment)     { s.next = next }
 func (s *opSegment) setPrev(prev *opSegment)     { s.prev = prev }
 
-// done reports whether every span in this segment has been processed.
 func (s *opSegment) done() bool { return s.doneCount == s.count }
 
-// markDone flags one span done, bumping the done count.
 func (s *opSegment) markDone(span *opSpan) {
 	if span.done {
 		return
@@ -90,22 +85,16 @@ func (s *opSegment) release(span *opSpan) {
 	s.count--
 }
 
-// isHorizontal reports whether the segment's bounds have zero height.
 func (s *opSegment) isHorizontal() bool { return s.bounds.top == s.bounds.bottom }
 
-// isVertical reports whether the segment's bounds have zero width.
 func (s *opSegment) isVertical() bool { return s.bounds.left == s.bounds.right }
 
-// lastPt returns the segment's final point, at t==1.
 func (s *opSegment) lastPt() geom.Point { return s.pts[opVerbToPoints(s.verb)] }
 
-// ptAtT returns the point on the curve at parameter t.
 func (s *opSegment) ptAtT(t float64) geom.Point { return curvePointAtT(s.verb, s.pts, s.weight, t) }
 
-// dPtAtT returns the double-precision point on the curve at parameter t.
 func (s *opSegment) dPtAtT(t float64) dPoint { return curveDPointAtT(s.verb, s.pts, s.weight, t) }
 
-// dSlopeAtT returns the curve's tangent vector at parameter t, computed in double precision.
 func (s *opSegment) dSlopeAtT(t float64) dVector { return curveDSlopeAtT(s.verb, s.pts, s.weight, t) }
 
 // init sets up the segment's head (t==0) and tail (t==1) spans from the given points.
@@ -125,7 +114,6 @@ func (s *opSegment) init(pts []geom.Point, weight float32, contour *opContour, v
 	oneSpan.initBase(s, zeroSpan, 1, pts[opVerbToPoints(verb)])
 }
 
-// addLine initializes the segment as a line and computes its bounds.
 func (s *opSegment) addLine(pts []geom.Point, parent *opContour) *opSegment {
 	s.init(pts, 1, parent, path.VerbLine)
 	s.bounds.setBoundsPoints(pts[:2])
@@ -206,7 +194,6 @@ func (s *opSegment) addTPt(t float64, pt geom.Point) *opPtT {
 	}
 }
 
-// addT computes the point at t and adds it via addTPt.
 func (s *opSegment) addT(t float64) *opPtT { return s.addTPt(t, s.ptAtT(t)) }
 
 // match reports whether testT/testPt coincides with base's pt-t.
@@ -235,8 +222,8 @@ func (s *opSegment) ptsDisjoint(t1 float64, pt1 geom.Point, t2 float64, pt2 geom
 }
 
 // subDivide fills edge with the curve running between the start and end spans (endpoints from the spans' points,
-// interior control points recovered from the segment's own geometry). Returns true when a non-line curve was computed.
-// Consumed by opAngle.setSpans.
+// interior control points recovered from the segment's own geometry). Returns true only when those control points had
+// to be computed by subdividing.
 func (s *opSegment) subDivide(start, end *opSpanBase, edge *dCurve) bool {
 	startPtT := &start.ptT
 	endPtT := &end.ptT
@@ -414,7 +401,6 @@ func (s *opSegment) containsT(newT float64) bool {
 	return false
 }
 
-// isXor reports whether the segment's contour uses XOR fill semantics.
 func (s *opSegment) isXor() bool { return s.contour.xor }
 
 // existing returns the pt-t already present at t (matching this segment's point and, when opp is non-nil, sharing a
@@ -460,7 +446,7 @@ func (s *opSegment) existing(t float64, opp *opSegment) *opPtT {
 	return testPtT
 }
 
-// collapsed reports whether any span reports the [s, e] range collapsed.
+// collapsed reports whether any span reports the [startT, endT] range collapsed.
 func (s *opSegment) collapsed(startT, endT float64) spanCollapsed {
 	span := &s.head.opSpanBase
 	for {

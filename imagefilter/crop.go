@@ -34,8 +34,7 @@ func Crop(rect geom.Rect, tileMode shaders.TileMode, input filtercore.Filter) fi
 	return f
 }
 
-// Empty returns a filter producing transparent black, via a crop to an empty rect (whose implementation handles empty
-// rects gracefully).
+// Empty returns a filter producing transparent black, implemented as a decal crop to an empty rect.
 func Empty() filtercore.Filter {
 	return Crop(geom.Rect{}, shaders.TileDecal, nil)
 }
@@ -101,8 +100,6 @@ func (f *cropFilter) OnOutputLayerBounds(mapping *filtercore.Mapping, contentBou
 		empty := geom.IRect{}
 		return &empty
 	}
-	// Non-transparent content exists within the crop; non-decal tiling makes the visual output unbounded even if the
-	// underlying data is smaller.
 	if f.tileMode == shaders.TileDecal {
 		return &crop
 	}

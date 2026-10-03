@@ -19,12 +19,10 @@ import (
 	"github.com/richardwilkes/canvas/stroke"
 )
 
-// Stroker probes.
-//
 // TestStrokeFillPathProbe is the structural differential: Skia's fill-path result vs stroke.FillPathWithPaintResScale
 // over a stroke-focused path corpus × paint matrix, comparing the returned doFill flag, fill type, point counts (exact
 // — a count mismatch means a subdivision decision diverged) and the point streams (bit-exact preferred, agree()
-// tolerance for the normalize/sqrt float lanes, whose contraction behavior is compiler-specific on the C side).
+// tolerance for the float lanes whose contraction behavior is compiler-specific on the C side).
 
 // strokePaint is one stroke configuration applied to both implementations.
 type strokePaint struct {
@@ -59,7 +57,6 @@ func (sp *strokePaint) spec() stroke.PaintSpec {
 	}
 }
 
-// strokeCorpus is the stroke-focused path corpus.
 func strokeCorpus() []*scenario.PathSpec {
 	var out []*scenario.PathSpec
 	add := func(s *scenario.PathSpec) { out = append(out, s) }

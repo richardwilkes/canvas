@@ -197,10 +197,10 @@ func columns4x4(t archsimd.Uint8x16) (c0, c1, c2, c3 archsimd.Int32x4) {
 // holds T[row][j] across its lanes, so transposing gives vector k = T[k][*], and the portable pass two indexes
 // tmp[0+i], tmp[4+i], tmp[8+i], tmp[12+i] — exactly T[0..3][i]).
 //
-// Lane bounds, from |src - ref| <= 255: the a-values of pass one reach 1020, so a2*2217 + a3*5352 <= 7.7e6 and the
-// tmp values stay inside 14 bits (8160). Pass two's a-values then reach 16320, so a2*2217 + a3*5352 + 51000 <= 1.24e8
-// — three orders of magnitude inside a signed 32-bit lane — and every output is inside 12 bits, which is what lets
-// narrow32Pair pack the results.
+// Lane bounds, from |src - ref| <= 255: the a-values of pass one reach 510, so a2*2217 + a3*5352 <= 3.9e6 and the tmp
+// values stay inside 14 bits (8160). Pass two's a-values then reach 16320, so a2*2217 + a3*5352 + 51000 <= 1.24e8 — an
+// order of magnitude inside a signed 32-bit lane — and every output is inside 12 bits, which is what lets narrow32Pair
+// pack the results.
 func fTransformSIMD(src, ref []uint8, out []int16) {
 	tIdx := loadShuffle(&transpose4x4Idx)
 	s := byteShuffle(loadBlock4x4(src), tIdx)

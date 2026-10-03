@@ -8,9 +8,7 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // Double-precision 2D vector and point primitives used throughout the pathops geometry, since the boolean-operation
-// math needs more precision than the float32 host types (geom.Point) provide. Covers the members the line intersection
-// layer reaches plus the curve-dependent free functions (dPointMid, dPointWayRoughlyEqual, …) the quad/cubic layers
-// use.
+// math needs more precision than the float32 host type (geom.Point) provides.
 
 package pathops
 
@@ -20,16 +18,14 @@ import (
 	"github.com/richardwilkes/canvas/geom"
 )
 
-// dVector is a double-precision 2D vector.
 type dVector struct {
 	x, y float64
 }
 
-// cross returns the 2D cross product (scalar z-component) of v and a.
 func (v dVector) cross(a dVector) float64 { return v.x*a.y - v.y*a.x }
 
-// crossCheck returns the cross product of v and a, but treats nearly-coincident directions (within 16 ULPs in float32)
-// as exactly parallel, returning 0 instead of a tiny nonzero value.
+// crossCheck returns the cross product of v and a, or 0 when its two terms are within 16 float32 ULPs of each other
+// (nearly parallel directions).
 func (v dVector) crossCheck(a dVector) float64 {
 	xy := v.x * a.y
 	yx := v.y * a.x
@@ -39,7 +35,7 @@ func (v dVector) crossCheck(a dVector) float64 {
 	return xy - yx
 }
 
-// crossNoNormalCheck is like crossCheck but its ULPs comparison is tolerant of denormalized operands.
+// crossNoNormalCheck is like crossCheck but without the shortcut that treats two near-zero terms as equal.
 func (v dVector) crossNoNormalCheck(a dVector) float64 {
 	xy := v.x * a.y
 	yx := v.y * a.x
@@ -49,68 +45,54 @@ func (v dVector) crossNoNormalCheck(a dVector) float64 {
 	return xy - yx
 }
 
-// dot returns the dot product of v and a.
 func (v dVector) dot(a dVector) float64 { return v.x*a.x + v.y*a.y }
 
-// length returns the Euclidean length of v.
 func (v dVector) length() float64 { return math.Sqrt(v.lengthSquared()) }
 
-// lengthSquared returns the squared Euclidean length of v.
 func (v dVector) lengthSquared() float64 { return v.x*v.x + v.y*v.y }
 
-// normalize scales v to unit length using an ordinary IEEE divide, so a zero-length vector normalizes to NaN and an
-// infinite-length vector normalizes to zero rather than trapping.
+// normalize scales v to unit length. A zero-length vector becomes NaN and one whose length overflows to infinity
+// becomes zero.
 func (v *dVector) normalize() {
 	inverseLength := ieeeDoubleDivide(1, v.length())
 	v.x *= inverseLength
 	v.y *= inverseLength
 }
 
-// isFinite reports whether both components of v are finite.
 func (v dVector) isFinite() bool { return dIsFinite(v.x, v.y) }
 
-// asVector narrows v to the float32 host vector type.
 func (v dVector) asVector() geom.Point {
 	return geom.Point{X: float32(v.x), Y: float32(v.y)}
 }
 
-// dPoint is a double-precision 2D point.
 type dPoint struct {
 	x, y float64
 }
 
-// sub returns the vector from b to the receiver.
 func (p dPoint) sub(b dPoint) dVector { return dVector{x: p.x - b.x, y: p.y - b.y} }
 
-// plusVector returns the point offset by v.
 func (p dPoint) plusVector(v dVector) dPoint { return dPoint{x: p.x + v.x, y: p.y + v.y} }
 
-// equals reports whether p and b have identical coordinates.
 func (p dPoint) equals(b dPoint) bool { return p.x == b.x && p.y == b.y }
 
-// set widens p from the float32 host point.
 func (p *dPoint) set(pt geom.Point) {
 	p.x = float64(pt.X)
 	p.y = float64(pt.Y)
 }
 
-// asPoint narrows p to the float32 host point.
 func (p dPoint) asPoint() geom.Point {
 	return geom.Point{X: float32(p.x), Y: float32(p.y)}
 }
 
-// distance returns the Euclidean distance between p and a.
 func (p dPoint) distance(a dPoint) float64 { return p.sub(a).length() }
 
-// distanceSquared returns the squared Euclidean distance between p and a.
 func (p dPoint) distanceSquared(a dPoint) float64 { return p.sub(a).lengthSquared() }
 
-// dPointMid returns the midpoint of a and b.
 func dPointMid(a, b dPoint) dPoint { return dPoint{x: (a.x + b.x) / 2, y: (a.y + b.y) / 2} }
 
-// approximatelyEqual reports whether p and a are the same point, using a cascade of increasingly loose tests
-// (component-wise approximate equality, then rough ULPs equality, then a final ULPs-based distance check) that accounts
-// for the magnitude of the coordinates.
+// approximatelyEqual reports whether p and a are the same point: either both components are approximately equal, or
+// both are roughly equal in ULPs and the distance between them is within 8 ULPs (almostPequalUlps) of the largest
+// coordinate magnitude.
 func (p dPoint) approximatelyEqual(a dPoint) bool {
 	if approximatelyEqual(p.x, a.x) && approximatelyEqual(p.y, a.y) {
 		return true
@@ -125,8 +107,7 @@ func (p dPoint) approximatelyEqual(a dPoint) bool {
 	return almostPequalUlps(largest, largest+dist)
 }
 
-// approximatelyDEqual is like approximatelyEqual, but its final distance check uses the looser 16-ULP almostDequalUlps
-// rather than approximatelyEqual's 8-ULP almostPequalUlps.
+// approximatelyDEqual is approximatelyEqual with the distance check loosened to 16 ULPs (almostDequalUlps).
 func (p dPoint) approximatelyDEqual(a dPoint) bool {
 	if approximatelyEqual(p.x, a.x) && approximatelyEqual(p.y, a.y) {
 		return true
@@ -141,21 +122,18 @@ func (p dPoint) approximatelyDEqual(a dPoint) bool {
 	return almostDequalUlps(largest, largest+dist)
 }
 
-// approximatelyEqualPt is approximatelyEqual for a float32 host point, widening a before comparing.
 func (p dPoint) approximatelyEqualPt(a geom.Point) bool {
 	var d dPoint
 	d.set(a)
 	return p.approximatelyEqual(d)
 }
 
-// approximatelyZero reports whether p is approximately the origin.
 func (p dPoint) approximatelyZero() bool {
 	return approximatelyZero(p.x) && approximatelyZero(p.y)
 }
 
-// dPointsApproximatelyEqual compares two float32 host points with the same approximate/rough/ULPs cascade
-// approximatelyEqual uses, but with the min/max magnitude computed in float32 before the final ULPs distance check
-// (matching the precision at which the host points actually live).
+// dPointsApproximatelyEqual is approximatelyDEqual for float32 host points, with the min/max magnitude computed in
+// float32 (the precision at which the host points live).
 func dPointsApproximatelyEqual(a, b geom.Point) bool {
 	if approximatelyEqual(float64(a.X), float64(b.X)) && approximatelyEqual(float64(a.Y), float64(b.Y)) {
 		return true
@@ -197,8 +175,6 @@ func dPointWayRoughlyEqual(a, b geom.Point) bool {
 	return roughlyZeroWhenComparedTo(float64(largestDiff), float64(largestNumber))
 }
 
-// minF32/maxF32 are min/max over float32 (used where an intermediate value must be kept in float32 precision rather
-// than widened to float64).
 func minF32(a, b float32) float32 {
 	if a < b {
 		return a

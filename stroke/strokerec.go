@@ -172,8 +172,8 @@ func (r *Rec) SetHairlineStyle() {
 	r.strokeAndFill = false
 }
 
-// SetStrokeStyle sets the style to stroke (or stroke-and-fill). Note, if width==0, then this request is taken to mean:
-// strokeAndFill==true -> new style will be Fill; strokeAndFill==false -> new style will be Hairline.
+// SetStrokeStyle sets the style to stroke, or to stroke-and-fill when strokeAndFill is set. A width of 0 instead
+// selects fill (strokeAndFill) or hairline.
 func (r *Rec) SetStrokeStyle(width float32, strokeAndFill bool) {
 	if strokeAndFill && width == 0 {
 		// hairline+fill == fill
@@ -254,21 +254,19 @@ func GetInflationRadius(join Join, miterLimit float32, strokeCap Cap, strokeWidt
 	if strokeWidth < 0 { // fill
 		return 0
 	} else if strokeWidth == 0 {
-		// The result is in local (pre-transform) space, but a hairline's width is defined in device space, so no
-		// local-space number can be exact here: under a matrix with scale s, this 1 maps to s device pixels while the
-		// hairline always paints ~1 device pixel wide. The 1 is a nominal stand-in, not a computed bound.
+		// The result is in local (pre-transform) space, but a hairline's width is in device space, so no local-space
+		// value is exact: under scale s this 1 maps to s device pixels while the hairline always paints ~1 device pixel
+		// wide. The 1 is a nominal stand-in, not a computed bound.
 		//
-		// Callers needing device-space accuracy must inflate after the transform rather than scaling this result;
-		// tessChopPathIfNecessary and strokeTessellateOp both do so by asking for the inflation of an equivalent
+		// Callers needing device-space accuracy must inflate after the transform rather than scale this result;
+		// tessChopPathIfNecessary and strokeTessellateOp do so by asking for the inflation of an equivalent
 		// device-space stroke of width 1. Callers that inflate in local space (Style.AdjustBounds, computeFastBounds)
-		// are safe without compensating, because every consumer of their bounds adds at least a device pixel of slop:
-		// Canvas.quickRejectBounds outsets the clip by 1 for AA/hairline slop, and getUnclippedShapeDevBounds rounds
-		// out to whole pixels. A hairline paints at most half a device pixel beyond its geometry: square and round caps
-		// extend by the half-width, and the hairline lane scan-converts the polyline without building miter join
-		// geometry, so the miter limit cannot push it further. That is why this branch ignores join, miterLimit and
-		// cap, and why a device pixel of slop covers a hairline at any scale. Probed by sweeping a hairline near the
-		// clip edge across scales from 1 down to 0.001: the clipping threshold is identical at every scale, so this
-		// value is not load-bearing.
+		// need no compensation, because every consumer of their bounds adds at least a device pixel of slop:
+		// Canvas.quickRejectBounds outsets the clip by 1, and getUnclippedShapeDevBounds rounds out to whole pixels. A
+		// hairline paints at most half a device pixel beyond its geometry (caps extend by the half-width, and the
+		// hairline lane builds no miter join geometry), which is why this branch ignores join, miterLimit and cap.
+		// Sweeping a hairline near the clip edge across scales from 1 down to 0.001 gave an identical clipping
+		// threshold at every scale, so this value is not load-bearing.
 		return 1
 	}
 

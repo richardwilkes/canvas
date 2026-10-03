@@ -36,7 +36,6 @@ type strokeTessellator struct {
 	attribs      PatchAttribs
 }
 
-// newStrokeTessellator creates a stroke tessellator for the given patch attribute layout.
 func newStrokeTessellator(attribs PatchAttribs) *strokeTessellator {
 	return &strokeTessellator{attribs: attribs | PatchAttribJoinControlPoint}
 }
@@ -45,8 +44,8 @@ func newStrokeTessellator(attribs PatchAttribs) *strokeTessellator {
 // conics, cubics, cusp circles) via patchWriter.
 func writeFixedCountPatches(patchWriter *patchWriter, shaderMatrix *geom.Matrix, pathStrokes *pathStrokeList) {
 	// The vector xform approximates how the control points are transformed by the shader to more accurately compute how
-	// many *parametric* segments are needed. getMaxScale() returns -1 if it can't compute a scale factor (e.g.
-	// perspective); taking the absolute value automatically converts that to an identity scale factor for our purposes.
+	// many *parametric* segments are needed. MaxScale() returns -1 if it can't compute a scale factor (e.g.
+	// perspective); taking the absolute value converts that to an identity scale factor for our purposes.
 	patchWriter.setShaderTransform(makeVectorXform(shaderMatrix),
 		geom.ScalarAbs(shaderMatrix.MaxScale()))
 	if patchWriter.attribs&PatchAttribStrokeParams == 0 {
@@ -161,9 +160,6 @@ func (t *strokeTessellator) prepare(target *OpFlushState, shaderMatrix *geom.Mat
 	writeFixedCountPatches(writer, shaderMatrix, pathStrokes)
 	alloc.close()
 	t.vertexCount = fixedCountStrokesVertexCountForTolerances(&worstCase)
-
-	// A static fallback vertex buffer holding the edge IDs would be bound here if gl_VertexID were unsupported; desktop
-	// core profiles always have gl_VertexID, so that lane is trimmed.
 }
 
 // draw issues draw calls for the tessellated stroke. The caller is responsible for creating and binding a pipeline that

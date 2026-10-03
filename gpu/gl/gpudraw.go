@@ -31,7 +31,8 @@ func (g *Gpu) CurrentProgram() *Program {
 	return g.hwProgram
 }
 
-// flushProgram binds program for use with UseProgram, skipping the GL call if it is already bound.
+// flushProgram makes program the current GL program, skipping the UseProgram call if it already is. A nil program only
+// clears the shadow.
 func (g *Gpu) flushProgram(program *Program) {
 	if program == nil {
 		g.hwProgram = nil
@@ -53,8 +54,8 @@ func (g *Gpu) flushProgram(program *Program) {
 	g.hwProgramID = id
 }
 
-// flushProgramID binds a raw GL program object by ID, skipping the GL call if it is already bound (used by the
-// copy/mipmap programs later).
+// flushProgramID binds a raw GL program object by ID, skipping the GL call if it is already bound (used by the mipmap
+// programs).
 func (g *Gpu) flushProgramID(id uint32) {
 	if id == 0 {
 		panic("program id required")
@@ -128,10 +129,9 @@ func (g *Gpu) prepareToDraw(primitiveType gpu.PrimitiveType) uint32 {
 	panic("invalid primitive type")
 }
 
-// NumGLDraws returns the number of GL geometry draw calls issued since the last ResetGLDrawStats. Together with the
-// number of ops recorded for the frame it is the batching-effectiveness metric (ops recorded vs GL draws issued): the
-// closer draws-issued is to draws-recorded-worth of primitives, the worse the batching. Read it only on the GL context
-// thread.
+// NumGLDraws returns the number of GL geometry draw calls issued since the last ResetGLDrawStats. Compared with the
+// number of ops recorded for the frame, it measures batching effectiveness: the closer the two, the worse the batching.
+// Read it only on the GL context thread.
 func (g *Gpu) NumGLDraws() int { return g.numGLDraws }
 
 // ResetGLDrawStats zeroes the GL-draw-call counter. Callers take a per-frame reading by resetting before recording and

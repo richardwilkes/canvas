@@ -12,11 +12,9 @@
 // All per-facet state and behavior lives on the facets, so a Surface with both facets behaves as one unit (one cache
 // entry, one ref count, combined memory size, release order RT-then-texture).
 //
-// Trims: external textures and compressed formats are out of scope (desktop trim), and protected content is not
-// implemented. The DMSAA dynamic MSAA attachment (EnsureDynamicMSAAAttachment) is live; only bindInternal's
-// render-to-texture FBO reconfiguration stays out, because it requires the single-sample and multisample FBO ids to be
-// equal, which only the ES render-to-texture extensions (msaaResolvesAutomatically) produce — never desktop GL. Release
-// procs are not ported.
+// Trims: external textures and compressed formats are out of scope (desktop trim), protected content is not
+// implemented, release procs are not ported, and the ES-only render-to-texture DMSAA lane is left out (see
+// bindInternal).
 
 package gl
 
@@ -355,7 +353,7 @@ type ResolveDirection bool
 
 // ResolveDirection values.
 const (
-	// ResolveSingleToMSAA requires glCaps.canResolveSingleToMSAA().
+	// ResolveSingleToMSAA requires Caps.CanResolveSingleToMSAA().
 	ResolveSingleToMSAA ResolveDirection = false
 	// ResolveMSAAToSingle blits the multisampled FBO into the single sample one.
 	ResolveMSAAToSingle ResolveDirection = true
@@ -439,11 +437,10 @@ func (rt *RenderTarget) AttachStencilAttachment(stencil *Attachment, useMSAASurf
 		slot = &rt.msaaStencilAttachment
 	}
 	if stencil == nil && *slot == nil {
-		// No need to do any work since we currently don't have a stencil attachment and we're not actually adding one.
 		return
 	}
-	// completeStencilAttachment: we defer attaching the new stencil buffer until the next time our framebuffer is
-	// bound.
+	// As in Skia's completeStencilAttachment, attaching the new stencil buffer is deferred until the framebuffer is
+	// next bound.
 	if *slot != stencil {
 		rt.needsStencilBind[boolIndex(useMSAASurface)] = true
 	}
@@ -458,7 +455,7 @@ func (rt *RenderTarget) HasDynamicMSAAAttachment() bool { return rt.dynamicMSAAA
 
 // EnsureDynamicMSAAAttachment lazily creates the multisample FBO + discardable MSAA color renderbuffer a single-sample
 // render target draws into under DMSAA. Resources here carry no back-pointer to a resource provider, so the caller
-// passes it. The msaaResolvesAutomatically render-to-texture lane (multisample FBO == single-sample FBO) is unreachable
+// passes it. The MSAAResolvesAutomatically render-to-texture lane (multisample FBO == single-sample FBO) is unreachable
 // on desktop GL and stays out.
 func (rt *RenderTarget) EnsureDynamicMSAAAttachment(rp *ResourceProvider) bool {
 	if rt.sampleCnt != 1 {
@@ -510,8 +507,8 @@ func (rt *RenderTarget) Bind(useMultisampleFBO bool) {
 	rt.bindInternal(FRAMEBUFFER, useMultisampleFBO)
 }
 
-// BindForPixelOps binds for copying, reading, or clearing pixel values, using the MSAA FBO only when there is a
-// separate resolve texture.
+// BindForPixelOps binds for copying, reading, or clearing pixel values, using the MSAA FBO only when the render target
+// itself is multisampled.
 func (rt *RenderTarget) BindForPixelOps(fboTarget uint32) {
 	rt.bindInternal(fboTarget, rt.sampleCnt > 1)
 }
@@ -537,7 +534,7 @@ func (rt *RenderTarget) BindForResolve(dir ResolveDirection) {
 
 // bindInternal binds the given FBO slot, minus the DMSAA render-to-texture FBO reconfiguration, which requires the
 // single-sample and multisample FBO ids to be equal — only the ES render-to-texture extensions
-// (msaaResolvesAutomatically) produce that, never desktop GL.
+// (MSAAResolvesAutomatically) produce that, never desktop GL.
 func (rt *RenderTarget) bindInternal(fboTarget uint32, useMultisampleFBO bool) {
 	fboID := rt.singleSampleFBOID
 	if useMultisampleFBO {

@@ -266,7 +266,6 @@ func writeRule(w *svgWriter, width, y float64) {
 		pageMargin, y, width-pageMargin, y)
 }
 
-// contains reports whether the set holds name.
 func contains(set map[string]struct{}, name string) bool {
 	_, ok := set[name]
 	return ok

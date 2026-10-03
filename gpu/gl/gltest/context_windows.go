@@ -10,26 +10,22 @@
 // Headless WGL context creation via the standard library's syscall package (no cgo, no purego — Windows resolves GL
 // through std syscall, matching gpu/gl/native_windows.go). This is the Windows counterpart of context_darwin.go's CGL
 // leg and context_linux.go's GLX leg: unison creates its GL contexts through WGL on Windows, so the test context is
-// built the same way. It creates an offscreen core-profile context on a hidden 1x1 window's device context — no window
-// is ever shown, and the GPU backend renders to framebuffer objects, so the window's back buffer is unused — which
-// matches how this package's GPU test suites use the context.
+// built the same way. It creates an offscreen core-profile context on a hidden 1x1 window's device context; the GPU
+// backend renders to framebuffer objects, so the window's back buffer is unused.
 //
-// WGL bootstrap: a modern (core-profile) context can only be created through wglCreateContextAttribsARB, which is
-// itself an extension entry point that opengl32.dll does not export — it must be resolved via wglGetProcAddress, and
-// that in turn requires a current legacy context. So init() creates a throwaway legacy context first, resolves
-// wglCreateContextAttribsARB, then creates the real 4.1-then-3.2 core context (the desktop-trim range) and deletes the
-// legacy one, mirroring the darwin/linux 4.1-then-3.2 selection.
+// WGL bootstrap: a core-profile context can only be created through wglCreateContextAttribsARB, an extension entry
+// point that opengl32.dll does not export — it must be resolved via wglGetProcAddress, which requires a current legacy
+// context. So init() creates a throwaway legacy context first, resolves wglCreateContextAttribsARB, then creates the
+// real 4.1-then-3.2 core context (the desktop-trim range, as on darwin/linux) and deletes the legacy one.
 //
 // The GL stack: a stock Windows runner's opengl32.dll is the Microsoft software rasterizer, which exposes only GL 1.1
 // and no WGL_ARB_create_context — so wglGetProcAddress("wglCreateContextAttribsARB") returns NULL, init() returns an
-// error, and the GPU tests skip (graceful degradation, exactly as on a headless host). A usable core-profile GL comes
-// from a Mesa3D opengl32.dll drop-in (llvmpipe software GL 3.3/4.x) placed next to the executable — opengl32.dll is not
-// a KnownDLL, so the app-directory copy is loaded in preference to System32's. See the "Provision Mesa3D" steps in
-// .github/workflows/build.yml and capture-goldens.yml for the CI-provisioning notes.
+// error, and the GPU tests skip. A usable core-profile GL comes from a Mesa3D opengl32.dll drop-in (llvmpipe software
+// GL 3.3/4.x) placed next to the executable — opengl32.dll is not a KnownDLL, so the app-directory copy is loaded in
+// preference to System32's. See the "Provision Mesa3D" steps in .github/workflows/build.yml and capture-goldens.yml.
 //
-// Software-renderer selection: unlike CGL (which takes a renderer-id pixel-format attribute), WGL has no "use the
-// software rasterizer" attribute, so CANVAS_GLTEST_RENDERER=software (honored by the darwin leg) is a no-op here,
-// exactly as on Linux — which opengl32.dll is loaded governs (Mesa's drop-in is the software renderer).
+// Software-renderer selection: WGL has no "use the software rasterizer" attribute, so CANVAS_GLTEST_RENDERER=software
+// (honored by the darwin leg) is a no-op here, as on Linux; which opengl32.dll is loaded governs.
 
 package gltest
 
@@ -215,7 +211,7 @@ func (p *platformContext) init() error {
 		return fmt.Errorf("gltest: LoadLibrary gdi32: %w", err)
 	}
 	// opengl32.dll may be the stock Microsoft GL 1.1 rasterizer or a Mesa3D drop-in; either exports the WGL entry
-	// points below. The app-directory copy (Mesa) wins over System32's because opengl32 is not a KnownDLL.
+	// points below.
 	opengl32, err := syscall.LoadLibrary("opengl32.dll")
 	if err != nil {
 		return fmt.Errorf("gltest: LoadLibrary opengl32: %w", err)
@@ -251,7 +247,7 @@ func (p *platformContext) init() error {
 	p.hInstance = winCall(p.getModuleHandleW, 0)
 
 	// Register a unique CS_OWNDC class so the window gets a stable private DC (the pixel format set on it sticks for
-	// the context's lifetime). A per-process-unique name means repeated New()/Destroy() never collide.
+	// the context's lifetime).
 	classNameStr := fmt.Sprintf("canvasGLTest_%d", atomic.AddUint64(&classCounter, 1))
 	if p.className, err = syscall.UTF16PtrFromString(classNameStr); err != nil {
 		return fmt.Errorf("gltest: UTF16 class name: %w", err)
@@ -270,8 +266,7 @@ func (p *platformContext) init() error {
 		return errors.New("gltest: RegisterClassExW failed")
 	}
 
-	// A hidden 1x1 popup window: never shown, and its back buffer is unused (the GPU backend renders to FBOs); it
-	// exists only to own a GL-capable device context.
+	// A hidden 1x1 popup window that exists only to own a GL-capable device context.
 	p.hwnd = winCall(p.createWindowExW,
 		0,                                    // dwExStyle
 		uintptr(unsafe.Pointer(p.className)), // lpClassName
@@ -291,7 +286,7 @@ func (p *platformContext) init() error {
 	}
 
 	// A double-buffered RGBA8 (+depth24/stencil8) pixel format. The GPU backend renders to its own FBOs, so the depth
-	// and stencil here are unused, but they are requested for parity with the CGL/GLX legs.
+	// and stencil here are unused, but they are requested for parity with the GLX leg.
 	pfd := pixelFormatDescriptor{
 		nSize:        uint16(unsafe.Sizeof(pixelFormatDescriptor{})),
 		nVersion:     1,

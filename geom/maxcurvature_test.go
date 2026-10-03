@@ -58,7 +58,6 @@ func TestFindCubicCusp(t *testing.T) {
 	if ct <= 0 || ct >= 1 {
 		t.Fatalf("cusp t %v want in (0,1)", ct)
 	}
-	// the derivative at the cusp is (near) zero relative to the cubic's size
 	d := evalCubicDerivative(cusp, ct)
 	if d.LengthSqd() >= calcCubicPrecision(cusp) {
 		t.Fatalf("derivative at cusp t=%v not near zero: %v", ct, d)
@@ -142,8 +141,7 @@ func TestChopCubicAtInflections(t *testing.T) {
 }
 
 func TestFindQuadMaxCurvatureNaN(t *testing.T) {
-	// Documented contract: the result is in [0, 1] for finite input, but a NaN coordinate makes numer and denom NaN,
-	// which fails every comparison and falls through to return NaN. Matches Skia, whose assert admits NaN.
+	// Documented contract: the result is in [0, 1] for finite input and NaN for a NaN coordinate, matching Skia.
 	nan := float32(math.NaN())
 	for _, src := range [][]Point{
 		{{X: nan, Y: 0}, {X: 1, Y: 1}, {X: 2, Y: 0}},
@@ -154,7 +152,6 @@ func TestFindQuadMaxCurvatureNaN(t *testing.T) {
 			t.Errorf("FindQuadMaxCurvature(%v) = %v, want NaN", src, got)
 		}
 	}
-	// Finite input stays pinned to the unit range.
 	rng := rand.New(rand.NewSource(5))
 	for range 50000 {
 		src := []Point{

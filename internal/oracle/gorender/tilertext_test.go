@@ -19,11 +19,9 @@ import (
 
 // TestTilerTextSeamWindow covers the glyph lane of the draw tiler (canvas/drawtiler.go): a text run crossing the 8191px
 // tile seam on a 10000x24 strip must render exactly as the same scene on a small untiled surface translated into view.
-// Glyph rasterization is the library's own on both sides (same scaler, same masks; text output is deterministic per
-// platform, which is also what lets the corpus's text scenes gate bit-exactly against the per-platform raster
-// goldens), and glyph placement/subpixel quantization is invariant under integer translation, so
-// the tiled strip and the untiled window must agree byte for byte; a seam misplacement or a wrong per-tile CTM shift in
-// the glyph painter breaks whole glyphs. cgo-free: both renders go through gorender's raster backend.
+// Both sides use the same scaler and masks, and glyph placement/subpixel quantization is invariant under integer
+// translation, so the tiled strip and the untiled window must agree byte for byte; a seam misplacement or a wrong
+// per-tile CTM shift in the glyph painter breaks whole glyphs.
 func TestTilerTextSeamWindow(t *testing.T) {
 	const stripW, stripH = 10000, 24
 	scene := func(c scenario.Canvas) {

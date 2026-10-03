@@ -60,7 +60,7 @@ func TestDrawImageRectScales(t *testing.T) {
 		shaders.SamplingOptions{}, nil, ConstraintFast)
 
 	src := img.PeekPixels(imagecore.CachingAllow)
-	// Nearest upscale 4x: quadrant (1,1) of the destination shows source pixel (0,0), etc.
+	// Nearest upscale 4x: destination pixel (1,1) shows source pixel (0,0), etc.
 	if pix.Pix[1*8+1] != src.Words[0] {
 		t.Fatalf("q00 = %08x want %08x", pix.Pix[9], src.Words[0])
 	}

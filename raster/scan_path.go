@@ -185,7 +185,7 @@ func walkEdges(prevHead *Edge, fillType path.FillType, blitter Blitter, startY, 
 		if currY >= stopY {
 			break
 		}
-		// now currE points to the first edge with a Yint larger than currY
+		// now currE points to the first edge with a FirstY larger than the previous currY
 		insertNewEdges(currE, currY)
 	}
 }
@@ -251,9 +251,8 @@ func walkSimpleEdges(prevHead *Edge, blitter Blitter, startY, stopY int32) {
 				if l < r {
 					blitter.BlitH(l, localTop, r-l)
 				}
-				// Either/both of these adds might overflow, since we perform this step even if (later) we determine
-				// that we are done with the edge (see updateEdge). Wrapping on overflow is intentional and harmless
-				// here.
+				// These adds may overflow, since they run even when updateEdge later finds the edge done; the
+				// wraparound is intentional and harmless.
 				left += dLeft
 				rite += dRite
 				localTop++
@@ -408,7 +407,6 @@ func fillPath(p *path.Path, clipRect geom.IRect, blitter Blitter, startY, stopY 
 	// them as locals on every fill.
 	headEdge := &builder.head
 	tailEdge := &builder.tail
-	// this returns the first and last edge after they're sorted into a dlink list
 	edge, last := sortEdges(list)
 
 	headEdge.Prev = nil
@@ -422,7 +420,6 @@ func fillPath(p *path.Path, clipRect geom.IRect, blitter Blitter, startY, stopY 
 	tailEdge.FirstY = edgeTailY
 	last.Next = tailEdge
 
-	// now edge is the head of the sorted linklist
 	if !pathContainedInClip && startY < clipRect.Top {
 		startY = clipRect.Top
 	}
@@ -470,10 +467,9 @@ func blitBelowClip(blitter Blitter, avoid geom.IRect, clip *Region) {
 ///////////////////////////////////////////////////////////////////////////////
 
 // scanClipper decides whether the blitter needs a clipping wrapper and whether the scan converter still needs the clip
-// rect. It is initialized in place by init (rather than constructed and returned by value) because blitter may point at
-// rectBlitter/rgnBlitter within the same scanClipper, so the storage must be caller-owned and stay at a stable address
-// for the fill's duration. needClipRect is a plain bool (not a pointer whose value is never read, only its presence) so
-// the clip bounds don't escape to the heap.
+// rect. It is initialized in place by init because blitter may point at rectBlitter/rgnBlitter within the same
+// scanClipper, so it must stay at a stable address for the fill's duration. needClipRect is a bool rather than a
+// pointer to the clip bounds so they don't escape to the heap.
 type scanClipper struct {
 	rgnBlitter   RgnClipBlitter
 	blitter      Blitter // nil means blit nothing
@@ -508,11 +504,10 @@ func (c *scanClipper) init(blitter Blitter, clip *Region, ir geom.IRect, skipRej
 	c.blitter = blitter
 }
 
-// scanClipper.blitter can be a self-referential pointer into one of the receiver's own embedded wrapper blitters
-// (&c.rectBlitter / &c.rgnBlitter), so the struct is forced to the heap whenever the caller reads that field back and
-// hands it to the (non-inlined) scan converter. Pooling keeps every path fill from allocating one; a sync.Pool (rather
-// than a single shared instance) keeps concurrent FillPathParallel bands independent. Each clipper is fully consumed by
-// the synchronous fill before putScanClipper returns it.
+// scanClipper.blitter can point into the clipper's own wrapper blitters, which forces the struct to the heap once the
+// caller hands that field to the scan converter; pooling keeps every path fill from allocating one. A sync.Pool rather
+// than a shared instance keeps concurrent FillPathParallel bands independent. The synchronous fill fully consumes a
+// clipper before putScanClipper returns it.
 var scanClipperPool = sync.Pool{New: func() any { return new(scanClipper) }}
 
 func getScanClipper(blitter Blitter, clip *Region, ir geom.IRect, skipRejectTest, irPreClipped bool) *scanClipper {
@@ -602,8 +597,7 @@ func PathRequiresTiling(bounds geom.IRect) bool {
 
 // FillPathRegion fills the path, without antialiasing, into blitter, restricted to a region clip (origClip).
 func FillPathRegion(p *path.Path, origClip *Region, blitter Blitter) {
-	// Our edges are fixed-point, and don't like the bounds of the clip to exceed that. Here we trim the clip just so we
-	// don't overflow later on.
+	// The edges are fixed-point, so trim the clip to that range to avoid overflow later.
 	clip, reduced := clipToLimitRegion(origClip)
 	if reduced && clip.IsEmpty() {
 		return

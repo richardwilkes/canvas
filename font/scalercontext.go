@@ -11,7 +11,8 @@
 // metrics/path/image generation, and the strike-level mask filter application. There is exactly one glyph host: the
 // typeface's sfnt outlines through go-text/typesetting, rendered by the raster package — the unhinted FreeType-style
 // recipe. The color glyph lanes use the same host: COLRv0 layers filled as device-space paths with CPAL/foreground
-// colors, and sbix/CBDT PNG strikes decoded and scaled through the image shader, both into ARGB32 masks.
+// colors, COLRv1 paint graphs (colorglyph_v1.go), and sbix/CBDT PNG strikes decoded and scaled through the image
+// shader, all into ARGB32 masks.
 //
 // Reachable-set trims: outline glyphs are A8 by default; color glyphs are ARGB32; LCD16 arrives when the font's edging
 // is subpixel-AA and the destination's pixel geometry is known, rendered through the LCD lane (the 4x horizontal
@@ -19,16 +20,14 @@
 // MaskSDF is the fourth rec format: no font or paint state selects it — MakeSDFTMaskSpec assigns rec.Format directly
 // for the distance-field text lane — and it runs through this same outline host, rasterizing A8 coverage into the
 // bounds inset by DistanceFieldPad and converting that to a signed distance field. That is why generateMetricsFromPath
-// deliberately omits upstream's "only BW/A8/LCD16 can be produced from paths, so force A8" normalization: the SDF
-// format has to survive the styled-path lane, which is the only lane that recomputes bounds from the path. A8 masks
-// stay linear coverage (the pre-blend applies only to LCD recs); that rule is hoisted into rec construction, so
-// only LCD16 recs carry a luminance color (LumBits) — A8 strikes stay color-independent, where keying every rec on the
-// canonical color would fragment strikes with no pixel difference. The device gamma and contrast rec fields have no
-// reachable variation (the surface-props text contrast/gamma constructor is not exposed) and stay the defaults inside
-// maskgamma.go. Embolden (fake bold), the embedded-bitmap request, and the hinting level are recorded on the Font but
-// have no lane here (there is no synthetic-bold generator, bitmap strikes are decoded whenever the typeface carries
-// them, and rendering is always unhinted), so none of them reaches the rec: keying strikes on a request that changes no
-// pixel would only fragment the cache.
+// omits upstream's "only BW/A8/LCD16 can be produced from paths, so force A8" normalization: the SDF format has to
+// survive the styled-path lane, the only lane that recomputes bounds from the path. A8 masks stay linear coverage: only
+// LCD16 recs carry a luminance color (LumBits) and get the pre-blend, since keying every rec on the canonical color
+// would fragment strikes with no pixel difference. The device gamma and contrast have no reachable variation (no API
+// exposes them) and stay the defaults in maskgamma.go. Embolden (fake bold), the embedded-bitmap request, and the
+// hinting level are recorded on the Font but have no lane here (there is no synthetic-bold generator, bitmap strikes
+// are decoded whenever the typeface carries them, and rendering is always unhinted), so none of them reaches the rec:
+// keying strikes on a request that changes no pixel would only fragment the cache.
 
 package font
 
@@ -73,9 +72,9 @@ const (
 )
 
 // DeviceProps carries the surface properties MakeRecAndEffects consumes: the destination's pixel geometry (which gates
-// LCD16) and the device-independent-fonts flag (which disables LCD — that flag conventionally routes text through SDFT,
-// whose fonts use plain AA edging; the outcome is encoded directly here until E.1 lands SDFT). A nil *DeviceProps means
-// no device: unknown geometry.
+// LCD16) and the device-independent-fonts flag (which disables LCD: upstream routes such text through SDFT, whose fonts
+// use plain AA edging, and that outcome is encoded directly here). A nil *DeviceProps means no device: unknown
+// geometry.
 type DeviceProps struct {
 	PixelGeometry             PixelGeometry
 	UseDeviceIndependentFonts bool
@@ -98,12 +97,11 @@ type ScalerRec struct {
 	StrokeCap  stroke.Cap
 	Flags      uint16
 	// Format is the mask format for the outline lane: MaskA8, MaskLCD16, or MaskSDF (the color lanes override it per
-	// glyph, to MaskARGB32). MakeRecAndEffects itself only ever produces A8 or LCD16; MaskSDF reaches the rec through
-	// MakeSDFTMaskSpec, which assigns the field after rec construction. The zero value is MaskA8, so a construction site
-	// that never touches the field builds an A8 rec.
+	// glyph, to MaskARGB32). MakeRecAndEffects produces only A8 or LCD16; MakeSDFTMaskSpec assigns MaskSDF afterward.
+	// The zero value is MaskA8.
 	Format MaskFormat
-	// LumBits is the canonical luminance color keying the mask pre-blend. Nonzero only for LCD16 recs (non-LCD recs
-	// ignore the pre-blend, hoisted here so A8 strikes stay color-independent; see the file comment).
+	// LumBits is the canonical luminance color keying the mask pre-blend. It is set only for LCD16 recs, so A8 strikes
+	// stay color-independent (see the file comment).
 	LumBits colorcore.Color
 	// ForegroundColor is the paint color, entering the rec (and therefore the strike key) only when the typeface's
 	// glyph masks need it (COLR layers with palette index 0xFFFF); black otherwise.
@@ -243,8 +241,7 @@ func MakeRecAndEffects(f *Font, paint *ScalerPaint, deviceMatrix *geom.Matrix, p
 	if f.flags&flagBaselineSnap != 0 {
 		rec.Flags |= recFlagBaselineSnap
 	}
-	// The requested hinting level deliberately does not enter the rec: nothing here honors it (rendering is always
-	// unhinted), so keying strikes on it would only charge the cache twice for byte-identical masks. See Hinting.
+	// The requested hinting level deliberately stays out of the rec (see the file comment and Hinting).
 
 	// The paint color enters the rec (and the strike key) only when the typeface's glyph masks may paint with it, so
 	// ordinary fonts never fragment strikes per color.
@@ -262,13 +259,11 @@ func MakeRecAndEffects(f *Font, paint *ScalerPaint, deviceMatrix *geom.Matrix, p
 	return rec, effects
 }
 
-// canonicalizeKeyFloats replaces any NaN among the rec's float fields with a well-defined finite value. The rec is half
-// of the strike cache's map key and a struct holding a NaN never equals itself, so a poisoned rec would miss on every
-// lookup and never match the delete in removeStrike: the strike and every glyph mask it generated would be retained
-// forever while the cache's accounting reported them freed, beyond the reach of either budget. Infinities need no such
-// treatment — they are self-equal, so they key correctly, and computeScale's non-finite gate already collapses them to
-// a degenerate strike. (Upstream Skia is immune because its key is a memcmp'd byte blob rather than a comparable
-// struct.)
+// canonicalizeKeyFloats replaces any NaN among the rec's float fields with a finite value. The rec is half of the
+// strike cache's map key and a struct holding a NaN never equals itself, so a poisoned rec would miss on every lookup
+// and never match the delete in removeStrike, stranding the strike and its glyph masks in the map while the cache's
+// accounting reported them freed. Infinities are self-equal, so they key correctly, and computeScale's non-finite gate
+// collapses them to a degenerate strike. (Upstream Skia is immune because its key is a memcmp'd byte blob.)
 func (r *ScalerRec) canonicalizeKeyFloats() {
 	// A NaN size, pre-scale, or pre-skew becomes zero, which computeScale then reports as singular, so the glyphs come
 	// out empty rather than nonsensical.
@@ -285,7 +280,6 @@ func (r *ScalerRec) canonicalizeKeyFloats() {
 	r.MiterLimit = zeroNaN(r.MiterLimit)
 }
 
-// zeroNaN returns v, or zero when v is NaN.
 func zeroNaN(v float32) float32 {
 	if math.IsNaN(float64(v)) {
 		return 0
@@ -372,7 +366,6 @@ func (r *ScalerRec) computeAxisAlignmentForHText() AxisAlignment {
 	return AxisAlignmentNone
 }
 
-// isSubpixel reports whether subpixel positioning is enabled.
 func (r *ScalerRec) isSubpixel() bool { return r.Flags&recFlagSubpixel != 0 }
 
 // ScalerContext generates glyph metrics, paths, and images for one rec against the sfnt outline host.
@@ -436,10 +429,9 @@ func strikePpemFor(scaleY float32) uint16 {
 	return uint16(ppem)
 }
 
-// Rec returns a copy of the context's rec. It is deliberately not a pointer into the live rec: NewScalerContext
-// snapshots single, isSing, strikePpem and preBlend from it, and StrikeCache keys the strike on its own copy, so a
-// mutation applied here would leave the context mapping glyphs through the old matrix and ppem while removeStrike still
-// deleted under the unmodified key. Build a new context (or strike spec) from a modified rec instead.
+// Rec returns a copy of the context's rec, not a pointer into it: NewScalerContext snapshots single, isSing, strikePpem
+// and preBlend from the rec and StrikeCache keys the strike on its own copy, so a mutation through a pointer would
+// leave the context and the cache key stale. Build a new context (or strike spec) from a modified rec instead.
 func (c *ScalerContext) Rec() ScalerRec { return c.rec }
 
 // Typeface returns the context's typeface.
@@ -478,15 +470,13 @@ type glyphMetrics struct {
 	neverRequestPath   bool
 }
 
-// generateMetrics computes a glyph's metrics through its lane: the COLRv0 layer union, the bitmap-strike quad, or the
-// outline control box, plus the linear advance through the single matrix (unhinted; bitmap-font advances stay linear
-// too).
+// generateMetrics computes a glyph's metrics through its lane: the COLR bounds, the bitmap-strike quad, or the outline
+// control box, plus the linear advance through the single matrix (unhinted; bitmap-font advances stay linear too).
 func (c *ScalerContext) generateMetrics(packedID PackedGlyphID) glyphMetrics {
 	var mx glyphMetrics
 	gid := packedID.GlyphID()
 	t := c.typeface
 
-	// Linear advance through the single matrix.
 	adv := t.faceHAdvance(opentype.GID(gid)) / float32(t.upem)
 	advVec := c.single.MapVector(geom.Pt(adv, 0))
 	mx.advanceX = advVec.X
@@ -532,12 +522,12 @@ func (c *ScalerContext) generateMetrics(packedID PackedGlyphID) glyphMetrics {
 				return mx
 			}
 			// A strike this lane will not draw (a B&W EBDT/CBDT image, an sbix 'jpg '/'tif ' graphic) leaves the glyph
-			// on the outline lane, so it has to be measured as an outline — and the extents lookup below cannot do
-			// that. go-text tries the strikes before 'glyf'/'CFF ' and the Face rests at ppem 0, where chooseStrike
-			// picks the *largest* strike, so a glyph carrying any strike at all gets that strike's ink box no matter
-			// which lane draws it: a bitmap-only EBLC/EBDT face (no outline table anywhere) would size every glyph off
-			// the strike and then fill it with the nil outline, drawing a correctly sized, fully transparent mask, and a
-			// hybrid face would clip its outline to the strike's box.
+			// on the outline lane, so it must be measured as an outline, which the extents lookup below cannot do:
+			// go-text tries the strikes before 'glyf'/'CFF ' and the Face rests at ppem 0, where chooseStrike picks the
+			// *largest* strike, so a glyph carrying any strike gets that strike's ink box whichever lane draws it. A
+			// bitmap-only EBLC/EBDT face (no outline table) would size every glyph off the strike and fill it with the
+			// nil outline, drawing a correctly sized, fully transparent mask, and a hybrid face would clip its outline
+			// to the strike's box.
 			mx.maskFormat = c.rec.Format
 			mx.bounds = c.outlineDeviceBounds(packedID, gid, mx.maskFormat)
 			return mx
@@ -682,7 +672,6 @@ func (c *ScalerContext) makeGlyph(packedID PackedGlyphID) *Glyph {
 		}
 	}
 
-	// If either dimension is empty, zap the image bounds of the glyph.
 	if g.Width == 0 || g.Height == 0 {
 		g.zeroBounds()
 		return g
@@ -884,8 +873,8 @@ func (c *ScalerContext) getImage(g *Glyph) {
 
 	if unfiltered.Format == MaskARGB32 {
 		if !maskfilter.AcceptsColorMask(mf) {
-			// filterMask returns false on a MaskARGB32 source for this filter, so getImage copies the unfiltered
-			// mask — the bounds pass was skipped too, so the rects and formats line up.
+			// This filter's FilterMask returns false on a MaskARGB32 source, so copy the unfiltered mask; the bounds
+			// pass was skipped too, so the rects and formats line up.
 			if unfiltered.IRect() == g.IRect() && g.Format == MaskARGB32 {
 				copy(g.Image32, unfiltered.Image32)
 			}
@@ -953,7 +942,7 @@ func (c *ScalerContext) getImage(g *Glyph) {
 	m := c.rec.matrixFrom2x2()
 	dst, _, ok := mf.FilterMask(&srcMask, &m)
 	if !ok || dst == nil || dst.Image == nil {
-		// Filter did nothing; copy the unfiltered mask if the bounds line up, else clear.
+		// Filter did nothing; copy the unfiltered mask, or its intersection with the glyph when the bounds differ.
 		if unfiltered.IRect() == g.IRect() {
 			copy(g.Image, unfiltered.Image)
 		} else {
@@ -1161,11 +1150,10 @@ var pack4xCoefficients = [3][12]uint32{
 // generates A8 from the LCD lane), applying the mask pre-blend per channel on the LCD16 side only. src is
 // sampleWidth×height with tight rows; doVert transposes the write (x and y swap when writing to dst).
 //
-// The A8 side takes no pre-blend, and cannot: NewScalerContext builds one only for a mask-filter-free MaskLCD16 rec,
-// while an A8 glyph arrives here either from an A8 rec (recFlagGenA8FromLCD, which never carries LumBits and so never
-// gets a pre-blend) or from makeGlyph's mask-filter demotion of an LCD16 rec (a mask filter suppresses the pre-blend).
-// A8 masks staying linear coverage is the reachable-set trim the file comment and maskgamma.go document, so this lane
-// averages the three filtered channels and stops.
+// The A8 side takes no pre-blend, and is never handed an applicable one: NewScalerContext builds one only for a
+// mask-filter-free MaskLCD16 rec, while an A8 glyph arrives here only from an A8 rec (recFlagGenA8FromLCD), which never
+// carries LumBits. A8 masks stay linear coverage (see the file comment), so this lane averages the three filtered
+// channels and stops.
 func pack4xHToMask(src []uint8, sampleWidth, height int, g *Glyph, preBlend *maskPreBlend, doBGR, doVert bool) {
 	toA8 := g.Format == MaskA8
 	dstW := int(g.Width)

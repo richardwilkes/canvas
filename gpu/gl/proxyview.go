@@ -7,8 +7,7 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// A surface proxy view pairs a surface proxy with the origin and swizzle with which it is viewed. Views are value
-// types; an empty view has a nil proxy.
+// Surface proxy views are value types; an empty view has a nil proxy.
 
 package gl
 

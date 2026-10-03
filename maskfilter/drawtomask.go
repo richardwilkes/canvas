@@ -24,7 +24,6 @@ import (
 // computeMaskBounds computes the mask bounds a filtered path draw needs, clipped to clipBounds plus the filter's
 // margin.
 func computeMaskBounds(devPathBounds geom.Rect, clipBounds geom.IRect, mf MaskFilter, ctm *geom.Matrix) (geom.IRect, bool) {
-	// init our bounds from the path
 	bounds := devPathBounds.Outset(0.5, 0.5).RoundOut()
 
 	srcM := &raster.Mask{Bounds: bounds}

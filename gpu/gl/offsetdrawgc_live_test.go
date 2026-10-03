@@ -7,13 +7,13 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// Regression guard for the buffer-offset-as-pointer GC hazard (GA hardening). GL entry points whose trailing "pointer"
-// argument is really a byte offset into a bound buffer object (glVertexAttribPointer, glDrawElements and friends) must
-// pass that offset as a uintptr, never synthesized into an unsafe.Pointer. When it was an unsafe.Pointer, a nonzero
-// offset (e.g. 0xc) occupied a pointer-typed stack slot across the purego.SyscallN call; if that goroutine's stack was
-// copied mid-call (morestack growth, which aggressive GC makes recur by repeatedly shrinking the stack), the runtime's
-// stack scanner rejected 0xc as an invalid pointer and aborted the process with "invalid pointer found on stack". Skips
-// when no GL context is available.
+// Regression guard for the buffer-offset-as-pointer GC hazard. GL entry points whose trailing "pointer" argument is
+// really a byte offset into a bound buffer object (glVertexAttribPointer, glDrawElements and friends) must pass that
+// offset as a uintptr, never synthesized into an unsafe.Pointer. When it was an unsafe.Pointer, a nonzero offset (e.g.
+// 0xc) occupied a pointer-typed stack slot across the GL call; if that goroutine's stack was copied mid-call (morestack
+// growth, which aggressive GC makes recur by repeatedly shrinking the stack), the runtime's stack scanner rejected 0xc
+// as an invalid pointer and aborted the process with "invalid pointer found on stack". Skips when no GL context is
+// available.
 
 package gl_test
 
@@ -28,7 +28,7 @@ import (
 
 // TestOffsetDrawGCStackSafety hammers the offset-based indexed draw path (filled AA circles lower to circleOp, whose
 // interleaved vertex-attribute fetch and glDrawElements both use nonzero buffer offsets) while a background goroutine
-// forces GC cycles. The GC cycles keep shrinking the drawing goroutine's stack, so each frame's SyscallN re-triggers a
+// forces GC cycles. The GC cycles keep shrinking the drawing goroutine's stack, so each frame's GL calls re-trigger a
 // growth-time stack copy that scans the wrapper frame — exactly the window in which the pre-fix code found the fake 0xc
 // pointer and crashed. With offsets riding as uintptr, that scan sees a plain integer and the run completes.
 func TestOffsetDrawGCStackSafety(t *testing.T) {
@@ -51,7 +51,7 @@ func TestOffsetDrawGCStackSafety(t *testing.T) {
 	}
 
 	// Maximal stack-move pressure: a minimal GC percent plus a background goroutine forcing full GC cycles. Each cycle
-	// scans and can shrink the drawing goroutine's stack; the next frame's deep SyscallN then grows it again, copying
+	// scans and can shrink the drawing goroutine's stack; the next frame's deep GL call then grows it again, copying
 	// (and scanning) the wrapper frames that carry the offset.
 	defer debug.SetGCPercent(debug.SetGCPercent(1))
 	stop := make(chan struct{})

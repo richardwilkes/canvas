@@ -7,13 +7,10 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// The double-precision cubic Bezier primitive. Present are the members reachable from the cubic/line intersection
-// layer, the order reducer, and the cubic bounds (set/debugSet, ptAtT, the monotonic checks, isLinear, and the root
-// machinery cubicCoefficients/cubicRootsReal/cubicRootsValidT/cubicFindExtrema/ findInflections plus the
-// searchRoots/binarySearch used when a solved root does not land on the axis) and the curve-vs-curve members the cubic
-// solver consumes (hullIntersects in all three forms over convexHull, otherPts, dxdyAtT, chopAt, subDivide, collapsed,
-// controlsInside), the edge-builder members (findMaxCurvature, calcPrecision, toFloatPoints, complexBreak), and the
-// opSegment members (align, subDivideAD). The convex-hull machinery lives in dcubichull.go.
+// The double-precision cubic Bezier primitive: its root solver (including the searchRoots/binarySearch fallback for a
+// solved root that does not land on the axis) and the members used by the cubic/line and curve/curve intersection
+// solvers, the order reducer, the cubic bounds, the edge builder, and opSegment. The convex-hull machinery lives in
+// dcubichull.go.
 
 package pathops
 
@@ -331,9 +328,8 @@ func (c dCubic) dxdyAtT(t float64) dVector {
 
 // hullIntersectsPoints is the quick reject that rotates all of pts relative to a line formed by a pair of this cubic's
 // hull points. If pts lie on the line or on the opposite side from this cubic's odd man, the curves at most touch at
-// endpoints. Returns whether the hulls may intersect beyond the endpoints; the returned isLinear (meaningful only when
-// the result is true — the early false return leaves it at its false value) reports whether this cubic's hull collapsed
-// to a line.
+// endpoints. Returns whether the hulls may intersect beyond the endpoints, and (meaningful only when that is true)
+// whether this cubic's hull collapsed to a line.
 func (c dCubic) hullIntersectsPoints(pts []dPoint) (result, isLinear bool) {
 	linear := true
 	var hullOrder [4]int
@@ -514,8 +510,8 @@ func (c dCubic) align(endIndex, ctrlIndex int, dstPt *dPoint) {
 }
 
 // subDivideAD returns the two interior control points of the sub-cubic over [t1, t2], given its exact endpoints a and
-// d. The directly computed control points are nudged so the endpoints land on a and d, with axis alignment at the
-// shared t==0/1 ends.
+// d. Each subdivided control point is shifted by its endpoint's offset to a or d, aligned to the original cubic's axes
+// at a t==0/1 end, and snapped to a or d per coordinate when almost equal.
 func (c dCubic) subDivideAD(a, d dPoint, t1, t2 float64) [2]dPoint {
 	sub := c.subDivide(t1, t2)
 	var dst [2]dPoint
@@ -693,9 +689,8 @@ func (c dCubic) toFloatPoints(pts *[4]geom.Point) bool {
 	return pointsAreFinite(pts[:])
 }
 
-// complexBreak returns, for a self-intersecting or high-curvature cubic, the t values (in increasing input order, at
-// most three) at which it should be split before intersection, writing them into t and returning their count (0 for a
-// simple monotonic cubic).
+// complexBreak writes into t the t values (at most three) at which a self-intersecting or high-curvature cubic should
+// be split before intersection, returning their count (0 for a monotonic cubic).
 func complexBreak(pointsPtr [4]geom.Point, t []float32) int {
 	var cubic dCubic
 	cubic.set(pointsPtr)

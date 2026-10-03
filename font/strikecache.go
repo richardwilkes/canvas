@@ -42,13 +42,12 @@ type StrikeCache struct {
 	mu              sync.Mutex
 }
 
-// strikeKey is the real (comparable) key type.
+// strikeKey is the cache's map key.
 type strikeKey struct {
 	effects ScalerEffects
 	rec     ScalerRec
 }
 
-// globalStrikeCache is the process-wide default cache instance.
 var globalStrikeCache = NewStrikeCache()
 
 // GlobalStrikeCache returns the process-wide strike cache.
@@ -116,8 +115,8 @@ func (c *StrikeCache) StrikeCount() int {
 	return c.count
 }
 
-// internalPurge evicts LRU strikes until at least minBytesNeeded bytes and both budgets are satisfied. Caller holds
-// c.mu.
+// internalPurge evicts LRU strikes until at least minBytesNeeded bytes are freed and both budgets are satisfied. Caller
+// holds c.mu.
 func (c *StrikeCache) internalPurge(minBytesNeeded int) {
 	bytesNeeded := 0
 	if c.totalMemoryUsed > c.sizeLimit {
@@ -210,19 +209,17 @@ func (spec *StrikeSpec) FindOrCreateStrike() *Strike {
 	return GlobalStrikeCache().FindOrCreateStrike(spec)
 }
 
-// Keyable reports whether the spec (or any part of it) can be used as a map key, which every strike cache keyed on one
-// must check first. The typeface pointer and the rec — a struct of scalars — always can, but stroke.PathEffect and
-// maskfilter.MaskFilter are exported interfaces with exported methods, so a caller outside this module can implement
-// them with a value receiver over a struct holding a slice, map, or func; Go panics with "hash of unhashable type" the
-// moment such a value reaches a map key, which would take down the first text draw that used the effect. A spec that
-// answers false gets an uncached strike instead: correct output, no caching, no panic. (Upstream Skia keys on a
-// serialized SkDescriptor byte blob, which cannot be poisoned this way.)
+// Keyable reports whether the spec can be used as a map key, which every strike cache keyed on one must check first.
+// The typeface pointer and the rec (a struct of scalars) always can, but stroke.PathEffect and maskfilter.MaskFilter
+// are exported interfaces, so a caller outside this module can implement them with a value receiver over a struct
+// holding a slice, map, or func, and Go panics with "hash of unhashable type" the moment such a value reaches a map
+// key. A spec that answers false gets an uncached strike instead: correct output, no caching, no panic. (Upstream Skia
+// keys on a serialized SkDescriptor byte blob, which cannot be poisoned this way.)
 func (spec *StrikeSpec) Keyable() bool {
 	return effectKeyable(spec.Effects.PathEffect) && effectKeyable(spec.Effects.MaskFilter)
 }
 
-// effectKeySeed is the seed effectKeyable's hash probe runs against. Nothing consumes the hashes, so the seed's value
-// is irrelevant; a fresh one just keeps the probe honest about being a hash.
+// effectKeySeed is the seed for effectKeyable's hash probe. Nothing consumes the hashes, so its value is irrelevant.
 var effectKeySeed = maphash.MakeSeed()
 
 // effectKeyable reports whether effect can be hashed as part of a map key. The test is an actual hash attempt with the
@@ -238,7 +235,6 @@ func effectKeyable(effect any) (ok bool) {
 			ok = false
 		}
 	}()
-	// The hash itself is not wanted, only the attempt: a value the map cannot key panics here instead of there.
 	_ = maphash.Comparable(effectKeySeed, effect)
 	return true
 }
@@ -257,10 +253,10 @@ func MakeMaskSpec(f *Font, paint *ScalerPaint, deviceMatrix *geom.Matrix, props 
 func MakePathSpec(f *Font, paint *ScalerPaint) (spec StrikeSpec, strikeToSourceScale float32) {
 	pathFont := *f
 
-	// A nil paint stays nil the whole way down. MakeRecAndEffects reads nil as "the default paint", whose color is
-	// black; the zero ScalerPaint a copy would substitute carries a *transparent* color instead, which for a COLR
-	// typeface (GlyphMaskNeedsCurrentColor) enters the rec as the foreground color and paints every palette-index-0xFFFF
-	// layer fully transparent — a blank glyph, on a strike keyed to a color no paint ever had.
+	// A nil paint stays nil: MakeRecAndEffects reads nil as the default paint, whose color is black, while a
+	// substituted zero ScalerPaint carries a *transparent* color, which for a COLR typeface
+	// (GlyphMaskNeedsCurrentColor) enters the rec as the foreground color and paints every palette-index-0xFFFF layer
+	// fully transparent — a blank glyph, on a strike keyed to a color no paint ever had.
 	var pathPaint *ScalerPaint
 	if paint != nil {
 		copied := *paint
@@ -282,11 +278,11 @@ func MakeTransformMaskSpec(f *Font, paint *ScalerPaint, deviceMatrix *geom.Matri
 	return StrikeSpec{Typeface: f.typeface, Rec: rec, Effects: effects}
 }
 
-// MakeSDFTMaskSpec builds the SDF strike spec for the E.1 distance-field text lane: the scaler generates its distance
-// field directly as a rec format (rec.Format = MaskSDF) rather than through a mask-filter effect, so setting that one
-// field is all that's needed beyond the identity-matrix mask spec. A8 coverage is always gamma-free, so no gamma
-// adjustment is needed here (unlike the shaded distance-field draw itself). The caller (gpu/text's makeSDFTStrikeSpec)
-// prepares the font/paint pair beforehand.
+// MakeSDFTMaskSpec builds the SDF strike spec for the distance-field text lane: the scaler generates its distance field
+// directly as a rec format (rec.Format = MaskSDF) rather than through a mask-filter effect, so the spec is the
+// identity-matrix mask spec with that format set. A8 coverage is always gamma-free, so no gamma adjustment is needed
+// here (unlike the shaded distance-field draw itself). The caller (gpu/text's makeSDFTStrikeSpec) prepares the
+// font/paint pair beforehand.
 func MakeSDFTMaskSpec(f *Font, paint *ScalerPaint) StrikeSpec {
 	identity := geom.IdentityMatrix()
 	rec, effects := MakeRecAndEffects(f, paint, &identity, nil)

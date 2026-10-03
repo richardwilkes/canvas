@@ -7,13 +7,9 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// The GPU capability base state: since this codebase targets exactly one backend, this package holds the field storage
-// plus the helpers that need no backend dispatch, and gpu/gl's Caps embeds it and supplies everything backend-specific
-// (including the option-override sequence applied during initialization).
-//
-// Trimmed to desktop needs: protected content, AHardwareBuffer images, push constants/DMSAA-resolve hooks for backends
-// not present here, the test-utils device name, and debug JSON dumps are dropped; fields settable only from
-// ES/ANGLE/WebGL/mobile driver paths are omitted for the same reason.
+// The GPU capability base state, trimmed to desktop needs: protected content, AHardwareBuffer images, push
+// constants/DMSAA-resolve hooks for backends not present here, the test-utils device name, and debug JSON dumps are
+// dropped, as are fields settable only from ES/ANGLE/WebGL/mobile driver paths.
 
 package gpu
 
@@ -76,7 +72,7 @@ type SupportedRead struct {
 }
 
 // TextureType identifies the shape of a GPU texture. External (OES) textures are excluded since this backend has no
-// such concept, so only none/2D/rectangle remain.
+// such concept.
 type TextureType int32
 
 // TextureType values.
@@ -159,7 +155,7 @@ type Caps struct {
 	AvoidLineDraws                     bool
 	// DisablePerspectiveSDFText disables signed-distance-field text under perspective transforms; a workaround for
 	// specific mobile GPU drivers, which the desktop driver detection never reports, so this stays false. SubRunControl
-	// construction still consults it faithfully.
+	// construction still consults it.
 	DisablePerspectiveSDFText        bool
 	PreferVRAMUseOverFlushes         bool
 	SemaphoreSupport                 bool
@@ -214,8 +210,7 @@ func (c *Caps) PerformPartialClearsAsDraws() bool {
 }
 
 // DiscardStencilValuesAfterRenderPass reports whether stencil contents may be discarded after a render pass. Always
-// false: discarding stencil values after a render pass has proven unreliable on enough drivers that it is never
-// attempted.
+// false: discarding them has proven unreliable on enough drivers that it is never attempted.
 func (c *Caps) DiscardStencilValuesAfterRenderPass() bool { return false }
 
 // ReducedShaderMode is a shortcut for ShaderCaps.ReducedShaderMode.

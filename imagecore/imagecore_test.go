@@ -25,7 +25,6 @@ func TestHalfRoundTrip(t *testing.T) {
 			t.Fatalf("half 0x%04x -> %v -> 0x%04x", h, f, got)
 		}
 	}
-	// Spot values.
 	if halfToFloat(0x3C00) != 1 || halfToFloat(0xBC00) != -1 || halfToFloat(0x0000) != 0 {
 		t.Fatal("wrong unit values")
 	}
@@ -192,8 +191,8 @@ func TestConvertF16ToAlpha8FaithfulTruncation(t *testing.T) {
 }
 
 func TestConvertPremulToUnpremulRoundTrip(t *testing.T) {
-	// premul → unpremul pays the sRGB linearize/encode round trip; opaque pixels must survive it exactly (the
-	// inv(srgb(1)) == 1 invariant holds per channel for byte-exact 8-bit values).
+	// premul → unpremul is a lone unpremultiply stage (the sRGB linearize/encode pair cancels); opaque pixels must
+	// survive it exactly.
 	info, _ := MakeInfo(256, 1, ColorTypeRGBA8888, AlphaTypePremul)
 	src := NewPixels(info)
 	for i := range 256 {
@@ -230,7 +229,7 @@ func TestConvertGrayAnd565AndF16(t *testing.T) {
 		t.Fatalf("gray -> rgba: % x", dst)
 	}
 
-	// RGBA → 565 → RGBA
+	// RGBA → 565
 	cinfo, _ := MakeInfo(1, 1, ColorTypeRGBA8888, AlphaTypeOpaque)
 	csrc := NewPixels(cinfo)
 	csrc.Words[0] = 0xFF0080FF // R=FF G=80 B=00
@@ -411,12 +410,9 @@ func TestElemsPerPixel(t *testing.T) {
 	}
 }
 
-// TestToUnormNaNIsZero pins toUnorm's NaN handling. NaN reaches it on the highp path (loadHighp's F16 lane returns
-// halfToFloat of arbitrary caller-supplied halves, and F16 is a Supported() source type), where a plain `f < 0 … else
-// if f > scale` clamp lets it straight through to a float→uint32 cast whose result the Go spec leaves
-// implementation-dependent. 0 is what the ARMv8 lane this mirrors produces (FCVTNU of NaN is 0), and it matches the
-// F16→Alpha8 lane's deliberate int32 intermediate: the two must not disagree about a determinism property this project
-// pins goldens on.
+// TestToUnormNaNIsZero pins toUnorm's NaN handling; toUnorm's comment explains how NaN reaches it and why the result
+// must be 0. That also matches the F16→Alpha8 lane (alpha8FromHalf): the two must not disagree about a determinism
+// property this project pins goldens on.
 func TestToUnormNaNIsZero(t *testing.T) {
 	nan := float32(math.NaN())
 	for _, scale := range []float32{255, 63, 31} {
@@ -486,11 +482,10 @@ func TestConvertPixelsF16NaNIsDeterministic(t *testing.T) {
 	}
 }
 
-// TestConvertF16ToAlpha8NonFiniteIsDeterministic covers the halves that halfToFloat maps to ±Inf and NaN. F16 is a
-// Supported() source type, so those bits are caller-supplied, and int32(±Inf)/int32(NaN) is exactly the
-// implementation-defined conversion the lane's deliberate int32 intermediate was written to eliminate: before the
-// saturation in alpha8FromHalf, an alpha half of 0x7C00 measured 255 on darwin/arm64 and 0 on amd64. The bytes below
-// are the ARMv8 FCVTZS results the rest of the F16 lanes already mirror, and must now be the same on every target.
+// TestConvertF16ToAlpha8NonFiniteIsDeterministic covers the halves that halfToFloat maps to ±Inf and NaN. Those bits
+// are caller-supplied (F16 is a Supported() source type), and int32(±Inf)/int32(NaN) is implementation-defined: without
+// the saturation in alpha8FromHalf, an alpha half of 0x7C00 measured 255 on darwin/arm64 and 0 on amd64. The bytes
+// below are the ARMv8 FCVTZS results the rest of the F16 lanes mirror, and must be the same on every target.
 func TestConvertF16ToAlpha8NonFiniteIsDeterministic(t *testing.T) {
 	halves := []uint16{0x7C00, 0xFC00, 0x7E00, 0xFE00, 0x7DFF}
 	want := []byte{
@@ -541,11 +536,9 @@ func TestConvertF16ToAlpha8NonFiniteIsDeterministic(t *testing.T) {
 	}
 }
 
-// TestNewFromEncodedValidatesReportedInfo pins the validation NewFromEncoded applies to whatever a codec reports. A
-// codec parses the encoded header and reports it verbatim, and several formats let a tiny file declare enormous
-// dimensions, so without this check maxDimension — which exists to keep the byte-offset and row-stride math in range —
-// was simply bypassed for every deferred-decode image, and the resulting *Image panicked on first use. NewRasterData
-// has always applied the same two tests.
+// TestNewFromEncodedValidatesReportedInfo pins the validation NewFromEncoded applies to whatever a codec reports (the
+// same two tests NewRasterData applies). Several formats let a tiny file declare enormous dimensions, so without it
+// maxDimension would be bypassed for every deferred-decode image and the resulting *Image would panic on first use.
 func TestNewFromEncodedValidatesReportedInfo(t *testing.T) {
 	magic := "imagecore-stub-codec"
 	var reported ImageInfo

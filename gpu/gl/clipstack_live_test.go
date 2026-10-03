@@ -30,7 +30,7 @@ func liveClipStack() *gl.ClipStack {
 	return gl.NewClipStack(geom.IRect{Right: 64, Bottom: 64}, false)
 }
 
-// fillSurface draws rect with an opaque solid color through the clip.
+// fillClipped draws rect with a solid color through the clip.
 func fillClipped(sdc *gl.SurfaceDrawContext, cs *gl.ClipStack, c colorcore.PMColor4f, rect geom.Rect, aa gpu.AA) {
 	identity := geom.IdentityMatrix()
 	sdc.FillRectToRect(cs, livePaint(c), aa, &identity, rect, rect)
@@ -82,7 +82,7 @@ func TestLiveClipRectFold(t *testing.T) {
 	}
 }
 
-// TestLiveClipRRectFP: a circular-corner rrect clip rides the CircularRRectEffect.
+// TestLiveClipRRectFP: a circular-corner rrect clip rides circularRRectFP.
 func TestLiveClipRRectFP(t *testing.T) {
 	_, dc := newLiveDirectContext(t)
 	sdc := newLiveDrawSDC(t, dc, 64, 64)
@@ -99,7 +99,6 @@ func TestLiveClipRRectFP(t *testing.T) {
 	fillClipped(sdc, cs, src, geom.Rect{Right: 64, Bottom: 64}, gpu.AANo)
 
 	data := readSDC(t, sdc)
-	// Interior points are fully green.
 	for _, p := range [][2]int32{{32, 32}, {12, 32}, {32, 12}, {51, 51}} {
 		if g := pxAt(data, p[0], p[1])[1]; g < 250 {
 			t.Fatalf("interior (%d,%d) green = %d, want ~255", p[0], p[1], g)

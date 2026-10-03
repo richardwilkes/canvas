@@ -13,8 +13,7 @@
 // TessellationPathRenderer → DefaultPathRenderer (always appended), plus the SoftwarePathRenderer fallback held by the
 // drawing manager. DashLinePathRenderer's slot is unreachable while styles carry no path effect, and the Atlas/Small
 // members are trimmed (the atlas member is an optional DMSAA atlasing optimization, and the small-path member needs the
-// SmallPathAtlasMgr/shape-cache machinery; its distance-field geometry processor exists but has no consumer until that
-// renderer lands).
+// SmallPathAtlasMgr/shape-cache machinery).
 
 package gl
 
@@ -54,9 +53,8 @@ const (
 	CanDrawPathYes
 )
 
-// CanDrawPathArgs bundles the inputs OnCanDrawPath needs to decide whether a renderer can handle a shape. SurfaceProps'
-// chain-side consumer is TriangulatingPathRenderer's DMSAA rejection (an atlas-path renderer would be another consumer,
-// but that renderer stays trimmed here).
+// CanDrawPathArgs bundles the inputs OnCanDrawPath needs to decide whether a renderer can handle a shape. SurfaceProps
+// is consumed only by TriangulatingPathRenderer's DMSAA rejection.
 type CanDrawPathArgs struct {
 	Caps                   *Caps
 	Proxy                  *RenderTargetProxy
@@ -116,8 +114,8 @@ type PathRenderer interface {
 	OnStencilPath(args *StencilPathArgs)
 }
 
-// PathRendererGetStencilSupport calls OnGetStencilSupport after checking its precondition: the path's fill must not be
-// an inverse type; the path will always be filled and not stroked.
+// PathRendererGetStencilSupport calls OnGetStencilSupport after checking its precondition: the shape must be simple
+// fill styled and non-inverse filled.
 func PathRendererGetStencilSupport(pr PathRenderer, shape *StyledShape) StencilSupport {
 	if !shape.Style().IsSimpleFill() || shape.InverseFilled() {
 		panic("getStencilSupport requires a simple-fill, non-inverse shape")
@@ -211,19 +209,16 @@ const (
 
 // PathRendererChain keeps the renderers in a priority order and selects the best one for a given request.
 type PathRendererChain struct {
-	// tessellationPathRenderer is a direct pointer for GetTessellationPathRenderer, since the drawing manager queries
-	// it through a narrower interface than PathRenderer.
 	tessellationPathRenderer *TessellationPathRenderer
 	chain                    []PathRenderer
 }
 
-// NewPathRendererChain builds the chain in priority order. The DashLinePathRenderer's option gate is preserved so the
-// construction order stays consistent, but the member itself is unreachable while styles carry no path effect. Atlas
-// (an optional DMSAA atlasing optimization) and Small (needs the SmallPathAtlasMgr/shape-cache machinery) are trimmed.
+// NewPathRendererChain builds the chain in priority order. See the file comment for the unreachable DashLine member and
+// the trimmed Atlas and Small members.
 func NewPathRendererChain(ctx *DirectContext, options PathRendererChainOptions) *PathRendererChain {
 	caps := ctx.GLCaps()
 	c := &PathRendererChain{}
-	// if options.PathRenderers&gpu.PathRenderersDashLine != 0 — unreachable
+	// PathRenderersDashLine would go here: unreachable.
 	if options.PathRenderers&gpu.PathRenderersAAConvex != 0 {
 		c.chain = append(c.chain, NewAAConvexPathRenderer())
 	}
@@ -233,8 +228,7 @@ func NewPathRendererChain(ctx *DirectContext, options PathRendererChainOptions) 
 	if options.PathRenderers&gpu.PathRenderersAALinearizing != 0 {
 		c.chain = append(c.chain, NewAALinearizingConvexPathRenderer())
 	}
-	// PathRenderersAtlas: trimmed (an optional DMSAA atlasing optimization). PathRenderersSmall: trimmed (the
-	// small-path atlas renderer).
+	// PathRenderersAtlas and PathRenderersSmall would go here: trimmed.
 	if options.PathRenderers&gpu.PathRenderersTriangulating != 0 {
 		c.chain = append(c.chain, NewTriangulatingPathRenderer())
 	}

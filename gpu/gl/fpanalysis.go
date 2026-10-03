@@ -17,7 +17,6 @@ import (
 	"github.com/richardwilkes/canvas/gpu"
 )
 
-// pmIsOpaque reports whether a normalized premultiplied color has full alpha.
 func pmIsOpaque(c colorcore.PMColor4f) bool { return c.A == 1 }
 
 // ProcessorAnalysisColor tracks what is statically known about a color flowing through the FP chain: unknown,

@@ -58,9 +58,9 @@ const (
 // ItalicAngle are in font (design) units.
 type AdvancedMetrics struct {
 	PostScriptName string           // FontName / BaseFont in the PDF (name ID 6, else the family name)
-	Style          uint32           // StyleFlags (fixed pitch, italic, ...)
+	Style          uint32           // Style* flags (fixed pitch, italic, ...)
 	Type           AdvancedFontType // the underlying font-program encoding
-	Flags          uint32           // FontFlags (variable, not embeddable, ...)
+	Flags          uint32           // FontFlag* flags (variable, not embeddable, ...)
 	ItalicAngle    int16            // counter-clockwise degrees from vertical
 	Ascent         int16            // max height above baseline
 	Descent        int16            // max depth below baseline (negative)
@@ -84,8 +84,8 @@ const (
 	pcltSerifStyleOffset = 52
 )
 
-// PCLT serifStyle classes (the low 6 bits of the field), the ranges FreeType's advanced-metrics recipe maps to the
-// serif and script style flags.
+// PCLT serifStyle classes (the low 6 bits of the field): the ranges SkTypeface_FreeType::onGetAdvancedMetrics maps to
+// the serif and script style flags.
 const (
 	pcltSerifStyleMask = 0x3F
 	pcltSerifFirst     = 2
@@ -94,8 +94,8 @@ const (
 	pcltScriptLast     = 12
 )
 
-// GetAdvancedMetrics returns the raw sfnt values the PDF backend embeds. It returns nil for the empty typeface or an
-// out-of-range glyph count. StemV and CapHeight may be zero here; the PDF backend fills reasonable guesses.
+// GetAdvancedMetrics returns the raw sfnt values the PDF backend embeds, or nil for the empty typeface or one with no
+// glyphs. StemV is left zero and CapHeight may be zero; the PDF backend fills in guesses for both.
 func (t *Typeface) GetAdvancedMetrics() *AdvancedMetrics {
 	if t.face == nil || t.nGlyphs <= 0 {
 		return nil
@@ -127,10 +127,9 @@ func (t *Typeface) GetAdvancedMetrics() *AdvancedMetrics {
 	if !t.CanSubset() {
 		m.Flags |= FontFlagNotSubsettable
 	}
-	// Only an outline program is a candidate for embedding at all, so — as upstream does — the alt-data flag is reported
-	// just for those: a container the sfnt reader accepts but that is not a plain sfnt file (WOFF, dfont) holds tables
-	// that are individually compressed or offset within a wrapper, so its bytes are not a font program even though every
-	// table parsed.
+	// As upstream does, report the alt-data flag only for outline programs, the only candidates for embedding: a
+	// container the sfnt reader accepts that is not a plain sfnt file (WOFF, dfont) does not hold a font program (see
+	// isStandardSfntData).
 	if (m.Type == FontTypeTrueType || m.Type == FontTypeCFF) && !isStandardSfntData(t.data) {
 		m.Flags |= FontFlagAltDataFormat
 	}
@@ -147,9 +146,9 @@ func (t *Typeface) GetAdvancedMetrics() *AdvancedMetrics {
 	// /Ascent and /Descent contradicting the glyphs drawn on the page for any font that sets USE_TYPO_METRICS or whose
 	// hhea reports nothing.
 	m.Ascent, m.Descent, _ = t.verticalMetrics()
-	// Cap height and the serif class come from PCLT when the font carries one, following FreeType's advanced-metrics
-	// recipe; otherwise cap height is OS/2 sCapHeight (version 2+) and zero when that is absent too (the PDF backend
-	// guesses then). Only PCLT classifies a face as serif or script, so a font without one emits neither flag.
+	// Following SkTypeface_FreeType::onGetAdvancedMetrics, cap height and the serif/script class come from PCLT when
+	// the font has one. Otherwise cap height is OS/2 sCapHeight (version 2+), or zero for the PDF backend to guess, and
+	// neither class flag is set.
 	if t.hasPCLT {
 		m.CapHeight = t.pcltCapHeight
 		switch serifStyle := t.pcltSerifStyle & pcltSerifStyleMask; {
@@ -161,7 +160,6 @@ func (t *Typeface) GetAdvancedMetrics() *AdvancedMetrics {
 	} else {
 		m.CapHeight = t.sCapHgt
 	}
-	// head bbox → LTRB(xMin, yMax, xMax, yMin) in font units.
 	m.BBox = geom.IRectLTRB(int32(t.head.XMin), int32(t.head.YMax), int32(t.head.XMax), int32(t.head.YMin))
 	return m
 }
@@ -180,12 +178,10 @@ func (t *Typeface) CanSubset() bool { return t.fsType&fsTypeNoSubsetting == 0 }
 func (t *Typeface) FontData() (data []byte, collectionIndex int) { return t.data, t.collectionIndex }
 
 // FontProgram returns a standalone sfnt font program for this face, which is what a PDF /FontFile2 must hold. A
-// typeface parsed from a single-face file returns its own bytes; one parsed from a collection returns a freshly
-// assembled font holding just this face's tables, since a 'ttcf' container is not a font program and its glyph IDs
-// resolve against face 0 rather than this face. Returns nil and an error for a collection whose header or table
-// directory is malformed, and for a container that is not an sfnt file at all (WOFF, dfont — see isStandardSfntData),
-// whose bytes are no more a font program than a collection's are. The single-face result is the typeface's own storage;
-// callers must not mutate it.
+// typeface parsed from a single-face file returns its own bytes, which callers must not mutate. One parsed from a
+// collection returns a freshly assembled font holding just this face's tables, since a 'ttcf' container is not a font
+// program and its glyph IDs resolve against face 0 rather than this face. It returns an error for a malformed
+// collection and for a container that is not a plain sfnt file (WOFF, dfont; see isStandardSfntData).
 func (t *Typeface) FontProgram() ([]byte, error) {
 	return extractFontProgram(t.data, t.collectionIndex)
 }
@@ -205,7 +201,6 @@ const (
 // headTag is the four-byte 'head' table tag.
 const headTag = 0x68656164
 
-// headCheckSumAdjustmentOffset is the byte offset of checkSumAdjustment within the head table.
 const headCheckSumAdjustmentOffset = 8
 
 // checkSumAdjustmentMagic is the constant the sum of an sfnt font's 32-bit words must add up to, per the OpenType head
@@ -238,11 +233,9 @@ func isStandardSfntData(data []byte) bool {
 // directory stay valid (head's is defined with checkSumAdjustment treated as zero, so rewriting that field cannot
 // invalidate it).
 //
-// A container the sfnt reader accepts that is not a plain sfnt file — WOFF, or a dfont resource fork, which holds
-// several faces just as a collection does — is an error rather than a passthrough: handing back the wrapper would
-// return the whole container (every face of it, tables possibly compressed) as this face's font program, which is
-// exactly what the 'ttcf' lane below exists to avoid. Empty data (the empty typeface) has no program and no container
-// to complain about, so it stays the nil, no-error answer.
+// A container the sfnt reader accepts that is not a plain sfnt file (WOFF, dfont) is an error rather than a
+// passthrough: its bytes are the whole wrapper, not this face's font program (see isStandardSfntData). Empty data (the
+// empty typeface) is returned as is, without error.
 func extractFontProgram(data []byte, index int) ([]byte, error) {
 	if len(data) == 0 {
 		return data, nil
@@ -332,10 +325,9 @@ func extractFontProgram(data []byte, index int) ([]byte, error) {
 	return out, nil
 }
 
-// GlyphToUnicodeMap returns a slice indexed by glyph ID giving the first (smallest) Unicode code point that maps to
-// that glyph through the font's cmap, or 0 when none does. The length is countGlyphs. At most maxCmapEntries cmap
-// entries are walked, which no well-formed cmap reaches (see maxCmapEntries: a crafted format-12/13 group otherwise
-// turns one PDF font emission into an hours-long spin).
+// GlyphToUnicodeMap returns a slice of length CountGlyphs, indexed by glyph ID, giving the smallest Unicode code point
+// the font's cmap maps to that glyph, or 0 when none does. At most maxCmapEntries cmap entries are walked, which no
+// well-formed cmap reaches (see maxCmapEntries).
 func (t *Typeface) GlyphToUnicodeMap() []int32 {
 	buffer := make([]int32, t.nGlyphs)
 	if t.face == nil || t.nGlyphs == 0 {

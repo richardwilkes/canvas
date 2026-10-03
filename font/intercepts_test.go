@@ -25,9 +25,9 @@ import (
 func gapIsEmpty(left, right float32) bool { return left == scalarMax && right == scalarMin }
 
 func TestCalculatePathGapLines(t *testing.T) {
-	// A "V" of two line segments: down from (0,0) to (10,20), back up to (20,0). Each leg is x = y/2 and x = 20-y/2,
-	// so a band at y in [8, 12] crosses at x = 4/16 on the way down and x = 16/4 on the way up. The band's own edges
-	// are what the intersections are taken against, so the answer is the outermost pair: 4 and 16.
+	// A "V" of two line segments: down from (0,0) to (10,20), back up to (20,0). Each leg is x = y/2 and x = 20-y/2, so
+	// a band at y in [8, 12] crosses at x = 4 and 6 on the way down and x = 14 and 16 on the way up. The band's own
+	// edges are what the intersections are taken against, so the answer is the outermost pair: 4 and 16.
 	v := path.New().MoveTo(0, 0).LineTo(10, 20).LineTo(20, 0)
 	left, right := calculatePathGap(8, 12, v)
 	if !near(left, 4, 1e-4) || !near(right, 16, 1e-4) {

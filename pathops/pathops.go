@@ -7,13 +7,10 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// The path boolean operation entry points: Op, Simplify, and Builder. The operator/fill-type algebra
-// (opInverse/outInverse), the rect-intersect and empty-operand fast paths, Simplify's convex fast path with
-// pathIsTrivial, and the builder's first-op padding rule live here. The boolean engine behind them is implemented in
-// op.go/simplify.go: Op and Simplify call runOp/runSimplify, which build the opContour data model from the edge
-// builder, bounds-sort it (sortContourList), intersect every segment pair (addIntersections), resolve coincidence
-// (handleCoincidence), and trace the resolved graph into an output path (bridgeOp/bridgeWinding/bridgeXor +
-// pathWriter). Results carry curves exactly, with no flattening or snapping.
+// The path boolean operation entry points (Op, Simplify, Builder) with their fill-type algebra and fast paths. The
+// engine is in op.go/simplify.go: runOp/runSimplify build the opContour model, bounds-sort it (sortContourList),
+// intersect every segment pair (addIntersections), resolve coincidence (handleCoincidence), and trace the result
+// (bridgeOp/bridgeWinding/bridgeXor + pathWriter). Results carry curves exactly, with no flattening or snapping.
 
 package pathops
 
@@ -66,8 +63,7 @@ func b2i(b bool) int {
 }
 
 // Op computes the boolean combination of two paths. On success the returned path describes the result region with an
-// even-odd (or inverse even-odd) fill; on failure it returns (nil, false) and the caller's result path is left
-// unmodified.
+// even-odd (or inverse even-odd) fill; on failure it returns (nil, false).
 func Op(one, two *path.Path, op PathOp) (*path.Path, bool) {
 	if op < Difference || op > ReverseDifference {
 		return nil, false
@@ -131,13 +127,12 @@ func Op(one, two *path.Path, op PathOp) (*path.Path, bool) {
 // Simplify rewrites the path as a set of non-overlapping contours describing the same region, with an even-odd (or
 // inverse even-odd) fill.
 func Simplify(p *path.Path) (*path.Path, bool) {
-	// Returns even-odd regardless of the input rule, inverse-ness preserved.
 	fillType := path.FillEvenOdd
 	if p.IsInverseFillType() {
 		fillType = path.FillInverseEvenOdd
 	}
 	if p.GetConvexity().IsConvex() {
-		// If the path is trivially convex, simplify to empty, else copy.
+		// A degenerate convex path simplifies to empty; any other is copied.
 		result := path.New()
 		if !pathIsTrivial(p) {
 			result = p.Clone()
@@ -152,8 +147,8 @@ func Simplify(p *path.Path) (*path.Path, bool) {
 }
 
 // pathIsTrivial reports whether every contour's points are coincident or collinear, so that a convex path covers no
-// area. Points within each verb are visited last-first, and consecutive edge vectors are compared via their cross
-// product to detect any turn (a nonzero cross product means the contour isn't degenerate).
+// area: a nonzero cross product between consecutive edge vectors means a turn. Points within each verb are visited
+// last-first, as Skia does.
 func pathIsTrivial(p *path.Path) bool {
 	var prevPt, prevVec geom.Point
 	addTrivialContourPoint := func(currPt geom.Point) bool {
@@ -220,10 +215,8 @@ func (b *Builder) reset() {
 
 // allUnion is Resolve's optimization gate: it reports whether every operator is a union over non-inverse paths, every
 // convex operand has a determinable direction, and every non-convex operand's bounds are disjoint from all earlier
-// operands. It stops scanning at the first failing operand rather than continuing to check the rest, since the caller
-// only needs a yes/no answer; this is safe because winding orientation is normalized away downstream regardless — the
-// pairwise Op path re-derives winding, and the all-union path runs each operand through Simplify (an
-// orientation-independent even-odd computation).
+// operands. Unlike Skia it does not reverse convex operands to a common direction: the all-union path runs each operand
+// through Simplify, an orientation-independent even-odd computation, so orientation is normalized away downstream.
 func allUnion(paths []*path.Path, ops []PathOp) bool {
 	firstDir := path.FirstDirectionUnknown
 	for i, p := range paths {
@@ -252,11 +245,10 @@ func allUnion(paths []*path.Path, ops []PathOp) bool {
 }
 
 // Resolve computes the accumulated boolean combination of every path added via Add, then resets the builder. When the
-// allUnion gate holds (every operator is a union over non-inverse paths), it takes the fast path: simplify each operand
-// to even-odd form, convert it back to winding form via fixWinding so overlapping unions reinforce rather than cancel,
-// accumulate, and simplify the sum once. Otherwise it folds the operands pairwise through Op, where a lone survivor
-// passes through unmodified with its original fill type. An empty builder resolves to Simplify(empty), since allUnion
-// is vacuously true and the accumulation loop is empty.
+// allUnion gate holds, it simplifies each operand, converts it to winding form via fixWinding so overlapping unions
+// reinforce rather than cancel, accumulates, and simplifies the sum once. Otherwise it folds the operands pairwise
+// through Op; a lone operand passes through unmodified with its original fill type. An empty builder resolves to an
+// empty path.
 func (b *Builder) Resolve() (*path.Path, bool) {
 	paths, ops := b.paths, b.ops
 	b.reset()

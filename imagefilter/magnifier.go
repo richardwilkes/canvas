@@ -31,7 +31,7 @@ type magnifierFilter struct {
 func Magnifier(lensBounds geom.Rect, zoomAmount, inset float32, sampling shaders.SamplingOptions, input filtercore.Filter, cropRect *geom.Rect) filtercore.Filter {
 	if lensBounds.IsEmpty() || !lensBounds.IsFinite() || zoomAmount <= 0 || inset < 0 ||
 		!geom.IsFinite(zoomAmount, inset) {
-		return nil // invalid
+		return nil
 	}
 	// The magnifier automatically restricts its output based on the size of the image it receives as input, so
 	// 'cropRect' only applies to its input.
@@ -87,10 +87,9 @@ func (f *magnifierFilter) OnFilterImage(ctx filtercore.Context) filtercore.Filte
 		expectedChildOutput = output.ToRect()
 	}
 
-	// Clamp the zoom center to be within the childOutput image.
 	zoomCenter = clampPointToRect(zoomCenter, expectedChildOutput)
 
-	// The layer-space zoom equals fZoomAmount because this filter only supports scale+translate matrices; clamp the max
+	// The layer-space zoom equals zoomAmount because this filter only supports scale+translate matrices; clamp the max
 	// zoom to scale half of a layer pixel to the entire lens.
 	maxLensSize := max(float32(1), max(lensBounds.Width(), lensBounds.Height()))
 	invZoom := 1 / min(f.zoomAmount, 2*maxLensSize)
@@ -147,7 +146,7 @@ func (f *magnifierFilter) OnFilterImage(ctx filtercore.Context) filtercore.Filte
 	builder.AddSampled(&visibleOutput, nil, filtercore.ShaderFlagNonTrivialSampling, f.sampling)
 	lensOutput := filtercore.RoundOut(lensBounds)
 	return builder.Eval(func(inputs []shaders.Shader) shaders.Shader {
-		// If the input resolved to a null shader, the magnified output is transparent too.
+		// If the input resolved to a nil shader, the magnified output is transparent too.
 		if inputs[0] == nil {
 			return nil
 		}
@@ -161,7 +160,6 @@ func (f *magnifierFilter) OnFilterImage(ctx filtercore.Context) filtercore.Filte
 	}, &lensOutput)
 }
 
-// clampPointToRect clamps p to lie within r.
 func clampPointToRect(p geom.Point, r geom.Rect) geom.Point {
 	return geom.Point{
 		X: min(max(p.X, r.Left), r.Right),

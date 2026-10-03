@@ -45,8 +45,8 @@ func polyPath(ft path.FillType, pts ...geom.Point) *path.Path {
 	return p
 }
 
-// assertLineOnly verifies line-only inputs yield line-only output (the faithful engine copies each segment's verb
-// through addCurveTo, so a polygon op/simplify introduces no spurious curves).
+// assertLineOnly verifies line-only inputs yield line-only output (addCurveTo copies each segment's verb, so a polygon
+// op/simplify introduces no spurious curves).
 func assertLineOnly(t *testing.T, p *path.Path) {
 	t.Helper()
 	it := path.NewRawIter(p)
@@ -61,7 +61,7 @@ func assertLineOnly(t *testing.T, p *path.Path) {
 	}
 }
 
-// assertHasCurve verifies the faithful engine preserved at least one curve verb (conic/quad/cubic).
+// assertHasCurve verifies the result preserved at least one curve verb (conic/quad/cubic).
 func assertHasCurve(t *testing.T, p *path.Path) {
 	t.Helper()
 	it := path.NewRawIter(p)
@@ -77,7 +77,6 @@ func assertHasCurve(t *testing.T, p *path.Path) {
 	t.Fatal("result has no curve verbs; the faithful engine should preserve curves")
 }
 
-// contourCount counts move verbs.
 func contourCount(p *path.Path) int {
 	n := 0
 	it := path.NewRawIter(p)
@@ -93,11 +92,11 @@ func contourCount(p *path.Path) int {
 }
 
 // regionArea returns the area of the region a result path fills, independent of contour orientation and correct for the
-// path's own fill rule. A plain signed shoelace isn't enough: pathops output makes no guarantee that holes and bowtie
-// lobes are oriented oppositely to their outer boundary (an even-odd hole may wind the same way as its container, and a
-// bowtie's two lobes wind oppositely though both are filled). So each contour's absolute area is signed by whether a
-// point just inside that contour is filled — an outer boundary adds area, a hole subtracts it. Curves are flattened
-// finely, so line-only output is measured exactly and curved output within flattening error.
+// path's own fill rule. A plain signed shoelace isn't enough: pathops output does not guarantee that holes wind
+// opposite to their container, and a bowtie's two lobes wind oppositely though both are filled. So each contour's
+// absolute area is signed by whether a point just inside it is filled: an outer boundary adds area, a hole subtracts
+// it. Curves are flattened into 32 segments, so line-only output is measured exactly and curved output within
+// flattening error.
 func regionArea(t *testing.T, p *path.Path) float64 {
 	t.Helper()
 	var total float64
@@ -456,8 +455,7 @@ func TestOpSharedEdge(t *testing.T) {
 
 func TestOpCornerTouch(t *testing.T) {
 	// Two squares touching at one corner. The union active-edge rule threads the trace through the shared vertex, so
-	// the result is a single contour pinched at the corner. The region is identical either way, verified by
-	// containment.
+	// the result is a single contour pinched at the corner.
 	a := polyPath(path.FillWinding,
 		geom.Point{X: 0, Y: 0}, geom.Point{X: 10, Y: 0}, geom.Point{X: 10, Y: 10},
 		geom.Point{X: 0, Y: 10}, geom.Point{X: 0, Y: 5})
@@ -625,7 +623,6 @@ func TestOpCurves(t *testing.T) {
 	if !ok {
 		t.Fatal("circle∩rect failed")
 	}
-	// The faithful engine preserves the circle's conic arcs (the interim engine emitted line-only output).
 	assertHasCurve(t, result)
 	halfDisc := math.Pi * 40 * 40 / 2
 	// Tolerance covers regionArea's 32-segment flattening of the arcs.
@@ -674,10 +671,9 @@ func TestBuilder(t *testing.T) {
 		t.Errorf("intersect-first builder should resolve empty (ok=%v)", ok)
 	}
 
-	// A single all-union convex path runs Resolve's all-union branch (Simplify → fixWinding → Simplify), yielding the
-	// same region with even-odd fill. fixWinding reverses the CW operand to a winding-consistent orientation (verified
-	// bit-exactly by the oracle's TestPathOpsBuilderConvexUnionExact); here we assert the orientation-independent
-	// region.
+	// A single convex union runs Resolve's all-union branch (Simplify → fixWinding → Simplify), yielding the same
+	// region with even-odd fill. The oracle's TestPathOpsBuilderConvexUnionExact pins the orientation bit-exactly; this
+	// checks only the region.
 	rect := rectPath(0, 0, 10, 10, path.FillWinding)
 	b.Add(rect, Union)
 	result, ok = b.Resolve()
@@ -740,9 +736,8 @@ func TestBuilder(t *testing.T) {
 }
 
 // TestOpContainsProperty cross-checks the engine against direct point classification of the inputs: for random polygon
-// pairs and every op, result.Contains must equal the op formula over the operands' own Contains for sample points away
-// from all input edges (the interim contract perturbs boundaries by less than the snap grid; samples keep a wide
-// margin).
+// pairs and every op, result.Contains must equal the op formula over the operands' own Contains for sample points at
+// least margin away from every input edge.
 func TestOpContainsProperty(t *testing.T) {
 	rng := rand.New(rand.NewSource(28))
 	fillTypes := []path.FillType{path.FillWinding, path.FillEvenOdd, path.FillInverseWinding, path.FillInverseEvenOdd}

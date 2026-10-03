@@ -7,9 +7,8 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// AAClipBlitter wraps another blitter, multiplying every blit's coverage by the AA clip's per-pixel alpha. It
-// implements A8 and LCD16 merge lanes for BlitMask (mergeOneMaskRow/mergeOneMaskRow16); a BW-upscale lane is not needed
-// since this package has no BW masks.
+// AAClipBlitter's BlitMask has A8 and LCD16 merge lanes (mergeOneMaskRow/mergeOneMaskRow16); Skia's BW-upscale lane is
+// not needed since this package has no BW masks.
 
 package raster
 
@@ -69,7 +68,6 @@ func expandToRuns(data []uint8, initialCount, width int32, runs []int16, aa []Al
 			break
 		}
 		off += n
-		// load the next count
 		n = int32(data[0])
 	}
 	runs[off+n] = 0 // sentinel
@@ -103,7 +101,6 @@ func mergeAARuns(row []uint8, rowN int32, srcAA []Alpha, srcRuns []int16, dstAA 
 	srcOff := int32(0)
 	dstOff := int32(0)
 	srcN := int32(srcRuns[0])
-	// do we need this check?
 	if srcN == 0 {
 		return
 	}
@@ -117,9 +114,9 @@ func mergeAARuns(row []uint8, rowN int32, srcAA []Alpha, srcRuns []int16, dstAA 
 
 		srcN -= minN
 		if srcN == 0 {
-			n := int32(srcRuns[srcOff]) // refresh
+			n := int32(srcRuns[srcOff])
 			srcOff += n
-			srcN = int32(srcRuns[srcOff]) // reload
+			srcN = int32(srcRuns[srcOff])
 			if srcN == 0 {
 				break
 			}
@@ -127,7 +124,7 @@ func mergeAARuns(row []uint8, rowN int32, srcAA []Alpha, srcRuns []int16, dstAA 
 		rowN -= minN
 		if rowN == 0 {
 			row = row[2:]
-			rowN = int32(row[0]) // reload
+			rowN = int32(row[0])
 		}
 	}
 	dstRuns[dstOff] = 0
@@ -198,9 +195,8 @@ func (b *AAClipBlitter) BlitMask(mask *Mask, clip geom.IRect) {
 		return
 	}
 
-	// No ensureRunsAndAA() here: this method works exclusively out of the row scratch it sizes below and never touches
-	// b.runs/b.aa. Upstream needs the call because there the row mask points into the single shared scanline scratch;
-	// this port keeps the two separate.
+	// No ensureRunsAndAA() here: this method uses only the row scratch it sizes below, never b.runs/b.aa. Upstream
+	// needs the call because its row mask points into the shared scanline scratch.
 	width := clip.Width()
 	isLCD := mask.Format == MaskLCD16
 	var src int
@@ -259,7 +255,7 @@ func (b *AAClipBlitter) BlitMask(mask *Mask, clip geom.IRect) {
 }
 
 // mergeOneMaskRow16 multiplies one LCD16 mask row by the clip row's alphas, each 5/6/5 channel scaled by
-// mulDiv255Round.
+// MulDiv255Round.
 func mergeOneMaskRow16(src []uint16, srcN int32, row []uint8, rowN int32, dst []uint16) {
 	off := int32(0)
 	for {

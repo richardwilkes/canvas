@@ -110,7 +110,6 @@ type RenderTaskBase struct {
 
 func (b *RenderTaskBase) taskBase() *RenderTaskBase { return b }
 
-// initRenderTask initializes the base state shared by every concrete task.
 func (b *RenderTaskBase) initRenderTask(self RenderTask) {
 	b.self = self
 	b.refCnt = 1
@@ -337,7 +336,6 @@ func (b *RenderTaskBase) addDependent(dependent RenderTask) {
 // and adds a dependency on it, resolving MSAA/mipmap regeneration first if needed. mipmapped indicates the proxy will
 // be sampled with mipmaps.
 func (b *RenderTaskBase) AddDependency(drawingMgr *DrawingManager, dependedOn *SurfaceProxy, mipmapped gpu.Mipmapped, caps *Caps) {
-	// If it is still receiving dependencies, this task shouldn't be closed.
 	if b.IsClosed() {
 		panic("adding a dependency to a closed task")
 	}
@@ -345,8 +343,8 @@ func (b *RenderTaskBase) AddDependency(drawingMgr *DrawingManager, dependedOn *S
 	dependedOnTask := drawingMgr.GetLastRenderTask(dependedOn)
 
 	if dependedOnTask == b.self {
-		// Self-read — presumably for dst reads. We don't need to do anything in this case: the XferProcessor will
-		// detect what is happening and insert a texture barrier.
+		// Self-read, presumably for dst reads. Nothing to do: the XferProcessor will detect it and insert a texture
+		// barrier.
 		if mipmapped == gpu.MipmappedYes || dependedOn.RequiresManualMSAAResolve() {
 			panic("invalid self-read")
 		}
@@ -390,7 +388,6 @@ func (b *RenderTaskBase) AddDependency(drawingMgr *DrawingManager, dependedOn *S
 		}
 	}
 
-	// Does this proxy have msaa to resolve and/or mipmaps to regenerate?
 	if resolveFlags != 0 {
 		if b.textureResolveTask == nil {
 			b.textureResolveTask = drawingMgr.newTextureResolveRenderTaskBefore()
@@ -420,7 +417,7 @@ func (b *RenderTaskBase) IsUsed(proxy *SurfaceProxy) bool {
 	return b.self.OnIsUsed(proxy)
 }
 
-// IsInstantiated reports whether all targets (and their stencil, if required) are allocated and alive.
+// IsInstantiated reports whether all targets are allocated and alive.
 func (b *RenderTaskBase) IsInstantiated() bool {
 	for _, proxy := range b.targets {
 		if !proxy.IsInstantiated() {

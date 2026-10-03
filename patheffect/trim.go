@@ -55,7 +55,6 @@ func addSegments(src *path.Path, start, stop float32, dst *path.Path, requiresMo
 	return contourCount
 }
 
-// trimEffect is the trim path effect implementation.
 type trimEffect struct {
 	noAsPoints
 	startT float32
@@ -109,8 +108,8 @@ func (t *trimEffect) FilterPath(dst, src *path.Path, _ *stroke.Rec, _ *geom.Rect
 			addSegments(src, arcStart, arcStop, dst, true)
 		}
 	} else {
-		// Inverted mode -> one logical span which wraps around at the end -> two actual spans. In order to preserve
-		// closed path continuity:
+		// Inverted mode -> one logical span which wraps around at the end -> two actual spans. To preserve closed path
+		// continuity:
 		//
 		//   1) add the second/tail span first
 		//

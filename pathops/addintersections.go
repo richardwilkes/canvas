@@ -7,15 +7,14 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// The intersection-phase walker: addIntersectTs takes two contours (or one contour against itself), enumerates every
-// pair of segments whose bounds overlap, computes the intersection(s) via the six curve/curve and the line/curve
-// solvers, and threads the resulting t values into the op data model — linking coincident points across the two
-// segments' pt-t loops and recording coincident runs in the opCoincidence tracker.
+// The intersection-phase walker: addIntersectTs takes two contours (or one contour against itself), intersects every
+// pair of segments whose bounds overlap using the curve/curve and line/curve solvers, and threads the resulting t
+// values into the op data model, linking coincident points across the two segments' pt-t loops and recording coincident
+// runs in the opCoincidence tracker.
 //
-// Debug-only assertions and tracing are omitted. Pathops computes in double precision, so t values flow as float64; the
-// intersection point is compared/stored at float32 (geom.Point) precision. The driver (addIntersections) runs the
-// double loop shared by the boolean-op and simplify entry points; it assumes the contour list is already bounds-sorted
-// (sortContourList, common.go, runs first).
+// Skia's debug-only assertions and tracing are omitted. Pathops computes in double precision, so t values flow as
+// float64; the intersection point is compared and stored at float32 (geom.Point) precision. addIntersections assumes
+// the contour list is already bounds-sorted (sortContourList in common.go runs first).
 
 package pathops
 
@@ -25,10 +24,10 @@ import (
 	"github.com/richardwilkes/canvas/geom"
 )
 
-// addIntersections is the "find all intersections between segments" loop shared by the boolean-op and simplify entry
-// points: for each contour, intersect it against itself and every following contour, stopping the inner advance as soon
-// as addIntersectTs reports the remaining contours are entirely below (the bounds-sort invariant). Always returns true
-// today (a false addIntersectTs return only prunes the inner walk).
+// addIntersections finds all intersections between segments for the boolean-op and simplify entry points: each contour
+// is intersected against itself and every following contour, stopping the inner advance once addIntersectTs reports
+// that the remaining contours lie entirely below (the bounds-sort invariant). It always returns true; a false return
+// from addIntersectTs only prunes the inner walk.
 func addIntersections(contourList *opContourHead, coincidence *opCoincidence) bool {
 	current := contourList.listHead()
 	for current != nil {
@@ -80,7 +79,7 @@ func addIntersectTs(test, next *opContour, coincidence *opCoincidence) bool {
 }
 
 // addIntersectSegments computes the intersection(s) of the two segments the cursors point at and threads the results
-// into the data model. This is the body of the inner double loop in addIntersectTs.
+// into the data model.
 func addIntersectSegments(wt, wn *intersectionHelper, coincidence *opCoincidence) {
 	ts := newIntersections()
 	swap := false
@@ -180,8 +179,7 @@ func addIntersectSegments(wt, wn *intersectionHelper, coincidence *opCoincidence
 }
 
 // addIntersectResults threads the computed intersection set into the two segments' data model: each entry adds a t to
-// both segments, links the resulting pt-t records into a shared loop, and records coincident pairs. This is the
-// per-point loop that runs at the tail of addIntersectTs.
+// both segments, links the resulting pt-t records into a shared loop, and records coincident pairs.
 func addIntersectResults(ts *intersections, wt, wn *intersectionHelper, swap bool, coincidence *opCoincidence) {
 	swapIdx := b2i(swap)
 	coinIndex := -1
@@ -255,7 +253,6 @@ func boundsIntersects(a, b pathOpsBounds) bool {
 		almostLessOrEqualUlps(float64(b.top), float64(a.bottom))
 }
 
-// isIntegral reports whether both coordinates are whole numbers.
 func isIntegral(p geom.Point) bool {
 	return float64(p.X) == math.Floor(float64(p.X)) && float64(p.Y) == math.Floor(float64(p.Y))
 }

@@ -9,8 +9,8 @@
 
 // Live-context test for LCD subpixel text on the GPU: a real GL surface with RGB_H pixel geometry renders
 // subpixel-edged text through the A565 atlas (RGB565 uploads + the LCD-coverage blend), and the readback must show
-// channel fringing; the same draw with kAntiAlias edging (and any draw on a default-props surface) stays gray. Skips
-// when no GL context is available.
+// channel fringing; the same draw with EdgingAntiAlias (and any draw on a default-props surface) stays gray. Skips when
+// no GL context is available.
 
 package gl_test
 

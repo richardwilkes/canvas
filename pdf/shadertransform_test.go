@@ -19,7 +19,7 @@ import (
 	"github.com/richardwilkes/canvas/shaders"
 )
 
-// patternMatrices returns the /Matrix entry of every shading pattern in the document.
+// patternMatrices returns the /Matrix entry of every pattern in the document.
 func patternMatrices(data []byte) []string {
 	var out []string
 	for _, d := range allObjectDicts(data) {

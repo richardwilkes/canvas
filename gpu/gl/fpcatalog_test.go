@@ -41,7 +41,6 @@ func newTestTextureProxyView(t *testing.T, dc *DirectContext, w, h int32) Surfac
 }
 
 func TestTextureEffectShaderModes(t *testing.T) {
-	// GetShaderMode table.
 	cases := []struct {
 		wrap   gpu.WrapMode
 		filter gpu.FilterMode
@@ -254,8 +253,8 @@ func TestGradientColorizerSelection(t *testing.T) {
 	if sampler.Filter != gpu.FilterModeLinear || sampler.WrapModeX != gpu.WrapModeClamp {
 		t.Fatalf("LUT sampler = %+v, want clamp/linear", sampler)
 	}
-	// An opaque >128-stop gradient bakes the interpolated-to-dst result directly, so no colorXform premul wrapper
-	// appears even though the colorizer is not the analytic lane.
+	// The LUT bake includes the interpolated-to-dst premultiplication, so the textured colorizer gets no colorXform
+	// premul wrapper.
 	if _, ok = fp.fpBase().ChildProcessor(0).(*colorXformFP); ok {
 		t.Fatal("textured colorizer must not get the ColorXformFP premul wrapper")
 	}
@@ -369,9 +368,9 @@ func TestColorFilterFPConstantFoldMatchesCPU(t *testing.T) {
 	var swapRB [20]float32
 	swapRB[2] = 1  // R = B
 	swapRB[6] = 1  // G = G
-	swapRB[10] = 1 // B = B? no: row2 col0
+	swapRB[10] = 1 // B = R
 	swapRB[10] = 0
-	swapRB[8] = 0.25 // B row gets a translate via matrix col
+	swapRB[8] = 0.25 // G += 0.25 * A
 	swapRB[10] = 1
 	swapRB[18] = 1 // A = A
 	filters := []struct {
@@ -406,9 +405,9 @@ func TestColorFilterFPConstantFoldMatchesCPU(t *testing.T) {
 			if !cpuOK {
 				t.Fatalf("%s: CPU FilterColor4f failed", tc.name)
 			}
-			// filterColor4f is unclamped; the FP lanes clamp where the corresponding effects clamp. Both land in range
-			// for these inputs. The CPU pipeline uses an approximate power function while the FP folding uses scalar
-			// color-space math, so allow a small tolerance.
+			// FilterColor4f is unclamped while the FP lanes clamp where their effects do, but both land in range for
+			// these inputs. The CPU pipeline uses an approximate power function and the FP folding scalar color-space
+			// math, so allow a small tolerance.
 			const tol = 2.0 / 255
 			for i, pair := range [][2]float32{
 				{got.R, want.R},
@@ -644,8 +643,8 @@ func TestAlwaysDitherSurfaceProp(t *testing.T) {
 }
 
 // TestFakeGradientDitherDrawGLSL runs a full dithered-gradient draw through the recording driver and checks the
-// generated GLSL structurally: the looping colorizer's uniforms and loop, the dither table sampler + RT-flip lowering
-// of gl_FragCoord, and the texture-effect sampler.
+// generated GLSL structurally: the looping colorizer's uniforms and loop, the dither range uniform, and the dither
+// table's sampler and device-position coord varying.
 func TestFakeGradientDitherDrawGLSL(t *testing.T) {
 	dc := newShaderRecordingContext(t)
 	defer dc.Destroy()

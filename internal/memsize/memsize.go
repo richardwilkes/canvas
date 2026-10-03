@@ -7,25 +7,23 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// Package memsize derives the per-item byte costs the byte-budgeted caches charge, from the layout of the types those
-// caches actually retain. A hand-picked constant is a guess that stops being true the moment a struct gains a field:
-// it then either lets the cache overrun its budget silently or purges long before it has to. Everything here is
-// computed once at init from unsafe.Sizeof/Alignof, so a budget tracks the types it is accounting for.
+// Package memsize derives the per-item byte costs the byte-budgeted caches charge from the layout of the types those
+// caches retain. A hand-picked constant stops being true the moment a struct gains a field, and the cache then either
+// overruns its budget silently or purges long before it has to; costs derived from unsafe.Sizeof/Alignof track the
+// types they account for.
 //
 // The map and slice models encode the runtime's storage strategy rather than any one map or slice, so they remain
-// approximations — the point is that they are approximations with a stated derivation instead of numbers somebody
-// liked the look of.
+// approximations, but ones with a stated derivation.
 
 package memsize
 
 import "unsafe"
 
-// ptrBytes is the width of a pointer on this platform.
 var ptrBytes = int(unsafe.Sizeof(uintptr(0)))
 
 const (
-	// maxInlineSlotBytes is the widest key or element the runtime's map stores inline in a slot (its maxKeyOrElemSize).
-	// Anything wider is stored indirectly: the slot holds a pointer to a separate allocation.
+	// maxInlineSlotBytes is the widest key or element the runtime's map stores inline in a slot (its abi.MapMaxKeyBytes
+	// and abi.MapMaxElemBytes). Anything wider is stored indirectly: the slot holds a pointer to a separate allocation.
 	maxInlineSlotBytes = 128
 	// slotsPerGroup is how many slots the runtime's map packs into one group, each with a one-byte control word.
 	slotsPerGroup = 8
@@ -36,13 +34,12 @@ const (
 	// entry goes in (the runtime's maps.Map: a use count, a seed, a directory pointer and length, a word of packed
 	// flags, and a clear sequence).
 	mapHeaderWords = 6
-	// sliceSlackNum/sliceSlackDen express how much storage a slice grown with append actually holds per element it is
-	// carrying. append doubles the capacity of a small slice, which every slice these caches build is, so a slice of n
-	// elements has room for somewhere between n and 2n — and the unused remainder is retained exactly as firmly as the
-	// used part. A length lands anywhere in that doubled span with roughly equal likelihood, putting the middle of the
-	// range at 3/2. These budgets sum over thousands of items, so the middle is the estimator that makes the total come
-	// out right; charging the 2x worst case for every one of them would leave a cache holding half the data it was
-	// configured to hold.
+	// sliceSlackNum/sliceSlackDen express how much storage a slice grown with append holds per element it carries.
+	// append doubles the capacity of a small slice, which every slice these caches build is, so a slice of n elements
+	// has room for between n and 2n, and the unused remainder is retained too. A length lands anywhere in that span
+	// with roughly equal likelihood, putting the middle at 3/2. These budgets sum over thousands of items, so the
+	// middle makes the total come out right; charging the 2x worst case for each would leave a cache holding half the
+	// data it was configured to hold.
 	sliceSlackNum = 3
 	sliceSlackDen = 2
 )

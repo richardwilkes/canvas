@@ -78,7 +78,6 @@ func (c *ScalerContext) renderCOLRv0(g *Glyph) {
 		if !local.IsFinite() {
 			continue
 		}
-		// Anti-aliased fill with a solid color takes the solid src-over N32 blitter.
 		raster.AntiFillPathRasterClip(local, clip, raster.NewSolidBlitter(&pm, color))
 	}
 }
@@ -141,26 +140,24 @@ func (c *ScalerContext) renderBitmap(g *Glyph) {
 	raster.FillPathRasterClip(quad, clip, blitter)
 }
 
-// decodedImage pairs the imagecore image with its info for the bitmap lane.
 type decodedImage struct {
 	Image *imagecore.Image
 	Info  imagecore.ImageInfo
 }
 
-// maxStrikePixels bounds the pixel count a strike PNG may decode to. The per-side ceiling alone is not enough on the
-// sbix path: there the "strike metrics" the header is checked against are themselves png.DecodeConfig's answer on these
-// very bytes (go-text derives GlyphBitmap.Width/Height that way, having no independent metrics to read), so the equality
-// check compares the header with itself and only this cap stands between a crafted IHDR and its allocation. 4 Mpixel is
-// roughly 16 MB per intermediate buffer and many times the largest strike any shipping color font carries (Apple Color
-// Emoji tops out at 160 px square, Noto Color Emoji at 136), while the 8191x8191 an IHDR one step below the per-side
-// ceiling can declare costs about 768 MB across the NRGBA image, the premultiplied buffer, and the imagecore copy.
+// maxStrikePixels bounds the pixel count a strike PNG may decode to. The per-side ceiling is not enough on the sbix
+// path, where go-text derives GlyphBitmap.Width/Height from png.DecodeConfig on these very bytes, so the
+// header-versus-metrics check compares the header with itself and only this cap stands between a crafted IHDR and its
+// allocation. 4 Mpixel is roughly 16 MB per intermediate buffer and many times the largest strike any shipping color
+// font carries (Apple Color Emoji tops out at 160 px square, Noto Color Emoji at 136), while the 8191x8191 the per-side
+// ceiling allows costs about 768 MB across the NRGBA image, the premultiplied buffer, and the imagecore copy.
 const maxStrikePixels = 1 << 22
 
-// strikeDimensionsUsable reports whether a strike's own declared dimensions are ones a PNG will be decoded at: positive,
-// under the glyph-mask ceiling on each side, and under maxStrikePixels in area. It is decodePremulPNG's whole refusal
-// decision, and the only part of it that runs before the data is touched at all — no reader, no header parse, nothing
-// allocated — which is what makes a hostile few-hundred-byte strike cost nothing. Named rather than inlined so that the
-// property can be asserted directly, instead of being inferred from a process-wide allocation measurement.
+// strikeDimensionsUsable reports whether a strike's own declared dimensions are ones a PNG will be decoded at:
+// positive, under the glyph-mask ceiling on each side, and at most maxStrikePixels in area. decodePremulPNG checks it
+// before touching the data (no reader, no header parse, no allocation), so a hostile few-hundred-byte strike costs
+// nothing. It is a named function so that tests can assert the property directly rather than infer it from a
+// process-wide allocation measurement.
 func strikeDimensionsUsable(strikeW, strikeH int) bool {
 	if strikeW <= 0 || strikeH <= 0 || strikeW >= maxGlyphWidth || strikeH >= maxGlyphHeight {
 		return false
@@ -172,12 +169,10 @@ func strikeDimensionsUsable(strikeW, strikeH int) bool {
 //
 // strikeW/strikeH are the strike's own declared dimensions, and they gate the decode: png.Decode allocates the full
 // image from the IHDR width/height before it reads a single IDAT byte, so a few-hundred-byte strike claiming
-// 65535x65535 would otherwise force a multi-gigabyte allocation out of untrusted font data. The header is therefore
-// read with DecodeConfig (which allocates nothing) and must agree with the strike metrics, both must stay under the
-// glyph-mask ceiling — a strike bigger than the largest mask that can be allocated has nothing to contribute anyway —
-// and the area must stay under maxStrikePixels, which is the only one of the three the sbix lane's self-comparison
-// leaves with any work to do. FreeType's Load_SBit_Png makes the same equality check against known metrics (CBDT/EBDT)
-// and bounds the dimensions it takes from the header (sbix).
+// 65535x65535 would otherwise force a multi-gigabyte allocation out of untrusted font data. They must therefore pass
+// strikeDimensionsUsable, and the header, read with DecodeConfig (which allocates nothing), must agree with them.
+// FreeType's Load_SBit_Png makes the same equality check against known metrics (CBDT/EBDT) and bounds the dimensions it
+// takes from the header (sbix).
 func decodePremulPNG(data []byte, strikeW, strikeH int) *decodedImage {
 	if !strikeDimensionsUsable(strikeW, strikeH) {
 		return nil

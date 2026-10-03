@@ -126,7 +126,7 @@ func (sdc *SurfaceDrawContext) attemptQuadOptimization(clip Clip, ss *UserStenci
 	clippedBounds := result.RRect.Rect
 	clippedBounds.Intersect(rtRect)
 	if !drawBounds.Intersect(clippedBounds) {
-		// The fractional bounds aren't actually inside the clip (preApply can think in terms of rounded-out bounds);
+		// The fractional bounds aren't actually inside the clip (PreApply can think in terms of rounded-out bounds);
 		// discard the draw.
 		return quadOptDiscarded
 	}
@@ -159,7 +159,7 @@ func (sdc *SurfaceDrawContext) attemptQuadOptimization(clip Clip, ss *UserStenci
 		}
 	} else {
 		// Rounded corners and constant filled color (limited to solid colors because there is no way to use custom
-		// local coordinates with drawRRect).
+		// local coordinates with DrawRRect).
 		if !simpleColor {
 			panic("rrect-clip reduction requires a simple color")
 		}
@@ -211,7 +211,7 @@ func (sdc *SurfaceDrawContext) DrawFilledQuad(clip Clip, paint *Paint, quad *Dra
 		}
 		sdc.AddDrawOp(finalClip, NewFillRectOp(paint, aaType, quad, ss, PipelineInputFlagNone))
 	}
-	// All other optimization levels were completely handled inside attempt(), so no extra op needed.
+	// All other optimization levels were completely handled inside attemptQuadOptimization, so no extra op needed.
 }
 
 // FillRectToRect fills rectToDraw with the paint using localRect for the local coordinates. Under DMSAA (or reduced
@@ -232,7 +232,7 @@ func (sdc *SurfaceDrawContext) FillRectToRect(clip Clip, paint *Paint, aa gpu.AA
 		sdc.Caps().DrawInstancedSupport && aa == gpu.AAYes {
 		opt := sdc.attemptQuadOptimization(clip, nil /* stencil */, &quad, paint)
 		if opt < quadOptClipApplied {
-			// The optimization was completely handled inside attempt().
+			// The optimization was completely handled inside attemptQuadOptimization.
 			return
 		}
 
@@ -450,8 +450,7 @@ func opBounds(op Op) geom.Rect {
 }
 
 // AddDrawOp runs the full draw pipeline for op: clip application, processor finalization, dst-copy setup, and OpsTask
-// recording, including the DMSAA per-op MSAA escalation (a willAddFn-style pre-add callback has no callers until the
-// clip-atlas work).
+// recording, including the DMSAA per-op MSAA escalation. Skia's willAddFn pre-add callback is omitted.
 func (sdc *SurfaceDrawContext) AddDrawOp(clip Clip, op DrawOp) {
 	if sdc.ctx.Abandoned() {
 		return

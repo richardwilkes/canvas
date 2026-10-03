@@ -16,7 +16,6 @@ import (
 	"github.com/richardwilkes/canvas/path"
 )
 
-// buildContours runs the edge builder over p and returns the resulting contour head.
 func buildContours(t *testing.T, p *path.Path) *opContourHead {
 	t.Helper()
 	head := &opContourHead{}
@@ -40,7 +39,6 @@ func realContours(head *opContourHead) []*opContour {
 	return out
 }
 
-// segVerbs returns the verbs of a contour's segments in forward order.
 func segVerbs(c *opContour) []path.Verb {
 	var out []path.Verb
 	for s := c.first(); s != nil; s = s.next {
@@ -109,7 +107,6 @@ func TestEdgeBuilderOpenContourAutoCloses(t *testing.T) {
 	if v := segVerbs(cs[0]); !verbsEqual(v, path.VerbLine, path.VerbLine, path.VerbLine) {
 		t.Fatalf("verbs = %v, want three lines (incl. the closing edge)", v)
 	}
-	// The final segment closes back to the contour start.
 	var last *opSegment
 	for s := cs[0].first(); s != nil; s = s.next {
 		last = s
@@ -148,7 +145,6 @@ func TestEdgeBuilderTwoContours(t *testing.T) {
 			t.Fatalf("contour %d verbs = %v, want three lines", i, v)
 		}
 	}
-	// The second contour starts where its moveTo placed it.
 	if cs[1].first().head.pt() != pt(100, 100) {
 		t.Fatalf("second contour starts at %v, want (100,100)", cs[1].first().head.pt())
 	}
@@ -276,7 +272,7 @@ func TestEdgeBuilderConicSplit(t *testing.T) {
 }
 
 func TestEdgeBuilderTwoOperands(t *testing.T) {
-	// addOperand appends a second path; walk flips fOperand at the first-operand boundary, so the second path's contour
+	// addOperand appends a second path; walk sets operand at the first-operand boundary, so the second path's contour
 	// is marked as the operand.
 	pa := path.New()
 	pa.MoveTo(0, 0).LineTo(10, 0).LineTo(5, 8).Close()

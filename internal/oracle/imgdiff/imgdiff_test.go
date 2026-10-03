@@ -14,9 +14,8 @@ import (
 	"testing"
 )
 
-// TestHeatColorBandsAreInclusiveUpperBounds pins the ramp to what Heatmap's doc says. Every band's threshold is its
-// inclusive upper bound, so delta 64 is the last orange value and red starts at 65 — the doc used to claim red meant
-// "delta ≥ 64", which is off by one at exactly the boundary a reader would check.
+// TestHeatColorBandsAreInclusiveUpperBounds pins the ramp to what Heatmap's doc says: every band's threshold is its
+// inclusive upper bound, so delta 64 is the last orange value and red starts at 65.
 func TestHeatColorBandsAreInclusiveUpperBounds(t *testing.T) {
 	var (
 		black  = color.NRGBA{A: 0xFF}

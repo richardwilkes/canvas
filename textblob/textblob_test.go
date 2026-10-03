@@ -59,7 +59,7 @@ func TestBuilderDefaultRunBounds(t *testing.T) {
 		t.Fatal("blob should exist")
 	}
 
-	// Default positioning uses TightRunBounds: measureText's bounds offset by the run offset.
+	// Default positioning uses tightRunBounds: MeasureText's bounds offset by the run offset.
 	var want geom.Rect
 	f.MeasureText(glyphBytes(glyphs), font.TextEncodingGlyphID, &want, nil)
 	want = want.Offset(10, 20)
@@ -114,7 +114,6 @@ func TestBuilderMergeRuns(t *testing.T) {
 	f := loadFont(t, 24)
 	glyphs := glyphsFor(f, "ab")
 
-	// Two full-positioned runs with the same font merge into one.
 	b := NewBuilder()
 	buf := b.AllocRunPos(f, 2, nil)
 	copy(buf.Glyphs, glyphs)
@@ -130,7 +129,6 @@ func TestBuilderMergeRuns(t *testing.T) {
 		t.Errorf("merged run has %d glyphs", len(blob.runs[0].glyphs))
 	}
 
-	// Default positioning never merges.
 	b2 := NewBuilder()
 	r1 := b2.AllocRun(f, 2, 0, 0, nil)
 	copy(r1.Glyphs, glyphs)
@@ -141,7 +139,6 @@ func TestBuilderMergeRuns(t *testing.T) {
 		t.Errorf("default runs should not merge: %d runs", len(blob2.runs))
 	}
 
-	// Horizontal runs merge only at the same y.
 	b3 := NewBuilder()
 	h1 := b3.AllocRunPosH(f, 2, 10, nil)
 	copy(h1.Glyphs, glyphs)
@@ -157,7 +154,6 @@ func TestBuilderMergeRuns(t *testing.T) {
 		t.Errorf("posH runs: %d, want 2 (same-y merged, different-y separate)", len(blob3.runs))
 	}
 
-	// A different font blocks merging.
 	f2 := loadFont(t, 30)
 	b4 := NewBuilder()
 	m1 := b4.AllocRunPos(f, 2, nil)
@@ -260,7 +256,6 @@ func TestGetIntercepts(t *testing.T) {
 		t.Errorf("interval %v outside glyph extent %v", vals, bounds)
 	}
 
-	// A band above the glyph has no intercepts.
 	if _, n := blob.GetIntercepts([2]float32{-100, -90}, nil, nil); n != 0 {
 		t.Error("band above the glyph should be clear")
 	}
@@ -281,7 +276,6 @@ func TestGetIntercepts(t *testing.T) {
 	}
 }
 
-// interceptsValues fetches intercepts into a fresh slice.
 func interceptsValues(t *testing.T, blob *Blob, bounds [2]float32, paint *stroke.PaintSpec) []float32 {
 	t.Helper()
 	_, n := blob.GetIntercepts(bounds, nil, paint)
@@ -319,7 +313,6 @@ func TestGlyphRunBuilderText(t *testing.T) {
 		t.Errorf("bounds with origin %v", wb)
 	}
 
-	// Empty/invalid text yields an empty list.
 	if !b.TextToGlyphRunList(f, nil, nil, font.TextEncodingUTF8, geom.Pt(0, 0)).Empty() {
 		t.Error("empty text should produce an empty list")
 	}
@@ -330,14 +323,11 @@ func TestBlobToGlyphRunList(t *testing.T) {
 	glyphs := glyphsFor(f, "ab")
 
 	b := NewBuilder()
-	// Default run at (3, 4).
 	r1 := b.AllocRun(f, 2, 3, 4, nil)
 	copy(r1.Glyphs, glyphs)
-	// Horizontal run at y=40.
 	r2 := b.AllocRunPosH(f, 2, 40, nil)
 	copy(r2.Glyphs, glyphs)
 	copy(r2.Pos, []float32{7, 21})
-	// Full run.
 	r3 := b.AllocRunPos(f, 2, nil)
 	copy(r3.Glyphs, glyphs)
 	copy(r3.Pos, []float32{1, 2, 3, 4})
@@ -357,11 +347,9 @@ func TestBlobToGlyphRunList(t *testing.T) {
 	if list.Runs[0].Positions[1] != geom.Pt(3+widths[0], 4) {
 		t.Errorf("default run position[1] = %v", list.Runs[0].Positions[1])
 	}
-	// Horizontal positioning.
 	if list.Runs[1].Positions[0] != geom.Pt(7, 40) || list.Runs[1].Positions[1] != geom.Pt(21, 40) {
 		t.Errorf("posH positions = %v", list.Runs[1].Positions)
 	}
-	// Full positioning.
 	if list.Runs[2].Positions[0] != geom.Pt(1, 2) || list.Runs[2].Positions[1] != geom.Pt(3, 4) {
 		t.Errorf("full positions = %v", list.Runs[2].Positions)
 	}
@@ -398,10 +386,9 @@ func copyPositions(list *GlyphRunList) [][]geom.Point {
 	return out
 }
 
-// TestGlyphRunBuilderPoolReuse locks the invariants the builder pooling relies on: the returned list is the builder's
-// own retained header, a builder reused for a smaller/different blob (its position/run buffers left "poisoned" with a
-// prior larger blob's data) produces byte-identical output to a fresh builder, full-positioned runs correctly share the
-// reused position buffer, and Release drops the source-blob reference.
+// TestGlyphRunBuilderPoolReuse locks the invariants builder pooling relies on: the returned list is the builder's own
+// retained header, a builder whose buffers still hold a larger blob's data produces output identical to a fresh builder
+// (including full-positioned runs sharing the position buffer), and Release drops the source-blob reference.
 func TestGlyphRunBuilderPoolReuse(t *testing.T) {
 	f := loadFont(t, 24)
 	big := glyphsFor(f, "abcdef")
@@ -409,17 +396,14 @@ func TestGlyphRunBuilderPoolReuse(t *testing.T) {
 	blobBig := mixedBlob(f, big, 50)
 	blobSmall := mixedBlob(f, small, 7)
 
-	// Reference output from a fresh builder for the small blob.
 	want := copyPositions(NewGlyphRunBuilder().BlobToGlyphRunList(blobSmall, geom.Pt(3, 9)))
 
-	// The returned list must be the builder's own field (so it does not allocate a fresh header), and reusing the
-	// builder for a different blob must reuse that same header.
 	reused := AcquireGlyphRunBuilder()
 	l1 := reused.BlobToGlyphRunList(blobBig, geom.Pt(1, 1))
 	if l1 != &reused.list {
 		t.Fatal("list must be the builder's retained header")
 	}
-	// Poison the buffers with the big blob, then process the small blob through the same builder.
+	// The buffers now hold the big blob's data; run the small blob through the same builder.
 	got := copyPositions(reused.BlobToGlyphRunList(blobSmall, geom.Pt(3, 9)))
 	l2 := reused.BlobToGlyphRunList(blobSmall, geom.Pt(3, 9))
 	if l2 != &reused.list || l1 != l2 {
@@ -440,17 +424,15 @@ func TestGlyphRunBuilderPoolReuse(t *testing.T) {
 		}
 	}
 
-	// Release must drop the source-blob reference so a pooled builder does not pin it while idle.
 	ReleaseGlyphRunBuilder(reused)
 	if reused.list.Blob != nil {
 		t.Error("Release must clear the retained list's blob reference")
 	}
 }
 
-// TestReleaseGlyphRunBuilderClearsRuns verifies Release drops every external reference an idle pooled builder would
-// otherwise pin: not just the retained list's blob, but the run scratch's per-run font and glyph-slice pointers,
-// including the elements past the current length that an earlier, longer draw left stranded. The scratch capacity must
-// survive so reuse stays allocation-free.
+// TestReleaseGlyphRunBuilderClearsRuns verifies Release drops every reference an idle pooled builder would pin: the
+// list's blob and each run's font and glyph slice, including runs stranded past the current length by an earlier,
+// longer draw. The scratch capacity must survive so reuse stays allocation-free.
 func TestReleaseGlyphRunBuilderClearsRuns(t *testing.T) {
 	f := loadFont(t, 24)
 	blobBig := mixedBlob(f, glyphsFor(f, "abcdef"), 50)
@@ -486,7 +468,6 @@ func TestReleaseGlyphRunBuilderClearsRuns(t *testing.T) {
 		}
 	}
 
-	// A released builder must still be usable, and reuse must not reallocate the kept scratch.
 	if n := len(b.BlobToGlyphRunList(blobBig, geom.Pt(1, 1)).Runs); n != 3 {
 		t.Fatalf("expected 3 runs after reuse, got %d", n)
 	}

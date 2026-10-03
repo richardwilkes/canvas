@@ -138,7 +138,6 @@ func (pp *ProxyProvider) createWrapped(tex *Surface, useAllocator UseAllocator) 
 	if rt := tex.AsRenderTarget(); rt != nil {
 		proxy.addRenderTargetFacet(rt.NumSamples())
 	}
-	// Adopt the surface's unique key when present.
 	if tex.UniqueKey().IsValid() {
 		pp.AdoptUniqueKeyFromSurface(proxy.AsTextureProxy(), tex)
 	}

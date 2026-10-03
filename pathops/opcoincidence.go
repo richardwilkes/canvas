@@ -9,9 +9,8 @@
 
 // The intersection-time coincidence tracking surface: the list of coincident span pairs (coincidentSpans) plus the
 // pieces the intersection-adding walker needs — add (record a coincident run), isEmpty, markCollapsed, releaseDeleted,
-// fixUp, and the Ordered comparator. The coincidence-resolution machinery (addExpanded, addMissing, mark, apply,
-// expand, findOverlaps, …) that runs in the walking phase arrives with its own slice; the fields are present but those
-// methods are not.
+// fixUp, and the ordering comparator. The coincidence-resolution machinery (addExpanded, addMissing, mark, apply,
+// expand, findOverlaps, …) lives in opcoincidence_resolve.go.
 
 package pathops
 
@@ -82,9 +81,9 @@ func (cs *coincidentSpans) collapsed(test *opPtT) bool {
 		(cs.oppPtTEnd == test && cs.oppPtTStart.containsPtT(test))
 }
 
-// opCoincidence is the collection of coincident span runs discovered during the intersection phase. top holds runs
-// migrated by the (deferred) expansion machinery; the walker only ever pushes onto head, but the traversal helpers scan
-// both lists.
+// opCoincidence is the collection of coincident span runs discovered during the intersection phase. top holds the old
+// head while addEndMovedSpans or addMissing walks it (new runs go onto head, and restoreHead re-splices), so the
+// traversal helpers scan both lists.
 type opCoincidence struct {
 	head        *coincidentSpans
 	top         *coincidentSpans
@@ -98,7 +97,6 @@ func newOpCoincidence(globalState *opGlobalState) *opCoincidence {
 	return co
 }
 
-// isEmpty reports whether no coincident runs have been recorded.
 func (co *opCoincidence) isEmpty() bool { return co.head == nil && co.top == nil }
 
 // add records a coincident run, ordering the two segments canonically (the caller may pass them in either order) and

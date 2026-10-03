@@ -105,11 +105,9 @@ func (e *Edge) setLineClip(p0, p1 geom.Point, clip *geom.IRect) bool {
 	top := FDot6Round(y0)
 	bot := FDot6Round(y1)
 
-	// are we a zero-height line?
 	if top == bot {
 		return false
 	}
-	// are we completely above or below the clip?
 	if clip != nil && (top >= clip.Bottom || bot <= clip.Top) {
 		return false
 	}
@@ -117,7 +115,7 @@ func (e *Edge) setLineClip(p0, p1 geom.Point, clip *geom.IRect) bool {
 	slope := FDot6Div(x1-x0, y1-y0)
 	dy := computeDY(top, y0)
 
-	// Note that FixedMul(Fixed, FDot6) produces results in FDot6
+	// FixedMul(Fixed, FDot6) produces an FDot6.
 	e.X = FDot6ToFixed(x0 + FDot6(FixedMul(slope, Fixed(dy))))
 	e.DxDy = slope
 	e.FirstY = top
@@ -142,7 +140,6 @@ func (e *Edge) updateLine(xStart, yStart, xEnd, yEnd Fixed) bool {
 	top := FDot6Round(y0)
 	bot := FDot6Round(y1)
 
-	// are we a zero-height line?
 	if top == bot {
 		return false
 	}
@@ -153,7 +150,7 @@ func (e *Edge) updateLine(xStart, yStart, xEnd, yEnd Fixed) bool {
 	slope := FDot6Div(x1-x0, y1-y0)
 	dy := computeDY(top, y0)
 
-	// Note that FixedMul(Fixed, FDot6) produces results in FDot6
+	// FixedMul(Fixed, FDot6) produces an FDot6.
 	e.X = FDot6ToFixed(x0 + FDot6(FixedMul(slope, Fixed(dy))))
 	e.DxDy = slope
 	e.FirstY = top
@@ -164,7 +161,6 @@ func (e *Edge) updateLine(xStart, yStart, xEnd, yEnd Fixed) bool {
 
 func (e *Edge) chopLineWithClip(clip *geom.IRect) {
 	top := e.FirstY
-	// clip the line to the top
 	if top < clip.Top {
 		e.X += e.DxDy * Fixed(clip.Top-top)
 		e.FirstY = clip.Top
@@ -202,16 +198,15 @@ func diffToShift(dx, dy FDot6, accuracy int) int {
 	// cheap calc of distance from center of p0-p2 to the center of the curve
 	dist := cheapDistance(dx, dy)
 
-	// shift down dist (it is currently in dot6); down by 3 should give us 1/8 pixel accuracy (assuming our dist is
-	// accurate...); this is chosen by heuristic: make it as big as possible (to minimize segments), but small enough so
-	// that our curves still look smooth
+	// dist is in FDot6, so shifting down by 3 gives about 1/8 pixel accuracy. The shift is a heuristic: as large as
+	// possible to minimize segments, but small enough that curves still look smooth.
 	dist = (dist + (1 << (2 + accuracy))) >> (3 + accuracy)
 
 	// each subdivision (shift value) cuts this dist (error) by 1/4
 	return (32 - clz(uint32(dist))) >> 1
 }
 
-// fdot6ToFixedDiv2 computes fdot6ToFixed(value >> 1) without throwing away the low bit — a modified up-shift.
+// fdot6ToFixedDiv2 computes FDot6ToFixed(value >> 1) without throwing away the low bit.
 func fdot6ToFixedDiv2(value FDot6) Fixed {
 	return Fixed(value << (16 - 6 - 1))
 }
@@ -248,7 +243,6 @@ func (q *QuadraticEdge) SetQuadratic(pts []geom.Point) bool {
 	top := FDot6Round(y0)
 	bot := FDot6Round(y2)
 
-	// are we a zero-height quad (line)?
 	if top == bot {
 		return false
 	}
@@ -341,12 +335,12 @@ func fdot6UpShift(x FDot6, upShift int) Fixed {
 	return Fixed(x << upShift)
 }
 
-// cubicDeltaFromLine computes the cubic's maximum deviation from the p0-p3 baseline, using:
+// cubicDeltaFromLine estimates the cubic's maximum deviation from its inner control points as the larger of:
 //
 //	f(1/3) - b = (8a - 15b + 6c + d) / 27
 //	f(2/3) - c = (a + 6b - 15c + 8d) / 27
 //
-// using 19/512 to approximate 1/27.
+// with 19/512 approximating 1/27.
 func cubicDeltaFromLine(a, b, c, d FDot6) FDot6 {
 	oneThird := (a*8 - b*15 + 6*c + d) * 19 >> 9
 	twoThird := (a + 6*b - c*15 + d*8) * 19 >> 9
@@ -398,7 +392,6 @@ func (c *CubicEdge) SetCubic(pts []geom.Point) bool {
 	top := FDot6Round(y0)
 	bot := FDot6Round(y3)
 
-	// are we a zero-height cubic (line)?
 	if top == bot {
 		return false
 	}
@@ -416,7 +409,7 @@ func (c *CubicEdge) SetCubic(pts []geom.Point) bool {
 
 	// Since our incoming data is initially shifted down by 10 (or 8 in antialias), the most we can shift up is 8.
 	// However, we compute coefficients with a 3*, so the safest upshift is really 6.
-	upShift := 6 // largest safe value
+	upShift := 6
 	downShift := shift + upShift - 10
 	if downShift < 0 {
 		downShift = 0
@@ -480,8 +473,7 @@ func (c *CubicEdge) nextSegment() bool {
 			newy = c.cLastY
 		}
 
-		// we want to say assert(oldy <= newy), but our finite fixedpoint doesn't always achieve that, so we have to
-		// explicitly pin it here.
+		// Finite fixed-point precision does not always keep oldy <= newy, so pin it here.
 		if newy < oldy {
 			newy = oldy
 		}

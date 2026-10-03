@@ -94,7 +94,6 @@ func (v *VertexData) Unref() {
 
 func (v *VertexData) unique() bool { return v.refCnt == 1 }
 
-// reset clears the vertex data and drops its GPU buffer ref, if any.
 func (v *VertexData) reset() {
 	v.vertices = nil
 	v.numVertices = 0
@@ -220,7 +219,6 @@ func (c *ThreadSafeCache) DropAllRefs() {
 // DropUniqueRefs drops uniquely held refs until the resource cache is under budget, LRU to MRU. A nil resourceCache
 // means drop all uniquely held refs.
 func (c *ThreadSafeCache) DropUniqueRefs(resourceCache *gpu.ResourceCache) {
-	// Iterate from LRU to MRU.
 	cur := c.tail
 	var prev *tscEntry
 	if cur != nil {
@@ -300,9 +298,8 @@ func (c *ThreadSafeCache) AddVertsWithData(key *gpu.UniqueKey, vertData *VertexD
 		c.listAddToHead(e)
 		c.stats.Adds++
 	case isNewerBetter(e.key.CustomData(), key.CustomData()):
-		// This orphans any existing uses of the prior vertex data but ensures the best version is in the cache. Touching
-		// the entry keeps its LRU position and last-access time honest — a freshly written entry must not be purged by
-		// DropUniqueRefsOlderThan ahead of colder ones.
+		// Touching the entry keeps its LRU position and last-access time honest — a freshly written entry must not be
+		// purged by DropUniqueRefsOlderThan ahead of colder ones.
 		c.makeExistingEntryMRU(e)
 		e.vertData.Unref()
 		e.key = *key

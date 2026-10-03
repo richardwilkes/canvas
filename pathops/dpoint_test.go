@@ -115,8 +115,7 @@ func TestPathOpsDVector(t *testing.T) {
 }
 
 func TestDVectorNormalize(t *testing.T) {
-	// A "nearly equal" tolerance of 1/4096, matching the default scalar-nearly-zero threshold used elsewhere for float
-	// comparisons.
+	// 1/4096 matches the default scalar-nearly-zero threshold.
 	const tol = 1.0 / (1 << 12)
 	assertDoublesEqual := func(left, right float64) {
 		t.Helper()

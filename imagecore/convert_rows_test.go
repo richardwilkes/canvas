@@ -17,11 +17,11 @@ import (
 	"testing"
 )
 
-// convertReference is the pixel-at-a-time form of ConvertPixels: the lanes that now dispatch through row kernels are
-// written here exactly as they read before that refactor, so TestConvertPixelsMatchesPerPixelReference can prove the
-// hoisted color/alpha decisions and the row kernels produce byte-identical output for every source/destination pair in
-// the supported matrix. It shares the untouched helpers (writeToBytes, loadLowp/storeLowp, loadHighp/storeHighp) with
-// the real function rather than duplicating them, since those are not what the refactor moved.
+// convertReference is the pixel-at-a-time form of ConvertPixels: the lanes that dispatch through row kernels are
+// written here as plain per-pixel loops, so TestConvertPixelsMatchesPerPixelReference can prove the hoisted color/alpha
+// decisions and the row kernels produce byte-identical output for every source/destination pair in the supported
+// matrix. It shares the helpers the row kernels do not replace (writeToBytes, loadLowp/storeLowp, loadHighp/storeHighp)
+// with the real function.
 func convertReference(dstInfo ImageInfo, dst []byte, dstRowBytes int, src *Pixels) bool {
 	if dstInfo.Width != src.Info.Width || dstInfo.Height != src.Info.Height {
 		return false
@@ -153,10 +153,9 @@ func convertTestPixels(rng *rand.Rand, ct ColorType, at AlphaType, w, h int32) *
 }
 
 // TestConvertPixelsGray8Exhaustive sweeps every gray level through the Gray8 → 8888 fast path, for all three
-// 8888-family destinations and all three destination alpha types, against the pixel-at-a-time reference. The fast path
-// asserts that the lowp pipeline collapses for Gray8 sources — the premultiply stage is the identity because alpha is
-// 255, and both the R/B swap and force_opaque are no-ops — and this is what proves that for the whole domain rather
-// than for the sample TestConvertPixelsMatchesPerPixelReference happens to draw.
+// 8888-family destinations and every source and destination alpha type, against the pixel-at-a-time reference. The fast
+// path assumes the lowp pipeline collapses for Gray8 sources (see grayToWordsRowGeneric); this proves it for the whole
+// domain rather than for the sample TestConvertPixelsMatchesPerPixelReference happens to draw.
 func TestConvertPixelsGray8Exhaustive(t *testing.T) {
 	src := NewPixels(ImageInfo{Width: 256, Height: 1, ColorType: ColorTypeGray8, AlphaType: AlphaTypeOpaque})
 	for i := range src.Bytes {

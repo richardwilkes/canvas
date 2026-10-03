@@ -165,7 +165,7 @@ const cheapDistLimit = float32(0.5) // just made this value up
 
 // quadTooCurvy reports whether the quad's midpoint strays from its endpoints' midpoint by more than the tolerance.
 func quadTooCurvy(pts []geom.Point, tolerance float32) bool {
-	// diff = (a/4 + b/2 + c/4) - (a/2 + c/2) diff = -a/4 + b/2 - c/4
+	// diff = (a/4 + b/2 + c/4) - (a/2 + c/2) = -a/4 + b/2 - c/4
 	dx := 0.5*pts[1].X - 0.5*(0.5*(pts[0].X+pts[2].X))
 	dy := 0.5*pts[1].Y - 0.5*(0.5*(pts[0].Y+pts[2].Y))
 	dist := max(geom.ScalarAbs(dx), geom.ScalarAbs(dy))
@@ -200,9 +200,6 @@ func cubicTooCurvy(pts []geom.Point, tolerance float32) bool {
 // maxRecursionDepth puts a cap on the total size of our output, since the client can pass in arbitrarily large values
 // for resScale.
 const maxRecursionDepth = 8
-
-///////////////////////////////////////////////////////////////////////////////
-// Iter
 
 // Iter iterates the contours of a path, producing a Measure per non-empty contour. The path is not copied; it must not
 // be mutated while the Iter is in use.
@@ -353,9 +350,8 @@ func (it *Iter) buildSegments() *Measure {
 	haveSeenClose := it.forceClosed
 	haveSeenMoveTo := false
 
-	// The running distance is accumulated by the computeLineSeg/computeQuadSegs/computeConicSegs/computeCubicSegs
-	// helpers, each of which records a segment only when += actually made the total larger: a delta can be > 0 yet
-	// still vanish into the running total once distance >>> delta.
+	// The compute*Seg(s) helpers record a segment only when += actually made the running distance larger: a delta can
+	// be > 0 yet still vanish into the total once distance >>> delta.
 
 	it.segments = it.segments[:0]
 	it.pts = it.pts[:0]
@@ -549,7 +545,6 @@ func (m *Measure) GetPosTan(distance float32, wantPos, wantTan bool) (pos, tange
 
 	length := m.length
 
-	// pin the distance to a legal range
 	if distance < 0 {
 		distance = 0
 	} else if distance > length {

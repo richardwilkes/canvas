@@ -48,7 +48,6 @@ func jpegCodec() imagecore.Codec {
 
 // jpegOrigin extracts the EXIF orientation (1..8; 1 when absent/invalid) from the APP1 Exif segment.
 func jpegOrigin(data []byte) int {
-	// Walk JPEG segments looking for APP1 "Exif\0\0".
 	i := 2 // skip SOI
 	for i+1 < len(data) {
 		if data[i] != 0xFF {

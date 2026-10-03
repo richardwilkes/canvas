@@ -42,8 +42,8 @@ func textureSizeToMipmapProgramIdx(width, height int32) int {
 	return idx
 }
 
-// compileMipmapShader compiles and attaches one shader of a mipmap program. Unlike the program-cache lane's panic on
-// failure, the mipmap lane returns failure so the caller can fall back. Returns the shader id, or 0 on failure.
+// compileMipmapShader compiles and attaches one shader of a mipmap program, returning the shader id, or 0 on failure
+// (the program-cache lane panics instead).
 func (g *Gpu) compileMipmapShader(programID, shaderType uint32, source string) uint32 {
 	shaderID := g.fns().CreateShader(shaderType)
 	if shaderID == 0 {
@@ -184,7 +184,6 @@ func (g *Gpu) regenerateMipmapLevelsByDraws(texture *Texture) bool {
 	height := dims.Height
 	levelCount := int32(texture.MaxMipmapLevel()) + 1
 
-	// Create (if necessary), then bind the temporary FBO.
 	if g.tempDstFBOID == 0 {
 		g.fns().GenFramebuffers(1, &g.tempDstFBOID)
 	}
@@ -231,7 +230,6 @@ func (g *Gpu) regenerateMipmapLevelsByDraws(texture *Texture) bool {
 	g.disableWindowRectangles()
 	g.disableStencil()
 
-	// Do all the blits.
 	for level := int32(1); level < levelCount; level++ {
 		// Get and bind the program for this particular downsample (filter shape can vary).
 		progIdx := textureSizeToMipmapProgramIdx(width, height)

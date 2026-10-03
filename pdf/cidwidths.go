@@ -8,8 +8,8 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // This file builds the /W array of a CIDFontType2 font, giving the (base-1000) advance of every used glyph that differs
-// from the default (/DW). Advances come from the typeface's design-space advances (font.Typeface.DesignAdvance) read
-// from a strike sized at unitsPerEm, and are compacted into runs and ranges to keep the array small.
+// from the default (/DW). Advances are the typeface's design-unit advances (font.Typeface.DesignAdvance), compacted
+// into runs and ranges to keep the array small.
 
 package pdf
 
@@ -82,7 +82,6 @@ func makeCIDGlyphWidthsArray(tf *font.Typeface, subset *glyphUse) (w *Array, def
 	sort.Slice(intAdvances, func(i, j int) bool { return intAdvances[i] < intAdvances[j] })
 	modeAdvance := int32(findModeOr0(intAdvances))
 
-	// Pre-convert to pdf advances.
 	for i, gid := range glyphIDs {
 		advances[i] = widthFromFontUnits(tf.DesignAdvance(gid), emSize)
 	}

@@ -248,7 +248,6 @@ func (m *Matrix) CheapEqual(other *Matrix) bool {
 func (m *Matrix) IsSimilarity() bool {
 	mask := m.Type()
 	if mask <= TypeTranslate {
-		// Identity or translate matrix.
 		return true
 	}
 	if mask&TypePerspective != 0 {
@@ -637,7 +636,6 @@ func (m *Matrix) invDeterminant(isPerspective bool) float64 {
 	return 1.0 / det
 }
 
-// computeInv computes the matrix inverse given the source elements and precomputed inverse determinant.
 func computeInv(dst, src *[9]float32, invDet float64, isPersp bool) {
 	if isPersp {
 		dst[MScaleX] = scrossDscale(src[MScaleY], src[MPersp2], src[MTransY], src[MPersp1], invDet)
@@ -724,8 +722,8 @@ func (m *Matrix) MapXY(x, y float32) Point {
 		if m.Type()&TypePerspective != 0 {
 			return m.mapPointPerspective(x, y)
 		}
-		// Affine: (src*scale + swz*skew) + trans, evaluated in this left-associative operation order for float
-		// consistency.
+		// Affine: (src*scale + swapped*skew) + trans, where swapped is src with x and y exchanged, evaluated in this
+		// left-associative operation order for float consistency.
 		return Point{
 			X: (x*m.mat[MScaleX] + y*m.mat[MSkewX]) + m.mat[MTransX],
 			Y: (y*m.mat[MScaleY] + x*m.mat[MSkewY]) + m.mat[MTransY],
@@ -733,7 +731,6 @@ func (m *Matrix) MapXY(x, y float32) Point {
 	}
 }
 
-// mapPointPerspective maps a single point through a perspective matrix.
 func (m *Matrix) mapPointPerspective(x, y float32) Point {
 	px := x*m.mat[MScaleX] + y*m.mat[MSkewX] + m.mat[MTransX]
 	py := x*m.mat[MSkewY] + y*m.mat[MScaleY] + m.mat[MTransY]
@@ -892,7 +889,7 @@ func (m *Matrix) MapRect(src Rect) (Rect, bool) {
 		dst.SetBounds(quad[:])
 		return dst, false
 	}
-	// The affine general path uses setBoundsNoCheck: non-finite corners poison the result to all-NaN.
+	// The affine general path uses SetBoundsNoCheck: non-finite corners poison the result to all-NaN.
 	dst.SetBoundsNoCheck(quad[:])
 	return dst, m.RectStaysRect()
 }
@@ -930,12 +927,12 @@ func (m *Matrix) MaxScale() float32 {
 		result = max(a, c)
 	} else {
 		aminusc := a - c
-		// Both halvings are wrapped in float32 conversions to keep this branch's pinning uniform with the dot products
-		// above: each is a multiply feeding the final add, which arm64 would otherwise contract into a single FMADDS.
-		// The contraction is provably unobservable here — halving is exact unless the result underflows to subnormal,
-		// and the bSqd guard keeps both operands far above that (bSqd > (1/4096)^2 gives sqrt(disc) >= 4.8e-4, and
-		// |b| <= (a+c)/2 by Cauchy-Schwarz gives a+c > 4.9e-4) — so this is consistency, not a bug fix. Pinned anyway
-		// so the branch cannot start diverging if the guard or the discriminant is ever reworked.
+		// Both halvings are wrapped in float32 conversions for uniformity with the dot products above: each is a
+		// multiply feeding the final add, which arm64 would otherwise contract into a single FMADDS. The contraction is
+		// unobservable here (halving is exact unless the result underflows to subnormal, and the bSqd guard keeps both
+		// operands far above that: bSqd > (1/4096)^2 gives sqrt(disc) >= 4.8e-4, and |b| <= (a+c)/2 by Cauchy-Schwarz
+		// gives a+c > 4.8e-4), but pinning keeps the branch from diverging if the guard or the discriminant is ever
+		// reworked.
 		apluscdiv2 := float32(0.5 * (a + c))
 		x := float32(0.5 * ScalarSqrt(float32(aminusc*aminusc)+float32(4*bSqd)))
 		result = apluscdiv2 + x

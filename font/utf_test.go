@@ -44,7 +44,7 @@ func TestCountUTF8(t *testing.T) {
 }
 
 func TestUTF8ValidationIsStructuralOnly(t *testing.T) {
-	// The file comment promises structural validation, not canonical-form validation: an overlong encoding, a
+	// utf.go's file comment promises structural validation, not canonical-form validation: an overlong encoding, a
 	// UTF-8-encoded surrogate, and a code point above U+10FFFF all pass the count functions and decode to the values
 	// below (the mask-based decode folds an overlong form down to its short value). This matches upstream
 	// SkUTF::CountUTF8/NextUTF8; the point of the test is that the comment and the code agree.
@@ -124,7 +124,7 @@ func TestNextUTF8(t *testing.T) {
 	if u != 0x1F600 || i != len(b) {
 		t.Fatalf("third = %d,%d", u, i)
 	}
-	// Invalid input jumps to the end with -1, like next_fail.
+	// Invalid input jumps to the end with -1, like upstream's next_fail.
 	u, i = nextUTF8([]byte{0x61, 0xC0}, 1)
 	if u != -1 || i != 2 {
 		t.Fatalf("invalid = %d,%d", u, i)

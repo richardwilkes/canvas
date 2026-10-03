@@ -25,14 +25,11 @@ func customXfermodeIsSupportedMode(mode raster.BlendMode) bool {
 	return mode > raster.BlendScreen && mode <= raster.BlendLuminosity
 }
 
-// hwBlendEquation maps a blend mode to the corresponding advanced hardware blend equation.
 func hwBlendEquation(mode raster.BlendMode) gpu.BlendEquation {
 	const eqOffset = int(gpu.BlendEquationOverlay) - int(raster.BlendOverlay)
 	return gpu.BlendEquation(int(mode) + eqOffset)
 }
 
-// canUseHWBlendEquation reports whether the advanced blend equation can be applied in fixed function hardware for the
-// given coverage type and caps.
 func canUseHWBlendEquation(equation gpu.BlendEquation, coverage AnalysisCoverage, caps *gpu.Caps) bool {
 	if !caps.AdvancedBlendEquationSupport() {
 		return false
@@ -123,8 +120,7 @@ func (i *customXPImpl) emitOutputsForBlendState(args *XPEmitArgs) {
 		panic("blend-state emission requires a HW blend equation")
 	}
 	args.FragBuilder.EnableAdvancedBlendEquationIfNeeded(xp.hwBlendEquation)
-	// Apply coverage by multiplying it into the src color before blending. This will "just work" automatically (see
-	// analysisProperties).
+	// Apply coverage by multiplying it into the src color before blending; see analysisProperties for why this works.
 	args.FragBuilder.CodeAppendf("%s = %s * %s;", args.OutputPrimary, args.InputCoverage,
 		args.InputColor)
 }
@@ -137,7 +133,6 @@ func (i *customXPImpl) emitBlendCodeForDstRead(fragBuilder *FragmentShaderBuilde
 	blendExpr := GLSLBlendExpression(xp, uniformHandler, fragBuilder, &i.blendUniform, srcColor,
 		dstColor, xp.mode)
 	fragBuilder.CodeAppendf("%s = %s;", outColor, blendExpr)
-	// Apply coverage.
 	defaultCoverageModulation(fragBuilder, srcCoverage, dstColor, outColor, outColorSecondary,
 		xp)
 }
@@ -147,8 +142,6 @@ func (i *customXPImpl) onSetData(pdman *ProgramDataManager, proc XferProcessor) 
 		GLSLSetBlendModeUniformData(pdman, i.blendUniform, proc.(*customXP).mode)
 	}
 }
-
-//////////////////////////////////////////////////////////////////////////////
 
 // customXPFactory is the XP factory for one advanced blend mode, one singleton per mode.
 type customXPFactory struct {
@@ -179,7 +172,6 @@ func (f *customXPFactory) analysisProperties(_ ProcessorAnalysisColor, coverage 
 	return XPAnalysisCompatibleWithCoverageAsAlpha | XPAnalysisReadsDstInShader
 }
 
-// customXPFactories holds the per-mode singletons.
 var customXPFactories = func() map[raster.BlendMode]*customXPFactory {
 	m := make(map[raster.BlendMode]*customXPFactory)
 	for mode := raster.BlendOverlay; mode <= raster.BlendLuminosity; mode++ {

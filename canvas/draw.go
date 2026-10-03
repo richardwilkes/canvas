@@ -9,7 +9,7 @@
 
 // Lowers canvas draw calls onto the raster scan converters through the raster clip, choosing a blitter per paint.
 // Paints carry solid colors or shaders (the raster-pipeline blitter lanes), color filters (folded into the shader or
-// paint color), and mask filters (the filterPath/ nine-patch lanes); image filters are handled by the canvas layer
+// paint color), and mask filters (the filterPath/nine-patch lanes); image filters are handled by the canvas layer
 // machinery. Hairlines (zero-width strokes, and AA thin strokes promoted to hairlines) draw through the hairline scan
 // converters; wider strokes and stroke-and-fill convert to fill geometry through the stroker
 // (stroke.FillPathWithPaint).
@@ -97,10 +97,8 @@ func checkFastPath(paint *Paint) blendFastPath {
 	}
 }
 
-// chooseBlitter picks the blitter for a paint: reduce the blend mode via checkFastPath, treat Clear as Src with
-// transparent black (dropping the shader and color filter), remove the color filter by folding it into the shader or
-// the paint color, veto dither unless it can matter on 8888 (it needs a mask filter or a non-constant shader), then
-// pick the lane:
+// chooseBlitter picks the blitter for a paint. After reducing the blend mode, folding away the color filter, and
+// vetoing dither that cannot matter (each explained below), it picks the lane:
 //
 //   - a shader takes the raster-pipeline blitter (unless the legacy image lane below applies), with the constant
 //     collapse and the srcover→src strength reduction;
@@ -232,11 +230,10 @@ func chooseBlitter(dst *raster.Pixmap, paint *Paint, ctm *geom.Matrix) raster.Bl
 	return raster.NewBlendBlitter(dst, color, mode)
 }
 
-// recycleBlitter returns a pooled blitter (and its pooled shaders.Pipeline) built by chooseBlitter to its pool once the
-// draw that used it is done. It is a no-op for the unpooled blitters (SolidBlitter, BlendBlitter, NullBlitter, …).
-// Callers must invoke it only after the blitter is fully consumed by the synchronous fill — never on a blitter still in
-// use or retained elsewhere. Missing a call is safe (the pool simply allocates a fresh instance next time); recycling
-// too early is not.
+// recycleBlitter returns a pooled blitter built by chooseBlitter (and its pooled shader pipeline or legacy image
+// context) to its pool. It is a no-op for the unpooled blitters (BlendBlitter, NullBlitter). Callers must invoke it
+// only after the blitter is fully consumed by the synchronous fill — never on a blitter still in use or retained
+// elsewhere. Missing a call is safe (the pool allocates a fresh instance next time); recycling too early is not.
 func recycleBlitter(b raster.Blitter) {
 	switch v := b.(type) {
 	case *raster.SolidBlitter:
@@ -288,12 +285,10 @@ func (d *draw) drawPaint(paint *Paint) {
 	devRect := geom.IRectWH(d.dst.Width, d.dst.Height)
 	blitter := chooseBlitter(d.dst, paint, d.ctm)
 
-	// A full-device shaded fill is the CPU throughput bottleneck, same as the rect-fill lane: a gradient/image span
-	// evaluates in scalar Go, one pixel at a time. Split it into horizontal row bands filled concurrently. drawPaint
-	// fills an integer rect via FillIRectRasterClip, which is per-row independent for any clip (no AA-rect edge
-	// coverage), so banding at integer scanlines is byte-identical to the serial fill — unlike the drawRectFull lane,
-	// no simple-rect-clip gate is needed. Each band rebuilds its own blitter (shader blitters carry per-span scratch),
-	// so the one chosen above is discarded when we take the parallel path.
+	// Band a full-device shaded fill across goroutines (see parallel.go). FillIRectRasterClip is per-row independent
+	// for any clip (no AA-rect edge coverage), so banding at integer scanlines is byte-identical to the serial fill
+	// and, unlike the drawRectFull lane, needs no simple-rect-clip gate. Each band builds its own blitter, so the one
+	// chosen above is discarded.
 	if isBandableShaderBlitter(blitter) {
 		if bounds := raster.IRectFillBandBounds(devRect.Top, devRect.Bottom, 0); bounds != nil {
 			recycleBlitter(blitter)
@@ -442,13 +437,11 @@ func (d *draw) drawRectFull(prePaintRect geom.Rect, paint *Paint, paintMatrix *g
 
 	blitter := chooseBlitter(d.dst, paint, matrix)
 
-	// Large shaded rect fills are the CPU throughput bottleneck: a gradient/image span evaluates in scalar Go, one
-	// pixel at a time. Splitting the fill into horizontal row bands filled concurrently speeds it up byte-identically —
-	// a rect fill's per-row coverage is row-independent, so banding at integer scanlines matches the serial fill
-	// exactly. Each band rebuilds its own blitter (shader blitters carry per-span scratch), so the blitter chosen above
-	// is discarded here. Gated to the fill lane, a per-span-scratch shader blitter, and a simple-rect clip (so the band
-	// bounds are exact); RectFillBandBounds returns nil when the rect is too short to be worth the goroutine/rebuild
-	// overhead.
+	// Band a large shaded rect fill across goroutines (see parallel.go): each row's coverage is independent of the
+	// other rows, so banding at integer scanlines is byte-identical to the serial fill. Each band builds its own
+	// blitter, so the one chosen above is discarded. Gated to the fill lane, a per-span-scratch shader blitter, and a
+	// simple-rect clip (so the band bounds are exact); RectFillBandBounds returns nil when the rect is too short to be
+	// worth the overhead.
 	if rtype == rectTypeFill && isBandableShaderBlitter(blitter) && d.rc.IsRect() {
 		if bounds := raster.RectFillBandBounds(devRect.Top, devRect.Bottom, 0); bounds != nil {
 			recycleBlitter(blitter)
@@ -542,8 +535,7 @@ func modifyPaintForHairlines(origPaint *Paint, matrix *geom.Matrix) *Paint {
 		return &paint
 	}
 	if raster.BlendSupportsCoverageAsAlpha(origPaint.BlendMode) {
-		// this is the old technique, which we preserve for now so we don't change previous results (testing). the new
-		// way seems fine, its just (a tiny bit) different.
+		// Skia's legacy alpha scaling (truncating rather than rounding coverage*alpha), kept for bit-exactness with it.
 		scale := int32(coverage * 256)
 		newAlpha := uint8(int32(origPaint.Color.A()) * scale >> 8)
 		paint := *origPaint
@@ -608,7 +600,7 @@ func (d *draw) drawRRectNinePatch(rrect geom.RRect, paint *Paint) bool {
 }
 
 // drawPath strokes or fills the path. prePathMatrix pre-concatenates onto the CTM (or transforms the path when the
-// paint strokes); pathIsMutable permits transforming origSrc in place.
+// paint strokes or has a path effect); pathIsMutable permits transforming origSrc in place.
 func (d *draw) drawPath(origSrc *path.Path, origPaint *Paint, prePathMatrix *geom.Matrix, pathIsMutable bool) {
 	if d.rc.IsEmpty() {
 		return
@@ -616,9 +608,9 @@ func (d *draw) drawPath(origSrc *path.Path, origPaint *Paint, prePathMatrix *geo
 
 	pathPtr := origSrc
 	doFill := true
-	// tmpPath is the per-draw scratch for the stroked/effected and device-space path. Borrow it from the shared pool so
-	// its storage is reused across draws instead of allocated fresh each time; it is fully consumed by the synchronous
-	// drawDevPath below, so recycling it on return is safe.
+	// tmpPath is the per-draw scratch for the stroked/effected and device-space path, borrowed from the shared pool so
+	// its storage is reused across draws; it is fully consumed by the synchronous drawDevPath below, so recycling it on
+	// return is safe.
 	tmpPath := path.Borrow()
 	defer path.Recycle(tmpPath)
 	matrix := d.ctm
@@ -662,7 +654,6 @@ func (d *draw) drawPath(origSrc *path.Path, origPaint *Paint, prePathMatrix *geo
 		devPath = pathPtr
 	}
 
-	// transform the path into device space
 	pathPtr.TransformTo(matrix, devPath)
 	if !devPath.IsFinite() {
 		return
@@ -686,16 +677,14 @@ func (d *draw) drawDevPath(devPath *path.Path, paint *Paint, doFill bool) {
 	}
 
 	if doFill {
-		// Large shaded path fills band like the rect lanes: a gradient/image span evaluates per pixel, so a tall shaded
-		// path (rrects and ovals lower to paths too) is worth splitting into row bands filled concurrently through
-		// per-band blitters. Unlike the rect banding this is not byte-exact — AA seam pixels can differ by a coverage
-		// step from the serial fill (see fillPathShadedParallel) — so it is gated to the lanes whose verification
-		// already carries AA tolerances: a per-span-scratch shader blitter, a simple-rect clip (each band is then
-		// exactly the region fill the serial lane lowers to), and a regular (non-inverse) fill. IRectFillBandBounds
-		// returns nil when the clipped path spans too few rows to pay for the goroutine/blitter-rebuild overhead. The
-		// drawAtlas per-sprite fills opt out (forceRasterPipeline): per-sprite quads are too small to amortize the band
-		// dispatch, and the banding's per-draw scaffolding would break the atlas lane's zero-allocs-per-sprite
-		// discipline.
+		// Large shaded path fills (rrects and ovals lower to paths too) band like the rect lanes. Unlike the rect
+		// banding this is not byte-exact — AA seam pixels can differ by a coverage step from the serial fill (see
+		// fillPathShadedParallel) — so it is gated to the lanes whose verification already carries AA tolerances: a
+		// per-span-scratch shader blitter, a simple-rect clip (each band is then exactly the region fill the serial
+		// lane lowers to), and a regular (non-inverse) fill. IRectFillBandBounds returns nil when the clipped path
+		// spans too few rows to pay for the overhead. The drawAtlas per-sprite fills opt out (forceRasterPipeline):
+		// per-sprite quads are too small to amortize the band dispatch, and the banding's per-draw scaffolding would
+		// break the atlas lane's zero-allocs-per-sprite discipline.
 		if isBandableShaderBlitter(blitter) && d.rc.IsRect() && !devPath.IsInverseFillType() &&
 			!paint.forceRasterPipeline {
 			clip := d.rc.Bounds()
@@ -767,10 +756,8 @@ func (d *draw) drawSprite(src *raster.Pixmap, x, y int32, origPaint *Paint) {
 		return
 	}
 
-	// The shader fallback: an integer-translated image shader over the sprite bounds, drawn with an identity CTM
-	// through drawRect. Color filters and partial-AA clips reach this lane; the legacy image lane still picks up the
-	// plain src-over cases. The wrapping image/shader are homed on the pooled scratch, consumed synchronously by
-	// drawRect before recycle.
+	// The shader fallback, drawn with an identity CTM; the legacy image lane still picks up the plain src-over cases.
+	// The wrapping image/shader are homed on the pooled scratch, consumed synchronously by drawRect before recycle.
 	scratch := acquireImageDrawScratch()
 	defer releaseImageDrawScratch(scratch)
 	matrix := &scratch.matrix
@@ -909,7 +896,6 @@ func aaPolyHairProc(rec *ptProcRec, devPts []geom.Point, blitter raster.Blitter)
 	raster.AntiHairLine(devPts, rec.rc, blitter)
 }
 
-// makeSquareRad returns the axis-aligned square of half-width radius centered at center.
 func makeSquareRad(center geom.Point, radius float32) geom.Rect {
 	return geom.RectLTRB(center.X-radius, center.Y-radius, center.X+radius, center.Y+radius)
 }
@@ -943,7 +929,6 @@ func (d *draw) drawPoints(mode PointMode, pts []geom.Point, paint *Paint) {
 		pts = pts[:len(pts)&^1]
 	}
 
-	// nothing to draw
 	if len(pts) == 0 || d.rc.IsEmpty() {
 		return
 	}
@@ -995,7 +980,7 @@ func float32Finite(x float32) bool {
 	return math.Float32bits(x)&0x7F800000 != 0x7F800000
 }
 
-// drawDevicePoints draws points without the fast procs: round caps via circle paths, square caps via rects,
+// drawDevicePoints draws points without the fast procs: round caps via circle paths, other caps via rects,
 // lines/polygons via per-segment stroking, including the dashed-line asPoints acceleration for the lines mode.
 func (d *draw) drawDevicePoints(mode PointMode, pts []geom.Point, paint *Paint) {
 	// if we're in lines mode, force count to be even
@@ -1003,7 +988,6 @@ func (d *draw) drawDevicePoints(mode PointMode, pts []geom.Point, paint *Paint) 
 		pts = pts[:len(pts)&^1]
 	}
 
-	// nothing to draw
 	if len(pts) == 0 || d.rc.IsEmpty() {
 		return
 	}
@@ -1016,7 +1000,6 @@ func (d *draw) drawDevicePoints(mode PointMode, pts []geom.Point, paint *Paint) 
 
 	switch mode {
 	case PointModePoints:
-		// temporarily mark the paint as filling.
 		newPaint := *paint
 		newPaint.Style = StyleFill
 
@@ -1046,7 +1029,6 @@ func (d *draw) drawDevicePoints(mode PointMode, pts []geom.Point, paint *Paint) 
 			// 'asPoints' managed to find some fast path
 			return
 		}
-		// couldn't take fast path
 		count := len(pts) - 1
 		p := *paint
 		p.Style = StyleStroke

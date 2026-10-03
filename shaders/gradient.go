@@ -48,8 +48,7 @@ type gradientBase struct {
 	colorsAreOpaque bool
 }
 
-// Colors returns the stop-fixed colors; Positions returns the stop positions (nil when uniform); TileMode returns the
-// tile mode; PtsToUnit returns the gradient's unit-space matrix — the descriptors the GPU side consumes.
+// Colors returns the stop-fixed colors. It and the accessors below expose the descriptors the GPU side consumes.
 func (g *gradientBase) Colors() []colorcore.Color4f { return g.colors }
 
 // Positions returns the stop positions, nil when the stops are uniform.
@@ -130,7 +129,7 @@ func (g *gradientBase) initGradientBase(colors []colorcore.Color4f, positions []
 			curr = pinFloat(positions[i], prev, 1)
 			// (Upstream also clears lastStopIsImplicit here when a value pins to 1.0 before the last stop, because it
 			// serializes that member. Nothing below reads it — colorCount and count were both fixed before this loop —
-			// and there is no serialization here, so the write is omitted rather than left dead.)
+			// so the write is omitted.)
 		}
 		if !geom.ScalarNearlyEqual(uniformStep, curr-prev) {
 			uniformStops = false
@@ -266,8 +265,8 @@ type gradientCtx struct {
 
 // nextGradCtx hands appendFillStages a distinct gradientCtx for one gradient fill stage, retained on the pipeline so
 // its factor/bias/ts storage is reused across pooled compiles. Distinct (not shared) because a BlendShader inlines two
-// gradient children into one pipeline, and each fill stage's closure captures its own ctx — a shared one would let the
-// second compile clobber the first.
+// gradient children into one pipeline, and each fill stage reads its own ctx — a shared one would let the second
+// gradient's setup clobber the first's.
 func (p *Pipeline) nextGradCtx() *gradientCtx {
 	if p.gradCtxN == len(p.gradCtxs) {
 		p.gradCtxs = append(p.gradCtxs, &gradientCtx{})
@@ -278,7 +277,7 @@ func (p *Pipeline) nextGradCtx() *gradientCtx {
 }
 
 // ensureF32 returns s resized to length n with the first n elements zeroed, reusing s's backing array when it is large
-// enough. It matches make([]float32, n) observably (a zeroed slice of length n) while avoiding the allocation on reuse.
+// enough.
 func ensureF32(s []float32, n int) []float32 {
 	if cap(s) < n {
 		return make([]float32, n)

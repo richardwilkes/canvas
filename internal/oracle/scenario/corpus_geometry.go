@@ -17,9 +17,9 @@ import (
 	"github.com/richardwilkes/canvas/path"
 )
 
-// Extra geometry coverage for the operations the corpus already draws — hairline AA/non-AA splits,
-// rotated ovals and round rects (each leaves its axis-aligned specialized op), degenerate arcs, inverse fills under
-// clips, and point-mode edge cases.
+// Extra geometry coverage for the operations the corpus already draws: hairline AA/non-AA splits, rotated ovals and
+// round rects (each leaves its axis-aligned specialized op), degenerate arcs, inverse fills under clips, and point-mode
+// edge cases.
 
 func init() {
 	reg("hairlines", func(c Canvas) {
@@ -97,8 +97,8 @@ func init() {
 		p := Stroke(blue, 14)
 		p.Cap = CapSquare
 		c.DrawPoints(PointModePoints, pts, p)
-		// Points mode, butt cap: nothing is drawn for zero-length butt segments... except points mode promotes them
-		// to squares? Every lane must agree with its goldens — keep AA on.
+		// Points mode with a butt cap: Skia's points mode draws every non-round cap as a square, so this row should
+		// match the square-cap row.
 		pts2 := make([]geom.Point, len(pts))
 		for i, pt := range pts {
 			pts2[i] = geom.Point{X: pt.X, Y: pt.Y + 80}

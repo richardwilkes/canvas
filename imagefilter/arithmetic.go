@@ -8,9 +8,7 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // The arithmetic blend image filter node: combines a background and foreground filter with the four-coefficient
-// equation k1*fg*bg + k2*fg + k3*bg + k4, optionally enforcing premultiplied output. The node carries the arithmetic
-// coefficients directly, and nearly-a-blend-mode coefficient sets (Src/Dst/Clear) collapse to the corresponding
-// short-circuit filter.
+// equation k1*fg*bg + k2*fg + k3*bg + k4, optionally enforcing premultiplied output.
 
 package imagefilter
 
@@ -98,8 +96,8 @@ func (f *arithmeticFilter) makeBlendShader(bg, fg shaders.Shader) shaders.Shader
 	return shaders.NewArithmeticBlend(f.k, f.enforcePremul, bg, fg)
 }
 
-// OnFilterImage evaluates both children over the maximum possible output (derived from the content bounds) so that
-// coefficients which restrict the output see the full extent of each input.
+// OnFilterImage requests from both children only the maximum output the blend can produce (derived from the source's
+// layer bounds), so coefficients that restrict the output also restrict what the children render.
 //
 //nolint:gocritic // hugeParam: ctx is by value per the interface; see filtercore.Filter.OnFilterImage
 func (f *arithmeticFilter) OnFilterImage(ctx filtercore.Context) filtercore.FilterResult {
@@ -140,8 +138,7 @@ func (f *arithmeticFilter) OnInputLayerBounds(mapping *filtercore.Mapping, desir
 			return geom.IRect{}
 		}
 	} else {
-		// The content and/or child output are unbounded, so the intersection with the desired output is simply the
-		// desired output.
+		// The content or child output is unbounded, so its intersection with the desired output is the desired output.
 		requiredInput = desiredOutput
 	}
 
@@ -189,8 +186,7 @@ func (f *arithmeticFilter) OnOutputLayerBounds(mapping *filtercore.Mapping, cont
 	return backgroundBounds
 }
 
-// OnComputeFastBounds applies the same coefficient-driven extent logic as OnOutputLayerBounds, but over the
-// conservative (unmapped) bounds convention used by the fast-bounds pass.
+// OnComputeFastBounds applies the coefficient-driven extent logic of OnOutputLayerBounds to the unmapped fast bounds.
 func (f *arithmeticFilter) OnComputeFastBounds(bounds geom.Rect) geom.Rect {
 	if f.k[3] != 0 {
 		return filtercore.MakeILarge().ToRect()

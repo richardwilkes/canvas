@@ -93,7 +93,6 @@ func TestBlitRowLCD16Pinned(t *testing.T) {
 		srcB := int(c.B())
 		for _, m := range lcdTestMasks {
 			for _, d := range lcdTestDsts {
-				// General proc.
 				dst := []uint32{d}
 				blitRowLCD16Generic(dst, []uint16{m}, uint32(srcA), uint32(srcR), uint32(srcG), uint32(srcB))
 				want := refBlendLCD16(srcA, srcR, srcG, srcB, d, m)
@@ -101,7 +100,6 @@ func TestBlitRowLCD16Pinned(t *testing.T) {
 					t.Fatalf("blitRowLCD16Generic(color %#x, mask %#04x, dst %#08x) = %#08x, want %#08x",
 						uint32(c), m, d, dst[0], want)
 				}
-				// Opaque proc.
 				if srcA == 0xFF {
 					opaqueDst := deviceRGBA(c.PreMultiply())
 					dst[0] = d
@@ -239,7 +237,7 @@ func TestBlendBlitterLCD16(t *testing.T) {
 	}
 }
 
-// TestAAClipLCD16Merge pins mergeOneMaskRow16: each 5/6/5 channel scales by mulDiv255Round.
+// TestAAClipLCD16Merge pins mergeOneMaskRow16: each 5/6/5 channel scales by MulDiv255Round.
 func TestAAClipLCD16Merge(t *testing.T) {
 	src := []uint16{0xFFFF, 0x1234, 0xF800}
 	dst := make([]uint16, 3)

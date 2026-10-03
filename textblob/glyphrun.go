@@ -77,8 +77,8 @@ func AcquireGlyphRunBuilder() *GlyphRunBuilder { return glyphRunBuilderPool.Get(
 // the scratch backing arrays are kept for reuse.
 func ReleaseGlyphRunBuilder(b *GlyphRunBuilder) {
 	b.list = GlyphRunList{}
-	// Zero every run element, including those past the current length that an earlier, longer draw left behind, since
-	// each still points at a font and a glyph slice owned by whatever was last drawn.
+	// Clear to capacity: elements past the current length, left by an earlier and longer draw, still pin a font and a
+	// glyph slice.
 	runs := b.runs[:cap(b.runs)]
 	clear(runs)
 	b.runs = runs[:0]
@@ -151,9 +151,8 @@ func (b *GlyphRunBuilder) TextToGlyphRunList(f *font.Font, paint *stroke.PaintSp
 
 // BlobToGlyphRunList converts blob's runs into a GlyphRunList, resolving each run's positions.
 func (b *GlyphRunBuilder) BlobToGlyphRunList(blob *Blob, origin geom.Point) *GlyphRunList {
-	// Pre-size the position buffer (covering every run, including full-positioned ones) so the per-run sub-slices
-	// handed out below never move as the loop fills them, then carve one sub-slice per run from it. This lets
-	// full-positioned runs share the reused buffer too rather than allocating a fresh slice each.
+	// Pre-size the position buffer for every run, full-positioned ones included, so the per-run sub-slices carved from
+	// it below never move.
 	positionCount := 0
 	for i := range blob.runs {
 		positionCount += len(blob.runs[i].glyphs)
@@ -165,7 +164,6 @@ func (b *GlyphRunBuilder) BlobToGlyphRunList(blob *Blob, origin geom.Point) *Gly
 	for i := range blob.runs {
 		run := &blob.runs[i]
 		if len(run.glyphs) == 0 || !fontIsFinite(&run.font) {
-			// If no glyphs or the font is not finite, don't add the run.
 			continue
 		}
 		positions := b.positions[cursor : cursor+len(run.glyphs)]
@@ -207,7 +205,6 @@ func (b *GlyphRunBuilder) textToGlyphIDs(f *font.Font, text []byte, encoding fon
 	return glyphs
 }
 
-// fontIsFinite reports whether the font's size and skew parameters are all finite.
 func fontIsFinite(f *font.Font) bool {
 	return finite32(f.Size()) && finite32(f.ScaleX()) && finite32(f.SkewX())
 }

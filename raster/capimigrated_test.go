@@ -18,9 +18,8 @@ import (
 	"github.com/richardwilkes/canvas/path"
 )
 
-// TestWrapBytes verifies the pixel-wrapping contract raster.WrapBytes keeps: a valid
-// buffer wraps without copying, and each unsupported configuration (bad dimensions, narrow or non-whole-pixel rowBytes,
-// short buffer) returns nil.
+// TestWrapBytes verifies WrapBytes' contract: a valid buffer wraps without copying, and each unsupported configuration
+// (bad dimensions, narrow or non-whole-pixel rowBytes, short buffer) returns nil.
 func TestWrapBytes(t *testing.T) {
 	const w, h = 4, 3
 	buf := make([]byte, w*h*4)
@@ -52,8 +51,8 @@ func TestWrapBytes(t *testing.T) {
 	if WrapBytes(buf[:w*h*4-4], w, h, w*4) != nil {
 		t.Error("too-small buffer: want nil")
 	}
-	// A width whose width*4 overflows int32 to a negative value must still be rejected: with a small rowBytes the
-	// row cannot actually hold the row, and the guard must not be fooled by the wrapped-around product.
+	// A width whose width*4 overflows int32 to a negative value must still be rejected: a small rowBytes cannot hold
+	// the row, and the guard must not be fooled by the wrapped-around product.
 	if WrapBytes(buf, 1<<29, 1, 8) != nil {
 		t.Error("width*4 overflow with narrow rowBytes: want nil")
 	}

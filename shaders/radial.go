@@ -58,7 +58,7 @@ func NewRadialGradient(center geom.Point, radius float32, colors []colorcore.Col
 	return withLocalMatrixPtr(g, localMatrix)
 }
 
-// Center returns the gradient's center; Radius returns its radius.
+// Center returns the gradient's center.
 func (g *RadialGradient) Center() geom.Point { return g.center }
 
 // Radius returns the gradient's radius.

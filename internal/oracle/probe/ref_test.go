@@ -7,15 +7,14 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// Reference-value record/replay for the numeric probes.
+// Reference-value replay for the numeric probes.
 //
 // The reference answers are Skia's, captured on darwin/arm64 and checked in under testdata/ref. Because the values
 // are Skia's rather than this library's own, the probes remain correctness references rather than mere pins on current
 // behavior, and their agree() tolerances keep their original meaning.
 //
-// What this cannot do is answer for input that was never captured. A probe that invents new input (the SVG parse fuzz
-// is the notable one) can only replay the corpus frozen here; growing it would need a Skia build from git history.
-// Corpus changes therefore fail loudly (missing key) rather than silently skipping.
+// Input that was never captured has no answer: a probe can only replay the corpus frozen here, and growing it would
+// need a Skia build from git history. Corpus changes therefore fail loudly (missing key) rather than silently skipping.
 package probe
 
 import (
@@ -258,8 +257,8 @@ type pathFacts struct {
 	lastOK   bool
 }
 
-// strokeResult is the oracle's Skia's Paint::getFillPath outcome: whether the paint reduced to a plain fill, and the
-// resulting geometry.
+// strokeResult is Skia's Paint::getFillPath outcome: whether the paint reduced to a plain fill, and the resulting
+// geometry.
 type strokeResult struct {
 	points   []geom.Point
 	fillType int
@@ -268,8 +267,8 @@ type strokeResult struct {
 
 // The PathMeasure record. Measuring is a stateful walk — construct, read the contour, step to the next — so the
 // fixture freezes the whole walk for one (path, forceClosed, resScale) as an ordered list of contours, rather than
-// trying to key each individual query. The fractions and spans sampled are fixed constants in the probe, so both halves
-// index them identically.
+// trying to key each individual query. The fractions and spans sampled are fixed (measureFractions, measureSpans), so
+// replay indexes them exactly as capture did.
 type measureContour struct {
 	posTan   []posTanSample   // one per probe fraction; empty when the contour has no length
 	segments []measureSegment // one per probe span; empty when the contour has no length

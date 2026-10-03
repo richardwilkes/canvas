@@ -166,7 +166,6 @@ func TestMatrixInvertRoundTrip(t *testing.T) {
 }
 
 func TestMatrixInvertSpecialCases(t *testing.T) {
-	// Identity inverts to itself.
 	id := IdentityMatrix()
 	inv, ok := id.Invert()
 	if !ok || !inv.IsIdentity() {
@@ -188,7 +187,6 @@ func TestMatrixInvertSpecialCases(t *testing.T) {
 	if inv.Get(MScaleX) != 0.5 || inv.Get(MScaleY) != 0.25 || inv.Get(MTransX) != -5 || inv.Get(MTransY) != -5 {
 		t.Errorf("scale-translate invert = %v", inv.As9())
 	}
-	// Degenerate matrix fails.
 	var z Matrix
 	z.SetScale(0, 1)
 	if _, ok = z.Invert(); ok {
@@ -219,12 +217,10 @@ func TestMatrixMapRect(t *testing.T) {
 	if !exact || dst != RectLTRB(-20, 0, 0, 10) {
 		t.Errorf("rotate90 MapRect = %+v exact=%v", dst, exact)
 	}
-	// Rotation by 45 degrees reports inexact bounds.
 	m = RotateDegMatrix(45)
 	if _, exact = m.MapRect(src); exact {
 		t.Error("rotate45 MapRect should be inexact")
 	}
-	// Perspective reports inexact.
 	var persp Matrix
 	persp.SetAll(1, 0, 0, 0, 1, 0, 0.001, 0, 1)
 	if _, exact = persp.MapRect(src); exact {
@@ -256,13 +252,11 @@ func TestMatrixPrePostOps(t *testing.T) {
 	if m.Type() != TypeIdentity {
 		t.Errorf("preScale back to identity type = %#x", m.Type())
 	}
-	// preScale by zero clears rect-stays-rect.
 	m = IdentityMatrix()
 	m.PreScale(0, 1)
 	if m.RectStaysRect() {
 		t.Error("preScale(0,1) should clear rect-stays-rect")
 	}
-	// PreConcat equivalence with SetConcat.
 	a := RotateDegMatrix(30)
 	b := TranslateMatrix(3, 4)
 	m1 := a
@@ -378,8 +372,7 @@ func TestMatrixMaxScale(t *testing.T) {
 		{name: "overflowing skew", m: MatrixFrom9([9]float32{0, huge, 0, huge, 0, 0, 0, 0, 1}), want: -1},
 		{name: "overflowing affine", m: MatrixFrom9([9]float32{huge, huge, 0, huge, huge, 0, 0, 0, 1}), want: -1},
 		{name: "NaN affine", m: MatrixFrom9([9]float32{float32(math.NaN()), 1, 0, 1, 1, 0, 0, 0, 1}), want: -1},
-		// The scale-only lane skips the quadratic entirely, but it must still honor the -1 sentinel rather than handing
-		// back an infinite or NaN scale for callers to use as a real one.
+		// The scale-only lane skips the quadratic but must still return the -1 sentinel, not an infinite or NaN scale.
 		{name: "infinite scale only", m: ScaleMatrix(float32(math.Inf(1)), 2), want: -1},
 		{name: "negative infinite scale only", m: ScaleMatrix(2, float32(math.Inf(-1))), want: -1},
 		{name: "NaN scale only", m: ScaleMatrix(float32(math.NaN()), 2), want: -1},
@@ -406,8 +399,8 @@ func TestMatrixDegeneracyIsUnfused(t *testing.T) {
 	// Both halves of the determinant are the same real number, 6e10, reached through different factor pairs (so the
 	// compiler cannot fold them into one value): the determinant is exactly zero when each product is rounded to
 	// float32 first. Fused, the surviving term keeps the exact product and the difference is the rounding error of
-	// 6e10, which is thousands of times the tolerance, so the matrix reads as non-degenerate.
-	// The operands come from a var so the compiler cannot constant-fold the products and hide the contraction.
+	// 6e10, which is far above the tolerance, so the matrix reads as non-degenerate. The operands come from a var so
+	// the compiler cannot constant-fold the products and hide the contraction.
 	x := degeneracyProbeScale
 	if !isDegenerate2x2(x, 2*x, 3, 6) {
 		t.Error("isDegenerate2x2 must report an exactly-zero determinant as degenerate on every platform")
@@ -465,10 +458,10 @@ func referenceMaxScale(m *Matrix) float32 {
 }
 
 func TestMaxScaleMatchesUnfusedReference(t *testing.T) {
-	// Pins MaxScale's affine branch against an independent float64 oracle. Note this does NOT distinguish fused from
-	// unfused halving: p + 0.5*s contracts to an FMADDS on arm64, but halving is exact outside the subnormal range and
-	// TestMaxScaleHalvingsStayNormal shows the branch guard keeps it out of that range. The oracle instead guards the
-	// dot products and the discriminant, where fusion would be observable.
+	// Pins MaxScale's affine branch against an independent float64 oracle. This does NOT distinguish fused from unfused
+	// halving: an unpinned p + 0.5*s contracts to an FMADDS on arm64, but halving is exact outside the subnormal range
+	// and TestMaxScaleHalvingsStayNormal shows the branch guard keeps it out of that range. The oracle instead guards
+	// the dot products and the discriminant, where fusion would be observable.
 	check := func(m *Matrix) {
 		t.Helper()
 		if !m.HasPerspective() {
@@ -503,7 +496,7 @@ func TestMaxScaleHalvingsStayNormal(t *testing.T) {
 	// MaxScale's affine branch halves (a + c) and sqrt(disc). Halving is exact in binary floating point unless the
 	// result underflows to subnormal, which is why the FMA contraction on that final add is harmless. The bSqd guard is
 	// what keeps both operands out of the subnormal range: bSqd > (1/4096)^2 forces sqrt(disc) >= 4.8e-4, and
-	// |b| <= (a+c)/2 by Cauchy-Schwarz forces a + c > 4.9e-4. If a rework ever breaks that, the halvings stop being
+	// |b| <= (a+c)/2 by Cauchy-Schwarz forces a + c > 4.8e-4. If a rework ever breaks that, the halvings stop being
 	// exact and the contraction starts to matter.
 	const smallestNormal = 1.1754944e-38
 	check := func(sx, kx, ky, sy float32) {

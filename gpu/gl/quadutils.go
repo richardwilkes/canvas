@@ -327,8 +327,8 @@ func insideTriangle(u, v, w [4]float32) [4]bool {
 	return r
 }
 
-// projectedBounds computes the device-space bounding rect of the quad after perspective division, clipping any vertices
-// behind the w=0 plane to the plane first.
+// projectedBounds computes the bounding rect of the quad after perspective division, clipping any vertices behind the
+// w=0 plane to the plane first.
 func (q *Quad) projectedBounds() geom.Rect {
 	xs := q.X4f()
 	ys := q.Y4f()
@@ -541,8 +541,8 @@ func ClipToW0(quad, extraVertices *DrawQuad) int {
 }
 
 // CropToRect crops the quad to the provided device-space axis-aligned rectangle. Returns true if the intersection of
-// the (projected) quad and cropRect results in a quadrilateral; otherwise the quad may have been updated to be a
-// smaller quad of the same type with a visually identical intersection. The quad's coordinates must be finite.
+// the (projected) quad and crop results in a quadrilateral; otherwise the quad may have been updated to be a smaller
+// quad of the same type with a visually identical intersection. The quad's coordinates must be finite.
 func CropToRect(crop geom.Rect, cropAA gpu.AA, quad *DrawQuad, computeLocal bool) bool {
 	if !quad.Device.IsFinite() {
 		panic("CropToRect requires finite quad coordinates")
@@ -550,8 +550,8 @@ func CropToRect(crop geom.Rect, cropAA gpu.AA, quad *DrawQuad, computeLocal bool
 
 	if quad.Device.QuadType() == QuadTypeAxisAligned {
 		// cropRect and cropSimpleRect keep the rectangles as rectangles, so the intersection of the crop and quad can
-		// be calculated exactly. Some care must be taken if the quad is axis-aligned but does not satisfy asRect() due
-		// to flips, etc.
+		// be calculated exactly. Some care must be taken if the quad is axis-aligned but does not satisfy AsRect due to
+		// flips, etc.
 		var clippedEdges gpu.QuadAAFlags
 		if computeLocal {
 			if isSimpleRect(&quad.Device) && isSimpleRect(&quad.Local) {
@@ -573,10 +573,8 @@ func CropToRect(crop geom.Rect, cropAA gpu.AA, quad *DrawQuad, computeLocal bool
 
 		// Apply the clipped edge updates to the original edge flags.
 		if cropAA == gpu.AAYes {
-			// Turn on all edges that were clipped.
 			quad.EdgeFlags |= clippedEdges
 		} else {
-			// Turn off all edges that were clipped.
 			quad.EdgeFlags &^= clippedEdges
 		}
 		return true
@@ -664,7 +662,7 @@ func OutsetQuad(edgeDistances [4]float32, quad *Quad) {
 type tessEdgeVectors struct {
 	// Projected corners (x/w and y/w).
 	x2d, y2d [4]float32
-	// Normalized edge vectors of the device space quad, ordered L, B, T, R (i.e. next_ccw(x) - x).
+	// Normalized edge vectors of the device space quad, ordered L, B, T, R (i.e. nextCCW(x) - x).
 	dx, dy [4]float32
 	// Reciprocal of the edge lengths.
 	invLengths [4]float32
@@ -719,7 +717,7 @@ type tessEdgeEquations struct {
 func (eq *tessEdgeEquations) reset(ev *tessEdgeVectors) {
 	dx := ev.dx
 	dy := ev.dy
-	// Correct for bad edges by copying adjacent edge information into the bad component.
+	// Correct for bad (near-zero-length) edges by substituting the reversed opposite edge.
 	correctBadEdges(f4GE(ev.invLengths, f4Splat(quadInvDistTolerance)), &dx, &dy, nil)
 
 	var c [4]float32
@@ -1032,7 +1030,7 @@ func (t *tessVertices) asQuads(deviceOut *Quad, deviceType QuadType, localOut *Q
 	if deviceType == QuadTypePerspective {
 		*deviceOut.Ws() = t.w
 	}
-	deviceOut.SetQuadType(deviceType) // Sets ws == 1 when the device type is not perspective.
+	deviceOut.SetQuadType(deviceType) // Resets ws to 1 when leaving perspective.
 
 	if t.uvrCount > 0 {
 		*localOut.Xs() = t.u

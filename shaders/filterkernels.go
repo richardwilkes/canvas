@@ -57,8 +57,7 @@ func storeCoordsStage(z *lanes) {
 }
 
 // appendStoreCoords appends a stage saving the current (r,g) local coordinates into dst (a field on the kernel's pooled
-// context), replacing a per-compile new([2][stride]float32) + capturing closure with a static stage reading dst through
-// z.ctx.
+// context), which the static stage reads through z.ctx.
 func (p *Pipeline) appendStoreCoords(dst *[2][stride]float32) {
 	p.appendCtx(storeCoordsStage, dst)
 }
@@ -236,7 +235,6 @@ func (s *MorphologyShader) appendStages(p *Pipeline, m MatrixRec) bool { //nolin
 		p.appendCtx(morphSparseMaxAggStageFn, c)
 	}
 
-	// return flip * aggregate
 	p.appendCtx(morphReturnStageFn, c)
 	return true
 }
@@ -644,7 +642,7 @@ func (s *LightingShader) IsConstant() bool { return false }
 
 // lightingCtx holds the Phong lighting kernel's saved coordinates plus the light/material uniforms (copied from the
 // shader — the same fields make_lighting_shader packs) in reused pipeline storage so lightingStage reads them through
-// z.ctx instead of a whole-shader closure capture.
+// z.ctx.
 type lightingCtx struct {
 	coords         [2][stride]float32
 	depth          float32
@@ -694,7 +692,7 @@ func (s *LightingShader) appendStages(p *Pipeline, m MatrixRec) bool { //nolint:
 func lightingStage(z *lanes) {
 	sh := z.ctx.(*lightingCtx)
 	const coneAAThreshold = 0.016
-	const coneScale = 1.0 / coneAAThreshold // precomputed reciprocal
+	const coneScale = 1.0 / coneAAThreshold
 	for i := range z.n {
 		nx, ny, nz := z.r[i], z.g[i], z.b[i]
 		na := z.a[i]
@@ -1000,10 +998,9 @@ func matrixConvCoordsStage(z *lanes) {
 // matrixConvAccumStage folds one tap into the accumulator (unpremultiplying first when not convolving alpha, and
 // recording the origin tap's alpha).
 //
-// The accumulation is written as the plain expression "sum += c*k", which the Go compiler is free to contract into a
-// single-precision fused multiply-add — and does on arm64 (FMADDS), while amd64 at this module's GOAMD64=v1 baseline
-// emits a separate MULSS and ADDSS. That is a per-arch difference in the *default* build, which is why the goldens are
-// captured per platform; the simd twin mirrors whichever form the arch's compiler chose (exprMulAdd4).
+// The plain expression "sum += c*k" contracts to FMADDS on arm64 but not on amd64 (see displacementStage). That
+// per-arch difference in the *default* build is why the goldens are captured per platform; the simd twin mirrors
+// whichever form the arch's compiler chose (exprMulAdd4).
 func matrixConvAccumStage(z *lanes) {
 	t := z.ctx.(*matrixConvTap)
 	c := t.c
@@ -1170,7 +1167,6 @@ func arithBlendStage(z *lanes) {
 		for ch := range 4 {
 			sv := srcCh[ch][i]
 			dv := c.res0[ch][i]
-			// saturate(k.x*src*dst + k.y*src + k.z*dst + k.w), left-associative plain ops.
 			out[ch] = clamp01(k[0]*sv*dv + k[1]*sv + k[2]*dv + k[3])
 		}
 		// color.rgb = min(color.rgb, max(color.a, pmClamp))

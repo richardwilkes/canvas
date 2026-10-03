@@ -38,7 +38,7 @@ type BlendBlitter struct {
 
 // NewBlendBlitter returns a blitter for the given unpremultiplied color and blend mode.
 func NewBlendBlitter(dev *Pixmap, color colorcore.Color, mode BlendMode) *BlendBlitter {
-	// Converting the 8-bit color to float is an exact /255; premultiplication happens in float.
+	// The 8-bit color converts to float by a 1/255 multiply; premultiplication happens in float.
 	const inv255f = float32(1.0 / 255.0)
 	a := float32(color.A()) * inv255f
 	cf := pmColor4f{
@@ -229,7 +229,7 @@ func (bb *BlendBlitter) BlitAntiRect(x, y, width, height int32, leftAlpha, right
 }
 
 // BlitMask implements Blitter for A8 masks (the scale_u8/lerp_u8 pipeline stages) and LCD16 masks (scale_565/lerp_565
-// with the rgb-coverage prescale rule). Note there is no BlendSrc shortcut here — even Src runs load_dst + lerp.
+// with the rgb-coverage prescale rule). There is no BlendSrc shortcut here — even Src runs load_dst + lerp.
 func (bb *BlendBlitter) BlitMask(mask *Mask, clip geom.IRect) {
 	if mask.Format == MaskLCD16 {
 		bb.blitMaskLCD16(mask, clip)

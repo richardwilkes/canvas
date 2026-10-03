@@ -7,13 +7,11 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// Row-band parallelism for large shaded rect fills. A gradient/image span evaluates per pixel in scalar Go, so a big
-// shaded rect fill is the CPU throughput bottleneck: GradientRectFill and ImageScale both exceeded the ≤3× gate.
-// Splitting such a fill into horizontal row bands filled concurrently closes the gap. A rect fill's per-row coverage is
-// independent of the other rows, so banding at integer scanlines is byte-identical to the serial fill; each band builds
-// its own blitter because shader blitters carry per-span scratch and cannot be shared across goroutines. This is scoped
-// to the rect-fill lane (the only fill whose banding is byte-exact — path fills restart edge accumulation at each band
-// top).
+// Row-band parallelism for large shaded fills. A gradient/image span evaluates per pixel, so a big shaded fill is the
+// CPU throughput bottleneck; splitting it into horizontal row bands filled concurrently closes the gap. Each band
+// builds its own blitter because shader blitters carry per-span scratch and cannot be shared across goroutines. Rect
+// and full-device fills band byte-identically to the serial fill (a row's coverage is independent of the other rows);
+// path fills do not (edge accumulation restarts at each band top; see fillPathShadedParallel).
 
 package canvas
 
@@ -61,7 +59,6 @@ func fillRectShadedParallel(dst *raster.Pixmap, rc *raster.Clip, devRect geom.Re
 	wg.Wait()
 }
 
-// fillRectShadedBandWorker is the goroutine entry point for a single band: fill it, then signal done.
 func fillRectShadedBandWorker(wg *sync.WaitGroup, dst *raster.Pixmap, rc *raster.Clip, band geom.Rect, paint *Paint, matrix *geom.Matrix, aa bool) {
 	defer wg.Done()
 	fillRectShadedBand(dst, rc, band, paint, matrix, aa)
@@ -85,9 +82,8 @@ func fillRectShadedBand(dst *raster.Pixmap, rc *raster.Clip, band geom.Rect, pai
 // drawPaint (full-device shaded fill) counterpart of fillRectShadedParallel. bounds are the integer band boundaries
 // from raster.IRectFillBandBounds. Unlike the rect-fill lane this fills an integer rect via FillIRectRasterClip (no
 // AA-rect edge coverage), which is per-row independent for any clip, so the union of the bands is byte-identical to the
-// serial fill regardless of the clip shape. It takes dst/rc explicitly rather than a *draw receiver for the same
-// escape-analysis reason fillRectShadedParallel does (keep the draw value on the caller's stack); the goroutine workers
-// are top-level functions (go f(args…), no capturing closure).
+// serial fill regardless of the clip shape. It takes dst/rc rather than a *draw receiver for the same escape-analysis
+// reason fillRectShadedParallel does.
 func fillIRectShadedParallel(dst *raster.Pixmap, rc *raster.Clip, devRect geom.IRect, paint *Paint, matrix *geom.Matrix, bounds []int32) {
 	var wg sync.WaitGroup
 	for i := 1; i+1 < len(bounds); i++ {
@@ -99,15 +95,13 @@ func fillIRectShadedParallel(dst *raster.Pixmap, rc *raster.Clip, devRect geom.I
 	wg.Wait()
 }
 
-// fillIRectShadedBandWorker is the goroutine entry point for a single integer-rect band.
 func fillIRectShadedBandWorker(wg *sync.WaitGroup, dst *raster.Pixmap, rc *raster.Clip, band geom.IRect, paint *Paint, matrix *geom.Matrix) {
 	defer wg.Done()
 	fillIRectShadedBand(dst, rc, band, paint, matrix)
 }
 
-// fillIRectShadedBand builds an independent blitter for a single integer-rect band and fills it, then recycles the
-// blitter. Concurrency-safe with sibling bands for the same reasons as fillRectShadedBand: goroutine-safe blitter
-// pools, read-only paint/matrix/source sampling, and disjoint device rows.
+// fillIRectShadedBand is fillRectShadedBand for an integer-rect band, concurrency-safe with sibling bands for the same
+// reasons.
 func fillIRectShadedBand(dst *raster.Pixmap, rc *raster.Clip, band geom.IRect, paint *Paint, matrix *geom.Matrix) {
 	blitter := chooseBlitter(dst, paint, matrix)
 	raster.FillIRectRasterClip(band, rc, blitter)
@@ -122,9 +116,8 @@ func fillIRectShadedBand(dst *raster.Pixmap, rc *raster.Clip, band geom.IRect, p
 // step can differ (see raster.FillPathParallel's contract). Output is fully deterministic for a given clip/band split.
 // The callers gate this lane to a simple-rect raster clip and a non-inverse fill, so each band is exactly
 // AntiFillPath/FillPath over the band rect — the region form the serial rect-clip lane lowers to. devPath is shared
-// read-only across the bands (the scan converters copy it into per-band edge lists) and outlives them (the wait below);
-// dst/rc-free arguments keep the caller's draw value on its stack for the same escape-analysis reason the rect lanes
-// do.
+// read-only across the bands (the scan converters copy it into per-band edge lists) and outlives them (the wait below).
+// It takes no *draw receiver for the same escape-analysis reason the rect lanes do.
 func fillPathShadedParallel(dst *raster.Pixmap, devPath *path.Path, paint *Paint, matrix *geom.Matrix, aa bool, clip geom.IRect, bounds []int32) {
 	// Resolve the lazily-cached state the concurrent bands would otherwise race to compute: the path's bounds and
 	// convexity (both memoized on the shared Path; the scan converters query them per band) and the CTM's type mask
@@ -146,7 +139,6 @@ func fillPathShadedParallel(dst *raster.Pixmap, devPath *path.Path, paint *Paint
 	wg.Wait()
 }
 
-// fillPathShadedBandWorker is the goroutine entry point for a single path band.
 func fillPathShadedBandWorker(wg *sync.WaitGroup, dst *raster.Pixmap, devPath *path.Path, paint *Paint, matrix *geom.Matrix, aa bool, band geom.IRect) {
 	defer wg.Done()
 	fillPathShadedBand(dst, devPath, paint, matrix, aa, band)

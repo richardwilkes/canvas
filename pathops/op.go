@@ -8,10 +8,9 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // The boolean-op engine tail: findChaseOp (the binary-op chase walker), bridgeOp (the output tracer that walks the
-// resolved segment graph and emits closed contours), and runOp (the driver that runs the operator/fill-type algebra and
-// the fast paths, which stay in pathops.go). The chase worklist is a []*opSpanBase; the fill-rule masks flow as plain
-// ints (winding=-1, even-odd=1) so the bit-mask math in activeOp stays simple integer arithmetic; both operand paths
-// map to *path.Path.
+// resolved segment graph and emits closed contours), and runOp (the pipeline driver that Op in pathops.go calls after
+// its fast paths and operator/fill-type algebra). The fill-rule masks flow as plain ints (winding=-1, even-odd=1) so
+// the bit-mask math in activeOp stays simple integer arithmetic.
 
 package pathops
 
@@ -19,7 +18,7 @@ import "github.com/richardwilkes/canvas/path"
 
 // findChaseOp pops chase spans, seeds the minuend/subtrahend windings, and advances to the next active edge for a
 // boolean op, marking passed-over edges. Sets *result to the next segment (nil when the chase is exhausted) and returns
-// false only on an unrecoverable markAngle.
+// false only when markAngleBinary fails.
 func findChaseOp(chase *[]*opSpanBase, startPtr, endPtr **opSpanBase, result **opSegment) bool {
 	for len(*chase) != 0 {
 		span := (*chase)[len(*chase)-1]
@@ -184,14 +183,12 @@ func bridgeOp(contourList *opContourHead, op PathOp, xorMask, xorOpMask int, wri
 	return true
 }
 
-// runOp runs the boolean-op pipeline after the fast paths (rect-intersect, empty-operand) and the operator/ fill-type
-// algebra, which stay in Op (pathops.go). minuend/subtrahend and op are already remapped (any reverse-difference
-// reduced to difference by swapping the operands). fillType is the even-odd/inverse-even-odd result fill.
+// runOp runs the boolean-op pipeline. Op has already remapped minuend/subtrahend and op (a reverse difference becomes a
+// difference with swapped operands); fillType is the even-odd/inverse-even-odd result fill.
 func runOp(minuend, subtrahend *path.Path, op PathOp, fillType path.FillType) (*path.Path, bool) {
 	head := &opContourHead{}
 	globalState := newOpGlobalState(head)
 	coincidence := newOpCoincidence(globalState)
-	// turn path into list of segments
 	builder := newOpEdgeBuilder(minuend, head, globalState)
 	if builder.unparseable {
 		return nil, false
@@ -207,12 +204,10 @@ func runOp(minuend, subtrahend *path.Path, op PathOp, fillType path.FillType) (*
 		result.SetFillType(fillType)
 		return result, true
 	}
-	// find all intersections between segments
 	addIntersections(head, coincidence)
 	if !handleCoincidence(head, coincidence) {
 		return nil, false
 	}
-	// construct closed contours
 	writer := newPathWriter(fillType)
 	if !bridgeOp(head, op, xorMask, xorOpMask, writer) {
 		return nil, false

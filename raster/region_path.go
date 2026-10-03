@@ -58,8 +58,8 @@ func (b *rgnBuilder) init(maxHeight, maxTransitions int, pathIsInverse bool) boo
 		return false
 	}
 	b.storage = make([]int32, count)
-	b.currScanline = -1 // signal empty collection
-	b.prevScanline = -1 // signal first scanline
+	b.currScanline = -1
+	b.prevScanline = -1
 	return true
 }
 
@@ -94,7 +94,7 @@ func (b *rgnBuilder) BlitH(x, y, width int32) {
 		b.storage[0] = y // lastY
 		b.currXIdx = b.firstX(0)
 	} else if y > b.lastY(b.currScanline) {
-		// if we get here, we're done with currScanline
+		// currScanline is complete.
 		b.storage[b.currScanline+1] = int32(b.currXIdx - b.firstX(b.currScanline)) // xCount
 
 		prevLastY := b.lastY(b.currScanline)
@@ -184,7 +184,6 @@ func (b *rgnBuilder) BlitV(_, _, _ int32, _ Alpha) {}
 
 // BlitRect implements Blitter.
 func (b *rgnBuilder) BlitRect(x, y, width, height int32) {
-	// The scan converter's rect fast path lowers through blitRect; feed it back as rows.
 	for r := y; r < y+height; r++ {
 		b.BlitH(x, r, width)
 	}
@@ -294,9 +293,8 @@ func (rgn *Region) SetPath(p *path.Path, clip *Region) bool {
 		return checkInverseOnEmptyReturn(rgn, p, clip)
 	}
 
-	// Our builder is very fragile, and can't be called with spans/rects out of Y->X order. To ensure this, we only
-	// "fill" clipped to a rect (the clip's bounds), and if the clip is more complex than that, we just post-intersect
-	// the result with the clip.
+	// The builder cannot take spans/rects out of Y->X order, so fill clipped only to the clip's bounds and
+	// post-intersect the result with a complex clip.
 	clipBounds := clip.Bounds()
 	if clip.IsComplex() {
 		if !rgn.SetPath(p, NewRegionRect(clipBounds)) {
@@ -313,8 +311,8 @@ func (rgn *Region) SetPath(p *path.Path, clip *Region) bool {
 
 		rgn.SetEmpty()
 
-		// Note: with large integers some intermediate calculations can overflow, but the end results will still be in
-		// integer range; use int64 for the intermediates.
+		// With large integers some intermediate calculations can overflow even though the end results are in int32
+		// range, so the intermediates are int64.
 		for top := int64(clipBounds.Top); top < int64(clipBounds.Bottom); top += kTileSize {
 			bot := min(top+kTileSize, int64(clipBounds.Bottom))
 			for left := int64(clipBounds.Left); left < int64(clipBounds.Right); left += kTileSize {

@@ -108,8 +108,8 @@ func (r Rect) Outset(dx, dy float32) Rect {
 // Intersect sets r to the intersection of r and other and returns true, or returns false leaving r unchanged when the
 // intersection is empty. NaN handling depends on operand order: the *other* rect's edges are the first max/min
 // argument, so NaN in other's edges is kept (forcing a false return) while NaN in the receiver's edges is silently
-// discarded. Note this is the opposite of Intersects below, which uses the receiver's edges first. Locked in by the
-// oracle probe TestRectIntersectProbe.
+// discarded. This is the opposite of Intersects below, which uses the receiver's edges first. Locked in by the oracle
+// probe TestRectIntersectProbe.
 func (r *Rect) Intersect(other Rect) bool {
 	l := max32(other.Left, r.Left)
 	rt := min32(other.Right, r.Right)
@@ -327,8 +327,7 @@ func (r IRect) IsEmpty() bool {
 
 // isEmpty64 is a cheaper emptiness test that ignores int32 overflow of the width or height, so it can disagree with
 // IsEmpty for rects spanning more than MaxInt32. Only Join uses it, matching SkIRect::join, which likewise tests the
-// edges directly rather than calling its overflow-aware isEmpty. Intersect and ContainsRect use IsEmpty instead, as
-// their Skia counterparts do; prefer IsEmpty in new code.
+// edges directly rather than calling its overflow-aware isEmpty; prefer IsEmpty in new code.
 func (r IRect) isEmpty64() bool {
 	return r.Right <= r.Left || r.Bottom <= r.Top
 }

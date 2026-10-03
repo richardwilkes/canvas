@@ -130,7 +130,7 @@ func TestFixWindingMultiContour(t *testing.T) {
 // operands must reinforce (union), not cancel. A naive even-odd sum of the two simplified operands would leave the
 // overlap empty; Builder.Resolve avoids that by fix-winding each operand before summing.
 func TestResolveOverlappingUnion(t *testing.T) {
-	// rect1 = [0,10]x[0,10], rect2 = [5,15]x[5,15]; overlap [5,10]x[5,10]. Union is an L, area 175.
+	// rect1 = [0,10]x[0,10], rect2 = [5,15]x[5,15]; overlap [5,10]x[5,10]; union area 175.
 	var b Builder
 	b.Add(rectPath(0, 0, 10, 10, path.FillWinding), Union)
 	b.Add(rectPath(5, 5, 15, 15, path.FillWinding), Union)

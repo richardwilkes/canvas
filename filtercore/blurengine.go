@@ -10,7 +10,8 @@
 // The blur engine the image filters consume: the raster engine's RGBA8888 algorithm — a true 1D Gaussian pass for sigma
 // < 2 (gaussianPass) and the three-pass box approximation for sigma in [2, 135] (threeBoxApproxPass), evaluated as
 // separated X/Y passes writing into one shared buffer. A tent-filter pass would only serve legacy blurs that bypass
-// FilterResult.rescale and is unreachable here; the A8 and shader-based algorithms wait for their consumers.
+// FilterResult.rescale and is unreachable here, as are the A8 and shader-based raster algorithms with the color type
+// pinned to N32.
 
 package filtercore
 
@@ -351,7 +352,7 @@ func gaussianBlurSegmentGeneric(p *gaussianPass, n int32, src []uint32, srcStrid
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// ThreeBoxApproxPass (successive box approximation, sigma < 135)
+// ThreeBoxApproxPass (successive box approximation, sigma <= 135)
 
 type threeBoxApproxPass struct {
 	buffer0, buffer1, buffer2 [][4]uint32
@@ -381,7 +382,6 @@ func makeThreeBoxPassMaker(sigma float32) *passMaker {
 			if window&1 == 0 {
 				size2 = passSize + 1
 			}
-			// Odd windows: border = 3*((window-1)/2); even: 3*(window/2) - 1.
 			var border int32
 			if window&1 == 1 {
 				border = 3 * ((window - 1) / 2)
@@ -495,9 +495,6 @@ func threeBoxBlurSegmentGeneric(p *threeBoxApproxPass, n int32, src []uint32, sr
 	p.sum0, p.sum1, p.sum2 = sum0, sum1, sum2
 	p.cursor0, p.cursor1, p.cursor2 = c0, c1, c2
 }
-
-///////////////////////////////////////////////////////////////////////////////
-// Raster8888BlurAlgorithm
 
 type raster8888BlurAlgorithm struct{}
 

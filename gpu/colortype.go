@@ -7,8 +7,6 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// ColorType and its descriptor helpers. The enum's ordering is fixed because caps tables index arrays by color type.
-
 package gpu
 
 // ColorChannelFlags is a bit set of the color channels a color type carries.

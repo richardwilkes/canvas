@@ -150,9 +150,8 @@ func TestMapKeyMemoization(t *testing.T) {
 		t.Fatal("Reset must clear both the key and the memoized string")
 	}
 
-	// Rebuilding a reused key struct with different data must refresh the memo (not return the stale string from the
-	// previous build) — the invariant the provider's key memo relies on when a (size,type) slot is first built into a
-	// zero key and when any recycled key is reused.
+	// Rebuilding a reused key struct with different data must refresh the memo, not return the stale string from the
+	// previous build.
 	var reused ScratchKey
 	b1 := ScratchKeyBuilder(&reused, rt, 2)
 	b1.Slice()[0] = 1

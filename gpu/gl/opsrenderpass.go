@@ -8,11 +8,11 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // The render pass is the series of commands (draws, clears, discards) targeting one render target; on GL they execute
-// immediately: the begin/end lifecycle with its load/store-op handling (including the DMSAA attachment load/store
-// resolves) and the clear entry points; the draw surface (bindPipeline/bindBuffers/draw*) lives with the shader
-// pipeline and the draw ops. This desktop-only build drops the ES tiled-rendering (QCOM_tiled_rendering) lane, and the
-// load-resolve fallback for when glBlitFramebuffer cannot target an MSAA destination is unreachable — desktop GL always
-// supports single-to-MSAA resolves, so CanResolveSingleToMSAA is constant true.
+// immediately. This file holds the begin/end lifecycle with its load/store-op handling (including the DMSAA attachment
+// load/store resolves) and the clear entry points; the draw surface (BindPipeline/BindBuffers/Draw*) lives in
+// gpudraw.go. This desktop-only build drops the ES tiled-rendering (QCOM_tiled_rendering) lane, and the load-resolve
+// fallback for when glBlitFramebuffer cannot target an MSAA destination is unreachable — desktop GL always supports
+// single-to-MSAA resolves, so CanResolveSingleToMSAA is always true.
 
 package gl
 
@@ -65,7 +65,6 @@ type OpsRenderPass struct {
 	primitiveType gpu.PrimitiveType
 }
 
-// set configures a reset render pass for the given target, bounds, origin, and load/store info.
 func (p *OpsRenderPass) set(rt *RenderTarget, useMSAASurface bool, contentBounds geom.IRect, origin gpu.SurfaceOrigin, colorInfo LoadAndStoreInfo, stencilInfo StencilLoadAndStoreInfo) {
 	if p.renderTarget != nil {
 		panic("render pass already set")
@@ -127,7 +126,6 @@ func (p *OpsRenderPass) End() {
 
 	if p.useMultisampleFBO && p.colorInfo.StoreOp == gpu.StoreOpStore &&
 		p.renderTarget.HasDynamicMSAAAttachment() {
-		// Blit the msaa attachment into the single sample fbo.
 		p.gpu.ResolveRenderFBOs(p.renderTarget, p.dmsaaLoadStoreBounds(), ResolveMSAAToSingle,
 			true /* invalidateReadBufferAfterBlit */)
 	}
@@ -142,8 +140,7 @@ func (p *OpsRenderPass) Clear(scissor *gpu.ScissorState, color [4]float32) {
 	p.gpu.Clear(scissor, color, p.renderTarget, p.useMultisampleFBO, p.origin)
 }
 
-// InlineUpload runs a deferred texture upload mid-pass; GL is immediate-mode, so this simply performs the upload
-// immediately.
+// InlineUpload runs a deferred texture upload mid-pass; GL is immediate-mode, so the upload happens right away.
 func (p *OpsRenderPass) InlineUpload(state *OpFlushState, upload DeferredTextureUploadFn) {
 	state.DoUpload(upload, false)
 }
@@ -160,8 +157,7 @@ func (p *OpsRenderPass) ClearStencilClip(scissor *gpu.ScissorState, insideStenci
 
 // GetOpsRenderPass returns the (single, reused) render pass object configured for the target, promoting a single-sample
 // target to its dynamic MSAA attachment when the pass requests MSAA (DMSAA). The resource provider creates that
-// attachment. The stencil attachment and sampled proxies are consumed by later phases; the GL pass doesn't key on them
-// yet.
+// attachment. The stencil attachment, sampled proxies, and transfer barriers are unused on GL.
 func (g *Gpu) GetOpsRenderPass(rp *ResourceProvider, rt *RenderTarget, useMSAASurface bool, stencil *Attachment, origin gpu.SurfaceOrigin, contentBounds geom.IRect, colorInfo LoadAndStoreInfo, stencilInfo StencilLoadAndStoreInfo, sampledProxies []*SurfaceProxy, renderPassXferBarriers gpu.XferBarrierFlags) *OpsRenderPass {
 	_ = stencil
 	_ = sampledProxies
@@ -186,8 +182,7 @@ func (g *Gpu) Submit(pass *OpsRenderPass) {
 	pass.reset()
 }
 
-// beginCommandBuffer binds the target FBO and applies the load-op clears. (This desktop-only build has no ES
-// tiled-rendering lane to skip.)
+// beginCommandBuffer binds the target FBO and applies the load-op clears.
 func (g *Gpu) beginCommandBuffer(rt *RenderTarget, useMultisampleFBO bool, colorLoadStore LoadAndStoreInfo, stencilLoadStore StencilLoadAndStoreInfo) {
 	g.handleDirtyContext()
 	g.flushRenderTarget(rt, useMultisampleFBO)

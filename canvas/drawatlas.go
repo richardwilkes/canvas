@@ -34,8 +34,7 @@ func cleanPaintForDrawVertices(paint *Paint) {
 // DrawAtlas draws a set of sprites from the atlas. Sprite i is the atlas sub-rect tex[i] mapped by xforms[i] (a
 // rotation+scale placement). With colors non-empty, sprite i's texels are combined with colors[i] through mode
 // (colors[i] is the blend dst, the sprite the src). cull is an optional conservative bounds hint used only for quick
-// rejection; paint may be nil. The draw count is min(len(xforms), len(tex)) (and len(colors) when non-empty). This API
-// has no C-API entry point.
+// rejection; paint may be nil. The draw count is min(len(xforms), len(tex)) (and len(colors) when non-empty).
 func (c *Canvas) DrawAtlas(atlas imagecore.DrawableImage, xforms []geom.RSXform, tex []geom.Rect, colors []colorcore.Color, mode raster.BlendMode, sampling shaders.SamplingOptions, cull *geom.Rect, paint *Paint) {
 	if atlas == nil {
 		return
@@ -118,9 +117,7 @@ func (d *BitmapDevice) DrawAtlas(xforms []geom.RSXform, tex []geom.Rect, colors 
 	working.Style = StyleFill
 	// Sprite quads rasterize non-AA (paint AA is ignored, per the triangle-fill semantics).
 	working.AntiAlias = false
-	// The per-sprite fills must take the raster-pipeline lane, never the legacy fixed-point image-sampler lane: the two
-	// sample differently (4-bit legacy filter weights vs the pipeline's float bilerp), and the atlas lane is defined in
-	// terms of the pipeline's sampling.
+	// The atlas lane is defined in terms of the raster pipeline's sampling (see Paint.forceRasterPipeline).
 	working.forceRasterPipeline = true
 
 	// Blend-mode simplifications: Src drops the colors entirely, Dst drops the shader and keeps only the colors.

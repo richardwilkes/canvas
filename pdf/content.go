@@ -30,7 +30,6 @@ const (
 	styleStrokeAndFill
 )
 
-// writeScalar writes value's PDF decimal form.
 func writeScalar(s stream.WStream, value float32) { s.Write(appendScalar(nil, value)) }
 
 // blendModeName returns the PDF32000 §11.3.5 blend-mode name for mode, or "" for modes PDF cannot express as a blend
@@ -92,7 +91,6 @@ func writeColorComponentF(s stream.WStream, value float32) {
 	s.Write(appendColorComponentF(nil, value))
 }
 
-// inverseTransformBBox maps bbox by matrix's inverse in place, returning false when matrix is not invertible.
 func inverseTransformBBox(matrix *geom.Matrix, bbox *geom.Rect) bool {
 	inv, ok := matrix.Invert()
 	if !ok {
@@ -123,7 +121,6 @@ func populateTilingPatternDict(pattern *Dict, bbox geom.Rect, resources *Dict, m
 	}
 }
 
-// moveTo writes an "m" (moveto) content-stream operator.
 func moveTo(x, y float32, content stream.WStream) {
 	writeScalar(content, x)
 	writeText(content, " ")
@@ -131,7 +128,6 @@ func moveTo(x, y float32, content stream.WStream) {
 	writeText(content, " m\n")
 }
 
-// appendLine writes an "l" (lineto) content-stream operator.
 func appendLine(x, y float32, content stream.WStream) {
 	writeScalar(content, x)
 	writeText(content, " ")
@@ -197,10 +193,8 @@ func appendRectangle(rect geom.Rect, content stream.WStream) {
 	writeText(content, " re\n")
 }
 
-// closePath writes an "h" (closepath) content-stream operator.
 func closePath(content stream.WStream) { writeText(content, "h\n") }
 
-// allPointsEq reports whether every point in the span equals the first.
 func allPointsEq(pts []geom.Point) bool {
 	for i := 1; i < len(pts); i++ {
 		if pts[i] != pts[0] {
@@ -264,8 +258,8 @@ func emitPath(p *path.Path, style paintStyle, consumeDegenerates bool, content s
 	}
 }
 
-// paintPath writes the fill/stroke painting operator for style, appending the even-odd star when fill requires it
-// (inverse fills are unreachable here — handled upstream).
+// paintPath writes the painting operator for style, with the even-odd star when fill requires it. Inverse fills are
+// handled upstream and never reach here.
 func paintPath(style paintStyle, fill path.FillType, content stream.WStream) {
 	switch style {
 	case styleFill:
@@ -283,10 +277,8 @@ func paintPath(style paintStyle, fill path.FillType, content stream.WStream) {
 	writeText(content, "\n")
 }
 
-// strokePath writes the "S" stroke-painting operator.
 func strokePath(content stream.WStream) { paintPath(styleStroke, path.FillWinding, content) }
 
-// applyGraphicState writes a "gs" operator selecting the ExtGState resource at objectIndex.
 func applyGraphicState(objectIndex int, content stream.WStream) {
 	writeResourceName(content, resExtGState, objectIndex)
 	writeText(content, " gs\n")
@@ -302,7 +294,6 @@ func applyPattern(objectIndex int, content stream.WStream) {
 	writeText(content, " scn\n")
 }
 
-// appendTransform writes a "cm" operator concatenating m into the current transformation matrix.
 func appendTransform(m *geom.Matrix, content stream.WStream) {
 	values, ok := m.AsAffine()
 	if !ok {

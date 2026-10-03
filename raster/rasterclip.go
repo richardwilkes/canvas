@@ -7,8 +7,7 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// Clip wraps a Region and an AAClip, so we have a single object that can represent either a BW or antialiased
-// clip. Clip shaders arrive, if ever needed, with the shader phase.
+// Clip wraps a Region and an AAClip in a single object that can represent either a BW or an antialiased clip.
 
 package raster
 
@@ -24,7 +23,7 @@ type Clip struct {
 	bw   Region
 	aa   AAClip
 	isBW bool
-	// these 2 are caches based on querying the right obj based on isBW
+	// isEmpty and isRect cache the answers of whichever of bw/aa isBW selects.
 	isEmpty bool
 	isRect  bool
 }
@@ -126,10 +125,9 @@ func (rc *Clip) computeIsRect() bool {
 func (rc *Clip) updateCacheAndReturnNonEmpty(detectAARect bool) bool {
 	rc.isEmpty = rc.computeIsEmpty()
 
-	// detect that our computed AA is really just a (hard-edged) rect
 	if detectAARect && !rc.isEmpty && !rc.isBW && rc.aa.IsRect() {
 		rc.bw.SetRect(rc.aa.Bounds())
-		rc.aa.SetEmpty() // don't need this anymore
+		rc.aa.SetEmpty()
 		rc.isBW = true
 	}
 
@@ -162,7 +160,7 @@ func (rc *Clip) convertToAA() {
 	rc.isBW = false
 	rc.bw.SetEmpty()
 
-	// since we are being explicitly asked to convert-to-aa, we pass false so we don't "optimize" ourselves back to BW.
+	// Pass false so an explicit conversion is not "optimized" back to BW.
 	rc.updateCacheAndReturnNonEmpty(false)
 }
 
@@ -217,8 +215,7 @@ func (rc *Clip) OpRect(localRect geom.Rect, matrix *geom.Matrix, op ClipOp, doAA
 
 	devRect, _ := matrix.MapRect(localRect)
 	if rc.isBW && doAA {
-		// check that the rect really needs aa, or is it close enough to integer boundaries that we can just treat it as
-		// a BW rect?
+		// A rect close enough to integer boundaries does not need AA and can be treated as a BW rect.
 		if nearlyIntegral(devRect.Left) && nearlyIntegral(devRect.Top) &&
 			nearlyIntegral(devRect.Right) && nearlyIntegral(devRect.Bottom) {
 			doAA = false
@@ -347,7 +344,6 @@ func (w *AAClipBlitterWrapper) Init(clip *Clip, blitter Blitter) {
 		aaclip := clip.AARgn()
 		w.bwRgn.SetRect(aaclip.Bounds())
 		w.aaBlitter.Init(blitter, aaclip)
-		// now our return values
 		w.clipRgn = &w.bwRgn
 		w.blitter = &w.aaBlitter
 	}
@@ -378,8 +374,7 @@ type rasterClipStackRec struct {
 	deferredCount int // 0 for a "normal" entry
 }
 
-// ClipStack is the save/restore stack of Clips a raster device maintains, with copy-on-write deferral of
-// saves.
+// ClipStack is the save/restore stack of Clips a raster device maintains, with copy-on-write deferral of saves.
 type ClipStack struct {
 	stack      []rasterClipStackRec
 	rootBounds geom.IRect

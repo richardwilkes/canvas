@@ -184,7 +184,7 @@ func TestLiveGradientSwatchesUnderCTM(t *testing.T) {
 	}
 }
 
-// TestLiveAdvancedBlendSwatches renders the 15 advanced blend modes over a translucent dst through the dst-copy lane
+// TestLiveAdvancedBlendSwatches renders the 14 advanced blend modes over a translucent dst through the dst-copy lane
 // and compares against the CPU blend kernels.
 func TestLiveAdvancedBlendSwatches(t *testing.T) {
 	env, dc := newLiveDirectContext(t)
@@ -228,8 +228,8 @@ func TestLiveAdvancedBlendSwatches(t *testing.T) {
 	}
 }
 
-// TestLiveColorFilterSwatches renders a gradient through matrix/luma/high-contrast/compose color filters and compares
-// against the CPU ColorFilterShader lane.
+// TestLiveColorFilterSwatches renders a gradient through matrix/luma/lighting/compose/high-contrast color filters and
+// compares against the CPU ColorFilterShader lane.
 func TestLiveColorFilterSwatches(t *testing.T) {
 	env, dc := newLiveDirectContext(t)
 	_ = env

@@ -9,8 +9,7 @@
 
 // The eager vertex allocator interface the triangulators use to obtain vertex space for a worst-case vertex count,
 // unlocking the space they did not use. eagerDynamicVertexAllocator locks space from the flush-time vertex pool;
-// cpuVertexAllocator (used by the prePrepare lane and by hermetic tests) backs the lock with CPU memory that can be
-// detached as thread-safe-cache vertex data.
+// cpuVertexAllocator (used only by hermetic tests) backs the lock with CPU memory that can be detached.
 
 package gl
 
@@ -22,8 +21,8 @@ type eagerVertexAllocator interface {
 	unlock(actualCount int)
 }
 
-// eagerDynamicVertexAllocator allocates via the draw target's flush-time vertex pool. The final buffer and start vertex
-// are published to its own fields at unlock time.
+// eagerDynamicVertexAllocator allocates via the draw target's flush-time vertex pool. After unlock, its buffer and
+// firstVertex fields locate the vertices (both are cleared when none were kept).
 type eagerDynamicVertexAllocator struct {
 	buffer      AnyBuffer
 	target      *OpFlushState
@@ -67,8 +66,7 @@ func (a *eagerDynamicVertexAllocator) unlock(actualCount int) {
 	a.lockCount = 0
 }
 
-// cpuVertexAllocator provides CPU-side vertex space whose final contents can be detached (as thread-safe-cache
-// VertexData in the prePrepare lane).
+// cpuVertexAllocator provides CPU-side vertex space whose final contents can be detached. Only hermetic tests use it.
 type cpuVertexAllocator struct {
 	vertexData []byte
 	lockStride uint64
@@ -94,8 +92,6 @@ func (a *cpuVertexAllocator) unlock(actualCount int) {
 	a.lockStride = 0
 }
 
-// detachVertexData returns the locked vertex data and clears the allocator's reference to it, for use by hermetic
-// tests.
 func (a *cpuVertexAllocator) detachVertexData() []byte {
 	if a.lockStride != 0 {
 		panic("detach while locked")

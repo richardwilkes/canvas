@@ -65,9 +65,6 @@ func (t ClipEdgeType) Invert() ClipEdgeType {
 	}
 }
 
-//////////////////////////////////////////////////////////////////////////////
-// DeviceSpace: samples its child at the fragment coordinate instead of local coords.
-
 type deviceSpaceFP struct {
 	FPBase
 }
@@ -107,16 +104,10 @@ func (i *deviceSpaceFPImpl) EmitCode(args *FPEmitArgs) {
 	args.FragBuilder.CodeAppendf("return %s;", i.InvokeChildWithCoords(0, args.InputColor, args, fragCoordName))
 }
 
-//////////////////////////////////////////////////////////////////////////////
-// ModulateRGBA.
-
 // ModulateRGBAFP returns a fragment processor whose output is inputFP's output modulated by a constant color.
 func ModulateRGBAFP(inputFP FragmentProcessor, color colorcore.PMColor4f) FragmentProcessor {
 	return BlendFP(MakeColorFP(color), inputFP, raster.BlendModulate)
 }
-
-//////////////////////////////////////////////////////////////////////////////
-// Rect ("Rect"): analytic device-space rect coverage.
 
 type rectClipFP struct {
 	FPBase
@@ -194,9 +185,6 @@ func (i *rectClipFPImpl) onSetData(pdman *ProgramDataManager, fp FragmentProcess
 	pdman.Set4f(i.rectUni, r.Left, r.Top, r.Right, r.Bottom)
 }
 
-//////////////////////////////////////////////////////////////////////////////
-// Circle ("Circle").
-
 type circleClipFP struct {
 	FPBase
 	edgeType ClipEdgeType
@@ -207,8 +195,7 @@ type circleClipFP struct {
 // CircleClipFP builds a fragment processor for analytic circle coverage. Reports failure when the combination is
 // unrepresentable.
 func CircleClipFP(inputFP FragmentProcessor, edgeType ClipEdgeType, center geom.Point, radius float32) (FragmentProcessor, bool) {
-	// A radius below half causes the implicit insetting done by this processor to become inverted. We could handle this
-	// case by making the processor code more complicated.
+	// A radius below half causes the implicit insetting done by this processor to become inverted.
 	if radius < 0.5 && edgeType.IsInverseFill() {
 		return inputFP, false
 	}
@@ -279,9 +266,6 @@ func (i *circleClipFPImpl) onSetData(pdman *ProgramDataManager, fp FragmentProce
 	}
 	pdman.Set4f(i.circleUni, f.center.X, f.center.Y, effectiveRadius, 1/effectiveRadius)
 }
-
-//////////////////////////////////////////////////////////////////////////////
-// Ellipse ("Ellipse").
 
 type ellipseClipFP struct {
 	FPBase
@@ -424,9 +408,6 @@ func (i *ellipseClipFPImpl) onSetData(pdman *ProgramDataManager, fp FragmentProc
 	}
 }
 
-//////////////////////////////////////////////////////////////////////////////
-// Oval effect.
-
 // OvalEffectFP builds a circle or ellipse clip fragment processor for oval, depending on whether it's round.
 func OvalEffectFP(inputFP FragmentProcessor, edgeType ClipEdgeType, oval geom.Rect, caps *gpu.ShaderCaps) (FragmentProcessor, bool) {
 	w := oval.Width()
@@ -441,9 +422,6 @@ func OvalEffectFP(inputFP FragmentProcessor, edgeType ClipEdgeType, oval geom.Re
 	return EllipseClipFP(inputFP, edgeType, geom.Point{X: oval.Left + w, Y: oval.Top + h},
 		geom.Point{X: w, Y: h}, caps)
 }
-
-//////////////////////////////////////////////////////////////////////////////
-// Convex polygon effect.
 
 // convexPolyMaxEdges is the maximum number of half-plane edges a convexPolyFP can represent.
 const convexPolyMaxEdges = 8
@@ -592,9 +570,6 @@ func (i *convexPolyFPImpl) onSetData(pdman *ProgramDataManager, fp FragmentProce
 	pdman.Set3fv(i.edgeUni, int32(f.edgeCount), f.edges[:3*f.edgeCount])
 }
 
-//////////////////////////////////////////////////////////////////////////////
-// RRect effect: circular + elliptical variants, plus the selection analysis.
-
 // rrectRadiusMin is the minimum radius the effects handle: rrect radii >= 0.5.
 const rrectRadiusMin = 0.5
 
@@ -673,7 +648,7 @@ func (i *circularRRectFPImpl) EmitCode(args *FPEmitArgs) {
 	// At each quarter-circle corner we compute a vector that is the offset of the fragment position from the circle
 	// center. The vector is pinned in x and y to be in the quarter-plane relevant to that corner. Fragments in the
 	// interior of the rrect have a (0,0) vector at all four corners, so as long as the radius > 0.5 they produce alpha
-	// 1. This is the kAll_CornerFlags form (the only one reachable with uniform radii).
+	// 1. This is Skia's kAll_CornerFlags form.
 	f.CodeAppendf("vec2 dxy0 = %s.xy - %s;", rectName, fragCoord)
 	f.CodeAppendf("vec2 dxy1 = %s - %s.zw;", fragCoord, rectName)
 	f.CodeAppend("vec2 dxy = max(max(dxy0, dxy1), 0.0);")
@@ -705,8 +680,7 @@ type ellipticalRRectFP struct {
 	edgeType ClipEdgeType
 }
 
-// newEllipticalRRectFP builds an elliptical-rrect clip fragment processor (simple type only; the nine-patch lane is
-// unrepresentable with uniform radii).
+// newEllipticalRRectFP builds an elliptical-rrect clip fragment processor (simple type only).
 func newEllipticalRRectFP(inputFP FragmentProcessor, edgeType ClipEdgeType, rrect geom.RRect) (FragmentProcessor, bool) {
 	if edgeType != ClipEdgeFillAA && edgeType != ClipEdgeInverseFillAA {
 		return inputFP, false

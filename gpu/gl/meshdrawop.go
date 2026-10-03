@@ -33,7 +33,7 @@ const (
 	// disable the scissor test.
 	ClipResultClippedGeometrically
 	// ClipResultClippedInShader: the clip was applied via shader coverage. The clip stack will still use a scissor test
-	// in order to reduce overdraw of transparent pixels.
+	// to reduce overdraw of transparent pixels.
 	ClipResultClippedInShader
 	// ClipResultClippedOut: the op can be thrown out entirely.
 	ClipResultClippedOut
@@ -213,8 +213,8 @@ func (h *SimpleMeshDrawOpHelper) FinalizeProcessorsWithColor(caps *gpu.Caps, cli
 	return result
 }
 
-// detachProcessorSet transfers ownership of the helper's processor set to the caller, leaving the helper with none (or
-// a fresh empty set if it had none to begin with).
+// detachProcessorSet transfers ownership of the helper's processor set to the caller, or returns a fresh empty set if
+// the helper had none.
 func (h *SimpleMeshDrawOpHelper) detachProcessorSet() *ProcessorSet {
 	if h.processors != nil {
 		p := h.processors

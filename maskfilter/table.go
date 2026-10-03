@@ -18,7 +18,6 @@ import (
 	"github.com/richardwilkes/canvas/raster"
 )
 
-// tableMaskFilter is the table mask filter implementation.
 type tableMaskFilter struct {
 	table [256]uint8
 }
@@ -35,7 +34,7 @@ func NewGamma(gamma float32) MaskFilter {
 	return &tableMaskFilter{table: table}
 }
 
-// NewClip creates a mask filter that remaps coverage to the [minV, maxV] range.
+// NewClip creates a mask filter that stretches the coverage range [minV, maxV] to [0, 255], clamping outside it.
 func NewClip(minV, maxV uint8) MaskFilter {
 	var table [256]uint8
 	MakeClipTable(&table, minV, maxV)

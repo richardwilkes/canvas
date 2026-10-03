@@ -8,9 +8,7 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // GLSLType enumerates the abstract shader value types used throughout the shader-building code, and ShaderVar
-// represents a single shader variable declaration. This package emits GLSL directly, so GLSLTypeString returns the
-// *GLSL* spelling of each type — half maps to float and half4 to vec4, matching a desktop GLSL compile with no
-// precision qualifiers.
+// represents a single shader variable declaration.
 
 package gl
 

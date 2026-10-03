@@ -7,10 +7,8 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// SurfaceFillContext is the render-target-owning context that manages the target's OpsTask across splits and implements
-// clears/discards. SurfaceDrawContext builds on it with a full paint/clip draw surface; the draw entry points live in
-// surfacedrawcontext.go. This file also carries the SurfaceDrawContext creation paths needed to wrap a caller-owned
-// backend render target.
+// SurfaceFillContext, the SurfaceDrawContext type built on it, and the SurfaceDrawContext creation paths. The draw
+// entry points live in surfacedrawcontext.go.
 
 package gl
 
@@ -68,7 +66,6 @@ func (sfc *SurfaceFillContext) WriteSurfaceView() SurfaceProxyView { return sfc.
 // NumSamples returns the render target's MSAA sample count.
 func (sfc *SurfaceFillContext) NumSamples() int { return sfc.AsRenderTargetProxy().NumSamples() }
 
-// arenas returns the render target's op/memory arenas.
 func (sfc *SurfaceFillContext) arenas() *Arenas {
 	return sfc.writeView.Proxy().AsRenderTargetProxy().Arenas()
 }
@@ -135,7 +132,7 @@ func (sfc *SurfaceFillContext) ResolveMSAA() {
 }
 
 // ClearRect clears the rect of the render target to the given color, which is in the surface's alpha type (premul for
-// all reachable surfaces — the alpha-type adjustment collapses).
+// all reachable surfaces).
 func (sfc *SurfaceFillContext) ClearRect(rect geom.IRect, color [4]float32) {
 	sfc.internalClear(&rect, color, false)
 }
@@ -176,7 +173,6 @@ func (sfc *SurfaceFillContext) FillRectToRectWithFP(srcRect geom.Rect, dstRect g
 	sfc.FillRectWithFPLocalMatrix(dstRect, lm, fp)
 }
 
-// addOp records op on this context's ops task.
 func (sfc *SurfaceFillContext) addOp(op Op) {
 	drawingMgr := sfc.drawingManager()
 	sfc.GetOpsTask().AddOp(drawingMgr, op, sfc.Caps())
@@ -271,7 +267,6 @@ func (sfc *SurfaceFillContext) addDrawOp(op DrawOp) {
 	if analysis.RequiresDstTexture() {
 		panic("fill contexts must not require dst textures")
 	}
-	// We shouldn't have coverage AA or hairline draws in fill contexts.
 	if op.opBase().HasAABloat() || op.opBase().HasZeroArea() {
 		panic("fill contexts must not have coverage-AA or hairline draws")
 	}
@@ -310,9 +305,8 @@ func (sdc *SurfaceDrawContext) alwaysAntialias() bool {
 	return sdc.surfaceProps.Flags&surface.DynamicMSAAFlag != 0
 }
 
-// MakeSurfaceDrawContext creates a new render-target-backed draw context with default surface props — the form used by
-// internal offscreen contexts. MakeSurfaceDrawContextWithProps is the full form. Returns nil if the context is
-// abandoned or the format/proxy can't be created.
+// MakeSurfaceDrawContext is MakeSurfaceDrawContextWithProps with default surface props, the form internal offscreen
+// contexts use.
 func MakeSurfaceDrawContext(ctx *DirectContext, colorType gpu.ColorType, dims geom.ISize, fit gpu.BackingFit, sampleCnt int, mipmapped gpu.Mipmapped, origin gpu.SurfaceOrigin, budgeted gpu.Budgeted, label string) *SurfaceDrawContext {
 	return MakeSurfaceDrawContextWithProps(ctx, colorType, dims, fit, sampleCnt, mipmapped, origin,
 		budgeted, label, nil)
@@ -365,7 +359,6 @@ func makeSDCFromProxy(ctx *DirectContext, proxy *SurfaceProxy, colorType gpu.Col
 	}
 	sdc.initSurfaceFillContext(ctx, MakeSurfaceProxyView(proxy, origin, readSwizzle),
 		MakeSurfaceProxyView(proxy, origin, writeSwizzle), colorType)
-	// canUseDynamicMSAA: the props flag AND caps support for dynamic MSAA on this render target.
 	sdc.canUseDynamicMSAA = sdc.surfaceProps.Flags&surface.DynamicMSAAFlag != 0 &&
 		ctx.GLCaps().SupportsDynamicMSAA(sdc.AsRenderTargetProxy())
 	sdc.canDiscardOverride = func() CanDiscardPreviousOps {

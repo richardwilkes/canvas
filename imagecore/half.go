@@ -11,11 +11,11 @@ package imagecore
 
 import "math"
 
-// HalfToFloat is the exported form of halfToFloat for the GPU texture lanes (gpu/gl's F16 gradient LUT bake).
+// HalfToFloat is the exported form of halfToFloat, used by the tests of gpu/gl's F16 gradient LUT bake.
 func HalfToFloat(h uint16) float32 { return halfToFloat(h) }
 
-// FloatToHalf is the exported form of floatToHalf for the GPU texture lanes: round-to-nearest-even, denormals honored,
-// overflow saturates to infinity.
+// FloatToHalf is the exported form of floatToHalf for the GPU texture lanes (gpu/gl's F16 gradient LUT bake):
+// round-to-nearest-even, denormals honored, overflow saturates to infinity.
 func FloatToHalf(f float32) uint16 { return floatToHalf(f) }
 
 // halfToFloat converts an IEEE binary16 value to float32, honoring denormals, infinities and NaN — the semantics of the
@@ -62,7 +62,7 @@ func floatToHalf(f float32) uint16 {
 		return sign | 0x7C00
 	}
 	if em < (113 << 23) { // subnormal (or zero) half
-		// Use the float-addition trick: adding denorm_magic shifts the mantissa into place with correct
+		// Use the float-addition trick: adding denormMagic shifts the mantissa into place with correct
 		// round-to-nearest-even.
 		v := math.Float32frombits(em) + math.Float32frombits(denormMagic)
 		return sign | uint16(math.Float32bits(v)-denormMagic)

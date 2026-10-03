@@ -18,7 +18,7 @@ import (
 // On arm64 the span dispatch switches to thin wrappers over the NEON kernels in span_arm64.s. They are bit-identical
 // to the portable defaults (see the .s file's equivalence notes and TestSpanNEONMatchesScalar), so this substitution
 // changes throughput only, never rendered bytes. Under goexperiment.simd, span_simd.go's init runs after this one
-// (file-name order) and would repoint the variables at the archsimd kernels — today it declines on arm64, where these
+// (file-name order) and could repoint the variables at the archsimd kernels, but it declines on arm64, where these
 // wrappers are the faster lane (see span_simd_arm64.go).
 func init() {
 	clampSpan01Fn = clampSpan01NEON

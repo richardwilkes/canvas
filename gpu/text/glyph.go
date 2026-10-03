@@ -7,10 +7,9 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// Glyph is the GPU-side glyph record pairing a packed glyph ID with its atlas locator. This package is home to the
-// text-rendering GPU layer (the SubRun system and its StrikeCache). FormatFromGlyph maps the mask formats the scaler
-// produces (A8 coverage — which also absorbs bilevel and 3D masks, SDF->A8 for distance-field text, ARGB32 color, and
-// LCD16->A565 for subpixel text) to the atlas mask format.
+// This package is home to the text-rendering GPU layer (the SubRun system and its StrikeCache). FormatFromGlyph maps
+// the mask formats the scaler produces (A8 coverage — which also absorbs bilevel and 3D masks, SDF->A8 for
+// distance-field text, ARGB32 color, and LCD16->A565 for subpixel text) to the atlas mask format.
 
 package text
 

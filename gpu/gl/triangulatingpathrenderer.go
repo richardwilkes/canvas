@@ -144,7 +144,6 @@ func (a *staticVertexAllocator) release() {
 	a.lockStride = 0
 }
 
-// detachVertexData returns the locked vertex data and clears the allocator's reference to it.
 func (a *staticVertexAllocator) detachVertexData() *VertexData {
 	if a.lockStride != 0 || a.vertices != nil || a.vertexBuffer != nil || a.vertexData == nil {
 		panic("detach without unlock")
@@ -153,9 +152,6 @@ func (a *staticVertexAllocator) detachVertexData() *VertexData {
 	a.vertexData = nil
 	return data
 }
-
-//////////////////////////////////////////////////////////////////////////////
-// TriangulatingPathOp
 
 var triangulatingPathOpClassID = GenOpClassID()
 
@@ -340,7 +336,6 @@ func (o *triangulatingPathOp) createNonAAMesh(target *OpFlushState) {
 		// Although the different triangulation found in the cache is better, continue with the current one since it is
 		// already on the gpu.
 	}
-	// There is no destruction hook to purge the entry when the source path dies, so it ages out of the LRU instead.
 	tmpV.Unref()
 
 	o.mesh = tessCreateMesh(o.vertexData.GpuBuffer(), 0, o.vertexData.NumVertices())
@@ -354,8 +349,7 @@ func (o *triangulatingPathOp) createAAMesh(target *OpFlushState) {
 	if o.shape.Style().Applies() {
 		panic("style must have been applied before triangulation")
 	}
-	// AsPath's result is always freshly owned (it clones the backing path), so no second Clone is needed before the
-	// in-place Transform.
+	// AsPath returns a freshly owned path (it clones the backing path), so the in-place Transform needs no Clone.
 	devPath := o.shape.AsPath()
 	devPath.Transform(&o.viewMatrix)
 	if devPath.IsEmpty() {
@@ -375,7 +369,6 @@ func (o *triangulatingPathOp) createAAMesh(target *OpFlushState) {
 	o.mesh.kind = simpleMeshNonIndexed
 }
 
-// tessCreateMesh builds a non-indexed simpleMesh over vb starting at firstVertex.
 func tessCreateMesh(vb AnyBuffer, firstVertex, count int) *simpleMesh {
 	mesh := &simpleMesh{}
 	mesh.vertexBuffer = vb
@@ -385,7 +378,6 @@ func tessCreateMesh(vb AnyBuffer, firstVertex, count int) *simpleMesh {
 	return mesh
 }
 
-// createProgramInfo builds the program info needed to execute this op's draw.
 func (o *triangulatingPathOp) createProgramInfo(state *OpFlushState) {
 	localCoordsType := LocalCoordsTypeUnused
 	if o.helper.UsesLocalCoords() {
@@ -446,11 +438,11 @@ func (o *triangulatingPathOp) releaseVertexData() {
 }
 
 // recycle implements Op. This op has no free list, but the ref createNonAAMesh takes on the ThreadSafeCache's vertex
-// data must be dropped even when the op is never executed — a prepared task can be abandoned before its execute loop
-// (a failed AttachStencilAttachment, or a target that lost its instantiation between the prepare and execute passes),
-// and without this the cache entry could never become uniquely held, so DropUniqueRefs could never purge it and the GPU
-// vertex buffer would stay pinned for the context's lifetime. deleteOps calls this unconditionally, matching upstream's
-// release from the op's destructor.
+// data must be dropped even when the op never executes (a prepared task can be abandoned by a failed
+// AttachStencilAttachment or a target that lost its instantiation between the prepare and execute passes). Otherwise
+// the cache entry never becomes uniquely held, DropUniqueRefs never purges it, and the GPU vertex buffer stays pinned
+// for the context's lifetime. deleteOps calls this unconditionally, matching upstream's release from the op's
+// destructor.
 func (o *triangulatingPathOp) recycle() { o.releaseVertexData() }
 
 // OnExecute implements Op. It explicitly releases the op's vertex-data ref once the draw has been submitted.
@@ -469,9 +461,6 @@ func (o *triangulatingPathOp) OnExecute(state *OpFlushState, chainBounds geom.Re
 	renderPass.BindTextures(o.programInfo.GeomProc(), nil, o.programInfo.Pipeline())
 	o.mesh.draw(renderPass)
 }
-
-//////////////////////////////////////////////////////////////////////////////
-// TriangulatingPathRenderer
 
 // TriangulatingPathRenderer draws paths by triangulating them on the CPU.
 type TriangulatingPathRenderer struct {
@@ -510,7 +499,6 @@ func (r *TriangulatingPathRenderer) OnCanDrawPath(args *CanDrawPathArgs) CanDraw
 		return CanDrawPathNo
 	}
 	verbCount := args.Shape.VerbCount()
-	// Don't use this path renderer if we exceed the max verb count.
 	if verbCount > pathRendererMaxVerbs {
 		return CanDrawPathNo
 	}

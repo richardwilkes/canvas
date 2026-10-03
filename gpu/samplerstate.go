@@ -7,8 +7,8 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// SamplerState describes how a texture is sampled: wrap mode, filter, mipmap mode, and anisotropy. The key packing in
-// AsKey must stay stable since the GL sampler-object cache and program keys depend on it.
+// SamplerState describes how a texture is sampled: wrap mode, filter, mipmap mode, and anisotropy. AsKey is the key of
+// the GL sampler-object cache.
 
 package gpu
 
@@ -55,7 +55,7 @@ const (
 const MaxMaxAniso = 1024
 
 // SamplerState describes a complete texture sampling configuration. The zero value is a reasonable default
-// (clamp/clamp, nearest, no mipmap) except MaxAniso, which callers should set via the Make functions rather than a
+// (clamp/clamp, nearest, no mipmap) except MaxAniso, which callers should set via the constructors below rather than a
 // struct literal (the intended default is 1, not 0).
 type SamplerState struct {
 	WrapModeX  WrapMode

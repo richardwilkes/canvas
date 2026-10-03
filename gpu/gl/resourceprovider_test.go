@@ -42,7 +42,6 @@ func TestPrepareLevelsShortPixelsRejected(t *testing.T) {
 	required := actualRB*(int(baseSize.Height)-1) + minRB
 	texels := []gpu.MipLevel{{Pixels: make([]byte, required-1), RowBytes: actualRB}}
 
-	// Must not panic; must report the write as unsupported.
 	_, out, ok := rp.prepareLevels(format, colorType, baseSize, texels, 1)
 	if ok {
 		t.Fatalf("prepareLevels accepted a too-short Pixels buffer (len=%d, required=%d)", required-1, required)
@@ -53,8 +52,8 @@ func TestPrepareLevelsShortPixelsRejected(t *testing.T) {
 }
 
 // TestPrepareLevelsBaseOnlyMipmapped verifies that supplying only the base level (len(texels) == 1) while requesting a
-// mipmapped upload (mipLevelCount > 1) does not index-panic on the absent upper levels; the missing levels are simply
-// left empty for later generation.
+// mipmapped upload (mipLevelCount > 1) does not index-panic on the absent upper levels; the missing levels are left
+// empty for later generation.
 func TestPrepareLevelsBaseOnlyMipmapped(t *testing.T) {
 	rp := newTightenCapsResourceProvider(t)
 	const (
@@ -66,7 +65,6 @@ func TestPrepareLevelsBaseOnlyMipmapped(t *testing.T) {
 	// A single, base-level-only slice with a tight stride, but ask for a full mip chain (4x4 -> 3 levels).
 	texels := []gpu.MipLevel{{Pixels: make([]byte, minRB*int(baseSize.Height)), RowBytes: minRB}}
 
-	// Must not panic reading texels[1]/texels[2]; must succeed with only the base level populated.
 	_, out, ok := rp.prepareLevels(format, colorType, baseSize, texels, 3)
 	if !ok {
 		t.Fatal("prepareLevels rejected a valid base-only mipmapped request")
@@ -97,7 +95,7 @@ func TestPrepareLevelsTightCopy(t *testing.T) {
 	actualRB := minRB + 16                                   // padded stride of 32
 	required := actualRB*(int(baseSize.Height)-1) + minRB
 	src := make([]byte, required)
-	// Fill each row's live region with a recognizable per-row byte; leave the padding zeroed.
+	// Fill each row's live region with a distinct byte per position; leave the padding zeroed.
 	for y := 0; y < int(baseSize.Height); y++ {
 		for x := 0; x < minRB; x++ {
 			src[y*actualRB+x] = byte(y*minRB + x + 1)
@@ -221,8 +219,8 @@ func mipTexels(t *testing.T, side int32, colorType gpu.ColorType) []gpu.MipLevel
 
 // TestCreateTextureWithDataFullChainStaysClean: a caller-supplied mip chain must leave the texture's mipmaps clean.
 // Reporting them dirty makes the next sample regenerate the chain with glGenerateMipmap, silently discarding the levels
-// the caller uploaded. CreateTexture compensates for this locally; ResourceProvider.writePixels — the lane
-// CreateTextureWithData takes with MippedYes — does not, so the contract has to hold in WritePixels itself.
+// the caller uploaded. CreateTexture compensates for this locally; ResourceProvider.writePixels
+// (CreateTextureWithData's scratch-reuse lane) does not, so the contract has to hold in WritePixels itself.
 func TestCreateTextureWithDataFullChainStaysClean(t *testing.T) {
 	dc := newFakeDirectContext(t)
 	defer dc.Destroy()
@@ -233,8 +231,7 @@ func TestCreateTextureWithDataFullChainStaysClean(t *testing.T) {
 	)
 
 	// Seed a purgeable mipmapped scratch texture so the CreateTextureWithData calls below take the scratch-reuse lane
-	// (ResourceProvider.writePixels), not CreateTexture's own lane — CreateTexture compensates for the mip status
-	// locally, so only the scratch lane exercises the contract in WritePixels itself.
+	// (ResourceProvider.writePixels), not CreateTexture's own lane.
 	seedScratch := func() {
 		t.Helper()
 		seed := rp.CreateTexture(geom.ISize{Width: side, Height: side}, FormatRGBA8,

@@ -49,7 +49,6 @@ func TestMeasureLine(t *testing.T) {
 	nearly(t, tan.X, 0.6, 1e-6, "tan.X")
 	nearly(t, tan.Y, 0.8, 1e-6, "tan.Y")
 
-	// distance pinning
 	pos, _, _ = m.GetPosTan(-5, true, false)
 	if pos != (geom.Point{}) {
 		t.Errorf("distance < 0 should pin to start, got %v", pos)
@@ -58,7 +57,6 @@ func TestMeasureLine(t *testing.T) {
 	nearly(t, pos.X, 30, 1e-4, "pinned end X")
 	nearly(t, pos.Y, 40, 1e-4, "pinned end Y")
 
-	// NaN distance
 	if _, _, ok = m.GetPosTan(float32(math.NaN()), true, true); ok {
 		t.Error("NaN distance should fail")
 	}
@@ -150,11 +148,9 @@ func TestMeasureGetSegment(t *testing.T) {
 		t.Errorf("segment mismatch: got %d pts", dst.CountPoints())
 	}
 
-	// reversed / NaN inputs fail
 	if m.GetSegment(75, 25, &path.Path{}, true) {
 		t.Error("start > stop should fail")
 	}
-	// clamped inputs succeed
 	dst.Reset()
 	if !m.GetSegment(-10, 1000, dst, true) {
 		t.Fatal("clamped GetSegment failed")
@@ -225,7 +221,6 @@ func TestMeasureGetMatrix(t *testing.T) {
 	nearly(t, got.X, 0, 1e-5, "mapped X")
 	nearly(t, got.Y, 51, 1e-5, "mapped Y")
 
-	// position-only
 	if !m.GetMatrix(50, &mat, GetPositionMatrixFlag) {
 		t.Fatal("GetMatrix failed")
 	}
@@ -282,7 +277,6 @@ func TestIterResetToUnusablePath(t *testing.T) {
 		t.Errorf("non-finite path produced a contour of length %v", m.Length())
 	}
 
-	// ...and resetting back onto a usable path measures it again.
 	it.Reset(p, false, 1)
 	m := it.Next()
 	if m == nil {
@@ -321,7 +315,6 @@ func TestPathMeasureWrapper(t *testing.T) {
 		t.Error("exhausted measure should have length 0")
 	}
 
-	// non-finite path -> no contours
 	bad := &path.Path{}
 	bad.MoveTo(0, 0)
 	bad.LineTo(float32(math.Inf(1)), 0)

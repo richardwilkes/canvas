@@ -73,13 +73,10 @@ func findCodec(data []byte) *Codec {
 	return nil
 }
 
-// DrawableImage is the polymorphic image type the device draw boundary consumes: an image may be raster- or
-// texture-backed. The device interface (canvas.Device.DrawImageRect) accepts this so a GPU device can draw a
-// texture-backed image natively, while raster/PDF devices rasterize. It exposes the queries the draw pipeline needs
-// plus MakeNonTextureImage, which yields CPU pixels — the identity for a raster image, a GPU→CPU readback for a
-// texture-backed one — for the devices that consume pixels; a GPU device instead type-asserts the concrete texture
-// image to obtain its texture view. *Image satisfies it (MakeNonTextureImage returns the receiver); gpu/gl.TextureImage
-// satisfies it via a readback.
+// DrawableImage is the image type the device draw boundary (canvas.Device.DrawImageRect) consumes, raster- or
+// texture-backed, so a GPU device can draw a texture-backed image natively (it type-asserts the concrete texture image
+// to obtain its texture view) while raster/PDF devices consume CPU pixels through MakeNonTextureImage. *Image and
+// gpu/gl.TextureImage satisfy it.
 type DrawableImage interface {
 	Width() int32
 	Height() int32
@@ -182,10 +179,9 @@ func NewRasterData(info ImageInfo, data []byte, rowBytes int) *Image {
 // NewFromEncoded sniffs a registered codec, parses the header for the image info, and defers pixel decoding to first
 // use. Returns nil when no codec accepts the data (including when no codecs have been registered) or when the codec's
 // reported info fails the same validation NewRasterData applies. A codec reports whatever the encoded header declares,
-// and several formats let a tiny file declare enormous dimensions (a 65-byte PNG can pass png.DecodeConfig with a
-// 1<<30 wide IHDR; the ICO codec's PNG entries inherit that), so without the check here an Image would carry
-// out-of-range dimensions that maxDimension exists to exclude and that every later use — PeekPixels, ReadPixels,
-// codecs.EncodePNG — would size an allocation from before anything could reject them.
+// and several formats let a tiny file declare enormous dimensions (a 65-byte PNG can pass png.DecodeConfig with a 1<<30
+// wide IHDR; the ICO codec's PNG entries inherit that), so without the check here every later use — PeekPixels,
+// ReadPixels, codecs.EncodePNG — would size an allocation from them before anything could reject them.
 func NewFromEncoded(data []byte) *Image {
 	if len(data) == 0 {
 		return nil
@@ -253,8 +249,8 @@ func (im *Image) PeekPixels(hint CachingHint) *Pixels {
 	return p
 }
 
-// Pixmap returns a read-only N32 view of the image's pixels for the sprite/snapshot consumers that predate the
-// color-type matrix; ok=false for non-N32 or failed-decode images.
+// Pixmap returns a read-only N32 view of the image's pixels for the sprite/snapshot consumers, or nil for non-N32 or
+// failed-decode images.
 func (im *Image) Pixmap() *raster.Pixmap {
 	p := im.PeekPixels(CachingAllow)
 	if p == nil {

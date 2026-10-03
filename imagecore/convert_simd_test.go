@@ -28,7 +28,6 @@ func convertSIMDRowLen(rng *rand.Rand) int {
 	return 1 + rng.IntN(67)
 }
 
-// convertSIMDWords returns n random source words.
 func convertSIMDWords(rng *rand.Rand, n int) []uint32 {
 	w := make([]uint32, n)
 	for i := range w {

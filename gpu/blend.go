@@ -7,9 +7,8 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// The GPU blend equations and coefficients used to configure a hardware blend state, plus the helpers that classify and
-// validate them. The advanced-blend disable flags in Caps are bit-indexed by these values, so the ordering below must
-// stay fixed.
+// The GPU blend equations and coefficients used to configure a hardware blend state. The advanced-blend disable flags
+// in Caps are bit-indexed by the equation values, so the ordering below must stay fixed.
 
 package gpu
 

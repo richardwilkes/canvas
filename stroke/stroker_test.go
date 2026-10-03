@@ -164,7 +164,7 @@ func TestStrokeAndFillConvex(t *testing.T) {
 	if !dst.Contains(50, 50) {
 		t.Fatal("stroke-and-fill must cover the interior")
 	}
-	if !dst.Contains(24.9+1, 30) { // outer edge band (26, 30)
+	if !dst.Contains(24.9+1, 30) { // in the outer stroke band
 		t.Fatal("stroke-and-fill must cover the outer band")
 	}
 }

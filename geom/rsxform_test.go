@@ -53,7 +53,6 @@ func nearlyEqualPoint(a, b Point) bool {
 	return ScalarAbs(a.X-b.X) <= tol && ScalarAbs(a.Y-b.Y) <= tol
 }
 
-// TestRSXformRectStaysRect pins the axis-alignment predicate.
 func TestRSXformRectStaysRect(t *testing.T) {
 	if !MakeRSXform(2, 0, 1, 1).RectStaysRect() {
 		t.Error("scale-only xform should stay rect")

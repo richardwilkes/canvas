@@ -7,10 +7,8 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// Engine helpers for the incremental path-op builder: oneContour, reversePath, and fixWinding. Builder.Add and
-// Builder.Resolve (the accumulate/resolve facade) live in pathops.go; this file holds the fixWinding machinery the
-// all-union optimization branch of Resolve needs to convert a simplified (even-odd) operand back to winding form before
-// accumulation.
+// The fixWinding machinery Builder.Resolve (pathops.go) needs in its all-union branch to convert a simplified
+// (even-odd) operand back to winding form before accumulation.
 
 package pathops
 

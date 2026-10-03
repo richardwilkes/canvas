@@ -59,13 +59,11 @@ func dictContaining(data []byte, needles ...string) string {
 // tables live inside a wrapper rather than in an sfnt, a not-embeddable face may not be shipped at all, a CFF program
 // is not a CIDFontType2 one, and a mask-filtered run has no font-program representation at all.
 //
-// The font package builds the faces that carry the first three flags and asserts the flags themselves; this is the
-// only place their consequence is decided, so the mapping is pinned here rather than restated there — a copy of it
-// living beside the flag assertions would stay green while this function stopped reading one of them.
+// The font package asserts the first three flags themselves; their consequence is decided only here, so the mapping is
+// pinned here, where a copy beside the flag assertions could not notice this function ignoring one of them.
 func TestPDFFontTypeForcesThePathFallback(t *testing.T) {
-	// Only the flags this function reads may change the answer. FontFlagNotSubsettable is the one other flag the field
-	// carries — the whole program is embedded, so it costs the face nothing here — and it rides along on the cases
-	// expected to embed.
+	// Only the flags this function reads may change the answer. FontFlagNotSubsettable, the field's one other flag,
+	// costs nothing here since the whole program is embedded, so it rides along on the cases expected to embed.
 	const ignored = font.FontFlagNotSubsettable
 	for _, c := range []struct {
 		name          string

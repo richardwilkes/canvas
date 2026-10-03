@@ -64,7 +64,7 @@ var directToStencil = MakeUserStencilSettings(0x0000, UserStencilTestAlwaysIfInC
 	UserStencilOpZero, UserStencilOpIncMaybeClamp, 0xffff)
 
 //////////////////////////////////////////////////////////////////////////////
-// Helpers for drawPath
+// Helpers for DefaultPathRenderer
 
 // singlePassShape reports whether shape can be drawn in a single pass: inverse fills are always two-pass; this renderer
 // only accepts simple fill paths or strokes that are hairline-equivalent, and hairlines are always single pass while
@@ -106,7 +106,6 @@ func glFastLen(pt geom.Point) float32 {
 // glDrawTreatAAStrokeAsHairline reports whether an AA stroke of the given width is thin enough, under matrix, to be
 // drawn as a modulated hairline instead.
 func glDrawTreatAAStrokeAsHairline(strokeWidth float32, matrix *geom.Matrix) (float32, bool) {
-	// We need to try to fake a thick-stroke with a modulated hairline.
 	if matrix.HasPerspective() {
 		return 0, false
 	}
@@ -120,9 +119,6 @@ func glDrawTreatAAStrokeAsHairline(strokeWidth float32, matrix *geom.Matrix) (fl
 	}
 	return 0, false
 }
-
-//////////////////////////////////////////////////////////////////////////////
-// PathGeoBuilder
 
 // pathGeoBuilder accumulates flattened path geometry into pooled vertex/index chunks, emitting a mesh per chunk.
 type pathGeoBuilder struct {
@@ -155,7 +151,6 @@ func newPathGeoBuilder(primitiveType gpu.PrimitiveType, target *OpFlushState, me
 	return b
 }
 
-// Derived properties.
 func (b *pathGeoBuilder) isIndexed() bool {
 	return b.primitiveType == gpu.PrimitiveTypeLines || b.primitiveType == gpu.PrimitiveTypeTriangles
 }
@@ -301,7 +296,6 @@ func (b *pathGeoBuilder) ensureSpace(vertsNeeded, indicesNeeded int, lastPoint *
 	return true
 }
 
-// moveTo begins a new subpath at p.
 func (b *pathGeoBuilder) moveTo(p geom.Point) {
 	if !b.ensureSpace(1, 0, nil) {
 		return
@@ -325,7 +319,6 @@ func (b *pathGeoBuilder) addLine(pts *[4]geom.Point) {
 	b.putPoint(pts[1])
 }
 
-// addQuad flattens and appends a quadratic curve.
 func (b *pathGeoBuilder) addQuad(p0, p1, p2 geom.Point, srcSpaceTolSqd, srcSpaceTol float32) {
 	if !b.ensureSpace(pathUtilsMaxPointsPerCurve, pathUtilsMaxPointsPerCurve*b.indexScale(),
 		&p0) {
@@ -346,7 +339,6 @@ func (b *pathGeoBuilder) addQuad(p0, p1, p2 geom.Point, srcSpaceTolSqd, srcSpace
 	}
 }
 
-// addConic flattens and appends a conic (via quad subdivision).
 func (b *pathGeoBuilder) addConic(weight float32, pts *[4]geom.Point, srcSpaceTolSqd, srcSpaceTol float32) {
 	conic := geom.MakeConic(pts[0], pts[1], pts[2], weight)
 	pow2 := conic.ComputeQuadPOW2(srcSpaceTol)
@@ -358,7 +350,6 @@ func (b *pathGeoBuilder) addConic(weight float32, pts *[4]geom.Point, srcSpaceTo
 	}
 }
 
-// addCubic flattens and appends a cubic curve.
 func (b *pathGeoBuilder) addCubic(p0, p1, p2, p3 geom.Point, srcSpaceTolSqd, srcSpaceTol float32) {
 	if !b.ensureSpace(pathUtilsMaxPointsPerCurve, pathUtilsMaxPointsPerCurve*b.indexScale(),
 		&p0) {
@@ -379,7 +370,6 @@ func (b *pathGeoBuilder) addCubic(p0, p1, p2, p3 geom.Point, srcSpaceTolSqd, src
 	}
 }
 
-// addPath flattens and appends every verb in p.
 func (b *pathGeoBuilder) addPath(p *path.Path, srcSpaceTol float32) {
 	srcSpaceTolSqd := srcSpaceTol * srcSpaceTol
 	it := path.NewIter(p, false)
@@ -404,7 +394,6 @@ func (b *pathGeoBuilder) addPath(p *path.Path, srcSpaceTol float32) {
 	}
 }
 
-// pathHasMultipleSubpaths reports whether p contains more than one moveTo-started contour.
 func pathHasMultipleSubpaths(p *path.Path) bool {
 	first := true
 	it := path.NewIter(p, false)
@@ -419,9 +408,6 @@ func pathHasMultipleSubpaths(p *path.Path) bool {
 		first = false
 	}
 }
-
-//////////////////////////////////////////////////////////////////////////////
-// DefaultPathOp
 
 var defaultPathOpClassID = GenOpClassID()
 
@@ -493,7 +479,6 @@ func (o *defaultPathOp) Finalize(caps *gpu.Caps, clip *AppliedClip, clampType gp
 	return o.helper.FinalizeProcessorsWithColor(caps, clip, clampType, gpCoverage, &o.color, nil)
 }
 
-// primType returns the GPU primitive type this op draws.
 func (o *defaultPathOp) primType() gpu.PrimitiveType {
 	if o.isHairline {
 		// We avoid indices when we have a single hairline contour.
@@ -505,7 +490,6 @@ func (o *defaultPathOp) primType() gpu.PrimitiveType {
 	return gpu.PrimitiveTypeTriangles
 }
 
-// createProgramInfo builds the program info for this op's draw.
 func (o *defaultPathOp) createProgramInfo(state *OpFlushState) {
 	localCoordsType := LocalCoordsTypeUnused
 	if o.helper.UsesLocalCoords() {
@@ -577,9 +561,6 @@ func (o *defaultPathOp) OnCombineIfPossible(t Op) CombineResult {
 	return CombineResultMerged
 }
 
-//////////////////////////////////////////////////////////////////////////////
-// DefaultPathRenderer
-
 // DefaultPathRenderer is the always-available fallback path renderer using CPU flattening plus the stencil buffer.
 type DefaultPathRenderer struct{}
 
@@ -612,11 +593,9 @@ func (r *DefaultPathRenderer) OnCanDrawPath(args *CanDrawPathArgs) CanDrawPath {
 	if !args.Shape.Style().IsSimpleFill() && !isHairline {
 		return CanDrawPathNo
 	}
-	// Don't try to draw hairlines with DefaultPathRenderer if avoidLineDraws is true.
 	if args.Caps.AvoidLineDraws && isHairline {
 		return CanDrawPathNo
 	}
-	// Don't use this path renderer if we exceed the max verb count.
 	if args.Shape.VerbCount() > pathRendererMaxVerbs {
 		return CanDrawPathNo
 	}

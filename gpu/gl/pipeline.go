@@ -7,10 +7,8 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// Pipeline is the immutable object holding everything needed to build a shader program and set API state for a draw —
-// the fragment-processor list (color, paint coverage, clip coverage), the transfer processor, the dst proxy view for
-// dst reads, flags, and the write swizzle. Window rectangles are not yet supported (pending a dedicated clip-stack
-// type); the dst-input-attachment lane is Vulkan-only and reduces to false on GL.
+// Pipeline is the immutable object holding everything needed to build a shader program and set API state for a draw.
+// Window rectangles are not supported; the dst-input-attachment lane is Vulkan-only and reduces to false on GL.
 
 package gl
 
@@ -109,7 +107,6 @@ func NewPipeline(args *PipelineInitArgs, processors *ProcessorSet, appliedClip *
 	}
 	p := NewPipelineHardClip(args, processors.XferProcessor(), appliedClip)
 
-	// Copy the FPs from the processor set to the pipeline.
 	if processors.HasColorFragmentProcessor() {
 		p.numColorProcessors = 1
 		p.fragmentProcessors = append(p.fragmentProcessors,
@@ -170,7 +167,7 @@ func (p *Pipeline) UsesDstTexture() bool {
 }
 
 // UsesDstInputAttachment reports whether the pipeline reads the destination through an input attachment. The
-// input-attachment lane is Vulkan-only and was dropped from gpu.DstSampleFlags, so this is constant false on GL.
+// input-attachment lane is Vulkan-only and absent from gpu.DstSampleFlags, so this is constant false on GL.
 func (p *Pipeline) UsesDstInputAttachment() bool { return false }
 
 // DstProxyView returns the destination proxy view. If the transfer processor does not read the dst then the view's

@@ -28,9 +28,9 @@ func NewKeyBuilder(data *[]uint32) *KeyBuilder {
 }
 
 // Reset reinitializes the builder to append to *data, clearing any in-progress bit state, so a single builder can be
-// reused across keys. A hot-path caller keeps one builder (its methods pass it to interface calls, which the compiler
-// treats as escaping, so a fresh per-key builder would heap- allocate) and resets it per key to avoid that per-call
-// allocation. The describe/comment hooks are left untouched.
+// reused across keys. A hot-path caller keeps one builder and resets it per key: the builder is passed to interface
+// calls, which the compiler treats as escaping, so a fresh per-key builder would heap-allocate. The describe/comment
+// hooks are left untouched.
 func (b *KeyBuilder) Reset(data *[]uint32) {
 	b.data = data
 	b.curValue = 0

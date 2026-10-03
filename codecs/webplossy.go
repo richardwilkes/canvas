@@ -7,15 +7,14 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// Lossy WebP assembly: the VP8 keyframe comes from the pure-Go VP8 encoder (codecs/internal/vp8enc); a non-opaque image
-// adds the ALPH chunk in a VP8X extended container using the common alpha configuration (alpha_compression 1: the plane
-// coded losslessly as a headerless VP8L stream; alpha_quality 100, so no level pre-processing), falling back to an
-// uncompressed (method 0) plane when compression does not shrink it. The VP8L stream is produced by the nativewebp
-// encoder the lossless lane already uses, on a synthetic w×h gray image carrying the alpha values in the green channel
-// (the channel the ALPH decoder reads); since nativewebp only writes complete WebP files, the headerless stream is
-// extracted from the file's VP8L chunk by stripping the fixed 5-byte VP8L header (signature byte + packed 14-bit
-// dimensions/alpha-hint/version) — the exact bytes the ALPH spec omits and decoders re-synthesize from the frame
-// dimensions. The ALPH prediction filter is always "none", which only affects compressed size, never the decoded plane.
+// Lossy WebP assembly. The VP8 keyframe comes from the pure-Go VP8 encoder (codecs/internal/vp8enc). A non-opaque image
+// adds an ALPH chunk in a VP8X extended container, with the plane coded losslessly as a headerless VP8L stream
+// (alpha_compression 1, no level pre-processing), falling back to an uncompressed (method 0) plane when compression
+// does not shrink it. The VP8L stream comes from the nativewebp encoder the lossless lane uses. Since nativewebp only
+// writes complete WebP files, the stream is extracted from the file's VP8L chunk by stripping the fixed 5-byte VP8L
+// header (signature byte + packed 14-bit dimensions/alpha-hint/version), the exact bytes the ALPH spec omits and
+// decoders re-synthesize from the frame dimensions. The ALPH prediction filter is always "none", which only affects
+// compressed size, never the decoded plane.
 
 package codecs
 
@@ -142,7 +141,6 @@ func assembleExtendedWebP(frame, alphaPayload []byte, w, h int) []byte {
 	return out
 }
 
-// appendUint24 appends v as a little-endian 24-bit value.
 func appendUint24(out []byte, v uint32) []byte {
 	return append(out, byte(v), byte(v>>8), byte(v>>16))
 }

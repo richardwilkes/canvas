@@ -7,11 +7,8 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// The double-precision rational-quadratic (conic) primitive. Present are the members reachable from the conic/line
-// intersection layer (set/debugSet, ptAtT, the weight, and the conic polynomial eval helpers) and the curve-vs-curve
-// members the conic solver consumes (hullIntersects in all three forms, dxdyAtT, conicFindExtrema, subDivide,
-// subDivideAC, collapsed, controlsInside, otherPts, the monotonic checks — most delegating to the underlying dQuad
-// pts). The conic bounds live in drect.go (setBoundsConic).
+// The double-precision rational-quadratic (conic) primitive: the members the conic/line and curve/curve intersection
+// solvers use, many delegating to the underlying dQuad. The conic bounds live in drect.go (setBoundsConic).
 
 package pathops
 
@@ -51,8 +48,8 @@ func conicEvalNumerator(c0, c1, c2 float64, w float32, t float64) float64 {
 	return (a*t+b)*t + c
 }
 
-// conicEvalDenominator evaluates the denominator of the rational-quadratic parameterization at t. Note that 2 * (w - 1)
-// is computed entirely in float32 before widening to double — the order of operations matters for bit-exact results.
+// conicEvalDenominator evaluates the denominator of the rational-quadratic parameterization at t. 2 * (w - 1) is
+// computed entirely in float32 before widening to double; the order of operations matters for bit-exact results.
 func conicEvalDenominator(w float32, t float64) float64 {
 	b := float64(2 * (w - 1))
 	c := 1.0
@@ -76,21 +73,17 @@ func (c dConic) ptAtT(t float64) dPoint {
 	}
 }
 
-// collapsed reports whether the conic's control points have degenerated to a single point (delegates to the underlying
-// quad).
+// collapsed reports whether the conic's control points have degenerated to a single point.
 func (c dConic) collapsed() bool { return c.pts.collapsed() }
 
-// controlsInside reports whether the conic's control point lies inside the hull formed by its endpoints (delegates to
-// the underlying quad).
+// controlsInside reports whether the conic's control point lies inside the hull formed by its endpoints.
 func (c dConic) controlsInside() bool { return c.pts.controlsInside() }
 
-// otherPts returns the two control points other than the one at index oddMan (delegates to the underlying quad).
+// otherPts returns the two control points other than the one at index oddMan.
 func (c dConic) otherPts(oddMan int) [2]dPoint { return c.pts.otherPts(oddMan) }
 
-// monotonicInX reports whether the conic's x-coordinate is monotonic along t (delegates to the underlying quad).
 func (c dConic) monotonicInX() bool { return c.pts.monotonicInX() }
 
-// monotonicInY reports whether the conic's y-coordinate is monotonic along t (delegates to the underlying quad).
 func (c dConic) monotonicInY() bool { return c.pts.monotonicInY() }
 
 // hullIntersectsQuad reports whether the convex hull of the conic's control points (its underlying quad) intersects the
@@ -104,8 +97,7 @@ func (c dConic) hullIntersectsConic(conic dConic) (sects, isLinear bool) {
 	return c.pts.hullIntersects(conic.pts)
 }
 
-// hullIntersectsCubic reports whether the conic's hull intersects the cubic's hull, dispatching to the cubic's own
-// hull-intersection test.
+// hullIntersectsCubic reports whether the conic's hull intersects the cubic's hull.
 func (c dConic) hullIntersectsCubic(cubic dCubic) (sects, isLinear bool) {
 	return cubic.hullIntersectsConic(c)
 }
@@ -201,9 +193,8 @@ func (c dConic) subDivide(t1, t2 float64) dConic {
 	return dst
 }
 
-// subDivideAC returns the middle control point and new weight of the sub-conic over [t1, t2]. The caller already has
-// the endpoints (a and c) exactly, so they are neither recomputed nor returned; only the interior control point and the
-// weight are.
+// subDivideAC returns the middle control point and new weight of the sub-conic over [t1, t2], for callers that already
+// have its endpoints (a and c).
 func (c dConic) subDivideAC(t1, t2 float64) (mid dPoint, weight float32) {
 	chopped := c.subDivide(t1, t2)
 	return chopped.pts.pts[1], chopped.weight

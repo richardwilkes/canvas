@@ -37,10 +37,10 @@ func filterTestChildAt(x, y float32) colorcore.PMColor4f {
 }
 
 // TestLinearMorphologyRadiusZeroIsSingleTap pins NewLinearMorphology's documented (2*radius+1) taps at radius 0: the
-// one center tap, evaluated at the unshifted coordinate. The form used to be inferred from the radius (0 meaning the
-// sparse form), so a zero radius silently became the sparse kernel's two ±offset taps — a dilate/erode by a full offset
-// where the caller asked for none. The sparse output is shaded alongside to show the two forms really do differ here,
-// i.e. that this test would have failed under the old sentinel.
+// one center tap, evaluated at the unshifted coordinate. Inferring the form from the radius (0 meaning sparse) once
+// turned a zero radius into the sparse kernel's two ±offset taps — a dilate/erode by a full offset where the caller
+// asked for none. The sparse output is shaded alongside to show the two forms really differ here, so this test would
+// catch that sentinel.
 func TestLinearMorphologyRadiusZeroIsSingleTap(t *testing.T) {
 	const row = 3
 	const n = 8
@@ -66,10 +66,10 @@ func TestLinearMorphologyRadiusZeroIsSingleTap(t *testing.T) {
 	}
 }
 
-// TestFilterDecalContextReuseIsClean locks the pooled-Pipeline invariant for the decal ramp kernel, which moved off a
-// per-compile new([2][stride]float32) plus two capturing closures: compiled into a pipeline whose retained
-// filterDecalCtx carries a prior draw's stale coordinates and ramp bounds, it must produce byte-identical output to a
-// fresh compile (the coordinates are write-before-read scratch and the bounds are overwritten on handout).
+// TestFilterDecalContextReuseIsClean locks the pooled-Pipeline invariant for the decal ramp kernel: compiled into a
+// pipeline whose retained filterDecalCtx carries a prior draw's stale coordinates and ramp bounds, it must produce
+// byte-identical output to a fresh compile (the coordinates are write-before-read scratch and the bounds are
+// overwritten on handout).
 func TestFilterDecalContextReuseIsClean(t *testing.T) {
 	id := geom.IdentityMatrix()
 	sh := NewFilterDecal(filterTestChild{}, geom.Rect{Left: 2, Top: 1, Right: 9, Bottom: 6})

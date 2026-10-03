@@ -45,11 +45,11 @@ const (
 	ColorTypeR8Unorm
 )
 
-// ColorTypeN32 is the platform-native 32-bit color type: RGBA_8888 on every target. Note this is RGBA on every
-// platform, unlike Skia, whose N32 is BGRA_8888 where the platform prefers it.
+// ColorTypeN32 is the native 32-bit color type: RGBA_8888 on every target, unlike Skia, whose N32 is BGRA_8888 where
+// the platform prefers it.
 const ColorTypeN32 = ColorTypeRGBA8888
 
-// BytesPerPixel returns the storage size of one pixel of ct (0 for unknown/unsupported types).
+// BytesPerPixel returns the storage size of one pixel of ct (0 for ColorTypeUnknown).
 func (ct ColorType) BytesPerPixel() int {
 	switch ct {
 	case ColorTypeAlpha8, ColorTypeGray8, ColorTypeR8Unorm:
@@ -83,12 +83,10 @@ func (ct ColorType) Supported() bool {
 	}
 }
 
-// isAlphaOnly reports whether ct carries only an alpha channel, for the supported set.
 func (ct ColorType) isAlphaOnly() bool {
 	return ct == ColorTypeAlpha8 || ct == ColorTypeA16Unorm || ct == ColorTypeA16Float
 }
 
-// isAlwaysOpaque reports whether ct has no alpha channel, for the supported set.
 func (ct ColorType) isAlwaysOpaque() bool {
 	switch ct {
 	case ColorTypeRGB565, ColorTypeRGB888x, ColorTypeGray8, ColorTypeRGB101010x,
@@ -171,8 +169,8 @@ func (info *ImageInfo) IsOpaque() bool { return info.AlphaType == AlphaTypeOpaqu
 // IsEmpty reports whether either dimension is non-positive.
 func (info *ImageInfo) IsEmpty() bool { return info.Width <= 0 || info.Height <= 0 }
 
-// maxDimension is the largest width or height a valid ImageInfo may report (2^31 >> 2, leaving headroom so byte offsets
-// and row-stride math stay within a signed 32-bit range).
+// maxDimension is the largest width or height a valid ImageInfo may report (MaxInt32 >> 2, leaving headroom so byte
+// offsets and row-stride math stay within a signed 32-bit range).
 const maxDimension = int32(0x7FFFFFFF >> 2)
 
 // IsValid reports whether the info has positive, in-range dimensions and known color/alpha types.

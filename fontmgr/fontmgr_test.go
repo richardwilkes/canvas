@@ -23,12 +23,9 @@
 // U+FFFF to glyph 0 (.notdef): go-text's scanner counts it into the footprint rune set, but it maps no real glyph — the
 // character-fallback verification cases below rely on that.
 //
-// The system manager (Default) scans every system font directory and serializes an index cache into the user's cache
-// dir, so no test performs that scan by default: every test that does is gated on CANVAS_FONTMGR_SYSTEM through
-// requireSystemFonts, in this file and in capimigrated_test.go alike. Default and DefaultWithError themselves are
-// exercised hermetically against a stubbed scan (stubSystemDefault), which is what keeps their memoization under test
-// on every leg. The live oracle probe that once compared the system manager against the C library's platform host was
-// removed along with that library.
+// No test scans the system fonts by default: those that do are gated on CANVAS_FONTMGR_SYSTEM through
+// requireSystemFonts, in this file and in capimigrated_test.go, and Default and DefaultWithError are otherwise
+// exercised against a stubbed scan (stubSystemDefault).
 
 package fontmgr
 
@@ -106,13 +103,12 @@ func newTestDataFaceRec(t *testing.T, data []byte, index int, langs ...string) *
 	}
 }
 
-// corpusSansFamily is the family the corpus's sans face carries. The face really is DejaVu Sans, which is the *first*
-// entry of defaultFamilies() on every non-darwin, non-windows GOOS: under its own name it lands in the default-family
-// tier on the Linux legs, so the platform, not the test, decides which branch of lookupOrDefault and
-// matchCoveringTiered answers — leaving the first-visible-family fallback and the family-sorted tie-break unexercised
-// there. Renaming it to a name no platform defaults to puts the same branch under test on every GOOS. The replacement
-// is the same length as the original (the rename overwrites the name strings in place) and still normalizes below
-// "roboto", so the corpus's family order is unchanged.
+// corpusSansFamily is the family the corpus's sans face carries. The face is really DejaVu Sans, the first entry of
+// defaultFamilies() on every non-darwin, non-windows GOOS; under its own name it would land in the default-family tier
+// there, leaving the first-visible-family fallback and the family-sorted tie-break unexercised on those legs. Renaming
+// it to a name no platform defaults to puts the same branches under test on every GOOS. The replacement is the same
+// length as the original (the rename overwrites the name strings in place) and still normalizes below "roboto", so the
+// corpus's family order is unchanged.
 const corpusSansFamily = "Corpus Sans"
 
 // newSansFaceRec builds the corpus's sans face: DejaVuSans.subset.ttf renamed to corpusSansFamily. The rename lives in
@@ -147,9 +143,8 @@ func sfntTable(t *testing.T, data []byte, tag string) []byte {
 }
 
 // sfntWithoutTable returns a copy of a single-font sfnt with tag's table directory record removed: the records after it
-// shift down by one 16-byte entry and numTables drops by one. Every table's data is left exactly where it was — only
-// the directory changes — so no offset has to be rewritten and the dropped table's bytes simply become unreferenced,
-// which is what makes this a pure "this face no longer has this table" edit.
+// shift down by one 16-byte entry and numTables drops by one. Table data stays where it was, so no offset has to be
+// rewritten and the dropped table's bytes simply become unreferenced.
 func sfntWithoutTable(t *testing.T, data []byte, tag string) []byte {
 	t.Helper()
 	out := bytes.Clone(data)
@@ -167,11 +162,11 @@ func sfntWithoutTable(t *testing.T, data []byte, tag string) []byte {
 	return nil
 }
 
-// renameSfntFamily returns a copy of a single-font sfnt whose family-name records — the name-table IDs the family
-// precedence in font.DescribeFace reads, 21, 16 and 1 — currently reading from are rewritten to to. Both names must be
-// ASCII and the same length, so every name string keeps its byte length in the UTF-16BE and single-byte encodings
-// alike and no offset in the table moves; records sharing a rewritten string (the full name and unique ID commonly
-// alias the family name) are rewritten with it.
+// renameSfntFamily returns a copy of a single-font sfnt in which each family-name record (name IDs 21, 16 and 1, which
+// font.DescribeFaceData's family precedence reads) that currently reads from is rewritten to to. Both names must be
+// ASCII and the same length, so every name string keeps its byte length in the UTF-16BE and single-byte encodings alike
+// and no offset in the table moves; records sharing a rewritten string (the full name and unique ID commonly alias the
+// family name) are rewritten with it.
 func renameSfntFamily(t *testing.T, data []byte, from, to string) []byte {
 	t.Helper()
 	if len(from) != len(to) {
@@ -301,10 +296,9 @@ func newTestManager(t *testing.T) *Manager {
 }
 
 func TestCorpusHoldsNoPlatformDefaultFamily(t *testing.T) {
-	// The branch split the whole corpus rests on: no corpus family may be one of this platform's default families, or
-	// the default-family branches of lookupOrDefault and matchCoveringTiered answer the empty-family and
-	// character-fallback cases instead of the first-visible-family fallback and the family-sorted tie-break those cases
-	// are written for — silently, and only on the platforms whose defaults collide (see corpusSansFamily).
+	// No corpus family may be one of this platform's default families, or the default-family branches of
+	// lookupOrDefault and matchCoveringTiered would answer the empty-family and character-fallback cases instead of the
+	// first-visible-family fallback and the family-sorted tie-break those cases are written for (see corpusSansFamily).
 	m := newTestManager(t)
 	for _, name := range defaultFamilies() {
 		if fam := m.byKey[tsfont.NormalizeFamily(name)]; fam != nil {
@@ -511,12 +505,10 @@ func TestNewFromData(t *testing.T) {
 	}
 }
 
-// TestNewFromDataCoverageUnderClaimsRemappedCmaps covers the other half of what NewFromData's per-face cmap read buys.
-// It removes the scan footprints' over-claim (TestNewFromData pins that), but not the under-claim: the read iterates
-// the raw subtable, so it cannot see the mappings go-text's remapping wrappers add on top of it. A symbol-encoded face
-// therefore records the U+F000 page and nothing below it, while every resolver — Typeface.UnicharToGlyph and the cmap
-// probe behind faceRec.covers alike — answers U+0020–U+00FF out of that page. The set is a filter in front of the
-// probe, never a statement of what the face covers, and faceRec.claims is what keeps the filter wide enough.
+// TestNewFromDataCoverageUnderClaimsRemappedCmaps pins that NewFromData's per-face cmap read removes the scan
+// footprints' over-claim (see TestNewFromData) but not the under-claim: it iterates the raw subtable, so a
+// symbol-encoded face records the U+F000 page and nothing below it, while every resolver answers U+0020–U+00FF out of
+// that page. faceRec.claims is what keeps the candidate filter wide enough.
 func TestNewFromDataCoverageUnderClaimsRemappedCmaps(t *testing.T) {
 	data := symbolizeSfntCmap(t, renameSfntFamily(t, readTestFontData(t, "DejaVuSans.subset.ttf"),
 		"DejaVu Sans", corpusSymbolFamily))
@@ -554,9 +546,9 @@ func TestNewFromDataCoverageUnderClaimsRemappedCmaps(t *testing.T) {
 
 // TestNewFromDataSkipsFacesItCannotName covers NewFromData's per-face skip, which the whole-blob garbage cases cannot
 // reach: a blob opentype.NewLoaders accepts can still hold a face whose lightweight description fails, or one that
-// carries no family name at all. Both have to be dropped rather than grouped, since a face admitted with an empty key
-// becomes an unnamed family that MatchFamily("") — which asks for the platform default — could then resolve to, and
-// whose Family.Name() has nothing but that empty key to answer with.
+// carries no family name. Both must be dropped rather than grouped: a face admitted with an empty key becomes an
+// unnamed family that MatchFamily("") could resolve to as the platform default, with nothing but the empty key for a
+// name.
 func TestNewFromDataSkipsFacesItCannotName(t *testing.T) {
 	roboto := readTestFontData(t, "Roboto-Regular.ttf")
 	for _, c := range []struct {
@@ -607,11 +599,8 @@ func TestNewFromDataSkipsFacesItCannotName(t *testing.T) {
 	}
 }
 
-// TestFaceRecCoversMemoSurvivesInterleavedRunes covers the memo behind covers. Every miss is a file open and a cmap
-// parse, and a fallback scan re-asks the same face about the same rune once per tier and once per BCP-47 tag, so the
-// memo is what keeps a scan from re-parsing the claiming inventory several times over. Remembering only the rune in
-// flight meant the next distinct character evicted the last one's verdict and a run mixing a few uncovered characters
-// paid the whole scan for each of them, over and over.
+// TestFaceRecCoversMemoSurvivesInterleavedRunes covers the memo behind covers (see coverMemoSize for why a single-entry
+// memo is not enough).
 //
 // A data-backed face makes the memo directly observable: swapping the face's bytes for garbage after the probes leaves
 // a memoized verdict as the only way any answer can still come back true.
@@ -621,8 +610,8 @@ func TestFaceRecCoversMemoSurvivesInterleavedRunes(t *testing.T) {
 	uncovered := []rune{0x4E00, 0x4E01, 0x4E02, 0x4E03} // Roboto carries ASCII, no CJK
 
 	f := newTestDataFaceRec(t, roboto, 0)
-	// Interleaved, which is the arrangement a single-entry memo cannot survive: each uncovered probe used to evict the
-	// covered verdict before it.
+	// Interleaved, the arrangement a single-entry memo cannot survive: each uncovered probe would evict the covered
+	// verdict before it.
 	for i, r := range covered {
 		if !f.covers(r) {
 			t.Fatalf("Roboto does not cover U+%04X; the corpus assumption is wrong", r)
@@ -645,8 +634,7 @@ func TestFaceRecCoversMemoSurvivesInterleavedRunes(t *testing.T) {
 		t.Fatal("a never-probed rune still resolved; the face's bytes were not actually invalidated")
 	}
 
-	// The memo is bounded, and evicts oldest-first. A system inventory holds thousands of these records, so unbounded
-	// growth is not an option however cheap each entry is.
+	// The memo is bounded and evicts oldest-first (see coverMemoSize).
 	g := newTestDataFaceRec(t, roboto, 0)
 	all := make([]rune, 0, coverMemoSize+1)
 	for r := 'a'; len(all) < coverMemoSize+1; r++ {
@@ -705,9 +693,8 @@ func TestManagerStyleSet(t *testing.T) {
 		if tf := set.CreateTypeface(idx); tf != nil {
 			t.Errorf("CreateTypeface(%d) != nil", idx)
 		}
-		// Style has its own documented out-of-range contract, and it is the one an indexing regression reaches first:
-		// a guard that let the index through would panic here rather than report the normal style and no name. The
-		// empty name is what separates it from the in-range faces, both of which do have one.
+		// Style documents its own out-of-range contract: the normal style and no name. The empty name is what
+		// distinguishes it from the in-range faces, both of which have one.
 		if style, name := set.Style(idx); style != font.NormalStyle() || name != "" {
 			t.Errorf("Style(%d) = %v %q, want the normal style and no name", idx, style, name)
 		}
@@ -824,9 +811,8 @@ func TestManagerMatchFamilyStyleCharacter(t *testing.T) {
 		t.Errorf("uncovered character = %v, want nil", tf)
 	}
 	// Footprint-only coverage is not coverage: the sans face and both Test faces carry the cmap4 sentinel segment
-	// mapping U+FFFF to glyph 0, which the footprint rune sets count but no host does (FreeType's charcode iteration
-	// skips glyph-0 entries, so fontconfig charsets never contain them; the CoreText/DirectWrite cmap lookups yield the
-	// missing glyph). The verified answer is nil, in the global scan and within a named family alike.
+	// mapping U+FFFF to glyph 0, which the footprint rune sets count but no host does (see matchCovering). The verified
+	// answer is nil, in the global scan and within a named family alike.
 	if tf := match("", font.NormalStyle(), nil, 0xFFFF); tf != nil {
 		t.Errorf("footprint-only coverage (U+FFFF sentinel) = %v, want nil", tf)
 	}
@@ -914,15 +900,14 @@ func TestManagerMatchCharacterBCP47Fallthrough(t *testing.T) {
 }
 
 // TestManagerMatchCharacterUnparseableBCP47Tags covers the guard in front of the tag pass. The tags the other cases
-// pass ("ja") are perfectly valid language IDs that simply match no font's language set, so they restrict the candidate
-// set to nothing and fall through further down; a tag language.NewLangID cannot resolve at all is skipped before any
-// candidate set is built, and only a tag that really fails to parse takes that branch. Callers hand these in — a hint
-// list assembled from a locale string, an attribute read out of a document — so a regression that panicked on one, or
-// that returned nil instead of continuing to the next tag, would ship.
+// pass ("ja") are valid language IDs that match no font's language set, so they restrict the candidate set to nothing
+// and fall through further down; only a tag language.NewLangID cannot resolve is skipped before any candidate set is
+// built. Callers hand these in (a hint list assembled from a locale string, an attribute read out of a document), so
+// the guard must neither panic nor return nil instead of continuing to the next tag.
 func TestManagerMatchCharacterUnparseableBCP47Tags(t *testing.T) {
-	// The premise, since which strings NewLangID rejects is its business and not this package's: these are the ones
-	// that really do fail to parse, and the empty and punctuation-only tags below do *not* — they resolve to language
-	// ID 0, so they restrict the candidate set rather than being skipped. Both shapes have to fall through.
+	// The premise, since which strings NewLangID rejects is its business: these fail to parse, while the empty and
+	// punctuation-only tags below do not (they resolve to language ID 0, so they restrict the candidate set rather than
+	// being skipped). Both shapes have to fall through.
 	unparseable := []string{"zz", "x-y-z"}
 	for _, tag := range unparseable {
 		if _, ok := language.NewLangID(language.NewLanguage(tag)); ok {
@@ -967,11 +952,9 @@ func TestManagerMatchCharacterUnparseableBCP47Tags(t *testing.T) {
 
 func TestManagerCharacterFallbackSymbolCmapRemap(t *testing.T) {
 	// A symbol-encoded face keys its characters in the U+F000 private-use page, and every resolver also answers
-	// U+0000–U+00FF from that page: Windows, HarfBuzz, and go-text's remaperSymbol, which both Typeface.UnicharToGlyph
-	// and the cmap probe behind faceRec.covers go through. Neither rune set the manager can carry sees the remap (both
-	// are built by iterating the raw subtable), so the candidate filters have to widen for it — otherwise the set vetoes
-	// every ASCII/Latin-1 character of every symbol font before covers is ever asked, and the set, which is only allowed
-	// to overcount, silently decides the answer.
+	// U+0000–U+00FF from that page (see symbolPUAPage). Neither rune set the manager can carry sees the remap, so the
+	// candidate filters have to widen for it (faceRec.claims); otherwise the set vetoes every ASCII/Latin-1 character
+	// of every symbol font before covers is asked.
 	syms := newSymbolFaceRec(t)
 	// The premise, so none of the cases below can go vacuous: the recorded coverage holds the U+F0xx page and nothing
 	// below it, while the face really does map 'a'.
@@ -1075,15 +1058,13 @@ func TestManagerCharacterFallbackLoadsOnlyTheAnswer(t *testing.T) {
 	}
 }
 
-// TestManagerCharacterFallbackVerifiesTheLoadedFace covers matchCovering's post-load re-verification, which is what
-// makes the documented promise ("the returned face always maps character through its own cmap") true of the object
-// handed back rather than only of the file it came from. The cmap probe reads two tables — the cmap and the OS/2 that
-// selects its encoding — while a full parse reads the rest, so a face can pass the probe and still fail to become a
-// typeface. Without the re-check such a face sets the match to nil and *stops the walk*, and
-// MatchFamilyStyleCharacter answers nil even though lower-ranked faces genuinely cover the character.
+// TestManagerCharacterFallbackVerifiesTheLoadedFace covers matchCovering's post-load re-check. The cmap probe reads
+// only the cmap and OS/2 tables while a full parse reads the rest, so a face can pass the probe and still fail to load.
+// Without the re-check such a face would set the match to nil and stop the walk, and MatchFamilyStyleCharacter would
+// answer nil even though lower-ranked faces genuinely cover the character.
 //
-// The unloadable candidates the other cases use — a face whose file has vanished — are rejected one step earlier, at
-// covers, so they cannot reach this branch at all.
+// The unloadable candidates the other cases use (a face whose file has vanished) are rejected one step earlier, at
+// covers, so they cannot reach this branch.
 func TestManagerCharacterFallbackVerifiesTheLoadedFace(t *testing.T) {
 	// Roboto with its head table dropped: the cmap is untouched, so the probe answers exactly as it does for the
 	// unmodified font, while go-text's parse needs head for the units per em and refuses the face outright.
@@ -1137,8 +1118,8 @@ func TestManagerCharacterFallbackVerifiesTheLoadedFace(t *testing.T) {
 }
 
 func TestFaceRecCovers(t *testing.T) {
-	// covers answers from the cmap without loading the typeface, and its single-entry memo must not let one rune's
-	// verdict answer for another.
+	// covers answers from the cmap without loading the typeface, and its memo must not let one rune's verdict answer
+	// for another.
 	f := newTestFaceRec(t, "Roboto-Regular.ttf", 0)
 	for i := range 2 {
 		if !f.covers('A') {
@@ -1170,11 +1151,10 @@ func TestFaceRecCovers(t *testing.T) {
 	}
 }
 
-// TestEnumerationSkipsFamiliesThatCanNameNoFace covers the enumeration filter. A family none of whose faces this port
-// can even describe can never produce a typeface, and Family.Name() has nothing but the internal normalized grouping key
-// left to answer with — a lowercased, space-stripped string that is not the font's display name. Stock macOS ships one
-// such file (Supplemental/NISC18030.ttf, which carries no head table): enumerated, it offers a font picker an entry
-// reading "gb18030bitmap" that selects nothing, since both MatchFamilyStyle and CreateTypeface answer nil for it.
+// TestEnumerationSkipsFamiliesThatCanNameNoFace covers the enumeration filter (see Manager.enumerated). Stock macOS
+// ships one such family (Supplemental/NISC18030.ttf, which carries no head table): enumerated, it would offer a font
+// picker an entry reading "gb18030bitmap" that selects nothing, since both MatchFamilyStyle and CreateTypeface answer
+// nil for it.
 func TestEnumerationSkipsFamiliesThatCanNameNoFace(t *testing.T) {
 	const ghostKey = "gb18030bitmap" // sorts before "roboto", so it would be family 0 of the enumeration
 	ghost := &faceRec{key: ghostKey, path: "../font/testdata/does-not-exist.ttf"}
@@ -1260,10 +1240,8 @@ func TestManagerUnloadableFace(t *testing.T) {
 
 func TestManagerConcurrentAccess(t *testing.T) {
 	// Manager is documented thread-safe; the lazy per-face loads must be too (exercised under -race). Every answer is
-	// checked rather than discarded: the corpus is fixed, so a concurrent walk has to produce exactly what a
-	// single-threaded one does, and each lazy load has to happen once — the same typeface pointer for every goroutine
-	// that asks. Without that, a manager answering nil to all three entry points would still report ok under a plain
-	// `go test`, since only -race and a panic could fail this case.
+	// checked so the test can fail without -race: a concurrent walk must produce exactly what a single-threaded one
+	// does, and each lazy load must happen once, yielding the same typeface pointer for every goroutine.
 	m := newTestManager(t)
 	wantFamilies := []string{corpusSansFamily, "Roboto", "Test"}
 	var mu sync.Mutex
@@ -1438,9 +1416,8 @@ func TestStyleFromAspect(t *testing.T) {
 
 // requireSystemFonts skips unless the system-font tests have been opted into. Default's first call runs
 // fontscan.SystemFonts, which walks every system font directory and serializes a font_index_v*.cache file into the
-// user's cache directory, so a test that reaches it is neither hermetic nor free of side effects and its runtime
-// depends on the machine's font inventory. Every test that performs the real scan gates on this; the tests that only
-// need Default's behavior stub the scan instead (stubSystemDefault).
+// user's cache directory, so a test that reaches it is neither hermetic nor free of side effects. Tests that only need
+// Default's behavior stub the scan instead (stubSystemDefault).
 func requireSystemFonts(t *testing.T) {
 	t.Helper()
 	if os.Getenv("CANVAS_FONTMGR_SYSTEM") == "" {
@@ -1448,8 +1425,7 @@ func requireSystemFonts(t *testing.T) {
 	}
 }
 
-// TestDefaultManagerSystem exercises the system scan end to end. Like the other system-font tests it is opt-in, so the
-// unit suite stays hermetic.
+// TestDefaultManagerSystem exercises the system scan end to end.
 func TestDefaultManagerSystem(t *testing.T) {
 	requireSystemFonts(t)
 	m := Default()
@@ -1474,7 +1450,7 @@ func TestDefaultManagerSystem(t *testing.T) {
 }
 
 // TestDefaultManagerMemoized pins DefaultWithError against Default on the real scan: one attempt, one memoized answer,
-// and the same manager from both entry points. Opt-in like the other system-font tests.
+// and the same manager from both entry points.
 func TestDefaultManagerMemoized(t *testing.T) {
 	requireSystemFonts(t)
 	m, err := DefaultWithError()
@@ -1596,10 +1572,8 @@ func TestSystemFontScanBuildsFaces(t *testing.T) {
 	}
 }
 
-// TestFontCacheDirFallback covers the reason the index cache directory is resolved here instead of being left to
-// fontscan: fontscan throws away a fully successful scan when it cannot write the index, so an unwritable user cache
-// dir (HOME unset or read-only — a systemd unit, a container, a sandboxed app) would otherwise cost the process every
-// system font it has.
+// TestFontCacheDirFallback covers the cache-directory fallback (see systemFontCacheDir for why fontscan is not left to
+// choose for itself).
 func TestFontCacheDirFallback(t *testing.T) {
 	tempRoot := t.TempDir()
 	temp := func() string { return tempRoot }
@@ -1652,9 +1626,8 @@ func TestFontCacheDirFallback(t *testing.T) {
 }
 
 // stubSystemDefault points Default and DefaultWithError at a scan of the caller's making for the duration of the test,
-// restoring the real one afterwards. It is what lets the two entry points be exercised at all: their own scan walks
-// every system font directory, so the tests that reach it are opt-in (requireSystemFonts) and skipped on every CI leg.
-// No test in this package runs in parallel, so the swap is not observable by another one.
+// restoring the real one afterwards. No test in this package runs in parallel, so the swap is not observable by another
+// one.
 func stubSystemDefault(t *testing.T, fps []fontscan.Footprint, err error) *int {
 	t.Helper()
 	calls := 0
@@ -1722,9 +1695,8 @@ func TestDefaultMemoizesTheOneScan(t *testing.T) {
 	})
 }
 
-// TestSystemFontCacheDirIsUsable pins what Default asks of the cache directory it resolves: fontscan discards a fully
-// successful scan when it cannot serialize its index there, so the resolved directory must be one it can write into —
-// or "", which leaves fontscan its own choice and its own error.
+// TestSystemFontCacheDirIsUsable pins that the cache directory Default resolves is writable, or "" (which leaves
+// fontscan its own choice and its own error).
 func TestSystemFontCacheDirIsUsable(t *testing.T) {
 	if dir := systemFontCacheDir(); dir != "" && !cacheDirWritable(dir) {
 		t.Errorf("systemFontCacheDir() = %q, which is not writable", dir)

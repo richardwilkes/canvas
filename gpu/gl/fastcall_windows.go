@@ -8,12 +8,11 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // The fixed-arity GL call lane for Windows: syscall.Syscall15 is the public, fixed-arity, allocation-free stdcall
-// dispatcher the runtime provides — it is exactly what purego.SyscallN wraps on Windows (its syscall_windows.go),
-// minus purego's escaping variadic []uintptr at the call site. Windows already marshals more cheaply than the SysV
-// platforms because purego's internal syscall15Args struct never exists there; calling Syscall15 directly removes the
-// remaining per-call slice allocation. Trailing arguments are padded with zero,
-// which is inert: the dispatcher always passes 15 slots (just as purego always did) and a C callee never reads beyond
-// its declared parameters.
+// dispatcher the runtime provides. purego.SyscallN reaches the same runtime dispatcher on Windows through
+// syscall.SyscallN (its syscall_windows.go), bypassing its internal argument struct, so calling Syscall15 directly
+// removes the one remaining per-call allocation: the escaping variadic []uintptr at the call site. Trailing arguments
+// are padded with zero, which is inert: the dispatcher always passes 15 slots and a C callee never reads beyond its
+// declared parameters.
 
 //go:build windows
 

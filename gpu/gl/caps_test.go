@@ -9,7 +9,7 @@
 
 // Differential-style tests for the desktop-trimmed GL Caps: full caps initialization is driven through
 // purego.NewCallback fake drivers (the same FFI boundary a real driver uses) for two realistic desktop profiles — the
-// Apple M4 Max GL 4.1 core context recorded in gldumps and a Mesa llvmpipe GL 4.5 core context (the planned Linux CI
+// Apple M4 Max GL 4.1 core context recorded in gldumps and a Mesa llvmpipe GL 4.5 core context (the Linux CI
 // environment) — plus an Intel-on-Mac profile that exercises the desktop driver workarounds.
 
 package gl
@@ -189,7 +189,7 @@ func appleM4MaxDriver() *capsFakeDriver {
 			MAX_RENDERBUFFER_SIZE:           16384,
 			MAX_SAMPLES:                     4,
 		},
-		sampleCounts:  []int32{4, 2}, // GL returns descending order
+		sampleCounts:  []int32{4, 2},
 		maxAniso:      16,
 		precisionBits: 23,
 	}
@@ -434,7 +434,7 @@ func TestCapsAppleM4MaxProfile(t *testing.T) {
 	}
 }
 
-// mesaLlvmpipeDriver models the planned Linux CI environment: Mesa llvmpipe, GL 4.5 core.
+// mesaLlvmpipeDriver models the Linux CI environment: Mesa llvmpipe, GL 4.5 core.
 func mesaLlvmpipeDriver() *capsFakeDriver {
 	return &capsFakeDriver{
 		version:     "4.5 (Core Profile) Mesa 24.0.5",
@@ -609,9 +609,9 @@ func TestCapsIntelWorkarounds(t *testing.T) {
 }
 
 // noPrecisionQueryDriver models a desktop GL 4.2 core context that doesn't advertise GL_ARB_ES2_compatibility. Such a
-// context sits above the 4.1 cutoff isFloatFP32 uses to decide precision info exists, yet assembleGLInterface never
-// resolves glGetShaderPrecisionFormat for it (that needs GL 4.3 or the extension), so the precision query has no proc
-// to call.
+// context sits above the 4.1 cutoff isFloatFP32 uses to decide precision info exists, yet MakeAssembledGLInterface
+// never resolves glGetShaderPrecisionFormat for it (that needs GL 4.3 or the extension), so the precision query has no
+// proc to call.
 func noPrecisionQueryDriver() *capsFakeDriver {
 	return &capsFakeDriver{
 		version:     "4.2.0 NVIDIA 390.157",

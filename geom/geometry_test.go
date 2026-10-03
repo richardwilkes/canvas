@@ -351,12 +351,9 @@ func TestConicChopIntoQuads(t *testing.T) {
 }
 
 func TestConicExtremaAndTightBounds(t *testing.T) {
-	// Half circle from (1,0) through (0,1) to (-1,0) built from two 90-degree conics; use the single 90-degree arc for
-	// extrema: x extremum should not exist in (0,1)... use an arc from (0,-1) to (0,1) through (1,0): x has an extremum
-	// at t=0.5 where x=1.
+	// An arc from (0,-1) to (0,1) bulging toward +x, so x has an extremum at t=0.5.
 	arc := MakeConic(Pt(0, -1), Pt(2, 0), Pt(0, 1), ScalarRoot2Over2)
-	// This is not a unit-circle arc (control point 2,0 with w=root2/2 gives x max sqrt(2)-ish); just verify extrema
-	// location and bounds consistency.
+	// This is not a unit-circle arc, so just verify the extremum's location and the bounds' consistency.
 	tv, ok := arc.FindXExtrema()
 	if !ok || math.Abs(float64(tv)-0.5) > 1e-5 {
 		t.Errorf("x extrema = %v ok=%v", tv, ok)
@@ -402,7 +399,7 @@ func TestBuildUnitArc(t *testing.T) {
 			}
 		}
 	}
-	// Full 270-degree sweep uses 3 quadrants + remainder.
+	// A 270-degree sweep uses exactly 3 quadrant conics.
 	n = BuildUnitArc(Pt(1, 0), Pt(0, -1), RotationCW, nil, &conics)
 	if n != 3 {
 		t.Errorf("270-degree arc conic count = %d, want 3", n)
@@ -426,8 +423,8 @@ func TestBuildUnitArc(t *testing.T) {
 
 func TestEvalCubicCurvatureAtScale(t *testing.T) {
 	// EvalCubicCurvatureAt returns one sixth of the second derivative, not the second derivative itself. Compare it
-	// against the analytic second derivative of the Bezier, fpp(t) = 6*(1-t)*(P2-2*P1+P0) + 6*t*(P3-2*P2+P1), so a caller that trusts the documented magnitude has a
-	// test pinning the factor.
+	// against the analytic second derivative of the Bezier, fpp(t) = 6*(1-t)*(P2-2*P1+P0) + 6*t*(P3-2*P2+P1), to pin
+	// the factor.
 	cubic := []Point{Pt(0, 0), Pt(10, 40), Pt(70, -20), Pt(100, 30)}
 	for _, tv := range []float32{0, 0.25, 0.5, 0.75, 1} {
 		got := EvalCubicCurvatureAt(cubic, tv)

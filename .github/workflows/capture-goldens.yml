@@ -1,23 +1,20 @@
 # Capture the per-platform self-captured golden sets the rendering gates compare against.
 #
-# Manual dispatch only — capture is never automatic, because port-generated goldens can absorb a regression: a gate
-# failure must be diagnosed, never silently re-blessed, so regeneration is always a deliberate, human-reviewed act.
-# Each matrix leg soaks every lane it can bring up (the determinism proof: two soak processes of three fresh-session
+# Manual dispatch only, because port-generated goldens can absorb a regression: a gate failure must be diagnosed, never
+# silently re-blessed. Each matrix leg soaks every lane it can bring up (two soak processes of three fresh-session
 # corpus passes each, with the cross-process corpus digests compared), blesses the lanes that soaked clean into
-# goldens/<lane>/<GOOS_GOARCH>/, and uploads the resulting goldens/ subtree as a goldens-<GOOS_GOARCH> artifact.
-# Nothing is ever committed by this workflow: review and commit happen manually via internal/oracle/capture.sh + git.
+# goldens/<lane>/<GOOS_GOARCH>/, and uploads those sets as a goldens-<GOOS_GOARCH> artifact. Nothing is committed here:
+# review and commit happen manually via internal/oracle/capture.sh + git.
 #
 # GL provisioning mirrors build.yml's oracle jobs: Xvfb + Mesa llvmpipe (LIBGL_ALWAYS_SOFTWARE=1 and
 # CANVAS_GLTEST_RENDERER=software) on Linux, the pinned Mesa3D llvmpipe drop-in beside the binary on Windows (the
-# app-directory copy of opengl32.dll wins over System32; PATH does not work), and the runner's own GL on macOS (both
-# GPU lanes self-pin CANVAS_GLTEST_RENDERER=software inside the oracle CLI, exactly as their gates do, so the variable
-# does not need to be in the darwin env — on the macOS runners it selects the stack they already render on). A leg
-# whose GL context fails to come up logs a loud warning and skips that lane's artifact content (oracle exits 3 for
-# exactly this case); a lane that soaks or blesses *nondeterministically* marks the leg failed — nondeterminism is a
-# rendering bug that would make exact golden comparison meaningless, and must be fixed, never papered over. A lane that
-# fails any other way also marks the leg failed, but is reported as what it is rather than as nondeterminism: the
-# commonest such failure is a GL context that comes up for the first pass and vanishes later, which is runner
-# infrastructure and is fixed by re-dispatching, not by touching the renderer.
+# app-directory copy of opengl32.dll wins over System32; PATH does not work), and the runner's own GL on macOS (the
+# oracle CLI pins CANVAS_GLTEST_RENDERER=software for the GPU lanes itself, as their gates do). A lane whose GL context
+# fails to come up is skipped with a loud warning (oracle exits 3 for exactly this case). A lane that soaks or blesses
+# nondeterministically fails the leg: nondeterminism is a rendering bug that makes exact golden comparison meaningless.
+# A lane that fails any other way also fails the leg but is reported as such, not as nondeterminism; the commonest case
+# is a GL context that comes up for the first pass and vanishes later, which is runner infrastructure and is fixed by
+# re-dispatching.
 name: Capture goldens
 
 on:
@@ -68,11 +65,8 @@ jobs:
         env:
           LIBGL_ALWAYS_SOFTWARE: '1'
       # Mesa3D llvmpipe, pinned to the same release build.yml's oracle-windows job uses. The x64 build is proven; the
-      # arm64 build is an attempt (mesa-dist-win publishes arm64 builds, but this one is unproven here) — if the
-      # archive has no arm64 DLLs the step warns and continues, and the GPU lanes then skip loudly when no GL context
-      # comes up.
-      # Deliberately non-fatal end to end: a leg that cannot provision Mesa (the arm64 build especially is an attempt)
-      # still captures its raster lane, and the GPU lanes skip loudly when no GL context comes up.
+      # arm64 build is unproven here. Deliberately non-fatal: a leg that cannot provision Mesa warns, still captures its
+      # raster lane, and its GPU lanes skip loudly when no GL context comes up.
       - name: Provision Mesa3D (Windows, llvmpipe software GL)
         if: runner.os == 'Windows'
         run: |
@@ -84,11 +78,9 @@ jobs:
           if [ ! -f mesa/opengl32.dll ]; then
             echo "::warning title=No Mesa ${{ matrix.mesa_arch }} DLLs::mesa-dist-win 26.1.3 provided no ${{ matrix.mesa_arch }} llvmpipe; GPU lanes will be skipped on this leg"
           fi
-      # Bless writes into goldens/<lane>/<GOOS_GOARCH>/ inside this checkout, over the committed self-captured sets —
-      # a prior schema-2 manifest is what gives bless its per-scenario old-vs-new change summary. Its refusal to
-      # replace a manifest carrying any other schema remains as a guard on a checkout that is badly wrong.
-      # Build the CLI once; on Windows the Mesa DLLs are staged beside the binary so its WGL context comes up on
-      # llvmpipe (same technique as build.yml's oracle-windows job).
+      # Bless writes into goldens/<lane>/<GOOS_GOARCH>/ in this checkout, over the committed sets, whose schema-2
+      # manifests give it its per-scenario old-vs-new change summary (it refuses to replace any other schema). On
+      # Windows the Mesa DLLs are staged beside the CLI binary so its WGL context comes up on llvmpipe.
       - name: Build oracle CLI
         working-directory: internal/oracle
         run: |
@@ -135,13 +127,12 @@ jobs:
           # fresh-session passes each; cross-process determinism via comparing their corpus digests), then bless.
           # oracle exit 3 = no GL context = loud skip; any other failure marks the lane (and the leg) failed.
           #
-          # A failed lane is reported as the kind of failure it actually was. Both soak and bless exit non-zero for
-          # two very different reasons, and only one of them is a rendering bug: they deliberately strip the
-          # no-GL-context signal from a session that came up for the first pass and died later (see the comments on
-          # soak's and bless's session-creation error paths), so a runner losing its X server mid-run arrives here
-          # looking exactly like a determinism failure. Announcing the wrong one sends the next reader hunting a
-          # renderer bug that is not there — which is precisely what happened on linux_amd64 in capture run
-          # 30953645849, where `XOpenDisplay(NULL) returned NULL` on soak pass 3 was titled "found nondeterminism".
+          # A failed lane is reported as the kind of failure it actually was. Soak and bless deliberately strip the
+          # no-GL-context signal from a session that came up for the first pass and died later (see their
+          # session-creation error paths), so a runner losing its X server mid-run exits non-zero exactly like a
+          # determinism failure. Misreporting it sends the reader hunting a renderer bug that is not there, as in
+          # capture run 30953645849, where `XOpenDisplay(NULL) returned NULL` on soak pass 3 was titled "found
+          # nondeterminism".
           #
           # The cross-process digest comparison is strict only for raster. The GPU lanes' cold renders differ within
           # the ±1 LSB driver envelope across processes on software-GL stacks (see the oracle soak command's doc
@@ -238,20 +229,16 @@ jobs:
           echo "skipped: ${skipped:- (none)}"
           echo "failed:  ${failed:- (none)}"
           find goldens -name manifest.json | sort
-          # Hand the staging step the lanes that actually blessed. It must not infer this from the presence of
-          # goldens/<lane>/<platform>, because the checkout already contains every committed set: a lane that skipped
-          # or failed still has its directory there, holding the *prior* committed goldens, and exporting those ships
-          # a stale set that looks exactly like fresh capture output to a reviewer and to capture.sh.
+          # Hand the staging step the lanes that actually blessed; it must not infer them from the presence of
+          # goldens/<lane>/<platform> (see the staging step's comment).
           echo "CAPTURED_LANES=$captured" >> "$GITHUB_ENV"
           echo "CAPTURE_SUMMARY=captured:${captured:- (none)} | skipped:${skipped:- (none)} | failed:${failed:- (none)}" >> "$GITHUB_ENV"
           if [ -n "$failed" ]; then
             echo "::error title=Capture leg $PLATFORM failed::lane(s)$failed did not capture; see above"
             exit 1
           fi
-      # Upload whatever was captured even when a lane failed the leg — partial results are still reviewable, and the
-      # summary above says exactly which lanes are missing and why.
-      # Stage and upload only the lanes this leg actually blessed, and only this platform's directories. Two distinct
-      # filters, for two distinct ways a stale set can reach the artifact:
+      # Upload whatever was captured even when a lane failed the leg; partial results are still reviewable. Stage only
+      # the lanes this leg actually blessed, and only this platform's directories, filtering out two kinds of stale set:
       #   - CAPTURED_LANES (from the step above) excludes lanes that skipped or failed. Their goldens/<lane>/<platform>
       #     directory still exists in the checkout holding the *prior committed* set, and exporting it would ship a
       #     stale set indistinguishable from fresh capture output — capture.sh would report `merged <lane>/<platform>`

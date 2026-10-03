@@ -97,12 +97,10 @@ func TestScalarNearlyZero(t *testing.T) {
 }
 
 func TestSinCosSnapToZero(t *testing.T) {
-	// 180 degrees: sin should snap to exactly 0.
 	rad := DegreesToRadians(180)
 	if got := ScalarSinSnapToZero(rad); got != 0 {
 		t.Errorf("sin(pi) did not snap to zero: %g", got)
 	}
-	// 90 degrees: cos should snap to exactly 0.
 	rad = DegreesToRadians(90)
 	if got := ScalarCosSnapToZero(rad); got != 0 {
 		t.Errorf("cos(pi/2) did not snap to zero: %g", got)

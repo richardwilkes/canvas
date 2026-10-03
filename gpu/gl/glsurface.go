@@ -8,9 +8,7 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // The GPU-backed surface: a render-target-backed surface wrapping a SurfaceDrawContext + Device + Canvas, with image
-// snapshots, the compatible-surface factory, and pixel readback. NewRenderTargetSurfaceFromBackendRenderTarget wraps a
-// caller-owned FBO into a surface; MakeSurface makes a compatible offscreen GPU surface; MakeImageSnapshot produces a
-// texture-backed image of the current content.
+// snapshots, the compatible-surface factory, and pixel readback.
 //
 // Divergence: MakeImageSnapshot always takes the non-shareable path — it eagerly copies the target proxy into a
 // read-only texture image rather than sharing the live proxy and copying on the surface's next write. The observable
@@ -87,9 +85,10 @@ func (s *RenderTargetSurface) SDC() *SurfaceDrawContext { return s.device.SDC() 
 func (s *RenderTargetSurface) Context() *DirectContext { return s.ctx }
 
 // Release drops what the surface's device holds beyond its own lifetime — the clip stack's cached SW masks (see
-// Device.Release). A surface dropped with a clip still set would otherwise leave those mask textures unique-keyed in the
-// resource cache until budget pressure or context teardown reclaims them. The surface's own render target belongs to the
-// draw context and is not touched, so this is not a substitute for tearing down the context. Safe to call more than once.
+// Device.Release). A surface dropped with a clip still set would otherwise leave those mask textures unique-keyed in
+// the resource cache until budget pressure or context teardown reclaims them. The surface's own render target belongs
+// to the draw context and is not touched, so this is not a substitute for tearing down the context. Safe to call more
+// than once.
 func (s *RenderTargetSurface) Release() { s.device.Release() }
 
 // Width returns the surface's width in pixels.
@@ -112,9 +111,8 @@ func (s *RenderTargetSurface) MakeSurface(width, height int32) *RenderTargetSurf
 		sdc.NumSamples(), mipmapped, sdc.Origin(), gpu.BudgetedYes, "Surface_makeSurface", &props)
 }
 
-// MakeImageSnapshot takes the copy branch: the current target proxy is copied into a read-only texture image so the
-// snapshot is independent of subsequent draws to the surface. Returns nil when the copy fails (an abandoned context, an
-// uncopyable proxy).
+// MakeImageSnapshot copies the current target proxy into a read-only texture image, so the snapshot is independent of
+// subsequent draws to the surface. Returns nil when the copy fails (an abandoned context, an uncopyable proxy).
 func (s *RenderTargetSurface) MakeImageSnapshot() *TextureImage {
 	if s.ctx.Abandoned() {
 		return nil
@@ -137,7 +135,7 @@ func (s *RenderTargetSurface) MakeImageSnapshot() *TextureImage {
 	swizzle := s.ctx.GLCaps().ReadSwizzle(copyProxy.Format(), colorType)
 	view := MakeSurfaceProxyView(copyProxy, srcView.Origin(), swizzle)
 	img := newTextureImage(s.ctx, view, colorType, imagecore.AlphaTypePremul, dims)
-	// The image took its own ref; drop the creation ref from Copy.
+	// The image took its own ref; drop the creation ref from CopySurfaceProxy.
 	copyProxy.Unref()
 	return img
 }

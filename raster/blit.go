@@ -12,7 +12,8 @@ package raster
 // The hot integer blit rows dispatch through package-level function variables, the same shape the span kernels use (see
 // span.go): the portable form of each row lives next to its blitter, under a Generic name and with no build tag, and a
 // goexperiment.simd build's init (blit_simd.go) repoints the variable at an archsimd kernel on qualifying hardware.
-// These rows have no hand-written assembly lane, so unlike the span kernels every build starts on the portable form.
+// These rows have no hand-written assembly lane, so unlike the span kernels only a goexperiment.simd build leaves the
+// portable form.
 //
 // Every substitute is bit-identical to the portable form (locked by TestBlitSIMDMatchesScalar, whose integer subtests
 // enumerate complete domains wherever they are small enough), so the choice of lane changes throughput only, never

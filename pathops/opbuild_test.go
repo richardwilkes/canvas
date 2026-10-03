@@ -185,7 +185,6 @@ func TestOpContourMultiSegment(t *testing.T) {
 	if head.count != 4 {
 		t.Fatalf("contour count = %d, want 4", head.count)
 	}
-	// Walk the forward segment list and collect verbs.
 	var verbs []path.Verb
 	for seg := head.first(); seg != nil; seg = seg.next {
 		verbs = append(verbs, seg.verb)

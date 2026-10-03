@@ -7,9 +7,8 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// The convex hull of a cubic's four control points, used by the cubic hull-intersection quick reject that the cubic
-// solver relies on. The hull may have 3 or 4 points; the returned order describes it (a cubic degenerating to a point
-// or line is not considered here).
+// The convex hull of a cubic's four control points, used by the cubic hull-intersection quick reject. The hull has 3 or
+// 4 points; a cubic degenerating to a point or line is not considered here.
 
 package pathops
 

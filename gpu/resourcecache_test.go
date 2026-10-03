@@ -242,7 +242,6 @@ func TestResourceCachePurgeCommandBufferUsage(t *testing.T) {
 	cache.PurgeUnlockedResources(PurgeScratchResourcesOnly)
 	check(t, m.alive == 2, "alive = %d", m.alive)
 
-	// Add command buffer usages to all resources.
 	a.RefCommandBuffer()
 	b.RefCommandBuffer()
 	cache.PurgeUnlockedResources(PurgeScratchResourcesOnly)
@@ -254,7 +253,6 @@ func TestResourceCachePurgeCommandBufferUsage(t *testing.T) {
 	cache.PurgeUnlockedResources(PurgeScratchResourcesOnly)
 	check(t, m.alive == 2, "alive = %d", m.alive)
 
-	// Remove command buffer usages.
 	a.UnrefCommandBuffer()
 	b.UnrefCommandBuffer()
 	check(t, m.alive == 2, "alive = %d", m.alive)
@@ -487,11 +485,8 @@ func TestResourceCacheUnbudgetedToScratch(t *testing.T) {
 
 // TestResourceCacheScratchBackingReuse verifies the reclaimed-backing free list: when a scratch-map key's list empties
 // and the key is deleted from the map, its []Resource backing is reclaimed — cleared, so it pins no Resource — and
-// reused by the next scratchInsert that (re)creates a key, so the steady-state recycle of a scratch resource (e.g. a
-// dynamic buffer freed and re-acquired every frame) does not re-grow its list from nil each cycle. The map contents,
-// scratch count, and eviction order are unchanged; validate() runs on every cache op via TestMain. Backing identity is
-// asserted structurally (the reused list aliases the reclaimed array), and the steady-state cycle is checked to be
-// allocation-free.
+// reused by the next scratchInsert that (re)creates a key. Backing identity is asserted structurally (the reused list
+// aliases the reclaimed array), and the steady-state find/reinsert cycle is checked to be allocation-free.
 func TestResourceCacheScratchBackingReuse(t *testing.T) {
 	m := newMock(30000)
 	cache := m.cache
@@ -554,8 +549,8 @@ func TestResourceCacheScratchBackingReuse(t *testing.T) {
 }
 
 // TestResourceCacheScratchRemoveClearsVacatedSlot verifies that removing one of several resources sharing a scratch key
-// does not leave the removed (or shifted-down) Resource pinned in the backing array past the list's new length: the
-// stored-back array must hold no Resource beyond len, so a released resource cannot stay reachable until the key empties.
+// leaves no Resource in the stored-back backing array past the list's new length, so a released resource cannot stay
+// reachable until the key empties.
 func TestResourceCacheScratchRemoveClearsVacatedSlot(t *testing.T) {
 	m := newMock(30000)
 	cache := m.cache
@@ -977,7 +972,7 @@ func TestResourceCacheTimePurge(t *testing.T) {
 				timeStamps[i] = nowish()
 			}
 			for i := 0; i < cnt; i++ {
-				// Should get a resource purged every other frame.
+				// Should get a resource purged every other iteration.
 				cache.PurgeResourcesNotUsedSince(timeStamps[i], PurgeAllResources)
 				check(t, cache.ResourceCount() == cnt-i/2-1, "count = %d", cache.ResourceCount())
 			}
@@ -1007,7 +1002,7 @@ func TestResourceCacheTimePurge(t *testing.T) {
 			timeStamps[i] = nowish()
 		}
 		for i := 0; i < cnt; i++ {
-			// A resource is purged every other frame since uniquely keyed resources are not considered.
+			// A resource is purged every other iteration since uniquely keyed resources are not considered.
 			cache.PurgeResourcesNotUsedSince(timeStamps[i], PurgeScratchResourcesOnly)
 			check(t, cache.ResourceCount() == cnt-i/2-1, "count = %d", cache.ResourceCount())
 		}
@@ -1169,8 +1164,8 @@ func TestResourceCachePurgeToMakeHeadroom(t *testing.T) {
 	}
 }
 
-// TestResourceCacheReleaseAllWithRefs verifies releaseAll destroys resources that still hold refs (the
-// gr_direct_context_release_resources_and_abandon path).
+// TestResourceCacheReleaseAllWithRefs verifies ReleaseAll destroys resources that still hold refs (the
+// ReleaseResourcesAndAbandonContext path).
 func TestResourceCacheReleaseAllWithRefs(t *testing.T) {
 	m := newMock(30000)
 	r := m.newResource(BudgetedYes, 16)

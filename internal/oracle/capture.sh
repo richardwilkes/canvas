@@ -29,11 +29,10 @@ gh run download "$1" --pattern 'goldens-*' --dir "$tmp"
 shopt -s nullglob
 merged=0
 for artifact in "$tmp"/goldens-*/; do
-	# An artifact holds only the lanes its leg actually blessed, staged as <lane>/<GOOS_GOARCH>/ (the workflow's
-	# staging step filters on the captured-lane list, so a lane that skipped or failed contributes nothing rather than
-	# its stale committed set). The per-platform filter below is the second guard, against an artifact built before
-	# that filter existed or by a hand-run leg: only the artifact's own platform directories can be its bless output,
-	# so a later artifact can never clobber an earlier platform's fresh set with a stale copy.
+	# An artifact holds only the lanes its leg actually blessed, staged as <lane>/<GOOS_GOARCH>/. The per-platform
+	# filter below is a second guard, against an artifact built before the workflow's captured-lane filter existed or by
+	# a hand-run leg: only the artifact's own platform directories can be its bless output, so a later artifact can
+	# never clobber an earlier platform's fresh set with a stale copy.
 	platform=$(basename "$artifact")
 	platform=${platform#goldens-}
 	# Each leg records its own account of what it captured, skipped and failed. Print it: a leg missing a lane is the

@@ -7,9 +7,8 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// The conic/line intersection solver (the general intersect plus the axis-aligned horizontal/vertical lanes and the ray
-// form), implemented by the lineConicIntersections struct. Also implements the conic case of near-endpoint handling
-// (nearPointForConic): it drops a perpendicular from a point and ray-intersects the conic.
+// The conic/line intersection solver (general, horizontal, vertical, and ray forms) and nearPointForConic, the conic
+// case of near-endpoint handling.
 
 package pathops
 
@@ -177,7 +176,6 @@ func (lc *lineConicIntersections) uniqueAnswer(conicT float64, pt dPoint) bool {
 		if conicT == existingConicT {
 			return false
 		}
-		// check if midway on conic is also same point. If so, discard this
 		conicMidT := (existingConicT + conicT) / 2
 		conicMidPt := lc.conic.ptAtT(conicMidT)
 		if conicMidPt.approximatelyEqual(pt) {

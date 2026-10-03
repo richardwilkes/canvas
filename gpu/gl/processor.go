@@ -100,7 +100,6 @@ type Processor interface {
 	ClassID() ClassID
 }
 
-// processorBase holds the state common to every Processor implementation.
 type processorBase struct {
 	classID ClassID
 }

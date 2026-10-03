@@ -63,11 +63,9 @@ type additiveBlitter interface {
 	trapezoidScratch(n int32) (alphas, tempAlphas []Alpha, runs []int16)
 }
 
-// aaaScratch holds the per-fill reusable row buffers used by blitAAATrapezoidRow. The analytic-AA walker calls that
-// function once per scanline; allocating alphas/tempAlphas/runs fresh each time was the dominant source of per-fill
-// heap traffic (pooled temporaries). The buffers live on the additive blitter, which is constructed once per fill — and
-// once per band under FillPathParallel, so there is no cross-goroutine sharing — and grow to the widest trapezoid row
-// seen.
+// aaaScratch holds the row buffers blitAAATrapezoidRow reuses across scanlines to avoid a per-scanline allocation. They
+// live on the additive blitter, which is built once per fill (once per band under FillPathParallel, so they are never
+// shared across goroutines), and grow to the widest trapezoid row seen.
 type aaaScratch struct {
 	alphas     []Alpha
 	tempAlphas []Alpha
@@ -75,9 +73,8 @@ type aaaScratch struct {
 }
 
 // trapezoidScratch returns three distinct scratch slices of length n (n = trapezoid width + 1), growing the backing
-// arrays as needed. The buffers need not be zeroed: blitAAATrapezoidRow fully writes alphas[0:n] and runs[0:n] before
-// use, and writes exactly the tempAlphas indices it later reads (computeAlpha{Above,Below}Line covers precisely the
-// read range).
+// arrays as needed. They need not be zeroed: blitAAATrapezoidRow writes all of alphas and runs before use, and
+// computeAlpha{Above,Below}Line write exactly the tempAlphas indices it later reads.
 func (s *aaaScratch) trapezoidScratch(n int32) (alphas, tempAlphas []Alpha, runs []int16) {
 	if int(n) > cap(s.alphas) {
 		s.alphas = make([]Alpha, n)
@@ -130,11 +127,10 @@ func maskBlitterCanHandleRect(bounds geom.IRect) bool {
 	return storage <= maskBlitterMaxStorage
 }
 
-// The additive blitters are constructed once per fill (and once per band under FillPathParallel, so a sync.Pool rather
-// than a shared instance keeps concurrent bands independent). They own the widest-row scratch buffers (aaaScratch) and
-// their RLE/mask storage; pooling them retains that storage across draws so steady-state fills allocate nothing at the
-// blitter layer. Each is fully consumed by the synchronous aaaFillPath before it is returned, so putting it back on
-// function exit is safe.
+// The additive blitters are pooled so their scratch buffers (aaaScratch) and RLE/mask storage survive across draws and
+// steady-state fills allocate nothing at the blitter layer. A sync.Pool rather than a shared instance keeps
+// FillPathParallel's concurrent bands independent. The synchronous aaaFillPath fully consumes a blitter before
+// returning, so putting it back right after the fill is safe.
 var maskBlitterPool = sync.Pool{New: func() any { return new(maskAdditiveBlitter) }}
 
 func getMaskAdditiveBlitter(realBlitter Blitter, ir, clipBounds geom.IRect) *maskAdditiveBlitter {
@@ -158,8 +154,8 @@ func (m *maskAdditiveBlitter) init(realBlitter Blitter, ir, clipBounds geom.IRec
 		m.clipRect = geom.IRect{}
 	}
 	rb := ir.Width()
-	// The mask blitter accumulates coverage additively, so the storage must start zeroed. make() zeroes; a reused
-	// backing array must be cleared explicitly over the bytes this fill will touch.
+	// Coverage accumulates additively, so the storage must start zeroed: make does that, and a reused backing array is
+	// cleared over the bytes this fill will touch.
 	need := int(rb)*int(ir.Height()) + 2
 	if need > cap(m.storage) {
 		m.storage = make([]uint8, need)
@@ -191,8 +187,8 @@ func (m *maskAdditiveBlitter) getRow(y int32) maskRow {
 }
 
 func (m *maskAdditiveBlitter) getRealBlitter(forceRealBlitter bool) Blitter {
-	// Most of the time, we still consider this mask blitter as the real blitter so we can accelerate blitRect and
-	// others. But sometimes we want to return the absolute real blitter (e.g., when we fall back to the old code path).
+	// The mask blitter normally serves as the real blitter, which accelerates BlitRect and the like. forceRealBlitter
+	// returns the device blitter instead; no caller passes it.
 	if forceRealBlitter {
 		return m.realBlitter
 	}
@@ -225,8 +221,7 @@ func (m *maskAdditiveBlitter) BlitV(x, y, height int32, alpha Alpha) {
 	if alpha == 0 {
 		return
 	}
-	// The vertical walk steps i by RowBytes rather than calling getRow again, so the row cache is left describing row
-	// y — which getRow already made true — and needs no fixup here.
+	// Stepping i by RowBytes instead of calling getRow per row leaves the row cache on row y, so it needs no fixup.
 	row := m.getRow(y)
 	i := row.off + int(x)
 	for h := int32(0); h < height; h++ {
@@ -279,7 +274,7 @@ type runBasedAdditiveBlitter struct {
 	aaaScratch
 	runs    AlphaRuns
 	offsetX int
-	currY   int32 // current y coordinate
+	currY   int32
 	width   int32 // widest row of region to be blitted
 	left    int32 // leftmost x coordinate in any row
 	top     int32 // initial y coordinate (top of bounds)
@@ -305,8 +300,7 @@ func putRunBasedAdditiveBlitter(r *runBasedAdditiveBlitter) {
 func (r *runBasedAdditiveBlitter) init(realBlitter Blitter, ir, clipBounds geom.IRect, isInverse bool) {
 	var sectBounds geom.IRect
 	if isInverse {
-		// We use the clip bounds instead of the ir, since we may be asked to draw outside of the rect when we're an
-		// inverse fill type.
+		// An inverse fill may draw outside ir, so use the clip bounds instead.
 		sectBounds = clipBounds
 	} else {
 		sectBounds = ir
@@ -345,7 +339,7 @@ func (r *runBasedAdditiveBlitter) check(x, width int32) bool {
 	return x >= 0 && x+width <= r.width
 }
 
-// snapAlpha blits 0xFF and 0 much faster than other values, so alphas close to them are snapped.
+// snapAlpha snaps alphas close to 0 or 0xFF to those values, which blit much faster than any other.
 func snapAlpha(alpha Alpha) Alpha {
 	switch {
 	case alpha > 247:
@@ -360,7 +354,6 @@ func snapAlpha(alpha Alpha) Alpha {
 func (r *runBasedAdditiveBlitter) flush() {
 	if r.currY >= r.top {
 		for x := 0; r.runs.Runs[x] != 0; x += int(r.runs.Runs[x]) {
-			// It seems that blitting 255 or 0 is much faster than blitting 254 or 1.
 			r.runs.Alpha[x] = snapAlpha(r.runs.Alpha[x])
 		}
 		if !r.runs.Empty() {
@@ -395,7 +388,7 @@ func (r *runBasedAdditiveBlitter) blitAntiHRun(x, y int32, antialias []Alpha) {
 		x = 0
 	}
 	length = min(length, r.width-x)
-	if length <= 0 { // nothing sensible can be added
+	if length <= 0 {
 		return
 	}
 
@@ -557,30 +550,27 @@ func getPartialAlphaFixed(alpha Alpha, partialHeight Fixed) Alpha {
 	return Alpha(FixedRoundToInt(Fixed(int32(alpha) * int32(partialHeight))))
 }
 
-// getPartialAlphaMul scales alpha by fullAlpha (both 0..255).
-//
-// The rounding term matters far more here than the shift suggests. A pixel row's coverage is accumulated one
-// sub-scanline at a time — the walker stops at every distinct edge y — and each sub-row's contribution passes through
-// this function with fullAlpha set to that sub-row's height. Truncating (Skia's `(alpha * fullAlpha) >> 8`) throws away
-// half a level per call on average, and that loss is one-directional, so it sums over however many sub-rows the row was
-// cut into: -(subRows-1)/2 levels. Skia can afford it because its edges snap to a quarter scanline, capping a row at
+// getPartialAlphaMul scales alpha by fullAlpha (both 0..255), rounding to nearest where Skia truncates with `(alpha
+// * fullAlpha) >> 8`. The walker stops at every distinct edge y, so a pixel row's coverage accumulates one sub-row at a
+// time, each passing through here with fullAlpha set to its height. Truncation loses half a level per call on average,
+// always downward, so the loss sums to (subRows-1)/2 levels. Skia's edges snap to a quarter scanline, capping a row at
 // four sub-rows and the drift at 1.5 levels; this port snaps to 1/64 (see analyticSnapAccuracy), which allows
-// sixty-four and would bleed away 31.5 of a pixel's 255. Rounding to nearest makes the per-sub-row error zero-mean
-// instead, so it stays at half a level however finely the row was cut, canceling across the row rather than
-// accumulating — which is what keeps several contours appended into one path (their edge y values interleave, cutting
-// every row much finer) totalling the same ink as the same contours filled one at a time.
+// sixty-four and would lose 31.5 of a pixel's 255. Rounding makes the per-sub-row error zero-mean, so it cancels across
+// the row and stays at half a level however finely the row is cut. That keeps several contours appended into one path
+// (their edge y values interleave, cutting every row much finer) totaling the same ink as the same contours filled one
+// at a time.
 func getPartialAlphaMul(alpha, fullAlpha Alpha) Alpha {
 	return Alpha((uint32(alpha)*uint32(fullAlpha) + 128) >> 8)
 }
 
-// fixedToAlpha converts f to an Alpha; for Fixed close to FixedOne we can't just shift right (that would map FixedOne
-// to 256, not 255); rarely a problem, so it's only used for blitting rectangles.
+// fixedToAlpha converts f to an Alpha without mapping FixedOne to 256, as a plain right shift would. That is rarely a
+// problem, so it is only used for blitting rectangles.
 func fixedToAlpha(f Fixed) Alpha {
 	return getPartialAlphaFixed(0xFF, f)
 }
 
-// approximateIntersection: suppose line (l1, y)-(r1, y+1) intersects with (l2, y)-(r2, y+1); approximate (very
-// coarsely) the x coordinate of the intersection.
+// approximateIntersection returns a very coarse approximation of the x coordinate where line (l1, y)-(r1, y+1)
+// intersects (l2, y)-(r2, y+1).
 func approximateIntersection(l1, r1, l2, r2 Fixed) Fixed {
 	if l1 > r1 {
 		l1, r1 = r1, l1
@@ -639,7 +629,7 @@ func computeAlphaBelowLine(alphas []Alpha, l, r, dY Fixed, fullAlpha Alpha) {
 ///////////////////////////////////////////////////////////////////////////////
 // Trapezoid blitting
 
-// blitSingleAlpha blits one pixel's alpha. If fullAlpha != 0xFF, alpha is scaled by fullAlpha.
+// blitSingleAlpha blits one pixel's alpha, scaled by fullAlpha unless fullAlpha is 0xFF and noRealBlitter is false.
 func blitSingleAlpha(blitter additiveBlitter, y, x int32, alpha, fullAlpha Alpha, mrow maskRow, noRealBlitter bool) {
 	if mrow.img != nil {
 		if fullAlpha == 0xFF && !noRealBlitter { // noRealBlitter is needed for concave paths
@@ -656,7 +646,6 @@ func blitSingleAlpha(blitter additiveBlitter, y, x int32, alpha, fullAlpha Alpha
 	}
 }
 
-// blitTwoAlphas blits two adjacent pixels' alphas.
 func blitTwoAlphas(blitter additiveBlitter, y, x int32, a1, a2, fullAlpha Alpha, mrow maskRow, noRealBlitter bool) {
 	if mrow.img != nil {
 		safelyAddAlpha(&mrow.img[mrow.off+int(x)], a1)
@@ -671,7 +660,6 @@ func blitTwoAlphas(blitter additiveBlitter, y, x int32, a1, a2, fullAlpha Alpha,
 	}
 }
 
-// blitFullAlpha blits a run of length pixels all at fullAlpha.
 func blitFullAlpha(blitter additiveBlitter, y, x, length int32, fullAlpha Alpha, mrow maskRow, noRealBlitter bool) {
 	if mrow.img != nil {
 		for i := int32(0); i < length; i++ {
@@ -706,7 +694,7 @@ func blitAAATrapezoidRow(blitter additiveBlitter, y int32, ul, ur, ll, lr, lDY, 
 		alphas[i] = fullAlpha
 	}
 	runs[length] = 0
-	alphas[length] = 0 // the init loop leaves [length] untouched; the original make() zeroed it
+	alphas[length] = 0 // the scratch buffer is not zeroed and the loop above stops short of [length]
 
 	uL := FixedFloorToInt(ul)
 	lL := FixedCeilToInt(ll)
@@ -785,8 +773,7 @@ func blitTrapezoidRow(blitter additiveBlitter, y int32, ul, ur, ll, lr, lDY, rDY
 		return
 	}
 
-	// Edge crosses. Approximate it. This should only happen due to precision limit, so the approximation could be very
-	// coarse.
+	// The edges cross, which should only happen at the precision limit, so a very coarse approximation suffices.
 	if ll > lr {
 		ll = approximateIntersection(ul, ll, ur, lr)
 		lr = ll
@@ -796,8 +783,8 @@ func blitTrapezoidRow(blitter additiveBlitter, y int32, ul, ur, ll, lr, lDY, rDY
 		return // empty trapezoid
 	}
 
-	// We're going to use the left line ul-ll and the rite line ur-lr to exclude the area that's not covered by the
-	// path. Swapping (ul, ll) or (ur, lr) won't affect that exclusion, so we'll do that for simplicity.
+	// The left line ul-ll and the rite line ur-lr exclude the area the path does not cover. Swapping (ul, ll) or
+	// (ur, lr) does not affect that exclusion, so do it for simplicity.
 	if ul > ll {
 		ul, ll = ll, ul
 	}
@@ -986,7 +973,6 @@ walk:
 			}
 		}
 
-		// check our bottom clip
 		if FixedFloorToInt(y) >= stopY {
 			break
 		}
@@ -1058,9 +1044,9 @@ walk:
 					}
 				}
 			} else {
-				// Normal conditions, this means left and rite are within the same pixel, but if both left and rite were
-				// < leftBounds or > rightBounds, both edges are clipped and we should not do any blitting (particularly
-				// since the negative width saturates to full alpha).
+				// Normally this means left and rite are within the same pixel, but if both were < leftBound or >
+				// riteBound, both edges are clipped and nothing must be blitted (particularly since the negative width
+				// saturates to full alpha).
 				width := rite - left
 				if width > 0 {
 					if partialTop > 0 {
@@ -1081,15 +1067,15 @@ walk:
 
 			y = localBotFixed
 		} else {
-			// The following constants are used to snap X. We snap X mainly for speedup (no tiny triangle) and to avoid
-			// edge cases caused by precision errors.
+			// These constants snap X, mainly for speed (no tiny triangle) and to avoid edge cases caused by precision
+			// errors.
 			const kSnapDigit = FixedOne >> 4
 			const kSnapHalf = kSnapDigit >> 1
 			const kSnapMask = -1 ^ (kSnapDigit - 1)
 			left += kSnapHalf
 			rite += kSnapHalf // For fast rounding
 
-			// Number of blit_trapezoid_row calls we'll have
+			// Number of blitTrapezoidRow calls we'll have
 			count := FixedCeilToInt(localBotFixed) - FixedFloorToInt(y)
 
 			// If we're using the mask blitter, we advance the mask row in this function to save some "if" condition
@@ -1099,9 +1085,8 @@ walk:
 				mrow = maskB.getRow(int32(y >> 16))
 			}
 
-			// Instead of writing one loop that handles both partial-row blit_trapezoid_row and full-row trapezoid_row
-			// together, we use the following 3-stage flow to handle partial-row blit and full-row blit separately. It
-			// will save us much time on changing y, left, and rite.
+			// Rather than one loop handling both partial-row and full-row blitTrapezoidRow calls, this 3-stage flow
+			// handles them separately, which saves much time on changing y, left, and rite.
 			if count > 1 {
 				if y&^Fixed(0xFFFF) != y { // There's a partial-row on the top
 					count--
@@ -1141,8 +1126,8 @@ walk:
 			}
 
 			dY := localBotFixed - y // partial-row on the bottom
-			// Smooth jumping to integer y may make the last nextLeft/nextRite out of bound. Take them back into the
-			// bound here. Note that we subtract kSnapHalf later, so we have to add it to leftBound/riteBound.
+			// Smooth jumping to integer y may take the last nextLeft/nextRite out of bounds, so bring them back here.
+			// kSnapHalf is subtracted later, so it has to be added to leftBound/riteBound.
 			nextLeft := max(left+FixedMul(dLeft, dY), leftBound+kSnapHalf)
 			nextRite := min(rite+FixedMul(dRite, dY), riteBound+kSnapHalf)
 			blitTrapezoidRow(blitter, int32(y>>16), left&kSnapMask, rite&kSnapMask,
@@ -1242,13 +1227,13 @@ func insertNewAnalyticEdges(newEdge *AnalyticEdge, y Fixed, nextNextY *Fixed) {
 // edgesTooClose reports whether prev.X and next.X are too close in the current pixel row.
 func edgesTooClose(prev, next *AnalyticEdge, lowerY Fixed) bool {
 	// When next.DX == 0, prev.X >= next.X - abs(next.DX) would be false even if prev.X and next.X are close and within
-	// one pixel (e.g., prev.X == 0.1, next.X == 0.9). Adding SLACK = 1 guarantees it to be true if the two edges are
-	// within one pixel.
+	// one pixel (e.g., prev.X == 0.1, next.X == 0.9). Adding slack guarantees it to be true if the two edges are within
+	// one pixel.
 	const slack = FixedOne
 
-	// Note that even if the following test failed, the edges might still be very close to each other at some point
-	// within the current pixel row because of prev.DX and next.DX (handling that would sacrifice performance; the
-	// current quality is deemed good enough).
+	// Even if the following test fails, the edges might still be very close to each other at some point within the
+	// current pixel row because of prev.DX and next.DX (handling that would sacrifice performance; the current quality
+	// is deemed good enough).
 	return next != nil && prev != nil && next.UpperY < lowerY &&
 		prev.X+slack >= next.X-FixedAbs(next.DX)
 }
@@ -1322,13 +1307,12 @@ func aaaWalkEdges(prevHead, nextTail *AnalyticEdge, fillType path.FillType, blit
 
 		fullAlpha := fixedToAlpha(nextY - y)
 
-		// If we're using the mask blitter, we advance the mask row in this function to save some "if" condition checks.
 		var mrow maskRow
 		if maskB != nil {
 			mrow = maskB.getRow(FixedFloorToInt(y))
 		}
 
-		// Even if nextY - y == Fixed1, we can still break the left-to-right order requirement of the clip mask: |\|
+		// Even if nextY - y == FixedOne, we can still break the left-to-right order requirement of the clip mask: |\|
 		// (two trapezoids with overlapping middle wedges)
 		noRealBlitter := forceRLE
 
@@ -1484,8 +1468,7 @@ func aaaFillPath(p *path.Path, clipRect geom.IRect, blitter additiveBlitter, mas
 	leftBound := Fixed(rect.Left) << 16
 	rightBound := Fixed(rect.Right) << 16
 	if maskB != nil {
-		// If we're using the mask, then we have to limit the bound within the path bounds; otherwise, the edge drift
-		// may access an invalid address inside the mask.
+		// With the mask, the bounds must stay within the path bounds; otherwise edge drift may index outside the mask.
 		ir := p.Bounds().RoundOut()
 		leftBound = max(leftBound, Fixed(ir.Left)<<16)
 		rightBound = min(rightBound, Fixed(ir.Right)<<16)
@@ -1526,10 +1509,9 @@ func AAAFillPath(p *path.Path, blitter Blitter, ir, clipBounds geom.IRect, force
 	containedInClip := clipBounds.ContainsRect(ir)
 	isInverse := p.IsInverseFillType()
 
-	// The mask blitter (which accumulates alphas into a small A8 mask and blits it once at the end) is faster than the
-	// RLE blitter when the blit region is small enough. When isInverse is true, the blit region is no longer the
-	// rectangle ir, so we won't use the mask blitter. When the path is a simple fat rect, blitFatAntiRect avoids the
-	// mask-and-blit overhead entirely.
+	// The mask blitter is faster than the RLE blitter when the blit region is small enough. An inverse fill's blit
+	// region is no longer the rectangle ir, so it cannot use the mask blitter. When the path is a simple fat rect,
+	// blitFatAntiRect avoids the mask-and-blit overhead entirely.
 	switch {
 	case maskBlitterCanHandleRect(ir) && !isInverse && !forceRLE:
 		// blitFatAntiRect is slower than the normal AAA flow without MaskAdditiveBlitter, hence only tryBlitFatAntiRect
@@ -1541,15 +1523,15 @@ func AAAFillPath(p *path.Path, blitter Blitter, ir, clipBounds geom.IRect, force
 			putMaskAdditiveBlitter(additive)
 		}
 	case !isInverse && p.IsConvex():
-		// If the filling area is convex, the simpler aaa_walk_convex_edges won't generate alphas above 255, so the
-		// basic RLE blitter suffices.
+		// If the filling area is convex, the simpler aaaWalkConvexEdges won't generate alphas above 255, so the basic
+		// RLE blitter suffices.
 		additive := getRunBasedAdditiveBlitter(blitter, ir, clipBounds, isInverse)
 		aaaFillPath(p, clipBounds, additive, nil, ir.Top, ir.Bottom, containedInClip, forceRLE)
 		additive.flush()
 		putRunBasedAdditiveBlitter(additive)
 	default:
-		// The filling area might not be convex, so the more involved aaa_walk_edges runs and alphas have to be clamped
-		// down to 255; SafeRLEAdditiveBlitter does that at a performance cost.
+		// The filling area might not be convex, so the more involved aaaWalkEdges runs and alphas have to be clamped
+		// down to 255; safeRLEAdditiveBlitter does that at a performance cost.
 		additive := getSafeRLEAdditiveBlitter(blitter, ir, clipBounds, isInverse)
 		aaaFillPath(p, clipBounds, additive, nil, ir.Top, ir.Bottom, containedInClip, forceRLE)
 		additive.flush()
@@ -1632,7 +1614,7 @@ func antiFillPathRegion(p *path.Path, origClip *Region, blitter Blitter, forceRL
 	}
 
 	// Our antialiasing can't handle a clip larger than 32767, so we restrict the clip to that limit here (the runs[]
-	// indexing uses int16_t).
+	// indexing uses int16).
 	clipRgn := origClip
 	const kMaxClipCoord = 32767
 	if b := origClip.Bounds(); b.Right > kMaxClipCoord || b.Bottom > kMaxClipCoord {
@@ -1641,7 +1623,7 @@ func antiFillPathRegion(p *path.Path, origClip *Region, blitter Blitter, forceRL
 			RegionIntersect)
 		clipRgn = tmp
 	}
-	// for here down, use clipRgn, not origClip
+	// from here down, use clipRgn, not origClip
 
 	clipper := getScanClipper(blitter, clipRgn, ir, false, false)
 	defer putScanClipper(clipper)

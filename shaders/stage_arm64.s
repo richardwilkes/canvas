@@ -2,8 +2,7 @@
 //
 // Use of this source code is governed by a BSD-style license that can be found in the LICENSE file.
 //
-// NEON forms of the hot SkRasterPipeline span stages (per-arch assembly for the top span kernels,
-// adopted only after profiling showed they dominate). Each kernel is bit-identical to its portable Go
+// NEON forms of the hottest SkRasterPipeline span stages, as profiled. Each kernel is bit-identical to its portable Go
 // stage:
 //
 //   - madf is float32(math.FMA(float64(f), float64(m), float64(a))) — a double-precision FMA rounded

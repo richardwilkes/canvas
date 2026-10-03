@@ -9,7 +9,7 @@
 
 // Package scenario defines the declarative drawing corpus rendered for differential testing. Scenarios draw through the
 // Canvas interface using only operations reachable through the public surface, with paints and paths described as plain
-// data so a backend can materialize them natively. This package is cgo-free.
+// data so a backend can materialize them natively.
 //
 // The gating references are the library's own per-platform self-captured sets under ../goldens, regenerated
 // deliberately via `oracle bless` and the capture-goldens workflow whenever rendering changes intentionally.
@@ -172,8 +172,8 @@ type Paint struct {
 	Dither      bool
 }
 
-// NewPaint returns a Paint matching a default-constructed Skia's Paint: opaque black fill, SrcOver, butt cap, miter
-// join with limit 4, no AA.
+// NewPaint returns a Paint matching a default-constructed Skia Paint: opaque black fill, SrcOver, butt cap, miter join
+// with limit 4, no AA.
 func NewPaint() Paint {
 	return Paint{
 		Color:       colorcore.Color(0xFF000000),
@@ -203,8 +203,8 @@ func Stroke(c colorcore.Color, width float32) Paint {
 	return p
 }
 
-// Canvas is the publicly reachable drawing surface a scenario draws on. gorender's adapter over the library's
-// *canvas.Canvas is its only implementation now; the removed C oracle once provided a second one.
+// Canvas is the publicly reachable drawing surface a scenario draws on, implemented by gorender's adapter over the
+// library's *canvas.Canvas.
 type Canvas interface {
 	Clear(c colorcore.Color)
 	DrawColor(c colorcore.Color, mode BlendMode)
@@ -231,8 +231,7 @@ type Canvas interface {
 	SaveLayer(bounds *geom.Rect, p *Paint) int
 	Restore()
 	// DrawSimpleText draws UTF-8 text at the baseline origin with the corpus font (FontData) at the given point size —
-	// Skia's Font defaults otherwise (kAntiAlias edging, normal hinting, no subpixel), which both backends share. Added
-	// with the text scenarios.
+	// Skia's Font defaults otherwise (kAntiAlias edging, normal hinting, no subpixel), which both backends share.
 	DrawSimpleText(text string, x, y, size float32, p Paint)
 	// DrawSimpleTextFont is DrawSimpleText with an explicit corpus font (text.go's FontID table); the emoji scenarios
 	// select the color test fonts through it.

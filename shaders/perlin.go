@@ -44,9 +44,8 @@ type PerlinNoiseShader struct {
 	baseFreqY     float32
 	stitchDataInX int32
 	stitchDataInY int32
-	// uniqueID is a process-unique identifier used to key the GPU permutations/noise textures, one per painting-data
-	// instance. Assigned eagerly at construction (the shader is immutable and only ever handled by pointer, so a plain
-	// field suffices — no atomic-in-struct copy hazard).
+	// uniqueID is a process-unique identifier keying the GPU permutations/noise textures, assigned at construction. A
+	// plain field suffices because the shader is immutable and only ever handled by pointer.
 	uniqueID        uint32
 	noise           [4][perlinBlockSize][2]uint16
 	latticeSelector [perlinBlockSize]uint8
@@ -385,7 +384,7 @@ func (s *PerlinNoiseShader) samplePixel(x, y float32) (r, g, b, a float32) {
 		}
 	}
 
-	// Note: rgb premultiplies by the *unclamped* alpha, then alpha itself is clamped.
+	// rgb premultiplies by the *unclamped* alpha, then alpha itself is clamped.
 	rawA := out[3]
 	return clamp01(out[0]) * rawA, clamp01(out[1]) * rawA, clamp01(out[2]) * rawA, clamp01(rawA)
 }

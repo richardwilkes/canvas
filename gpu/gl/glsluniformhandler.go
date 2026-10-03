@@ -7,8 +7,8 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// The uniform handler for shader programs: uniforms are declared with mangled names, bound (or queried) to locations at
-// link, and identified afterwards by handle index.
+// The uniform handler for shader programs: uniforms are declared with mangled names, resolved to locations after link,
+// and identified afterwards by handle index.
 
 package gl
 
@@ -44,7 +44,8 @@ func (h SamplerHandle) toIndex() int {
 	return int(h) - 1
 }
 
-// unusedUniformLocation marks a uniform whose GL location has not yet been resolved.
+// unusedUniformLocation is the location of a uniform that is not yet resolved or that the linker optimized away
+// (glGetUniformLocation returns -1 for those).
 const unusedUniformLocation = -1
 
 // UniformInfo records one declared uniform's shader variable, owning processor, pre-mangling name, visibility, and
@@ -57,7 +58,7 @@ type UniformInfo struct {
 	Location   int32
 }
 
-// UniformHandler is the merged uniform handler.
+// UniformHandler declares a program's uniforms and samplers and resolves their GL locations.
 type UniformHandler struct {
 	programBuilder  *ProgramBuilder
 	uniforms        []UniformInfo
@@ -113,8 +114,8 @@ func (u *UniformHandler) internalAddUniformArray(owner Processor, visibility Sha
 		panic("uniform visibility required")
 	}
 
-	// Names that already carry the 'u' prefix (uniform view matrices, the program-wide RT-adjust and RT-flip uniforms)
-	// keep their names as-is; other names get a 'u' prefix.
+	// Names that already start with 'u' (the program-wide RT-adjust and RT-flip uniforms) keep their names as-is; other
+	// names get a 'u' prefix.
 	prefix := byte('u')
 	if name[0] == 'u' {
 		prefix = 0

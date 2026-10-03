@@ -7,9 +7,9 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// A strict UTF-8 decoding primitive that writeTextString uses to validate and iterate a PDF text string. Implemented
-// locally so the pdf package does not depend on the font stack; the semantics match font.nextUTF8 exactly (strict
-// validation, -1 on any invalid byte with the cursor jumping to the end).
+// A strict UTF-8 decoding primitive that writeTextString uses to validate and iterate a PDF text string. It duplicates
+// the unexported font.nextUTF8; the semantics match exactly (strict validation, -1 on any invalid byte with the cursor
+// jumping to the end).
 
 package pdf
 

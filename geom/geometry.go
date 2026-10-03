@@ -12,8 +12,8 @@ package geom
 import "math"
 
 // This file implements the quad/cubic evaluation, chopping, and extrema-finding used by the path flattening and
-// clipping machinery. Curves are represented as point slices: quads are [3]Point, cubics are [4]Point, and chops write
-// the shared point once (a chop of a quad yields 5 points, of a cubic 7 points).
+// clipping machinery. Curves are point slices (3 points for a quad, 4 for a cubic), and chops write the shared point
+// once (a chop of a quad yields 5 points, of a cubic 7).
 
 // ValidUnitDivide computes numer/denom and returns it with true only when the result is a valid parametric t in (0, 1).
 // Zero, NaN, and out-of-range results return false.
@@ -228,10 +228,9 @@ func evalCubicDerivative(src []Point, t float32) Point {
 	return q.eval(t)
 }
 
-// EvalCubicCurvatureAt returns the second derivative of the cubic src at t, scaled by 1/6: with A = P3-3*P2+3*P1-P0
-// and B = P2-2*P1+P0, it returns A*t + B, which is one sixth of the true second derivative. The scale factor is
-// harmless for the callers, which only use the direction of the returned vector, but callers relying on the magnitude
-// must multiply by 6.
+// EvalCubicCurvatureAt returns one sixth of the second derivative of the cubic src at t: A*t + B, with A =
+// P3-3*P2+3*P1-P0 and B = P2-2*P1+P0, as Skia's eval_cubic_2ndDerivative does. A caller that needs the magnitude rather
+// than just the direction must multiply by 6.
 func EvalCubicCurvatureAt(src []Point, t float32) Point {
 	ax := src[3].X + 3*(src[1].X-src[2].X) - src[0].X
 	ay := src[3].Y + 3*(src[1].Y-src[2].Y) - src[0].Y
@@ -287,8 +286,7 @@ func ChopCubicAt(src, dst []Point, t float32) {
 }
 
 // ChopCubicAt2 splits the cubic at both t0 and t1, producing three cubics. dst must hold 10 points. src and dst may
-// alias each other (ChopCubicAtList deliberately overlaps them), so all four source points are loaded before anything
-// is stored.
+// alias each other, as with ChopCubicAt.
 func ChopCubicAt2(src, dst []Point, t0, t1 float32) {
 	p0, p1, p2, p3 := src[0], src[1], src[2], src[3]
 	if t1 == 1 {
@@ -332,7 +330,6 @@ func ChopCubicAtHalf(src, dst []Point) {
 	ChopCubicAt(src, dst, 0.5)
 }
 
-// pin32 clamps x to the inclusive range [lo, hi].
 func pin32(x, lo, hi float32) float32 {
 	return max32(lo, min32(x, hi))
 }
@@ -368,9 +365,8 @@ func ChopCubicAtList(src, dst []Point, tValues []float32) {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// Y-extrema chops (used by point-in-path winding computation)
+// Y-extrema chops
 
-// isNotMonotonic reports whether the sequence a, b, c is not monotonic.
 func isNotMonotonic(a, b, c float32) bool {
 	ab := a - b
 	bc := b - c

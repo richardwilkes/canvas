@@ -421,7 +421,6 @@ func (g *Gpu) WritePixels(surface *Surface, rect geom.IRect, surfaceColorType, s
 	}
 	g.handleDirtyContext()
 
-	// Bind the target texture and upload.
 	glTex := surface.AsTexture()
 	if glTex == nil {
 		return false
@@ -751,7 +750,7 @@ func (g *Gpu) bindSurfaceFBOForPixelOps(surface *Surface, mipLevel int, fboTarge
 	}
 }
 
-// unbindSurfaceFBOForPixelOps detaches the texture bound by bindSurfaceFBOForPixelOps, undoing it.
+// unbindSurfaceFBOForPixelOps detaches the texture bindSurfaceFBOForPixelOps attached to a temporary FBO.
 func (g *Gpu) unbindSurfaceFBOForPixelOps(surface *Surface, mipLevel int, fboTarget uint32) {
 	if mipLevel > 0 || surface.AsRenderTarget() == nil {
 		texture := surface.AsTexture()

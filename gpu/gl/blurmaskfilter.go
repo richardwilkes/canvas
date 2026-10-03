@@ -9,20 +9,16 @@
 
 // The mask-filter draw lane: DrawShapeWithMaskFilter and its helpers. A blurred (or otherwise mask-filtered) shape is
 // turned into an A8 coverage mask that is filtered and then drawn as a device-space coverage rect. Large blurs generate
-// and blur the mask entirely on the GPU (createMaskGPU + filterMask over the Gaussian blur engine); small
-// blurs (and every non-blur filter) render the filtered mask on the CPU and upload it (swCreateFilteredMask), matching
-// the standard minimum-GPU-blur-size gate.
+// and blur the mask entirely on the GPU (createMaskGPU + filterMask over the Gaussian blur engine); small blurs (and
+// every non-blur filter) render the filtered mask on the CPU and upload it (swCreateFilteredMask), matching Skia's
+// minimum-GPU-blur-size gate.
 //
-// directFilterMask's analytic blur profiles are all implemented (rect/circle and simple-circular rrect), so a
-// normal-blurred simple-fill rect/circle/rrect renders through one textured coverage draw.
+// directFilterMask short-circuits a normal-blurred simple-fill rect, circle, or simple-circular rrect into one analytic
+// coverage draw.
 //
-// computeKeyAndClipBounds and its thread-safe cache: an axis-aligned, unstyled-keyable, >50%-visible blurred shape has
-// its filtered A8 mask memoized under a unique key so a repeated draw (unison redraws the same shadowed primitives
-// frame after frame) reuses the upload, and the clip no longer bounds the mask (boundsForClip becomes the unclipped
-// shape bounds so the same key serves every clip). The HW lane (large blurs) takes an explicit long-lived ref on the
-// rendered mask proxy before adding it (this codebase is single-threaded, and the HW lane runs before the SW lane; a
-// given key deterministically takes one lane); the SW lane's lazy-upload A8 view is cached exactly as the analytic
-// profiles are.
+// A cacheable shape's filtered mask is memoized in the thread-safe cache under a unique key that ignores the clip, so a
+// repeated draw (unison redraws the same shadowed primitives frame after frame) reuses it; see computeKeyAndClipBounds
+// for the gate and hwCreateFilteredMask/swCreateFilteredMask for each lane's ownership rules.
 
 package gl
 
@@ -75,7 +71,6 @@ type blurMaskFilterQuery interface {
 	ComputeXformedSigma(ctm *geom.Matrix) float32
 }
 
-// clipBoundsQuickReject reports whether rect can be trivially rejected against clipBounds.
 func clipBoundsQuickReject(clipBounds, rect geom.IRect) bool {
 	return clipBounds.IsEmpty() || rect.IsEmpty() || !clipBounds.Intersects(rect)
 }
@@ -112,7 +107,7 @@ func createMaskGPU(ctx *DirectContext, maskRect geom.IRect, origViewMatrix *geom
 		return nil
 	}
 
-	sdc.Clear([4]float32{}) // transparent
+	sdc.Clear([4]float32{})
 
 	maskPaint := NewPaint()
 	maskPaint.SetCoverageSetOpXPFactory(raster.RegionReplace, false)
@@ -126,11 +121,10 @@ func createMaskGPU(ctx *DirectContext, maskRect geom.IRect, origViewMatrix *geom
 	return sdc
 }
 
-// blurShapeAndClipBounds returns the clip bounds, the unclipped shape dev bounds, and whether the shape has a
-// (non-empty) styled bound. It does not require the shape to intersect the clip (an inverse-filled shape can still
-// draw). getUnclippedShapeDevBounds uses the shape's finite styled bounds; an infinite-bounds inverse-fill lane is not
-// implemented — inverse-filled mask-filtered shapes therefore blur over their finite bounds, matching this codebase's
-// SW path renderer.
+// blurShapeAndClipBounds returns the unclipped device-space shape bounds, the clip bounds, and whether the shape has a
+// non-empty styled bound. It does not require the shape to intersect the clip (an inverse-filled shape can still draw).
+// The shape bounds are the finite styled bounds: there is no infinite-bounds inverse-fill lane, so inverse-filled
+// mask-filtered shapes blur over their finite bounds, matching the SW path renderer.
 func blurShapeAndClipBounds(sdc *SurfaceDrawContext, clip Clip, shape *StyledShape, matrix *geom.Matrix) (unclippedDevShapeBounds, devClipBounds geom.IRect, ok bool) {
 	devClipBounds = sdc.clipConservativeBounds(clip)
 	unclippedDevShapeBounds, ok = getUnclippedShapeDevBounds(shape, matrix)
@@ -188,8 +182,6 @@ func filterMask(ctx *DirectContext, mf maskfilter.MaskFilter, srcView SurfacePro
 
 	xformedSigma := bmf.ComputeXformedSigma(ctm)
 
-	// For a normal blur we can clobber the src in the GaussianBlur; otherwise we save it for the compositing pass
-	// below.
 	isNormalBlur := bmf.Style() == maskfilter.BlurNormal
 	srcBounds := geom.IRectSize(srcView.Proxy().Dimensions())
 	sdc := GaussianBlur(ctx, srcView, srcColorType, srcAlphaType, clipRect, srcBounds, xformedSigma,
@@ -325,8 +317,8 @@ func swCreateFilteredMask(ctx *DirectContext, viewMatrix *geom.Matrix, shape *St
 	drawRect = dstM.Bounds
 
 	if key.IsValid() {
-		// The view owns a8DataToTextureView's single construction ref, which addWithData adopts (as the analytic path
-		// does). On a key collision addWithData drops the redundant ref and returns the incumbent, whose stored draw
+		// The view owns a8DataToTextureView's single construction ref, which AddWithData adopts (as the analytic path
+		// does). On a key collision AddWithData drops the redundant ref and returns the incumbent, whose stored draw
 		// rect may differ.
 		key.SetCustomData(createMaskData(drawRect, unclippedDevShapeBounds))
 		var data []byte
@@ -469,8 +461,6 @@ func computeKeyAndClipBounds(caps *Caps, viewMatrix *geom.Matrix, inverseFilled 
 	boundsForClip = devClipBounds
 
 	bmf, isBlur := mf.(blurMaskFilterQuery)
-	// To prevent overloading the cache with entries during animations we limit the cache of masks to cases where the
-	// matrix preserves axis alignment (preservesAxisAlignment == rectStaysRect).
 	useCache := !inverseFilled && viewMatrix.RectStaysRect() && shape.HasUnstyledKey() && isBlur
 
 	if useCache {
@@ -548,8 +538,9 @@ const (
 	maskFilterLaneSW
 )
 
-// DrawShapeWithMaskFilter styles the shape, then draws it filtered through the GPU mask lane (large blurs) or the CPU
-// mask lane (small blurs and non-blur filters). The paint is consumed.
+// DrawShapeWithMaskFilter styles the shape, then draws it filtered through an analytic blur FP when directFilterMask
+// can, else through the GPU mask lane (large blurs) or the CPU mask lane (small blurs and non-blur filters). The paint
+// is consumed.
 func DrawShapeWithMaskFilter(sdc *SurfaceDrawContext, clip Clip, paint *Paint, viewMatrix *geom.Matrix, mf maskfilter.MaskFilter, origShape *StyledShape) {
 	drawShapeWithMaskFilter(sdc, clip, paint, viewMatrix, mf, origShape)
 }
@@ -569,10 +560,7 @@ func drawShapeWithMaskFilter(sdc *SurfaceDrawContext, clip Clip, paint *Paint, v
 		shape = &tmpShape
 	}
 
-	// Try to draw the mask filter directly through an analytic blur FP (rect/circle/simple-circular rrect profiles).
-	// Shapes that do not qualify fall through to the general filtered-mask path.
 	if directFilterMask(sdc, mf, clip, paint, viewMatrix, shape) {
-		// The mask filter drew itself directly, so there's nothing left to do.
 		return maskFilterLaneDirect
 	}
 

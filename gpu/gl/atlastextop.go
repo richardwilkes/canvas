@@ -11,8 +11,7 @@
 // SDFT subruns, the distance-field GPs — regenerating the glyph atlas as it prepares and interleaving inline uploads
 // with its draws under the deferred-upload token protocol (see OpFlushState.IssueDrawToken). Trims: the color-space
 // xform for color emoji is identity, since color emoji and the destination are both sRGB; glyph allocation is ordinary
-// Go allocation; useGammaCorrectDistanceTable is constant false — sRGB destinations only. The LCD coverage type (A565
-// atlas) is live.
+// Go allocation; useGammaCorrectDistanceTable is constant false — sRGB destinations only.
 
 package gl
 
@@ -25,13 +24,12 @@ import (
 	"github.com/richardwilkes/canvas/surface"
 )
 
-// Vertex/index counts per glyph quad.
 const (
 	verticesPerGlyph = 4
 	indicesPerGlyph  = 6
 )
 
-// atlasTextMaskType selects which atlas format and shading lane a glyph draw uses (all six members live as of E.1).
+// atlasTextMaskType selects which atlas format and shading lane a glyph draw uses.
 type atlasTextMaskType uint8
 
 const (
@@ -68,13 +66,11 @@ func (t atlasTextMaskType) maskFormat() gpu.MaskFormat {
 	}
 }
 
-// usesDistanceFields reports whether this mask type is one of the SDF lanes.
 func (t atlasTextMaskType) usesDistanceFields() bool {
 	return t == maskTypeAliasedDistanceField || t == maskTypeGrayscaleDistanceField ||
 		t == maskTypeLCDDistanceField
 }
 
-// isLCD reports whether this mask type renders through the LCD coverage lane.
 func (t atlasTextMaskType) isLCD() bool {
 	return t == maskTypeLCDCoverage || t == maskTypeLCDDistanceField
 }
@@ -156,8 +152,8 @@ const (
 	kGeometryClipped
 )
 
-// calculateClip decides how (and whether) the clip needs to be applied to a glyph draw whose device bounds and
-// untransformed glyph bounds are given.
+// calculateClip decides how (and whether) the clip needs to be applied to a glyph draw, given the render target's
+// bounds and the glyphs' device-space bounds.
 func calculateClip(clip Clip, deviceBounds, glyphBounds geom.Rect) (clipMethod, geom.IRect) {
 	if clip == nil {
 		if !deviceBounds.Intersects(glyphBounds) {
@@ -175,7 +171,7 @@ func calculateClip(clip Clip, deviceBounds, glyphBounds geom.Rect) (clipMethod, 
 		if result.IsRRect && result.RRect.Type == geom.RRectRect {
 			r := result.RRect.Rect
 			if result.AA == gpu.AANo || IsPixelAligned(r) {
-				// Clip geometrically during onPrepare using clipRect.
+				// Clip geometrically during OnPrepare using clipRect.
 				clipRect := r.Round()
 				if clipRect.ContainsRect(glyphBounds.RoundOut()) {
 					// If fully within the clip, signal no clipping using the empty rect.
@@ -191,7 +187,7 @@ func calculateClip(clip Clip, deviceBounds, glyphBounds geom.Rect) (clipMethod, 
 }
 
 // calculateColors resolves the paint into a device-ready Paint and drawing color for this mask format; color-bitmap
-// glyphs ignore the paint's shader and only use its alpha.
+// glyphs ignore the paint's shader and only use its alpha, since the texture supplies the actual color.
 func calculateColors(sdc *SurfaceDrawContext, paint *canvas.Paint, matrix *geom.Matrix, maskFormat gpu.MaskFormat) (*Paint, colorcore.PMColor4f, bool) {
 	pp := PaintParams{
 		Color:          colorcore.Color4fFromColor(paint.Color),
@@ -203,7 +199,6 @@ func calculateColors(sdc *SurfaceDrawContext, paint *canvas.Paint, matrix *geom.
 		HasImageFilter: paint.ImageFilter != nil,
 	}
 	if maskFormat == gpu.MaskFormatARGB {
-		// Ignore the paint's shader and use its color; the texture supplies the actual color.
 		gpuPaint, ok := makePaintImpl(sdc, &pp, *matrix, nil, true, false, 0)
 		if !ok {
 			return nil, colorcore.PMColor4f{}, false
@@ -365,7 +360,7 @@ func (o *AtlasTextOp) Finalize(caps *gpu.Caps, clip *AppliedClip, clampType gpu.
 	if o.maskType == maskTypeColorBitmap {
 		color = AnalysisColorUnknown()
 	} else {
-		// finalize() is called before any merging is done, so at this point there's at most one geometry with a color.
+		// Finalize is called before any merging is done, so at this point there's at most one geometry with a color.
 		color = AnalysisColorConstant(o.geometries[0].color)
 	}
 	switch o.maskType {
@@ -466,8 +461,7 @@ func regenerateAtlasForGL(gv *text.GlyphVector, begin, end int, maskFormat gpu.M
 
 		// Update the atlas generation if there are no more glyphs to put in the atlas.
 		if success && begin+glyphsPlacedInAtlas == gv.GlyphCount() {
-			// Need to get the freshest value of the atlas' generation because updateTextureCoordinates may have changed
-			// it.
+			// Fetch the atlas generation afresh, since adding glyphs above may have changed it.
 			gv.SetAtlasGeneration(atlasManager.AtlasGeneration(maskFormat))
 		}
 		return success, glyphsPlacedInAtlas
@@ -475,8 +469,7 @@ func regenerateAtlasForGL(gv *text.GlyphVector, begin, end int, maskFormat gpu.M
 
 	// The atlas hasn't changed, so our texture coordinates are still valid.
 	if end == gv.GlyphCount() {
-		// The atlas hasn't changed and the texture coordinates are all still valid. Update all the plots used to the
-		// new use token.
+		// Update all the plots used to the new use token.
 		atlasManager.SetUseTokenBulk(gv.BulkUseUpdater(),
 			state.TokenTracker().NextDrawToken(), maskFormat)
 	}
@@ -489,7 +482,7 @@ func regenerateAtlasForGL(gv *text.GlyphVector, begin, end int, maskFormat gpu.M
 func (o *AtlasTextOp) OnPrepare(state *OpFlushState) {
 	// If we need local coordinates, compute an inverse view matrix. If this is a solid color, the processor analysis
 	// will not require local coords and the GP will skip local coords when the matrix is identity. When the shaders
-	// require local coords, combineIfPossible requires all geometries to have the same draw matrix.
+	// require local coords, OnCombineIfPossible requires all geometries to have the same draw matrix.
 	localMatrix := geom.IdentityMatrix()
 	if o.usesLocalCoords {
 		inverted, ok := o.geometries[0].drawMatrix.Invert()
@@ -511,7 +504,7 @@ func (o *AtlasTextOp) OnPrepare(state *OpFlushState) {
 	o.numActiveViews = numActiveViews
 
 	// This op does not know its atlas proxies when it is added to an OpsTask, so the proxies don't get added during the
-	// visitProxies call. Thus we add them here.
+	// VisitProxies call. Thus we add them here.
 	for i := uint32(0); i < numActiveViews; i++ {
 		*state.SampledProxyArray() = append(*state.SampledProxyArray(), views[i].Proxy())
 	}
@@ -530,8 +523,8 @@ func (o *AtlasTextOp) OnPrepare(state *OpFlushState) {
 			int(numActiveViews))
 	} else {
 		filter := bitmapTextFilterFromNeedsTransform(o.needsGlyphTransform)
-		// Bitmap text uses a single color; combineIfPossible ensures all geometries have the same color, so we can use
-		// the first's without worry.
+		// Bitmap text uses a single color; OnCombineIfPossible ensures all geometries have the same color, so we can
+		// use the first's without worry.
 		o.gp = newBitmapTextGeoProc(state.Caps().ShaderCaps, o.geometries[0].color,
 			views[:], int(numActiveViews), filter, maskFormat, &localMatrix, o.hasPerspective)
 	}

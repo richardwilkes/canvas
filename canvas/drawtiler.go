@@ -10,8 +10,7 @@
 // The draw tiler: the CPU scan converters are only safe to ~15-bit device coordinates, so draws against devices or
 // clips extending past 8191px are re-issued once per 8191x8191 tile with a shifted CTM and a re-derived clip. Devices
 // that fit in 8191px per side — everything unison creates — never construct a tiler at all: the wrapped device methods
-// gate on clipMayNeedTiling and take the exact pre-tiler draw path otherwise, keeping that fast path allocation-free
-// and byte-identical to the pre-H code.
+// gate on clipMayNeedTiling and otherwise take the untiled draw path, keeping it allocation-free.
 
 package canvas
 

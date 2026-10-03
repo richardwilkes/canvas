@@ -67,7 +67,7 @@ func TestUUIDToStringAndPdfID(t *testing.T) {
 	if got, want := uuidToString(uuid), "81b14aaf-a313-db63-dbd6-f981e49f94f4"; got != want {
 		t.Errorf("uuidToString = %q, want %q", got, want)
 	}
-	// MakePdfId emits two identical byte strings holding the raw UUID bytes (hex, since non-printable).
+	// MakePdfID emits two identical byte strings holding the raw UUID bytes (hex, since non-printable).
 	got := string(emitToBytes(MakePdfID(uuid, uuid)))
 	want := "[<81B14AAFA313DB63DBD6F981E49F94F4> <81B14AAFA313DB63DBD6F981E49F94F4>]"
 	if got != want {

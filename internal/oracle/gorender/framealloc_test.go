@@ -24,9 +24,9 @@ import (
 	"github.com/richardwilkes/canvas/internal/oracle/gorender"
 )
 
-// The panel-frame geometry, identical to gpu/gl/frame_bench_test.go's BenchmarkGLFramePanels — a batching-friendly UI
-// frame (background fill plus a grid of filled rounded-rect panels with stroked borders), the "unison workload" proxy
-// the GA gates were stated against.
+// The panel-frame geometry, identical to gpu/gl/frame_bench_test.go's BenchmarkGLFramePanels: a batching-friendly UI
+// frame (background fill plus a grid of filled rounded-rect panels with stroked borders) standing in for the unison
+// workload.
 const (
 	framePanelSide = 256
 	framePanelRows = 6
@@ -34,10 +34,9 @@ const (
 	framePanelPad  = 6
 )
 
-// frameAllocBudget caps allocations per rendered frame. The frame records at 1 alloc on darwin/arm64 (the panels frame
-// went 238 -> 1), and the fixed-arity FFI lane removes the per-call marshaling allocs on all three OSes, so 10 leaves
-// ~10x absolute headroom while still tripping on a single GL call falling back to the SyscallN lane or a lost pooling
-// tier. Carried over from the retired benchratio gate this replaces.
+// frameAllocBudget caps allocations per rendered frame. The frame measures 1 alloc on darwin/arm64, and the fixed-arity
+// FFI lane removes the per-call marshaling allocs on all three OSes, so 10 leaves ~10x headroom while still tripping on
+// a single GL call falling back to the SyscallN lane or a lost pooling tier.
 const frameAllocBudget = 10
 
 // panelColor is the deterministic per-cell fill color from gpu/gl/frame_bench_test.go's benchPanels.
@@ -97,7 +96,7 @@ func TestGLFramePanelsAllocs(t *testing.T) {
 	}
 
 	// Warm the program/resource caches with one full frame: first-frame compilation and cache fills allocate heavily
-	// and are not what this gates, so measuring without a warm-up would gate on start-up cost.
+	// and are not what this gates.
 	frame()
 	if target.DirectContext().NumGLDraws() == 0 {
 		t.Fatal("warm-up frame issued no GL draws — the frame did not render")

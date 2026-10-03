@@ -23,8 +23,6 @@ import (
 	"github.com/richardwilkes/canvas/stream"
 )
 
-// ---- OffsetMap ---------------------------------------------------------------------------------------
-
 // offsetMap tracks the byte offset of each indirect object so the xref table can be written at close.
 type offsetMap struct {
 	offsets    []int
@@ -100,8 +98,6 @@ func serializeFooter(m *offsetMap, s stream.WStream, infoDict, docCatalog Indire
 	writeText(s, "\n%%EOF\n")
 }
 
-// ---- Document -----------------------------------------------------------------------------------------
-
 // Document writes a PDF to a stream as pages are added. Not safe for concurrent use.
 type Document struct {
 	stream stream.WStream
@@ -133,8 +129,8 @@ type Document struct {
 	invertFunction IndirectReference
 	xmp            IndirectReference
 	infoDict       IndirectReference
-	// noSmaskGraphicState is the shared "/SMask /None" /ExtGState used to turn a soft mask back off after a masked
-	// form-XObject draw. Lazily emitted the first time drawFormXObjectWithMask needs it (zero value = not yet emitted).
+	// noSmaskGraphicState is the shared "/SMask /None" /ExtGState that turns a soft mask back off after a masked draw,
+	// lazily emitted by clearMaskOnGraphicState (zero value = not yet emitted).
 	noSmaskGraphicState    IndirectReference
 	nextObjectNumber       int32
 	inverseRasterScale     float32
@@ -144,7 +140,7 @@ type Document struct {
 	closed                 bool
 }
 
-// NewDocument applies the rasterDPI (<=0 → 72) and encodingQuality (<0 → 0) clamps and prepares the object catalog.
+// NewDocument applies the RasterDPI (<=0 → 72) and EncodingQuality (<0 → 0) clamps and prepares the object catalog.
 // Nothing is written until the first page begins.
 func NewDocument(w stream.WStream, metadata *Metadata) *Document {
 	if metadata == nil {
@@ -179,8 +175,7 @@ func NewDocument(w stream.WStream, metadata *Metadata) *Document {
 // Metadata returns the document's (clamped) metadata.
 func (d *Document) Metadata() *Metadata { return &d.metadata }
 
-// ReserveRef reserves an indirect object number; every returned reference must be passed to EmitAt exactly once. (Emit
-// is the shorthand for the common case: it reserves its own reference and emits under it.)
+// ReserveRef reserves an indirect object number; every returned reference must be passed to EmitAt exactly once.
 func (d *Document) ReserveRef() IndirectReference {
 	ref := IndirectReference{value: d.nextObjectNumber}
 	d.nextObjectNumber++
@@ -206,7 +201,7 @@ func (d *Document) EmitAt(object Object, ref IndirectReference) IndirectReferenc
 	return ref
 }
 
-// emitStream emits dict, then " stream\n", the writer's bytes, and "\nendstream", as a single indirect object.
+// emitStream emits dict, then " stream\n", content, and "\nendstream", as a single indirect object.
 func (d *Document) emitStream(dict *Dict, content []byte, ref IndirectReference) {
 	beginIndirectObject(&d.offsetMap, ref, d.stream)
 	dict.emit(d.stream)
@@ -220,9 +215,9 @@ func (d *Document) emitStream(dict *Dict, content []byte, ref IndirectReference)
 // dict.
 const minimumFlateSavings = len("/Filter /FlateDecode ")
 
-// StreamOut emits content as a stream object, FlateDecode-compressing it when compression is enabled, the level is not
-// None, and doing so actually saves space. dict may be nil (a fresh dictionary is used). Returns the object's
-// reference, or the zero, invalid reference after Close or Abort (see EmitAt).
+// StreamOut emits content as a stream object, FlateDecode-compressing it when compress is set, the level is not
+// CompressionNone, and doing so actually saves space. dict may be nil (a fresh dictionary is used). Returns the
+// object's reference, or the zero, invalid reference after Close or Abort (see EmitAt).
 func (d *Document) StreamOut(dict *Dict, content []byte, compress bool) IndirectReference {
 	if d.closed {
 		return IndirectReference{}
@@ -368,7 +363,7 @@ func (d *Document) EndPage() {
 	d.current = nil
 }
 
-// generatePageTree builds a balanced tree of /Pages nodes (branching factor maxNodeSize = 8), built bottom up, skipping
+// generatePageTree builds a balanced tree of /Pages nodes (branching factor maxNodeSize = 8) bottom up, skipping
 // internal nodes with a single child.
 func generatePageTree(doc *Document, pages []*Dict, pageRefs []IndirectReference) IndirectReference {
 	type node struct {
@@ -435,8 +430,8 @@ func (d *Document) Close() {
 	docCatalog := NewTypedDict("Catalog")
 	if d.metadata.PDFA {
 		docCatalog.InsertRef("Metadata", d.xmp)
-		// The sRGB /OutputIntents ICC profile is deferred: PDF/A isn't reachable through the oracle's public metadata
-		// API, so this completeness gap is unobservable.
+		// The sRGB /OutputIntents ICC profile is not emitted: PDF/A isn't reachable through the oracle's public
+		// metadata API, so this completeness gap is unobservable.
 	}
 	docCatalog.InsertRef("Pages", generatePageTree(d, d.pages, d.pageRefs))
 
@@ -452,7 +447,6 @@ func (d *Document) Close() {
 
 	docCatalogRef := d.Emit(docCatalog)
 
-	// Emit every font used across the document.
 	d.emitFonts()
 
 	serializeFooter(&d.offsetMap, d.stream, d.infoDict, docCatalogRef, d.uuid)

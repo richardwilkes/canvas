@@ -26,11 +26,9 @@ const outsetBeforeClipTest = true
 
 const hlineStackBuffer = 100
 
-// hlineScratch holds callHLineBlitter's runs/coverage buffers. They are handed to the Blitter interface as slices,
-// which the compiler must treat as escaping (and some wrapper blitters genuinely mutate them in place), so a plain
-// stack array would heap-allocate on every AA rect-fill / hairline scanline. Pooling keeps those hot lanes
-// allocation-free; a sync.Pool (rather than a single shared instance) keeps concurrent FillPathParallel bands
-// independent.
+// hlineScratch holds callHLineBlitter's runs/coverage buffers. Slices handed to the Blitter interface escape, so a
+// stack array would heap-allocate on every AA rect-fill and hairline scanline; pooling avoids that, and a sync.Pool
+// (rather than a shared instance) keeps concurrent FillPathParallel bands independent.
 type hlineScratch struct {
 	runs [hlineStackBuffer + 1]int16
 	aa   [hlineStackBuffer]Alpha
@@ -51,9 +49,7 @@ func callHLineBlitter(blitter Blitter, x, y, count int32, alpha uint32) {
 	aa := s.aa[:]
 
 	for count > 0 {
-		// In theory, we should be able to just do this once (outside of the loop), since aa[] and runs[] are supposed
-		// to be const when we call the blitter. In reality, some wrapper-blitters (e.g. RgnClipBlitter) modify the
-		// buffers in-place. Hence the need to be defensive here and reseed the aa value.
+		// Reseed aa every pass: some wrapper blitters (e.g. RgnClipBlitter) modify the buffers in place.
 		aa[0] = Alpha(alpha)
 
 		n := count
@@ -246,8 +242,7 @@ func contribution64(ordinate FDot6) int32 {
 
 // doAntiHairLine draws one antialiased hairline segment. clip is nil when the segment is known to be fully inside.
 func doAntiHairLine(x0, y0, x1, y1 FDot6, clip *geom.IRect, blitter Blitter) {
-	// check for integer NaN (0x80000000) which we can't handle (can't negate it). It appears typically from a huge
-	// float (inf or nan) being converted to int. If we see it, just don't draw.
+	// Integer NaN cannot be negated, so draw nothing (see anyBadInts).
 	if anyBadInts(int32(x0), int32(y0), int32(x1), int32(y1)) {
 		return
 	}
@@ -255,9 +250,7 @@ func doAntiHairLine(x0, y0, x1, y1 FDot6, clip *geom.IRect, blitter Blitter) {
 	// The caller must clip the line to [-32767.0 ... 32767.0] ahead of time (in dot6 format).
 
 	if FixedAbs(Fixed(x1-x0)) > Fixed(511<<6) || FixedAbs(Fixed(y1-y0)) > Fixed(511<<6) {
-		// instead of (x0 + x1) >> 1, we shift each separately. This is less precise, but avoids overflowing the
-		// intermediate result if the values are huge. A better fix might be to clip the original pts directly (i.e. do
-		// the divide), so we don't spend time subdividing huge lines at all.
+		// Shifting each value separately instead of (x0 + x1) >> 1 is less precise but cannot overflow on huge values.
 		hx := (x0 >> 1) + (x1 >> 1)
 		hy := (y0 >> 1) + (y1 >> 1)
 		doAntiHairLine(x0, y0, hx, hy, clip, blitter)
@@ -460,19 +453,16 @@ func AntiHairLineRgn(pts []geom.Point, clip *Region, blitter Blitter) {
 	var clipBounds geom.Rect
 	if clip != nil {
 		clipBounds = clip.Bounds().ToRect()
-		// We perform integral clipping later on, but we do a scalar clip first to ensure that our coordinates are
-		// expressible in fixed/integers.
-		//
-		// antialiased hairlines can draw up to 1/2 of a pixel outside of their bounds, so we need to outset the clip
-		// before calling the clipper. To make the numerics safer, we outset by a whole pixel, since the 1/2 pixel
-		// boundary is important to the antihair blitter, we don't want to risk numerical fate by chopping on that edge.
+		// Integral clipping happens later; this scalar clip first ensures the coordinates are expressible in fixed
+		// point. AA hairlines can draw up to 1/2 pixel outside their bounds, so the clip is outset, by a whole pixel
+		// rather than 1/2 so the chop never lands on the 1/2-pixel boundary the antihair blitter depends on.
 		clipBounds = clipBounds.Outset(1, 1)
 	}
 
 	for i := 0; i < len(pts)-1; i++ {
 		var seg, clipped [2]geom.Point
 
-		// We have to pre-clip the line to fit in a Fixed, so we just chop the line.
+		// Pre-clip the line so it fits in a Fixed.
 		seg[0] = pts[i]
 		seg[1] = pts[i+1]
 		if !geom.IntersectLine(&seg, fixedBounds, &clipped) {
@@ -762,7 +752,7 @@ func invAlphaMul(a, b uint32) uint32 {
 func innerScanline(l fDot8, top int32, r fDot8, alpha uint32, blitter Blitter) {
 	if (l >> 8) == ((r - 1) >> 8) { // 1x1 pixel
 		widClamp := int32(r - l)
-		// border case clamp 256 to 255 instead of going through call_hline_blitter (skbug/4406)
+		// border case clamp 256 to 255 instead of going through callHLineBlitter (skbug/4406)
 		widClamp -= widClamp >> 8
 		blitter.BlitV(int32(l>>8), top, 1, Alpha(invAlphaMul(alpha, uint32(widClamp))))
 		return
@@ -876,10 +866,7 @@ func AntiFrameRectRegion(r geom.Rect, strokeSize geom.Point, clip *Region, blitt
 	innerR := scalarToFDot8(r.Right - rx)
 	innerB := scalarToFDot8(r.Bottom - ry)
 
-	// For sub-unit strokes, tweak the hulls such that one of the edges coincides with the pixel edge. This ensures that
-	// the general rect stroking logic below
-	//   a) doesn't blit the same scanline twice
-	//   b) computes the correct coverage when both edges fall within the same pixel
+	// For sub-unit strokes, align one edge of each hull with a pixel edge (see alignThinStroke).
 	if strokeSize.X < 1 || strokeSize.Y < 1 {
 		alignThinStroke(&outerL, &innerL)
 		alignThinStroke(&outerT, &innerT)
@@ -905,8 +892,8 @@ func AntiFrameRectRegion(r geom.Rect, strokeSize geom.Point, clip *Region, blitt
 		fillCheckRect(inner.Right, inner.Top, outer.Right, inner.Bottom, blitter)
 		fillCheckRect(outer.Left, inner.Bottom, outer.Right, outer.Bottom, blitter)
 
-		// now stroke the inner rect, which is similar to antifilldot8() except that it treats the fractional
-		// coordinates with the inverse bias (since its inner).
+		// Stroke the inner rect like antiFillDot8, but with the inverse bias on fractional coordinates since it is the
+		// inner edge.
 		innerStrokeDot8(innerL, innerT, innerR, innerB, blitter)
 	}
 }

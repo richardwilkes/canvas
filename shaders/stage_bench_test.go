@@ -110,10 +110,9 @@ func BenchmarkGradientEvenlyStage(b *testing.B) {
 	c := &gradientCtx{stops: make([]gradStop, stops+1), gapCount: stops - 1}
 	for i := range c.stops {
 		f := float32(i) * 0.1
-		// The R channel is the identity ramp (madf(t, 1, 0) == t): the stage writes its result back over the r
-		// register, which is also the t it reads, so an identity R keeps t at its initial spread for every iteration
-		// of the benchmark loop instead of collapsing the lanes onto one stop — or, worse, drifting out of the [0,1]
-		// domain the scalar stage's unclamped index requires. The other channels carry ordinary ramp coefficients.
+		// The R channel is the identity ramp (madf(t, 1, 0) == t): the stage writes r, which is also the t it reads, so
+		// an identity R keeps t at its initial spread instead of collapsing the lanes onto one stop or drifting out of
+		// the [0,1] domain the scalar stage's unclamped index requires.
 		c.stops[i] = gradStop{
 			fr: 1, fg: 0.25 - f, fb: f, fa: 0.125,
 			br: 0, bg: 1 - f, bb: 0.5, ba: 0.75 + f,
@@ -162,8 +161,8 @@ func BenchmarkMatrix4x5Stage(b *testing.B) {
 
 func BenchmarkClamp01Stage(b *testing.B) {
 	z := benchLanes()
-	// Straddle the clamp on every channel: some lanes below 0, some above 1, most inside. Like the clamp_x_1
-	// benchmark, the first iteration pulls the lanes in and the rest measure the in-range cost.
+	// Straddle the clamp on every channel; the first iteration pulls the lanes in and the rest measure the in-range
+	// cost.
 	for i := range stride {
 		z.r[i] = float32(i)*0.1 - 0.3
 		z.g[i] = 0.9 - float32(i)*0.1
@@ -411,11 +410,10 @@ func BenchmarkMorphReturnStage(b *testing.B) {
 }
 
 // BenchmarkDisplacementStage drives the displacement kernel with a premultiplied displacement-map output in the color
-// registers and device-ish saved coordinates. The selects are the blue and alpha channels on purpose: the stage writes
-// the r and g registers, so selecting either of those would feed each iteration's displaced coordinate back in as the
-// next one's displacement channel and run the lanes away to infinity within a few dozen iterations. Reading only
-// registers the stage never writes makes the loop's feedback an exact no-op, and the pair still covers both selection
-// paths — blue unpremultiplies, alpha is taken straight from the register.
+// registers and device-ish saved coordinates. It selects blue and alpha on purpose: the stage writes r and g, so
+// selecting either would feed each displaced coordinate back in as the next displacement and run the lanes away to
+// infinity. Reading only registers the stage never writes makes the feedback a no-op, and the pair still covers both
+// selection paths (blue unpremultiplies, alpha is read directly).
 func BenchmarkDisplacementStage(b *testing.B) {
 	c := &displacementCtx{sx: 24, sy: -18, xSel: 2, ySel: 3}
 	z := benchLanes()

@@ -17,7 +17,7 @@ import (
 
 // TestMaskAdditiveBlitterClearsReusedStorage verifies that init zeroes reused storage. The mask blitter accumulates
 // coverage additively, so a smaller fill reusing a larger pooled fill's backing array must start from all-zero, else it
-// would carry stale coverage. (make() zeroes for a fresh array; the reuse path must clear() explicitly.)
+// would carry stale coverage.
 func TestMaskAdditiveBlitterClearsReusedStorage(t *testing.T) {
 	var m maskAdditiveBlitter
 	clip := geom.IRectLTRB(0, 0, 1000, 1000)

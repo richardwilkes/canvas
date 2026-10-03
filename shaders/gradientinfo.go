@@ -7,9 +7,8 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// The gradient introspection surface: a read-back the PDF backend uses to reconstruct a gradient's stops and geometry.
-// This is kept as a small introspection surface separate from the raster-pipeline evaluation stages, matching the
-// descriptor/evaluation split the rest of the package uses.
+// The gradient introspection surface: a read-back the PDF backend uses to reconstruct a gradient's stops and geometry,
+// kept separate from the raster-pipeline evaluation stages like the rest of the package's descriptors.
 
 package shaders
 

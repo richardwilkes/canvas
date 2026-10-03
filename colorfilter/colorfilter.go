@@ -8,10 +8,8 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // Package colorfilter provides the color filters that are publicly reachable: the 4x5 matrix filter, the blend-mode
-// filter, compose, lighting, luma, and high contrast (which runs in a linear-unpremul working format). The former
-// runtime-effect filters are implemented as their shader math directly (no shader compiler); the working-format
-// sandwich reduces to unpremul/linearize … encode/premul for sRGB-only content. Constructors return shaders.ColorFilter
-// descriptors that append raster-pipeline stages.
+// filter, compose, lighting, luma, and high contrast (see runtime.go for the last two). Constructors return
+// shaders.ColorFilter descriptors that append raster-pipeline stages.
 
 package colorfilter
 
@@ -22,10 +20,7 @@ import (
 	"github.com/richardwilkes/canvas/shaders"
 )
 
-///////////////////////////////////////////////////////////////////////////////
-// matrix (RGBA domain with clamping — the only publicly reachable form)
-
-// matrixFilter is the 4x5 color-matrix filter for the RGBA domain with clamping.
+// matrixFilter is the 4x5 color-matrix filter for the RGBA domain with clamping (the only publicly reachable form).
 type matrixFilter struct {
 	mat            [20]float32
 	alphaUnchanged bool
@@ -50,7 +45,7 @@ func NewMatrix(array *[20]float32) shaders.ColorFilter {
 	return &matrixFilter{mat: *array, alphaUnchanged: matrixIsAlphaUnchanged(array)}
 }
 
-// Matrix returns the 4x5 matrix — the descriptor the GPU side consumes.
+// Matrix returns the 4x5 matrix.
 func (f *matrixFilter) Matrix() [20]float32 { return f.mat }
 
 // IsAlphaUnchanged implements shaders.ColorFilter.
@@ -70,9 +65,6 @@ func (f *matrixFilter) AppendStages(p *shaders.Pipeline, shaderIsOpaque bool) bo
 	return true
 }
 
-///////////////////////////////////////////////////////////////////////////////
-// blend mode
-
 // blendFilter blends a fixed color over the filtered color; the color is stored unpremultiplied in sRGB.
 type blendFilter struct {
 	color colorcore.Color4f
@@ -88,7 +80,6 @@ func NewBlend(c colorcore.Color, mode raster.BlendMode) shaders.ColorFilter {
 	srgb := colorcore.Color4fFromColor(c) // 8-bit colors are already alpha-pinned
 	alpha := srgb.A
 
-	// Next collapse some modes if possible
 	switch mode {
 	case raster.BlendClear:
 		srgb = colorcore.Color4f{}
@@ -103,7 +94,7 @@ func NewBlend(c colorcore.Color, mode raster.BlendMode) shaders.ColorFilter {
 		// else just stay srcover
 	}
 
-	// Finally weed out combinations that are noops, and just return null
+	// Weed out the combinations that are no-ops.
 	if mode == raster.BlendDst ||
 		(alpha == 0 && (mode == raster.BlendSrcOver ||
 			mode == raster.BlendDstOver ||
@@ -117,7 +108,7 @@ func NewBlend(c colorcore.Color, mode raster.BlendMode) shaders.ColorFilter {
 	return &blendFilter{color: srgb, mode: mode}
 }
 
-// Color returns the stored unpremul sRGB color; Mode returns the blend mode — the descriptor the GPU side consumes.
+// Color returns the stored unpremul sRGB color.
 func (f *blendFilter) Color() colorcore.Color4f { return f.color }
 
 // Mode returns the blend mode.
@@ -142,9 +133,6 @@ func (f *blendFilter) AppendStages(p *shaders.Pipeline, _ bool) bool {
 	return true
 }
 
-///////////////////////////////////////////////////////////////////////////////
-// compose
-
 // composeFilter chains two filters: result = outer(inner(color)).
 type composeFilter struct {
 	outer, inner shaders.ColorFilter
@@ -161,7 +149,7 @@ func NewCompose(outer, inner shaders.ColorFilter) shaders.ColorFilter {
 	return &composeFilter{outer: outer, inner: inner}
 }
 
-// Outer and Inner return the children — the descriptor the GPU side consumes.
+// Outer returns the outer child.
 func (f *composeFilter) Outer() shaders.ColorFilter { return f.outer }
 
 // Inner returns the inner child.
@@ -181,13 +169,9 @@ func (f *composeFilter) AppendStages(p *shaders.Pipeline, shaderIsOpaque bool) b
 	return f.inner.AppendStages(p, shaderIsOpaque) && f.outer.AppendStages(p, innerIsOpaque)
 }
 
-///////////////////////////////////////////////////////////////////////////////
-// lighting
-
 // byteToUnitFloat converts a byte to a unit float, mapping 0xFF to exactly 1.
 func byteToUnitFloat(b uint8) float32 {
 	if b == 0xFF {
-		// want to get this exact
 		return 1
 	}
 	return float32(b) * 0.00392156862745

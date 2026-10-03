@@ -7,9 +7,7 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// The engine tail of Simplify: bridgeWinding (the non-zero-winding output tracer, with a findChase multi-piece chase),
-// bridgeXor (the even-odd tracer over findUndone, no chase), and runSimplify (the body run after the convex fast path,
-// which stays in pathops.go).
+// The engine behind Simplify: the bridgeWinding and bridgeXor output tracers and runSimplify.
 
 package pathops
 
@@ -125,8 +123,8 @@ func bridgeXor(contourList *opContourHead, writer *pathWriter) bool {
 	return true
 }
 
-// runSimplify runs the simplification engine after the convex fast path (which stays in Simplify, pathops.go). fillType
-// is the even-odd/inverse-even-odd result fill.
+// runSimplify runs the simplification engine after Simplify's convex fast path. fillType is the result fill (even-odd
+// or inverse even-odd).
 func runSimplify(p *path.Path, fillType path.FillType) (*path.Path, bool) {
 	head := &opContourHead{}
 	globalState := newOpGlobalState(head)
@@ -141,7 +139,6 @@ func runSimplify(p *path.Path, fillType path.FillType) (*path.Path, bool) {
 		result.SetFillType(fillType)
 		return result, true
 	}
-	// find all intersections between segments
 	addIntersections(head, coincidence)
 	if !handleCoincidence(head, coincidence) {
 		return nil, false

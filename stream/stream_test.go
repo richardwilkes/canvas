@@ -55,7 +55,7 @@ func TestFileWStream(t *testing.T) {
 	if err != nil || string(content) != "data" {
 		t.Errorf("file content = %q err=%v", content, err)
 	}
-	// Writes after close fail and latch.
+	// Writes after close fail.
 	if s.Write([]byte("x")) {
 		t.Error("write after close should fail")
 	}
@@ -69,11 +69,11 @@ func TestFileWStream(t *testing.T) {
 	}
 }
 
-// TestFileWStreamLatchedErrorIsReadable pins that the latched error state is observable. A failure can surface only at
-// Flush or Close — the OS may not report a write error (ENOSPC, a broken device) until the data is actually flushed —
-// and Close leaves f nil, so every later Write returns false whether or not anything went wrong. Without Failed, a
-// caller that wrote a whole file successfully has no way to tell a complete file from a truncated one. The underlying
-// descriptor is closed out from under the stream here to make the syscalls fail on demand.
+// TestFileWStreamLatchedErrorIsReadable pins that the latched error state is observable. A failure can first surface at
+// Flush or Close (the OS may not report ENOSPC or a broken device until the data is flushed), and Close leaves f nil,
+// so every later Write returns false whether or not anything went wrong. Without Failed, a caller that wrote a whole
+// file successfully could not tell a complete file from a truncated one. The test closes the descriptor out from under
+// the stream to make the syscalls fail on demand.
 func TestFileWStreamLatchedErrorIsReadable(t *testing.T) {
 	dir := t.TempDir()
 

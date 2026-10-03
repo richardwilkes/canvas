@@ -129,15 +129,13 @@ func (p *Path) AddRectWithStart(rect geom.Rect, dir geom.PathDirection, startInd
 
 // AddOval adds a closed oval contour, starting at point index 1 (the right edge midpoint).
 func (p *Path) AddOval(oval geom.Rect, dir geom.PathDirection) *Path {
-	// legacy start index: 1
 	return p.AddOvalWithStart(oval, dir, 1)
 }
 
 // AddOvalWithStart adds a closed oval contour built from four conics, starting at startPointIndex.
 func (p *Path) AddOvalWithStart(oval geom.Rect, dir geom.PathDirection, startPointIndex uint) *Path {
-	// If addOval() is called after previous moveTo(), this path is still marked as an oval. This is used to fit into
-	// WebKit's calling sequences. We can't simply check isEmpty() in this case, as additional moveTo() would mark the
-	// path non empty.
+	// A path holding only moveTos is still marked as an oval, to fit WebKit's calling sequences. IsEmpty would not do,
+	// as a moveTo makes the path non-empty.
 	isOval := p.hasOnlyMoveTos()
 
 	wasEmpty := p.isEffectivelyEmpty()
@@ -271,9 +269,6 @@ func (p *Path) AddPoly(pts []geom.Point, closePath bool) *Path {
 	return p.dirtyAfterEdit()
 }
 
-//////////////////////////////////////////////////////////////////////////////
-// addPath
-
 // AddPathOffset appends src's contours translated by (dx, dy), per mode.
 func (p *Path) AddPathOffset(src *Path, dx, dy float32, mode AddPathMode) *Path {
 	var matrix geom.Matrix
@@ -302,7 +297,6 @@ func (p *Path) AddPathMatrix(src *Path, matrix *geom.Matrix, mode AddPathMode) *
 		return p
 	}
 
-	// Detect if we're trying to add ourself
 	if p == src {
 		src = src.Clone()
 	}
@@ -362,7 +356,6 @@ func (p *Path) AddPathMatrix(src *Path, matrix *geom.Matrix, mode AddPathMode) *
 
 // ReverseAddPath appends src's contours in reverse order (each contour's verbs reversed).
 func (p *Path) ReverseAddPath(src *Path) *Path {
-	// Detect if we're trying to add ourself
 	if p == src {
 		src = src.Clone()
 	}
@@ -408,7 +401,7 @@ func (p *Path) ReverseAddPath(src *Path) *Path {
 }
 
 // ReversePathTo appends src's last contour reversed, ignoring src's final point (the caller is expected to already be
-// there), and without emitting src's initial moveTo. If src has multiple contours, only the last is reversed.
+// there) and without emitting src's initial moveTo.
 func (p *Path) ReversePathTo(src *Path) *Path {
 	if len(src.verbs) == 0 {
 		return p

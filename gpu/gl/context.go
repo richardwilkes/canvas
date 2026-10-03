@@ -53,7 +53,7 @@ type ContextStats struct {
 func (dc *DirectContext) Stats() *ContextStats { return &dc.stats }
 
 // NumGLDraws returns the GL geometry draw calls issued since the last ResetGLDrawStats — the "GL draws issued" side of
-// the batching metric. It delegates to the Gpu counter.
+// the batching metric.
 func (dc *DirectContext) NumGLDraws() int { return dc.gpu.NumGLDraws() }
 
 // ResetGLDrawStats zeroes the GL-draw-call counter (see DirectContext.NumGLDraws).
@@ -86,8 +86,7 @@ func NewDirectContext(g *Gpu) *DirectContext {
 	reduceOpsTaskSplitting := !dc.Caps().AvoidReorderingRenderTasks
 	dc.drawingManager = newDrawingManager(dc, reduceOpsTaskSplitting)
 
-	// The atlas manager. Multitexturing is supported only if the shader range can represent the page index + texcoords
-	// fully.
+	// Multitexturing is supported only if the shader range can represent the page index + texcoords fully.
 	options := g.ContextInfo().Options
 	if options == nil {
 		options = gpu.DefaultContextOptions()
@@ -101,12 +100,9 @@ func NewDirectContext(g *Gpu) *DirectContext {
 		allowMultitexturing, options.SupportBilerpFromGlyphAtlas)
 	dc.drawingManager.AddOnFlushCallbackObject(dc.atlasManager)
 
-	// The text strike cache and the text-blob redraw coordinator.
 	dc.textStrikeCache = text.NewStrikeCache()
 	dc.textBlobCache = text.NewTextBlobRedrawCoordinator()
 
-	// The gradient-LUT bitmap cache for the textured colorizer (per-context; see gradientbitmapcache.go), and the bound
-	// on the LUT texture proxies it and the perlin lane register (see lutproxycache.go).
 	dc.gradientRampCache = newGradientBitmapCache(maxNumCachedGradientBitmaps, gradientTextureSize)
 	dc.lutProxyKeys = newLUTProxyKeyCache(maxLiveLUTProxies)
 	return dc
@@ -177,11 +173,9 @@ func (dc *DirectContext) AbandonContext() {
 	if dc.Abandoned() {
 		return
 	}
-	// Destroy the drawing manager.
 	dc.drawingManager.destroy()
 
-	// We need to make sure all work is finished on the gpu before we start releasing resources — but only if the
-	// context is still usable (caps.mustSyncGpuDuringAbandon).
+	// All GPU work must finish before resources are released, but only if the context is still usable.
 	if dc.Caps().MustSyncGpuDuringAbandon {
 		dc.gpu.FinishOutstandingGpuWork()
 	}
@@ -201,7 +195,7 @@ func (dc *DirectContext) ReleaseResourcesAndAbandonContext() {
 	}
 	dc.drawingManager.destroy()
 
-	// We need to make sure all work is finished on the gpu before we start releasing resources.
+	// All GPU work must finish before resources are released.
 	dc.gpu.FinishOutstandingGpuWork()
 
 	dc.resourceProvider.Abandon()
@@ -236,7 +230,7 @@ func (dc *DirectContext) ResetGLTextureBindings() {
 	dc.gpu.ResetTextureBindings()
 }
 
-// Flush submits pending work for the whole context, invoking info's callbacks.
+// Flush flushes pending work for the whole context, invoking info's callbacks.
 func (dc *DirectContext) Flush(info FlushInfo) bool {
 	if dc.Abandoned() {
 		if info.FinishedProc != nil {

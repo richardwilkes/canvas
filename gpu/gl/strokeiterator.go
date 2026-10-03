@@ -7,18 +7,17 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// strokeIterator iterates over the stroke geometry defined by a path and stroke. It automatically converts closes and
-// square caps to lines, and round caps to circles, so the user doesn't have to worry about it. At each location it
-// provides a verb and "prevVerb" so there is context about the preceding join. It decodes the path's records through
-// path.RawIter up front (supplying the close verbs' current point, which the raw iterator omits) and queues point
-// slices, allocating fresh slices for the geometry that gets defined implicitly by the path (close lines and square-cap
-// lines).
+// strokeIterator iterates over the stroke geometry defined by a path and stroke. It converts closes and square caps to
+// lines, and round caps to circles. At each location it provides a verb and "prevVerb" so there is context about the
+// preceding join. It decodes the path's records through path.RawIter up front (supplying the close verbs' current
+// point, which the raw iterator omits) and queues point slices, allocating fresh slices for the geometry that gets
+// defined implicitly by the path (close lines and square-cap lines).
 //
 // Usage:
 //
 //	iter := newStrokeIterator(path, stroke, viewMatrix)
 //	for iter.next() { // Call next() first.
-//	    iter.verb(); iter.pts(); iter.w(); iter.prevVerb(); iter.prevPts()
+//	    iter.verb(); iter.pts(); iter.w(); iter.prevVerb()
 //	}
 
 package gl
@@ -33,7 +32,6 @@ import (
 // values coincide with path.Verb's so casts stay value-preserving.
 type strokeIterVerb uint8
 
-// strokeIterVerb values.
 const (
 	// Verbs that describe stroke geometry.
 	strokeIterVerbLine                  = strokeIterVerb(path.VerbLine)
@@ -51,8 +49,7 @@ const (
 // notifies the caller of contour-iteration state.
 func strokeIterVerbIsGeometric(v strokeIterVerb) bool { return v < strokeIterVerbMoveWithinContour }
 
-// strokeIterVerbPtCount returns the number of points for the geometric verbs (the only callers pass
-// line/quad/conic/cubic).
+// strokeIterVerbPtCount returns the number of points for a line/quad/conic/cubic verb, the only verbs callers pass.
 func strokeIterVerbPtCount(v strokeIterVerb) int {
 	switch v {
 	case strokeIterVerbLine:
@@ -68,7 +65,7 @@ func strokeIterVerbPtCount(v strokeIterVerb) int {
 
 const strokeIterQueueBufferCount = 8
 
-// strokeIterator is the iterator state described in the package comment above.
+// strokeIterator is the iterator state described in the file comment above.
 type strokeIterator struct {
 	stroke *stroke.Rec
 	// Info from the original path and stroke.
@@ -82,13 +79,12 @@ type strokeIterator struct {
 	queueCount             int
 	wQueue                 [strokeIterQueueBufferCount]float32
 	firstWInContour        float32
-	// The queue is implemented as a roll-over array with a floating front index.
+	// The queue (verbs, ptsQueue, wQueue) is implemented as roll-over arrays with a floating front index.
 	verbs [strokeIterQueueBufferCount]strokeIterVerb
 	// Info for the current contour we are iterating.
 	firstVerbInContour strokeIterVerb
 }
 
-// newStrokeIterator creates a stroke iterator over p's stroke geometry.
 func newStrokeIterator(p *path.Path, rec *stroke.Rec, viewMatrix *geom.Matrix) *strokeIterator {
 	s := &strokeIterator{viewMatrix: viewMatrix, stroke: rec}
 	// Decode the records up front. The raw iterator supplies the segment start point for curve verbs but no points for
@@ -142,8 +138,7 @@ func (s *strokeIterator) next() bool {
 				continue
 			}
 		case path.VerbCubic, path.VerbConic, path.VerbQuad, path.VerbLine:
-			// A verb is degenerate when all of its points beyond the first are equal to it ("p3 == p2 && p2 == p1 && p1
-			// == p0" for cubics, and so on down).
+			// A verb is degenerate when all of its points are equal.
 			n := strokeIterVerbPtCount(strokeIterVerb(rec.verb))
 			degenerate := true
 			for i := n - 1; i >= 1; i-- {

@@ -40,13 +40,11 @@ type XferProcessor interface {
 	// xpBase gives shared code access to the embedded base.
 	xpBase() *XPBase
 
-	// onAddToKey adds this processor's key contribution to b.
 	onAddToKey(caps *gpu.ShaderCaps, b *gpu.KeyBuilder)
 	// onHasSecondaryOutput reports whether this processor emits a dual-source secondary output.
 	onHasSecondaryOutput() bool
-	// onGetBlendInfo returns the fixed-function blend state for this processor. Unlike a mutate- in-place approach,
-	// this returns the value directly so the result does not escape to the heap through this call on every executing
-	// op.
+	// onGetBlendInfo returns the fixed-function blend state for this processor. It returns the value rather than
+	// filling an out-parameter so the result does not escape to the heap on every executing op.
 	onGetBlendInfo() gpu.BlendInfo
 	// onIsEqual reports whether this processor is equal to other; only called when ClassIDs match.
 	onIsEqual(other XferProcessor) bool
@@ -59,12 +57,10 @@ type XPBase struct {
 	isLCD            bool
 }
 
-// initXP initializes the base with just a class ID (no dst read, no LCD coverage).
 func (b *XPBase) initXP(classID ClassID) {
 	b.classID = classID
 }
 
-// initXPFull initializes the base with a class ID and the dst-read/coverage configuration.
 func (b *XPBase) initXPFull(classID ClassID, willReadDstColor bool, coverage AnalysisCoverage) {
 	b.classID = classID
 	b.willReadDstColor = willReadDstColor
@@ -82,7 +78,6 @@ func (b *XPBase) IsLCD() bool { return b.isLCD }
 // XferBarrierType is the base default (none).
 func (b *XPBase) XferBarrierType(*gpu.Caps) XferBarrierType { return XferBarrierNone }
 
-// onHasSecondaryOutput is the base default (no secondary output).
 func (b *XPBase) onHasSecondaryOutput() bool { return false }
 
 // onGetBlendInfo is the base default (no blending).
@@ -106,14 +101,12 @@ func xpGetBlendInfo(xp XferProcessor) gpu.BlendInfo {
 	return gpu.MakeBlendInfo()
 }
 
-// xpAddToKey adds xp's key contribution (including the shared willReadDstColor/isLCD bits) to b.
 func xpAddToKey(xp XferProcessor, caps *gpu.ShaderCaps, b *gpu.KeyBuilder) {
 	b.AddBool(xp.xpBase().WillReadDstColor(), "willReadDstColor")
 	b.AddBool(xp.xpBase().IsLCD(), "isLCD")
 	xp.onAddToKey(caps, b)
 }
 
-// xpIsEqual reports whether a and b are equal transfer processors.
 func xpIsEqual(a, b XferProcessor) bool {
 	if a.ClassID() != b.ClassID() {
 		return false
@@ -155,8 +148,8 @@ type XPFactory interface {
 	// makeXferProcessor builds the transfer processor for the given paint/coverage analysis.
 	makeXferProcessor(color ProcessorAnalysisColor, coverage AnalysisCoverage, caps *gpu.Caps,
 		clampType gpu.ClampType) XferProcessor
-	// analysisProperties returns this factory's XPAnalysis* bits for the given paint/coverage analysis. It should not
-	// return kRequiresDstTexture; that is inferred by the shared XPFactoryGetAnalysisProperties.
+	// analysisProperties returns this factory's XPAnalysis* bits for the given paint/coverage analysis. It must not
+	// return XPAnalysisRequiresDstTexture; that is inferred by the shared XPFactoryGetAnalysisProperties.
 	analysisProperties(color ProcessorAnalysisColor, coverage AnalysisCoverage, caps *gpu.Caps,
 		clampType gpu.ClampType) uint32
 }
@@ -207,7 +200,7 @@ type XPProgramImpl interface {
 	// emitOutputsForBlendState emits blending and coverage via fixed-function state; only implemented by XPs that don't
 	// read the dst.
 	emitOutputsForBlendState(args *XPEmitArgs)
-	// emitBlendCodeForDstRead emits blend logic only; the base applies coverage.
+	// emitBlendCodeForDstRead emits the blend logic, then applies coverage via defaultCoverageModulation.
 	emitBlendCodeForDstRead(fragBuilder *FragmentShaderBuilder, uniformHandler *UniformHandler,
 		srcColor, srcCoverage, dstColor, outColor, outColorSecondary string, xp XferProcessor)
 	// emitWriteSwizzle emits the write-swizzle adjustment for the fragment shader outputs.
@@ -296,13 +289,12 @@ func xpImplEmitCode(impl XPProgramImpl, args *XPEmitArgs) {
 		}
 	}
 
-	// Swizzle the fragment shader outputs if necessary.
 	impl.emitWriteSwizzle(args.FragBuilder, args.WriteSwizzle, args.OutputPrimary,
 		args.OutputSecondary)
 }
 
-// adjustForLCDCoverage collapses per-channel LCD coverage to a single alpha value. Only called for LCD coverage without
-// in-shader blending.
+// adjustForLCDCoverage sets LCD coverage's alpha to the max of its RGB channels. Only called without in-shader
+// blending.
 func adjustForLCDCoverage(fragBuilder *FragmentShaderBuilder, srcCoverage string, xp XferProcessor) {
 	if srcCoverage != "" && xp.xpBase().IsLCD() {
 		fragBuilder.CodeAppendf("%s.a = max(max(%s.r, %s.g), %s.b);",

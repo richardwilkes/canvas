@@ -14,8 +14,8 @@ import (
 	"testing"
 )
 
-// midTangentDirection returns normalize(tan0) + normalize(-tan1)-style bisector target: the direction the curve's
-// tangent must have at the midtangent, i.e. the bisector of the normalized endpoint tangents.
+// midTangentDirection returns normalize(tan0) + normalize(tan1), the bisector of the endpoint tangents: the direction
+// the curve's tangent must have at the midtangent.
 func midTangentDirection(tan0, tan1 Point) Point {
 	n0 := tan0
 	n0.Normalize()
@@ -25,7 +25,6 @@ func midTangentDirection(tan0, tan1 Point) Point {
 }
 
 func TestFindQuadMidTangent(t *testing.T) {
-	// A symmetric quad has its midtangent at exactly T=0.5.
 	sym := []Point{{X: 0, Y: 0}, {X: 5, Y: 8}, {X: 10, Y: 0}}
 	if got := FindQuadMidTangent(sym); got != 0.5 {
 		t.Fatalf("symmetric quad midtangent = %v, want 0.5", got)
@@ -71,8 +70,7 @@ func TestFindQuadMidTangent(t *testing.T) {
 }
 
 func TestConicFindMidTangent(t *testing.T) {
-	// A quarter-circle conic is symmetric: midtangent at T=0.5, where the tangent is parallel to the chord's bisector
-	// direction (-1, -1)...(1,1) family.
+	// A quarter-circle conic is symmetric: midtangent at T=0.5.
 	w := float32(math.Sqrt2 / 2)
 	c := MakeConic(Point{X: 0, Y: 1}, Point{X: 1, Y: 1}, Point{X: 1, Y: 0}, w)
 	tv := c.FindMidTangent()

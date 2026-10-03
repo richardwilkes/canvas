@@ -7,9 +7,9 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// The image draws: the bitmap/sprite lowering, the device drawImageRect, the sprite-eligibility test, the canvas entry
-// points (including the image-filter lane via aboutToDraw, and DrawImageNine → the lattice draw), and the device
-// lattice draw over the lattice iterator.
+// The image draws: the bitmap/sprite lowering, the device drawImageRect, the sprite-eligibility test, and the canvas
+// entry points (including the image-filter lane via aboutToDraw, and DrawImageNine, which draws its patches over the
+// lattice iterator).
 
 package canvas
 
@@ -98,11 +98,9 @@ func scalarRoundToInt(v float32) int32 {
 	return int32(math.Floor(float64(v) + 0.5))
 }
 
-// imageDrawScratch holds the per-draw temporaries the CPU image-draw path would otherwise allocate fresh on every draw:
-// the wrapping Image and base ImageShader that makePaintWithImage builds, plus drawBitmap's CTM∘prematrix concatenation
-// and drawRectFull's image-lane shading matrix. Homed on a pooled (heap-resident) scratch so their addresses — which
-// flow into retaining callees (blitter construction, the draw struct's ctm) — no longer force a per-draw heap
-// allocation. Pooled (not a shared instance) so nested/concurrent draws stay independent.
+// imageDrawScratch holds the per-draw temporaries of the CPU image-draw path. Their addresses flow into retaining
+// callees (blitter construction, the draw struct's ctm), so homing them on a pooled, heap-resident scratch avoids a
+// per-draw heap allocation. Pooled (not a shared instance) so nested/concurrent draws stay independent.
 type imageDrawScratch struct {
 	image    *imagecore.Image    // lazily allocated once per scratch, re-init per draw via SetFromPixels
 	shader   shaders.ImageShader // reused base clamp/clamp image shader
@@ -142,7 +140,7 @@ func (scratch *imageDrawScratch) makePaintWithImage(origPaint *Paint, px *imagec
 	}
 	if px.Info.ColorType == imagecore.ColorTypeAlpha8 && origPaint.Shader != nil && s != nil {
 		// Alpha images+shaders output the texture's alpha multiplied by the shader's color: DstIn with the source image
-		// and dst shader (MakeBlend takes dst first, src second).
+		// and dst shader (NewBlend takes dst first, src second).
 		s = shaders.NewBlend(raster.BlendDstIn, origPaint.Shader, s)
 	}
 	paint := *origPaint
@@ -150,12 +148,10 @@ func (scratch *imageDrawScratch) makePaintWithImage(origPaint *Paint, px *imagec
 	return paint
 }
 
-// spriteAlphaType translates an image's alpha type into the sprite blitters' classification of a source's alpha
-// channel. The unpremul case matters: the sprite lane blits onto a premultiplied destination, so a straight-alpha
-// source has to be premultiplied on the way in — without that it would composite as if its color bytes were already
-// scaled by alpha, adding a fully transparent pixel's color to the backdrop instead of leaving it alone. An unknown
-// alpha type (which a valid image info cannot carry) falls in with the premultiplied form, the same reading the shader
-// lane's premul stage gives it.
+// spriteAlphaType maps an image's alpha type to the sprite blitters' source classification. The unpremul case matters:
+// the sprite lane blits onto a premultiplied destination, so a straight-alpha source must be premultiplied on the way
+// in, or a fully transparent pixel's color would be added to the backdrop. An unknown alpha type (which a valid image
+// info cannot carry) is treated as premul, as the shader lane's premul stage does.
 func spriteAlphaType(at imagecore.AlphaType) raster.SpriteAlphaType {
 	switch at {
 	case imagecore.AlphaTypeOpaque:
@@ -188,9 +184,7 @@ func (d *draw) drawBitmap(px *imagecore.Pixels, prematrix *geom.Matrix, dstBound
 		paint = &p
 	}
 
-	// The matrix, the wrapping image/shader, and drawRectFull's combined shading matrix are homed on the pooled scratch
-	// so their addresses (which flow into retaining callees) do not heap-allocate per draw; the scratch is fully
-	// consumed by the synchronous draw below before it is recycled.
+	// The scratch (see imageDrawScratch) is fully consumed by the synchronous draw below before it is recycled.
 	scratch := acquireImageDrawScratch()
 	defer releaseImageDrawScratch(scratch)
 
@@ -277,7 +271,6 @@ func (d *BitmapDevice) DrawImageRect(img imagecore.DrawableImage, src *geom.Rect
 		tmpSrc = *src
 	}
 
-	// Compute the matrix mapping the src rect onto the dst rect.
 	matrix := rectToRectFill(tmpSrc, dst)
 
 	dstPtr := &dst
@@ -341,8 +334,8 @@ func (d *BitmapDevice) DrawImageRect(img imagecore.DrawableImage, src *geom.Rect
 		}
 	}
 
-	// Construct a shader and call the device DrawRect with the dst (which tiles past 8191px). The wrapping image/shader
-	// are homed on the pooled scratch, fully consumed by the synchronous drawRect below before it is recycled.
+	// Construct a shader and call the device DrawRect with the dst (which tiles past 8191px). The scratch is fully
+	// consumed by the synchronous DrawRect below before it is recycled.
 	scratch := acquireImageDrawScratch()
 	defer releaseImageDrawScratch(scratch)
 	paintWithShader := scratch.makePaintWithImage(paint, bitmapPtr, sampling, &matrix)
@@ -381,13 +374,10 @@ func cleanSamplingForConstraint(sampling shaders.SamplingOptions, constraint Src
 }
 
 // imageRectScratch homes Canvas.DrawImageRect's two per-draw temporaries — the src rect and the cleaned working paint —
-// whose addresses cross the polymorphic Device.DrawImageRect interface method (&src into the device call, and &paint
-// into aboutToDraw, which returns it as the working paint pointer that then also flows into the device call). Every
-// Device implementation — BitmapDevice, the gpu/gl device, and the pdf device — consumes both synchronously,
-// dereferencing *src and copying *paint into locals before returning, so it is safe to recycle the scratch once the
-// device draw (and any image-filter-layer restore) returns. Homing them on a pooled (heap-resident) scratch keeps the
-// address-taken values off the per-draw stack→heap path. Pooled (not a shared instance) so nested/concurrent draws stay
-// independent.
+// whose addresses cross the Device.DrawImageRect interface call and would otherwise escape to the heap on every draw.
+// Every Device implementation (BitmapDevice, the gpu/gl device, the pdf device) consumes both synchronously, so the
+// scratch can be recycled once the device draw (and any image-filter-layer restore) returns. Pooled (not a shared
+// instance) so nested/concurrent draws stay independent.
 type imageRectScratch struct {
 	paint Paint
 	src   geom.Rect
@@ -400,15 +390,13 @@ func acquireImageRectScratch() *imageRectScratch {
 }
 
 func releaseImageRectScratch(s *imageRectScratch) {
-	// Drop the paint's shader/color-filter/mask-filter/image-filter references so an idle pooled scratch does not pin
-	// them (src is a plain value with no references).
+	// Drop the paint's references so an idle pooled scratch does not pin them.
 	s.paint = Paint{}
 	imageRectScratchPool.Put(s)
 }
 
-// DrawImageRect draws the src rect of img mapped onto dst. img is the polymorphic drawable (a raster image or a
-// texture-backed one); the pipeline reasons about it via the image-level queries and hands it to the device, which
-// draws it natively (GPU) or rasterizes it (CPU/PDF).
+// DrawImageRect draws the src rect of img mapped onto dst. img may be a raster image or a texture-backed one; the
+// device draws it natively (GPU) or rasterizes it (CPU/PDF).
 func (c *Canvas) DrawImageRect(img imagecore.DrawableImage, src, dst geom.Rect, sampling shaders.SamplingOptions, paint *Paint, constraint SrcRectConstraint) {
 	if img == nil || !src.IsFinite() || !dst.IsFinite() {
 		return
@@ -487,7 +475,6 @@ func (c *Canvas) DrawImageNine(img *imagecore.Image, center geom.IRect, dst geom
 	realPaint = *dp
 	dev := c.topDevice()
 
-	// Draw each lattice patch.
 	iter := newLatticeIter(&lattice, dst)
 	var srcR geom.IRect
 	var dstR geom.Rect

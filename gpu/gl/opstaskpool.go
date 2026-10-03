@@ -8,20 +8,19 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // Free list for whole OpsTask objects. A fresh OpsTask is created for each surface every frame — the previous one is
-// closed at flush and replaced — so the steady-state frame paid one OpsTask struct, its RenderTaskBase
-// targets/dependency slice growths, and one heap closure per cached proxy visitor, every frame. Pooling the whole task
-// eliminates that per-frame cost, and makes the task's cached self-capturing visitor closures
-// (sampledDepFn/depFn/gatherFn) truly once-per-pooled-object instead of once-per-frame.
+// closed at flush and replaced — so without pooling every frame pays for one OpsTask struct, its RenderTaskBase
+// targets/dependency slice growths, and one heap closure per cached proxy visitor. Pooling the whole task removes that
+// cost and makes the task's cached self-capturing visitor closures (sampledDepFn/depFn/gatherFn) once per pooled object
+// instead of once per frame.
 //
 // Lifetime safety (same argument as opchainspool.go): a task is recycled only at the end of RenderTaskBase.Unref when
-// refCnt reaches 0 — the death point at which, by this codebase's refcounting discipline, no owner may touch the task
-// again. The task is provably disowned (Unref panics otherwise) and its ops/opChains backing were already recycled by
-// the onDelete hook. recycleOpsTask rebuilds the task from the zero value (so any future field is reset by
-// construction, never stale), preserving only: the capacity of the element-cleared
-// targets/dependencies/dependents/sampledProxies/deferredProxies backings, and the three cached closures — which
-// capture nothing but the (stable) task pointer itself and read their per-call state from fields that the zero-value
-// reset just cleared. A fresh uniqueID is assigned on every borrow (initRenderTask), so anything stale keyed by task
-// identity can never match a reused task.
+// refCnt reaches 0, after which no owner may touch the task again. The task is provably disowned (Unref panics
+// otherwise) and its ops/opChains backing were already recycled by the onDelete hook. recycleOpsTask rebuilds the task
+// from the zero value (so any future field is reset by construction, never stale), preserving only the capacity of the
+// element-cleared targets/dependencies/dependents/sampledProxies/deferredProxies backings and the three cached
+// closures, which capture nothing but the (stable) task pointer and read their per-call state from fields the
+// zero-value reset just cleared. A fresh uniqueID is assigned on every borrow (initRenderTask), so anything stale keyed
+// by task identity can never match a reused task.
 
 package gl
 

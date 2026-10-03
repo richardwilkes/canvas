@@ -59,7 +59,6 @@ func (f *matrixTransformFilter) requiredInput(mapping *filtercore.Mapping, desir
 	if !ok {
 		return geom.IRect{}
 	}
-	// Any filtering beyond nearest neighbor needs an extra buffer of pixels for the kernel.
 	if f.sampling != (shaders.SamplingOptions{}) {
 		requiredInput = requiredInput.Inset(-1, -1)
 	}

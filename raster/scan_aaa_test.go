@@ -263,7 +263,7 @@ func TestAAFillHugeCoordsFallsBack(t *testing.T) {
 	}
 }
 
-// TestAlphaRunsAdd: the RLE accumulation matches the documented example step by step.
+// TestAlphaRunsAdd: AlphaRuns.Add accumulates two overlapping spans into the expected RLE.
 func TestAlphaRunsAdd(t *testing.T) {
 	var runs AlphaRuns
 	runs.Runs = make([]int16, 9)
@@ -375,10 +375,9 @@ func TestAdditiveBlitterRunLeftOfBounds(t *testing.T) {
 	}
 }
 
-// TestMaskAdditiveBlitterRowCacheAfterVerticalBlits: BlitV and BlitRect walk down rows by stepping the row pointer by
-// RowBytes, so the row cache getRow already set up for row y stays correct. The trailing `m.rowY = y` fixups those two
-// carried were no-ops, and the comment calling the cache stale invited "fixing" rowOff too — which would silently move
-// every later blit to the wrong row. This pins that a blit after a vertical walk still lands where it should.
+// TestMaskAdditiveBlitterRowCacheAfterVerticalBlits: BlitV and BlitRect walk down rows by stepping the index by
+// RowBytes, so the row cache getRow set up for row y stays correct. "Fixing" rowOff after the walk would silently move
+// every later blit to the wrong row; this pins that a blit after a vertical walk still lands where it should.
 func TestMaskAdditiveBlitterRowCacheAfterVerticalBlits(t *testing.T) {
 	ir := geom.IRectLTRB(0, 0, 8, 8)
 	var m maskAdditiveBlitter

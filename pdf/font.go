@@ -9,13 +9,12 @@
 
 // The CIDFontType2 embedding lane: the per-typeface PDF font resource, the document-level canonicalization of advanced
 // metrics and reverse cmaps, the FontType decision, and emitFont (the Type0 + CIDFontType2 + FontFile2 + ToUnicode
-// object graph). HarfBuzz/ICU are disabled, so — exactly as the cskia reference oracle in this configuration — the
-// *full* font program is embedded (no subsetting) and the ToUnicode CMap is built purely from the cmap reverse mapping.
+// object graph). As in the cskia reference oracle built without HarfBuzz/ICU, the full font program is embedded (no
+// subsetting) and the ToUnicode CMap is built purely from the cmap reverse mapping.
 //
-// Only glyf-outline (TrueType) faces embed here; CFF/variable/not-embeddable faces, mask filters, and perspective fall
-// back to drawing glyphs as filled paths (drawGlyphRunAsPath in device.go) rather than a Type3 fallback, which is out
-// of scope. Since glyph runs here carry no cluster text, the per-cluster grouping, the ActualText marked-content
-// sequences, and the extended (Ex) ToUnicode map are all unreachable and dropped.
+// Only glyf-outline (TrueType) faces embed here; CFF/variable/not-embeddable faces, mask filters, and perspective draw
+// glyphs as paths (drawGlyphRunAsPath in device.go) rather than through Skia's Type3 fallback. Since glyph runs carry
+// no cluster text, per-cluster grouping, ActualText marked content, and the extended (Ex) ToUnicode map are dropped.
 
 package pdf
 
@@ -32,8 +31,8 @@ import (
 const kPdfSymbolic = 4
 
 // pdfFont holds the state for one embedded CIDFontType2 font resource: the typeface, the accumulated glyph usage, its
-// reserved indirect reference, and the font-program type. One pdfFont exists per typeface per document — the fill,
-// no-mask-filter case, where the path strike is sized at unitsPerEm and the paint carries no stroke/effect/mask filter.
+// reserved indirect reference, and the font-program type. One pdfFont exists per typeface per document, serving only
+// filled text with no stroke, path effect, or mask filter.
 type pdfFont struct {
 	typeface   *font.Typeface
 	glyphUsage glyphUse
@@ -59,7 +58,6 @@ func (f *pdfFont) glyphToPDFFontEncoding(gid uint16) uint16 {
 	return gid - f.firstGlyphID() + 1
 }
 
-// noteGlyphUsage records that gid was used, expanding the font's tracked glyph range.
 func (f *pdfFont) noteGlyphUsage(gid uint16) { f.glyphUsage.set(gid) }
 
 // getFontMetrics caches the typeface's advanced metrics per document, filling StemV/CapHeight guesses when the typeface
@@ -99,9 +97,8 @@ func (d *Document) getFontMetrics(tf *font.Typeface) *font.AdvancedMetrics {
 			m.CapHeight = int16(geom.RoundToInt(capHeight / 2))
 		}
 	}
-	// Subsetted fonts conventionally get a six-letter tag prefix (e.g. "ABCDEF+Arial"); the tag is prepended here too,
-	// for output parity with subsetted fonts, even though the full font program is always embedded (no actual
-	// subsetting).
+	// Subsetted fonts conventionally get a six-letter tag prefix (e.g. "ABCDEF+Arial"). It is added here for output
+	// parity even though the full font program is embedded.
 	m.PostScriptName = d.nextFontSubsetTag() + m.PostScriptName
 	d.typefaceMetrics[id] = m
 	return m
@@ -178,7 +175,6 @@ func fromFontUnits(scaled float32, emSize uint16) float32 {
 	return scaled * 1000 / float32(emSize)
 }
 
-// scaleFromFontUnits is fromFontUnits for an integer input, returning a float32.
 func scaleFromFontUnits(val int, emSize uint16) float32 { return fromFontUnits(float32(val), emSize) }
 
 // populateCommonFontDescriptor fills in the FontDescriptor entries shared by every embedded font (FontName, Flags,
@@ -203,10 +199,8 @@ func populateCommonFontDescriptor(descriptor *Dict, m *font.AdvancedMetrics, emS
 }
 
 // insertFontProgram inserts the /FontFile2 entry — the embedded font program stream, with its uncompressed size in
-// /Length1 — into a FontDescriptor. A typeface whose asset couldn't be read, or whose collection container is
-// malformed, yields no bytes; the entry is then omitted entirely rather than embedding an empty program with /Length1 0
-// that the CIDFontType2 descendant would still point at. As upstream does, the rest of the font's object graph is
-// emitted either way, so there is nothing for the caller to react to.
+// /Length1 — into a FontDescriptor. Empty data (an unreadable asset) omits the entry rather than embedding an empty
+// program with /Length1 0; as upstream, the rest of the font's object graph is emitted anyway.
 func insertFontProgram(doc *Document, descriptor *Dict, data []byte) {
 	if len(data) == 0 {
 		return
@@ -216,10 +210,9 @@ func insertFontProgram(doc *Document, descriptor *Dict, data []byte) {
 	descriptor.InsertRef("FontFile2", doc.StreamOut(streamDict, data, true))
 }
 
-// emitFont emits the full object graph for one CIDFontType2 (TrueType) font: the FontDescriptor with the full FontFile2
-// program (omitted when the font program is unavailable, as upstream does), the CIDFontType2 descendant (Identity
-// CIDToGIDMap, /W widths, /DW default), and the Type0 wrapper (Identity-H, /ToUnicode). Called once per font at
-// document close.
+// emitFont emits the full object graph for one CIDFontType2 (TrueType) font: the FontDescriptor with the FontFile2
+// program, the CIDFontType2 descendant (Identity CIDToGIDMap, /W widths, /DW default), and the Type0 wrapper
+// (Identity-H, /ToUnicode). Called once per font at document close.
 func emitFont(doc *Document, f *pdfFont) {
 	tf := f.typeface
 	m := doc.getFontMetrics(tf)
@@ -233,8 +226,8 @@ func emitFont(doc *Document, f *pdfFont) {
 
 	// FontProgram, not FontData: /FontFile2 is a TrueType font program, so a face from a collection must be extracted
 	// from its 'ttcf' container first — embedding the container would both violate PDF 32000-1 §9.9 and, for a face
-	// index above 0, make the /CIDToGIDMap /Identity glyph IDs resolve against face 0. A malformed container is treated
-	// like an unreadable asset: the /FontFile2 entry is left out and the rest of the graph emitted anyway.
+	// index above 0, make the /CIDToGIDMap /Identity glyph IDs resolve against face 0. A malformed container leaves the
+	// /FontFile2 entry out, like an unreadable asset.
 	if data, err := tf.FontProgram(); err == nil {
 		insertFontProgram(doc, descriptor, data)
 	}
@@ -251,7 +244,6 @@ func emitFont(doc *Document, f *pdfFont) {
 	sysInfo.InsertInt("Supplement", 0)
 	newCIDFont.InsertObject("CIDSystemInfo", sysInfo)
 
-	// Poppler enforces that /DW is an integer, so the widths array only considers integer advances.
 	widths, defaultWidth := makeCIDGlyphWidthsArray(tf, &f.glyphUsage)
 	if widths != nil && widths.Size() > 0 {
 		newCIDFont.InsertObject("W", widths)

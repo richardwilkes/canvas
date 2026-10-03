@@ -55,17 +55,14 @@ const (
 	preferSIMDAccumulate           = true
 )
 
-// The image-filter kernel stages (filterkernels.go) ported afterwards, all of which likewise have no NEON twin, so
-// their default lane is the portable scalar loop and the vector kernel wins outright — there is no measurement here
-// that argues for the default lane. Benchstat on an M4 Max (stage_bench_test.go, both build modes, n=6, every
-// comparison p=0.002): arith_blend -78%, morph_sparse_max_agg -74%, morph_max_agg -73%, matrix_conv_accum -71%
+// The image-filter kernel stages (filterkernels.go) likewise have no NEON twin, so their default lane is the portable
+// scalar loop and the vector kernel wins outright. Benchstat on an M4 Max (stage_bench_test.go, both build modes, n=6,
+// every comparison p=0.002): arith_blend -78%, morph_sparse_max_agg -74%, morph_max_agg -73%, matrix_conv_accum -71%
 // (unpremul form) / -63% (convolve-alpha form), matrix_conv_coords -70%, normal_set_coords -69%, morph_plus_coords
-// -67%, morph_take_plus and morph_sparse_agg_minus -66%, morph_return -62%, normal_filter -62%,
-// matrix_conv_finalize -60%, morph_agg_init -52%; geomean -67%. The displacement and magnifier stages were measured
-// afterwards, in their own pair of runs (n=6, p=0.002 both): displacement -73%, magnifier -44%. The magnifier is the
-// weakest of the set because its per-lane branch is not hoistable, so the vector form always evaluates both the
-// circular arm (a square root) and the linear one where the scalar takes just the arm each lane needs; it still wins
-// by a wide margin.
+// -67%, morph_take_plus and morph_sparse_agg_minus -66%, morph_return -62%, normal_filter -62%, matrix_conv_finalize
+// -60%, morph_agg_init -52%; geomean -67%. Measured separately (n=6, p=0.002 both): displacement -73%, magnifier -44%.
+// The magnifier gains least because its per-lane branch is not hoistable, so the vector form evaluates both the
+// circular arm (a square root) and the linear one where the scalar takes only the arm each lane needs.
 //
 // The morphology and convolution stages run many times per chunk — one plus-coords/take-plus/max-agg triple per
 // morphology radius step (up to 14) and one coords/accum pair per convolution tap (25 for a 5x5 kernel) — so those

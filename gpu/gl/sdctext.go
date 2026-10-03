@@ -39,8 +39,7 @@ func (sdc *SurfaceDrawContext) DrawGlyphRunList(cv *canvas.Canvas, clip Clip, vi
 
 	deviceProps := sdc.SurfaceProps().DeviceProps()
 	if sdc.subRunControl == nil {
-		// Built lazily from the recording context and the device-independent-fonts flag on first use, and cached
-		// thereafter since the surface draw context's context and props are immutable after creation.
+		// Cached after first use, since the surface draw context's context and props are immutable after creation.
 		control := sdc.ctx.GetSubRunControl(deviceProps.UseDeviceIndependentFonts)
 		sdc.subRunControl = &control
 	}

@@ -67,7 +67,6 @@ func (h *swMaskHelper) drawShape(shape *Shape, matrix *geom.Matrix, aa gpu.AA, a
 		return
 	}
 
-	// Rects, rrects, and paths all render through their path form, using the same scan converters.
 	p := shape.AsPath()
 	p.Transform(&translatedMatrix)
 	if !p.IsFinite() {
@@ -81,7 +80,6 @@ func (h *swMaskHelper) drawShape(shape *Shape, matrix *geom.Matrix, aa gpu.AA, a
 	}
 }
 
-// drawPaint fills the whole mask with the given value using replace semantics.
 func (h *swMaskHelper) drawPaint(alpha uint8) {
 	h.clear(alpha)
 }

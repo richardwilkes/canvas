@@ -16,8 +16,8 @@ func scalarCubeRoot(x float32) float32 {
 	return float32(math.Pow(float64(x), float64(float32(0.3333333))))
 }
 
-// solveCubicPoly solves coeff[0]t³+coeff[1]t²+coeff[2]t+coeff[3] == 0, returning the roots pinned to [0, 1], distinct
-// and increasing.
+// solveCubicPoly solves coeff[0]t³+coeff[1]t²+coeff[2]t+coeff[3] == 0, storing the roots (pinned to [0, 1], distinct
+// and increasing) in tValues and returning their count.
 func solveCubicPoly(coeff *[4]float32, tValues *[3]float32) int {
 	if ScalarNearlyZero(coeff[0]) { // we're just a quadratic
 		var roots [2]float32
@@ -48,7 +48,6 @@ func solveCubicPoly(coeff *[4]float32, tValues *[3]float32) int {
 		tValues[1] = pin32(neg2RootQ*float32(math.Cos(float64((theta+2*math.Pi)/3)))-adiv3, 0, 1)
 		tValues[2] = pin32(neg2RootQ*float32(math.Cos(float64((theta-2*math.Pi)/3)))-adiv3, 0, 1)
 
-		// now sort the roots (bubble_sort of 3)
 		sort3(tValues)
 		return collapsDuplicatesExact(tValues[:], 3)
 	}
@@ -102,8 +101,8 @@ func formulateF1DotF2(p0, p1, p2, p3 float32, coeff *[4]float32) {
 	coeff[3] = a * b
 }
 
-// FindCubicMaxCurvature returns the t values (up to 3) where the cubic's curvature is at a local maximum (F' dot F” ==
-// 0).
+// FindCubicMaxCurvature stores in tValues the t values (up to 3) where the cubic's curvature is at a local maximum (F'
+// dot F” == 0) and returns their count.
 func FindCubicMaxCurvature(src []Point, tValues *[3]float32) int {
 	var coeffX, coeffY [4]float32
 	formulateF1DotF2(src[0].X, src[1].X, src[2].X, src[3].X, &coeffX)
@@ -120,7 +119,6 @@ func ChopCubicAtMaxCurvature(src, dst []Point) int {
 	var roots [3]float32
 	rootCount := FindCubicMaxCurvature(src, &roots)
 
-	// Throw out values not inside 0..1.
 	var tValues [3]float32
 	count := 0
 	for i := 0; i < rootCount; i++ {
@@ -142,9 +140,8 @@ func ChopCubicAtMaxCurvature(src, dst []Point) int {
 
 // FindQuadMaxCurvature returns the t where the quad's curvature is maximal (t = -(Ax Bx + Ay By) / (Bx^2 + By^2),
 // pinned to the unit range). The result is in [0, 1] for finite input, but a NaN coordinate makes both numer and denom
-// NaN, which fails every comparison below and falls through to return NaN — matching Skia, whose own assert is
-// (0 <= t && t < 1) || SkScalarIsNaN(t). Callers that feed the result into further geometry must handle that, as
-// gpu/gl/aahairlinepathrenderer.go does.
+// NaN, which fails every comparison and returns NaN, matching Skia, which asserts (0 <= t && t < 1) || SkIsNaN(t).
+// Callers that feed the result into further geometry must handle that, as gpu/gl/aahairlinepathrenderer.go does.
 //
 // The dot products are pinned to unfused evaluation because this function branches on numer <= 0 / numer >= denom, and
 // FMA fusion would move mathematically-zero results across those cliffs differently per platform.
@@ -181,8 +178,9 @@ func ChopQuadAtMaxCurvature(src, dst []Point) int {
 	return 1
 }
 
-// FindCubicInflections returns the t values (up to 2) where the cubic's curvature is zero. The quadratic's coefficients
-// are cross products, pinned unfused like Point.Cross (their signs pick the root count).
+// FindCubicInflections stores in tValues the t values (up to 2) where the cubic's curvature is zero and returns their
+// count. The quadratic's coefficients are cross products, pinned unfused like Point.Cross (their signs pick the root
+// count).
 func FindCubicInflections(src []Point, tValues *[2]float32) int {
 	ax := src[1].X - src[0].X
 	ay := src[1].Y - src[0].Y

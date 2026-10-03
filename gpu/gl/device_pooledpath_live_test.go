@@ -8,13 +8,12 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // Live-context regression test for the GPU device's pooled per-draw working paths. The device lowers styled shapes,
-// hairline points/polygons, stroked lines, and mask-filtered shapes through transient device-space paths that are now
-// drawn from path.Borrow() and returned with path.Recycle() (the pooled-temporaries tier, extended from the CPU raster
-// device to the GPU device). Correctness hinges on each borrowed path being cloned (MakeShapePath /
-// MakeStyledShapePath) or consumed synchronously before it is recycled, so a leak would let a later draw's Borrow()
-// reuse storage a still-live op referenced. This test renders a scene that interleaves several distinct styled draws
-// through the device and compares it to the CPU canvas (the Go-GPU vs Go-CPU self-consistency lane): a pooled-path leak
-// would corrupt a shape's geometry and blow far past the AA-edge budget. Skips when no GL context is available.
+// hairline points/polygons, stroked lines, and mask-filtered shapes through transient paths taken from path.Borrow()
+// and returned with path.Recycle(). Correctness hinges on each borrowed path being cloned (MakeShapePath /
+// MakeStyledShapePath) or consumed synchronously before it is recycled; otherwise a later draw's Borrow() would reuse
+// storage a still-live op references. The test renders a scene that interleaves several distinct styled draws through
+// the device and compares it to the CPU canvas: a pooled-path leak would corrupt a shape's geometry and blow far past
+// the AA-edge budget. Skips when no GL context is available.
 
 package gl_test
 
@@ -104,8 +103,7 @@ func styledPooledScene(c *canvas.Canvas) {
 }
 
 // TestLiveGLDevicePooledPaths renders the styled-pooled-path scene through the GPU device and the CPU canvas and
-// asserts Go-GPU vs Go-CPU self-consistency. It guards the GPU-device path.Borrow adoption: a use-after-recycle would
-// corrupt a shape and exceed the budget.
+// asserts they agree; a use-after-recycle would corrupt a shape and exceed the budget.
 func TestLiveGLDevicePooledPaths(t *testing.T) {
 	_, dc := newLiveDirectContext(t)
 
@@ -126,13 +124,11 @@ func TestLiveGLDevicePooledPaths(t *testing.T) {
 	gpuData := readSDC(t, sdc)
 	cpuData := unsafe.Slice((*byte)(unsafe.Pointer(&cpuPix.Pix[0])), len(cpuPix.Pix)*4)
 
-	// Go-GPU vs Go-CPU self-consistency via the over-tolerance fraction. This verifies the device's styled / points /
-	// line / mask-filter lanes — which now lower through pooled transient paths — render the same scene as the CPU
-	// canvas. Interiors must agree tightly; AA edge pixels (dashes, hairlines, and the sharp stroked-polygon corners
-	// have many) legitimately swing the full range where one renderer covers a boundary pixel and the other does not,
-	// so a hard per-pixel delta cap is inappropriate here. A pooled-path leak corrupts a shape's geometry — its whole
-	// area disagrees with the CPU reference (well beyond the thin AA fringe) — so it trips the budget. Measured worst
-	// case ~0.9%; the budget leaves headroom for CI's software-GL AA differences.
+	// Compare via the over-tolerance fraction. Interiors must agree tightly, but AA edge pixels (dashes, hairlines, and
+	// the sharp stroked-polygon corners have many) legitimately swing the full range where one renderer covers a
+	// boundary pixel and the other does not, so a hard per-pixel delta cap is inappropriate. A pooled-path leak
+	// corrupts a shape's whole area (well beyond the thin AA fringe), so it trips the budget. Measured worst case
+	// ~0.9%; the budget leaves headroom for CI's software-GL AA differences.
 	const tol = 12
 	budget := w * h * 4 / 100 // 4% — above the AA fringe, below a corrupted shape's footprint
 	over := 0

@@ -374,7 +374,6 @@ func (c *Conic) ChopAtXExtrema(dst *[2]Conic) bool {
 		return false
 	}
 	if !c.ChopAt(t, dst) {
-		// If the chop cannot produce finite values, do not chop.
 		return false
 	}
 	value := dst[0].Pts[2].X
@@ -422,8 +421,9 @@ func (c *Conic) ComputeFastBounds() Rect {
 	return BoundsOrEmpty(c.Pts[:])
 }
 
-// BuildUnitArc appends up to MaxConicsForArc conics sweeping from uStart to uStop (unit vectors) in the given
-// direction, optionally transformed by userMatrix. Returns the conics used, which may be zero for degenerate sweeps.
+// BuildUnitArc writes into dst up to MaxConicsForArc conics sweeping from uStart to uStop (unit vectors) in the given
+// direction, optionally transformed by userMatrix. It returns the number written, which may be zero for a degenerate
+// sweep.
 func BuildUnitArc(uStart, uStop Point, dir RotationDirection, userMatrix *Matrix, dst *[MaxConicsForArc]Conic) int {
 	// Rotate by x,y so that uStart is (1, 0).
 	x := uStart.Dot(uStop)
@@ -489,7 +489,7 @@ func BuildUnitArc(uStart, uStop Point, dir RotationDirection, userMatrix *Matrix
 			conicCount++
 		}
 	}
-	// Handle counter-clockwise and the initial unitStart rotation.
+	// Handle counter-clockwise and the initial uStart rotation.
 	var matrix Matrix
 	matrix.SetSinCos(uStart.Y, uStart.X)
 	if dir == RotationCCW {

@@ -478,8 +478,7 @@ func TestCOLRv0ForegroundColor(t *testing.T) {
 
 // TestBitmapGlyphMetrics covers the two bitmap strike formats. Each font is its own subtest and everything after the
 // action and format checks reports rather than aborts, so a regression in one format cannot hide a simultaneous one in
-// the other: run as a single loop with t.Fatalf throughout, an sbix bounds regression stopped the loop before cbdt was
-// ever asked, and the CBDT failure only surfaced once the sbix one was fixed.
+// the other, as an sbix bounds regression once hid a CBDT one when this was a single loop of t.Fatalf calls.
 func TestBitmapGlyphMetrics(t *testing.T) {
 	for _, name := range []string{"sbix.ttf", "cbdt.ttf"} {
 		t.Run(name, func(t *testing.T) {
@@ -673,10 +672,8 @@ func TestUndrawableStrikeIsMeasuredAsAnOutline(t *testing.T) {
 }
 
 func TestEmbeddedBitmapsFlagDoesNotGateTheBitmapLane(t *testing.T) {
-	// The typeface.go/font.go comments say embedded bitmap strikes are always used when present and that no flag gates
-	// them: the embeddedBitmaps request can neither enable nor suppress the lane, and it stays out of the scaler rec.
-	// Both halves are pinned here, since a comment claiming "recorded but never honored — outline fonts only" would
-	// describe the opposite behavior.
+	// Embedded bitmap strikes are always used when present: the embeddedBitmaps request can neither enable nor suppress
+	// the lane, and it stays out of the scaler rec. Both halves are pinned here.
 	for _, name := range []string{"sbix.ttf", "cbdt.ttf"} {
 		t.Run(name, func(t *testing.T) {
 			tf := loadColorTypeface(t, name)
@@ -867,8 +864,8 @@ func craftedPNG(t *testing.T, w, h uint32) []byte {
 func TestDecodePremulPNGValidatesStrikeDimensions(t *testing.T) {
 	// png.Decode allocates the full image from the IHDR before reading a single IDAT byte, so the strike's own
 	// dimensions have to gate the decode. A real 4x3 strike decodes; the same bytes under mismatched strike metrics
-	// (the CBDT/EBDT hazard, where the metrics are independent of the PNG) do not; and a header claiming 65535x65535 in
-	// 33 bytes must be refused without allocating.
+	// (the CBDT/EBDT hazard, where the metrics are independent of the PNG) do not; and a tiny PNG whose header claims
+	// the mask ceiling must be refused without allocating.
 	var buf bytes.Buffer
 	src := image.NewNRGBA(image.Rect(0, 0, 4, 3))
 	src.Set(1, 1, color.NRGBA{R: 255, A: 128})
@@ -946,7 +943,7 @@ func TestDecodePremulPNGCapsTheStrikeArea(t *testing.T) {
 	// the sbix path nothing else stands in its way: go-text has no independent metrics to check such a strike against,
 	// so it takes GlyphBitmap.Width/Height from png.DecodeConfig on these very bytes and the equality check below
 	// compares the header with itself. Decoding it would cost about 768 MB across the NRGBA image, the premultiplied
-	// buffer, and the imagecore copy, out of a 33-byte strike.
+	// buffer, and the imagecore copy, out of a 33-byte header.
 	huge := craftedPNG(t, maxGlyphWidth-1, maxGlyphHeight-1)
 	if len(huge) > 1024 {
 		t.Fatalf("the crafted strike is %d bytes; it is meant to be tiny", len(huge))
@@ -1266,10 +1263,9 @@ func TestBitmapFontMeasure(t *testing.T) {
 
 // TestBitmapLaneKeepsItsOwnFace covers the split between the bitmap-strike lane's Face and the design-unit one. The
 // lane is the only reader that wants a nonzero ppem, and typesetting's SetPpem throws away the Face's entire per-glyph
-// extents cache; borrowing the shared Face meant setting the ppem and putting it back around every glyph, so each glyph
-// paid two full nGlyphs-entry cache clears and then looked into a cache that was guaranteed empty. With a Face of its
-// own the lane simply rests at the strike's ppem, so the cache survives from glyph to glyph — while the design-unit
-// readers keep seeing a Face that never left ppem 0.
+// extents cache, so borrowing the shared Face (setting the ppem and restoring it around every glyph) left every lookup
+// facing an empty cache. With a Face of its own the lane rests at the strike's ppem and the cache survives from glyph
+// to glyph, while the design-unit readers keep seeing a Face that never left ppem 0.
 func TestBitmapLaneKeepsItsOwnFace(t *testing.T) {
 	tf := loadColorTypeface(t, "sbix.ttf")
 	gid := opentype.GID(tf.UnicharToGlyph(smiley))

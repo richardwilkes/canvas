@@ -127,7 +127,7 @@ func (b *Buffer) AccessPattern() gpu.AccessPattern { return b.accessPattern }
 // IsMapped reports whether the buffer is currently mapped for CPU access.
 func (b *Buffer) IsMapped() bool { return b.mapPtr != nil }
 
-// IsCpuBuffer reports whether this is a CPU-only buffer (always false; CPU buffer pools are a future feature).
+// IsCpuBuffer implements AnyBuffer: always false, since this is a GPU buffer object.
 func (b *Buffer) IsCpuBuffer() bool { return false }
 
 // ResourceType implements gpu.Resource.
@@ -245,7 +245,6 @@ func (b *Buffer) onMap(mt bufferMapType) {
 	}
 }
 
-// onUnmap unmaps the buffer via whichever mapping mechanism was used to map it.
 func (b *Buffer) onUnmap() {
 	g := b.g
 	switch g.glCaps().MapBufferType() {

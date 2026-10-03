@@ -9,7 +9,7 @@
 
 // Live-context tests for the resource layer: texture create/upload/readback round-trips, render-target clears through
 // the state shadow, stencil attachment probing, buffer mapping, sync objects and finished callbacks, and scratch reuse
-// — all on a real GL context provided the way unison will provide one (gltest). Skips when no GL context is available.
+// — all on a real GL context (gltest). Skips when no GL context is available.
 
 package gl_test
 
@@ -78,7 +78,6 @@ func TestGpuLiveTextureUploadReadback(t *testing.T) {
 		}
 	}
 
-	// Overwrite a sub-rect with WritePixels and confirm both regions.
 	subDims := geom.ISize{Width: 16, Height: 16}
 	subRect := geom.IRectXYWH(8, 4, subDims.Width, subDims.Height)
 	subPixels := testPattern(subDims, 101)

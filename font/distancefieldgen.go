@@ -207,7 +207,6 @@ func initDistances(data []dfData, edges []uint8, width, height int) {
 					data[next+1].alpha - data[prev+1].alpha
 				currGrad = setLengthFast(currGrad, 1)
 
-				// Init squared distance to edge and distance vector.
 				dist := edgeDistance(currGrad, data[curr].alpha)
 				data[curr].distVector = geom.Pt(currGrad.X*dist, currGrad.Y*dist)
 				data[curr].distSq = dist * dist
@@ -372,10 +371,8 @@ func generateDistanceFieldFromImage(distanceField, paddedImage []uint8, width, h
 	data := make([]dfData, dataWidth*dataHeight)
 	edges := make([]uint8, dataWidth*dataHeight)
 
-	// Copy the glyph into the distance-field storage.
 	initGlyphData(data, edges, paddedImage, dataWidth, width+2, height+2, DistanceFieldPad)
 
-	// Create the initial distance data, particularly at edges.
 	initDistances(data, edges, dataWidth, dataHeight)
 
 	// Perform the Euclidean distance transform to propagate distances.
@@ -415,13 +412,11 @@ func generateDistanceFieldFromImage(distanceField, paddedImage []uint8, width, h
 	//
 	// Upstream Skia starts two texels earlier, at (dataHeight-3, dataWidth-1), which shifts every row's window two
 	// columns left: the rightmost interior column of each row never gets backward propagation, and column 0's b1 reads
-	// the previous row's last column. That divergence is not confined to the padding DistanceFieldInset trims, as one
-	// might expect — over 300 masks the two starts also differ *inside* the inset region, by up to 3/255. What makes it
-	// invisible in a rendered glyph is where those texels sit rather than whether they are trimmed: they are ~3.9 texels
-	// from the glyph against a DistanceFieldMagnitude of 4, so they are pinned at the far end of the packed range and
-	// nowhere near the smoothstep band the shader reads around the zero crossing (TestDistanceFieldOuterBandIsSaturated
-	// pins that margin). Mirroring the passes costs nothing and does not need the argument at all, so the start is fixed
-	// here rather than ported.
+	// the previous row's last column. Over 300 masks the two starts differ by up to 3/255, and not only in the padding
+	// DistanceFieldInset trims, but only in texels ~3.9 texels from the glyph against a DistanceFieldMagnitude of 4:
+	// those are pinned at the far end of the packed range, nowhere near the smoothstep band the shader reads around the
+	// zero crossing (TestDistanceFieldOuterBandIsSaturated pins that margin). Mirroring the passes costs nothing and
+	// does not need the argument at all, so the start is fixed here rather than ported.
 	curr = dataWidth*(dataHeight-2) + 1 // skip the outer buffer
 	e = dataWidth*(dataHeight-2) + 1
 	for j := 1; j < dataHeight-1; j++ {

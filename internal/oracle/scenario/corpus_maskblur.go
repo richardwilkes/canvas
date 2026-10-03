@@ -14,9 +14,8 @@ import (
 	"github.com/richardwilkes/canvas/geom"
 )
 
-// The blur mask filter — the one mask filter with a dedicated GPU lane on both backends. Covers the
-// four styles, rect/rrect/circle/path geometries (each takes a different specialized blur lane), stroked geometry, and
-// the respectCTM flag.
+// The blur mask filter: the four styles, rect/rrect/circle/path geometries (each takes a different specialized blur
+// lane), stroked geometry, and the respectCTM flag.
 
 func blurMF(style BlurStyle, sigma float32) *MaskFilterSpec {
 	return &MaskFilterSpec{Style: style, Sigma: sigma, RespectCTM: true}

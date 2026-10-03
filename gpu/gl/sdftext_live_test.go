@@ -45,7 +45,7 @@ func TestLiveSDFTextRotated(t *testing.T) {
 	}
 	c := s.Canvas()
 
-	// 200px text is inside the default SDFT window (162..glyphsAsPathsFontSize) on every OS.
+	// 200px text is inside the default SDFT window (162..GlyphsAsPathsFontSize) on every OS.
 	f := font.NewFont(tf, 200, 1, 0)
 	paint := canvas.NewPaint()
 	paint.Color = colorcore.RGB(0, 0, 0)

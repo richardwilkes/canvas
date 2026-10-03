@@ -89,7 +89,6 @@ func (f *VertexFiller) VertexStride(matrix *geom.Matrix) int {
 	return argb2DVertexStride
 }
 
-// scalarIsInt reports whether v has no fractional part.
 func scalarIsInt(v float32) bool { return v == float32(math.Floor(float64(v))) }
 
 // canUseDirect checks for an integer translation with the same 2x2 matrix and no perspective; returns the translation.
@@ -147,7 +146,6 @@ func packColor(c colorcore.PMColor4f) uint32 {
 	return toByte(c.R) | toByte(c.G)<<8 | toByte(c.B)<<16 | toByte(c.A)<<24
 }
 
-// vertexWriter writes the packed vertex forms.
 type vertexWriter struct {
 	buf    []byte
 	offset int
@@ -188,7 +186,6 @@ func (f *VertexFiller) FillVertexData(dst []byte, offset, count int, glyphs []*G
 	hasColor := f.maskType != gpu.MaskFormatARGB
 	w := vertexWriter{buf: dst}
 
-	// Handle direct mask drawing specifically.
 	if f.canDrawDirect {
 		if noTransformNeeded, originOffset := canUseDirect(&f.creationMatrix, positionMatrix); noTransformNeeded {
 			var clipPtr *geom.IRect
@@ -200,7 +197,6 @@ func (f *VertexFiller) FillVertexData(dst []byte, offset, count int, glyphs []*G
 		}
 	}
 
-	// Handle the general transformed case.
 	viewDifference := f.viewDifference(positionMatrix)
 	if !positionMatrix.HasPerspective() {
 		f.fill2D(&w, offset, count, glyphs, packed, hasColor, &viewDifference)
@@ -209,8 +205,8 @@ func (f *VertexFiller) FillVertexData(dst []byte, offset, count int, glyphs []*G
 	}
 }
 
-// fillDirect merges fillDirectNoClipping and fillDirectClipped: device positions are integer translations of the stored
-// leftTop values; the optional clip adjusts both the device rect and the atlas coordinates.
+// fillDirect merges Skia's fillDirectNoClipping and fillDirectClipped: device positions are integer translations of the
+// stored leftTop values; the optional clip adjusts both the device rect and the atlas coordinates.
 func (f *VertexFiller) fillDirect(w *vertexWriter, offset, count int, glyphs []*Glyph, color uint32, hasColor bool, originOffset geom.Point, clip *geom.IRect) {
 	for i := offset; i < offset+count; i++ {
 		glyph := glyphs[i]

@@ -95,10 +95,9 @@ func TestChooseSpriteNeverCopiesUnpremulVerbatim(t *testing.T) {
 	}
 }
 
-// TestSpriteUnpremulMatchesPremultipliedSource is the fix for the sprite lane compositing straight-alpha sources as if
-// they were premultiplied: blitting an unpremultiplied source must land on the same bytes as blitting the
-// premultiplied copy of it. Exact for every lowp lane; the highp lanes premultiply in float instead of rounding
-// through 8 bits first, so they are allowed the one-step difference that costs.
+// TestSpriteUnpremulMatchesPremultipliedSource pins that blitting an unpremultiplied source lands on the same bytes as
+// blitting its premultiplied copy. Exact for every lowp lane; the highp lanes premultiply in float instead of rounding
+// through 8 bits first, so they are allowed a one-step difference.
 func TestSpriteUnpremulMatchesPremultipliedSource(t *testing.T) {
 	const w, h = 8, 4
 	src := unpremulTestPixmap(w, h)
@@ -151,8 +150,8 @@ func TestImageSpriteBlitterUnpremulCoverage(t *testing.T) {
 	}
 }
 
-// TestSpriteUnpremulTransparentPixelLeavesDestination is the reported symptom in its smallest form: a fully
-// transparent straight-alpha pixel used to add its own color to the backdrop instead of leaving it alone.
+// TestSpriteUnpremulTransparentPixelLeavesDestination pins the smallest form of a reported bug: a fully transparent
+// straight-alpha pixel must leave the backdrop alone rather than add its own color to it.
 func TestSpriteUnpremulTransparentPixelLeavesDestination(t *testing.T) {
 	src := NewPixmap(2, 1)
 	src.Pix[0] = 16 | 8<<8 | 96<<16 | 0<<24   // color (16,8,96), fully transparent

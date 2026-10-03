@@ -175,7 +175,6 @@ func (f BlendFormula) SecondaryOutput() BlendFormulaOutputType { return f.second
 // makeCoeffFormula builds the standard Porter-Duff formula for use when there is no coverage, or the blend mode can
 // tweak alpha for coverage instead of needing a separate multiply.
 func makeCoeffFormula(srcCoeff, dstCoeff BlendCoeff) BlendFormula {
-	// When the coeffs are (Zero, Zero) or (Zero, One) we set the primary output to none.
 	if srcCoeff == BlendCoeffZero && (dstCoeff == BlendCoeffZero || dstCoeff == BlendCoeffOne) {
 		return MakeBlendFormula(BlendFormulaOutputNone, BlendFormulaOutputNone,
 			BlendEquationAdd, BlendCoeffZero, dstCoeff)

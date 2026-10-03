@@ -20,7 +20,7 @@ import (
 	"github.com/richardwilkes/canvas/path"
 )
 
-// pathCorpus builds the probe corpus (~110 specs): every builder op, the shape adders in both directions, all three arc
+// pathCorpus builds the probe corpus (~100 specs): every builder op, the shape adders in both directions, all three arc
 // forms with their degenerate cases, addPath composition, contour bookkeeping edge cases, and seeded random builder
 // mixes.
 func pathCorpus() []*scenario.PathSpec {
@@ -144,7 +144,6 @@ func pathCorpus() []*scenario.PathSpec {
 			case 6:
 				// float32() forces the sweep's multiply to round before the subtract; see coord() in aaedge_test.go for
 				// why an unrounded mul-then-sub makes this corpus (and so the fixture keys) platform-specific.
-				// coord()'s own (x*2-1)*s is safe: x*2 is exact.
 				s.ArcToOval(geom.RectLTRB(coord(), coord(), coord(), coord()), rng.Float32()*360,
 					float32(rng.Float32()*720)-360, rng.Intn(2) == 0)
 			case 7:

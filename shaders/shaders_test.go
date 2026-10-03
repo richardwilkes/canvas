@@ -218,10 +218,10 @@ func TestGradientNaNStopDoesNotCollapse(t *testing.T) {
 		colorcore.PMColor4f{G: 0.5, B: 0.5, A: 1}, 1e-6, "gradient past a NaN stop")
 }
 
-// TestGradientPinToOneBeforeImplicitLastStop locks the stop preprocessing for the one case the removed
-// lastStopIsImplicit write inside the position-fixing loop was about: a position pins to 1.0 before the last stop while
-// the trailing stop is implicit. Both counts are fixed before the loop and nothing downstream reads the flag, so the
-// output must be exactly what it was with the write in place.
+// TestGradientPinToOneBeforeImplicitLastStop locks the stop preprocessing for the case upstream handles by clearing
+// lastStopIsImplicit inside the position-fixing loop: a position pins to 1.0 before the last stop while the trailing
+// stop is implicit. Both counts are fixed before the loop and nothing downstream reads the flag, so omitting that write
+// must not change the output.
 func TestGradientPinToOneBeforeImplicitLastStop(t *testing.T) {
 	colors := []colorcore.Color{0xFFFF0000, 0xFF00FF00, 0xFF0000FF}
 	// positions[1] pins to 1 (out of range), positions[2] then pins to prev = 1, and the trailing 0.6 != 1 made the
@@ -373,9 +373,9 @@ func TestApplyForFragmentProcessorIgnoresCTM(t *testing.T) {
 	}
 }
 
-// TestApplyForFragmentProcessorPanicsAfterCTMApplied pins the other half of that contract, the one the doc now records:
-// a record that already went through the CPU lane's apply is not a GPU-lane record, and reusing it here would
-// double-transform the sample coordinates, so the call aborts rather than returning ok=false.
+// TestApplyForFragmentProcessorPanicsAfterCTMApplied pins the other half of that contract: a record that already went
+// through the CPU lane's apply is not a GPU-lane record, and reusing it here would double-transform the sample
+// coordinates, so the call panics rather than returning ok=false.
 func TestApplyForFragmentProcessorPanicsAfterCTMApplied(t *testing.T) {
 	defer func() {
 		if recover() == nil {
@@ -611,7 +611,6 @@ func TestDitherStage(t *testing.T) {
 	}
 }
 
-// matrixNear reports whether every element of a and b matches within tol.
 func matrixNear(a, b *geom.Matrix, tol float32) bool {
 	for i := range 9 {
 		if !near(a.Get(i), b.Get(i), tol) {

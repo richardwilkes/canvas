@@ -122,16 +122,16 @@ const (
 )
 
 // MaskFilterSpec declaratively describes a paint mask filter. Only the blur mask filter is in the corpus: it is the one
-// with a dedicated GPU lane on both sides (the table/clip/gamma/shader mask filters are raster-only constructs covered
-// by the probe differentials, and a corpus scenario renders through both lanes).
+// with a dedicated GPU lane (the table/clip/gamma/shader mask filters are raster-only constructs tested in the
+// maskfilter package, and a corpus scenario renders through both backends).
 type MaskFilterSpec struct {
 	Style      BlurStyle
 	Sigma      float32
 	RespectCTM bool
 }
 
-// ImageFilterKind selects the ImageFilterSpec variant — one per sk_imagefilter_new_* constructor reachable without an
-// Skia's Image input (the image-source leaf needs image plumbing the corpus does not carry).
+// ImageFilterKind selects the ImageFilterSpec variant: one per sk_imagefilter_new_* constructor reachable without an
+// image input (the image-source leaf needs image plumbing the corpus does not carry).
 type ImageFilterKind int32
 
 // ImageFilterKind values.

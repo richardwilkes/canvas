@@ -92,8 +92,7 @@ type OpFlushState struct {
 	opArgsSet  bool
 }
 
-// NewOpFlushState creates an OpFlushState wired up to the given Gpu, resource provider, token tracker, buffer cache,
-// thread-safe cache, atlas manager, and glyph strike cache.
+// NewOpFlushState creates an OpFlushState with fresh vertex and index buffer pools.
 func NewOpFlushState(g *Gpu, resourceProvider *ResourceProvider, tokenTracker *gpu.TokenTracker, cpuBufferCache *CpuBufferCache, threadSafeCache *ThreadSafeCache, atlasManager *AtlasManager, strikeCache *text.StrikeCache) *OpFlushState {
 	return &OpFlushState{
 		gpu:              g,
@@ -202,11 +201,10 @@ func (s *OpFlushState) PreExecuteDraws() {
 	s.currUpload = 0
 }
 
-// Reset clears the flush state for reuse on the next flush. It also fully clears the per-op scratch fields (opArgs,
-// opsRenderPass, sampledProxyArray) that the prepare/execute loops set and clear again as they go: they are already
-// nil/false here on the normal flow (the drawing manager panics if a render pass is still active), but zeroing them
-// makes reuse of the persistent flush state (DrawingManager.flushState) safe by construction rather than by relying on
-// that flow — no stale pointer can survive into the next flush (cf. the op-pool full-zero recycle).
+// Reset clears the flush state for reuse on the next flush. The per-op scratch fields (opArgs, opsRenderPass,
+// sampledProxyArray) are already clear here on the normal flow (the prepare/execute loops clear them as they go, and
+// the drawing manager panics if a render pass is still active), but zeroing them makes reuse of the persistent flush
+// state (DrawingManager.flushState) safe by construction: no stale pointer can survive into the next flush.
 func (s *OpFlushState) Reset() {
 	if s.currUpload != len(s.inlineUploads) {
 		panic("inline uploads were recorded but never executed")
@@ -226,7 +224,8 @@ func (s *OpFlushState) Reset() {
 // accessor. Implements DeferredUploadTarget.
 func (s *OpFlushState) TokenTracker() *gpu.TokenTracker { return s.tokenTracker }
 
-// AddInlineUpload schedules upload to run before the next draw token is issued. Implements DeferredUploadTarget.
+// AddInlineUpload schedules upload to run just before the draw that takes the next draw token executes, and returns
+// that token. Implements DeferredUploadTarget.
 func (s *OpFlushState) AddInlineUpload(upload DeferredTextureUploadFn) gpu.Token {
 	token := s.tokenTracker.NextDrawToken()
 	s.inlineUploads = append(s.inlineUploads, inlineUpload{upload: upload, uploadBeforeToken: token})
@@ -275,8 +274,7 @@ func (s *OpFlushState) DoUpload(upload DeferredTextureUploadFn, shouldPrepareSur
 		supportedWrite := s.gpu.GLCaps().SupportedWritePixelsColorType(colorType,
 			dstSurface.Format(), colorType)
 		if supportedWrite.ColorType != colorType {
-			// Cross-color-type conversion waits for the imagecore integration (unreachable for the atlas formats on the
-			// desktop matrix).
+			// Cross-color-type conversion is unsupported (unreachable for the atlas formats on the desktop matrix).
 			return false
 		}
 		tightRB := int(rect.Width()) * colorType.BytesPerPixel()

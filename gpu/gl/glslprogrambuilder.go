@@ -26,7 +26,7 @@ import (
 // rtAdjustName is the uniform name for the RT-adjust vector (see rtAdjustVector in glprogram.go).
 const rtAdjustName = "u_rtAdjust"
 
-// ProgramBuilder is the merged program builder.
+// ProgramBuilder generates and links the GL program for one ProgramInfo.
 type ProgramBuilder struct {
 	gpImpl         GPProgramImpl
 	xpImpl         XPProgramImpl
@@ -70,16 +70,12 @@ func newProgramBuilder(g *Gpu, desc *ProgramDesc, programInfo *ProgramInfo) *Pro
 	return pb
 }
 
-// shaderCaps returns the driver's shader capabilities.
 func (pb *ProgramBuilder) shaderCaps() *gpu.ShaderCaps { return pb.gpu.Caps().ShaderCaps }
 
-// pipeline returns the program's pipeline (the fragment processor tree and transfer processor).
 func (pb *ProgramBuilder) pipeline() *Pipeline { return pb.programInfo.Pipeline() }
 
-// geometryProcessor returns the program's geometry processor.
 func (pb *ProgramBuilder) geometryProcessor() GeometryProcessor { return pb.programInfo.GeomProc() }
 
-// snapVerticesToPixelCenters reports whether the pipeline requests vertex positions be snapped to pixel centers.
 func (pb *ProgramBuilder) snapVerticesToPixelCenters() bool {
 	return pb.pipeline().SnapVerticesToPixelCenters()
 }
@@ -135,12 +131,10 @@ func (pb *ProgramBuilder) advanceStage() {
 	pb.fs.nextStage()
 }
 
-// appendUniformDecls appends the declarations for uniforms visible to the given shader stage(s).
 func (pb *ProgramBuilder) appendUniformDecls(visibility ShaderFlags, out *[]byte) {
 	pb.uniformHandler.appendUniformDecls(visibility, out)
 }
 
-// addRTFlipUniform registers the fragment-shader RT-flip uniform under name.
 func (pb *ProgramBuilder) addRTFlipUniform(name string) {
 	if pb.uniformHandles.RTFlipUni.IsValid() {
 		panic("RT flip uniform already added")
@@ -183,7 +177,6 @@ func (pb *ProgramBuilder) emitAndInstallProcs() bool {
 func (pb *ProgramBuilder) emitAndInstallPrimProc(outputColor, outputCoverage *string) bool {
 	geomProc := pb.geometryProcessor()
 
-	// Program builders have a bit of state we need to clear with each effect.
 	pb.advanceStage()
 	pb.nameExpression(outputColor, "outputColor")
 	pb.nameExpression(outputCoverage, "outputCoverage")
@@ -232,7 +225,6 @@ func (pb *ProgramBuilder) emitAndInstallDstTexture() bool {
 
 	dstView := pb.pipeline().DstProxyView()
 	if pb.pipeline().UsesDstTexture() {
-		// Set up a sampler handle for the destination texture.
 		dstTextureProxy := dstView.AsTextureProxy()
 		if dstTextureProxy == nil {
 			panic("dst texture read requires a texture proxy")
@@ -305,7 +297,6 @@ func (pb *ProgramBuilder) emitRootFragProc(fp FragmentProcessor, impl FPProgramI
 		panic("root FP requires an input expression")
 	}
 
-	// Program builders have a bit of state we need to clear with each effect.
 	pb.advanceStage()
 	var output string
 	pb.nameExpression(&output, "output")
@@ -378,7 +369,7 @@ func (pb *ProgramBuilder) writeChildFPFunctions(fp FragmentProcessor, impl FPPro
 	pb.substageIndices = pb.substageIndices[:len(pb.substageIndices)-1]
 }
 
-// writeFPFunction emits fp's function (children first, so their uniforms are all registered).
+// writeFPFunction emits fp's function, children first.
 func (pb *ProgramBuilder) writeFPFunction(fp FragmentProcessor, impl FPProgramImpl) {
 	const dstColorParam = "_dst"
 	inputColorParam := "_input"
@@ -394,7 +385,6 @@ func (pb *ProgramBuilder) writeFPFunction(fp FragmentProcessor, impl FPProgramIm
 	params := make([]ShaderVar, 0, 3)
 	params = append(params, NewShaderVar(inputColorParam, GLSLTypeHalf4))
 	if fp.fpBase().IsBlendFunction() {
-		// Blend functions take a dest color as input.
 		params = append(params, NewShaderVar(dstColorParam, GLSLTypeHalf4))
 	}
 
@@ -406,7 +396,6 @@ func (pb *ProgramBuilder) writeFPFunction(fp FragmentProcessor, impl FPProgramIm
 			params = append(params, NewShaderVar(sampleCoords, GLSLTypeFloat2))
 		}
 	case coordsEntry.HasCoordsParam:
-		// This FP is in the map, and it takes an explicit coords param.
 		params = append(params, NewShaderVar(sampleCoords, GLSLTypeFloat2))
 	default:
 		// Either doesn't use coords at all or sampled through a chain of passthrough/matrix usages. In the latter case
@@ -418,7 +407,6 @@ func (pb *ProgramBuilder) writeFPFunction(fp FragmentProcessor, impl FPProgramIm
 				panic("directly used coords without a varying")
 			}
 		case GLSLTypeFloat2:
-			// Just point the local coords to the varying.
 			sampleCoords = varying.Name()
 		case GLSLTypeFloat3:
 			// Must perform the perspective divide in the frag shader based on the varying; add a local variable in
@@ -447,7 +435,6 @@ func (pb *ProgramBuilder) writeFPFunction(fp FragmentProcessor, impl FPProgramIm
 // emitAndInstallXferProc builds and emits the transfer processor's shader code, wiring up its input color/coverage and
 // output(s).
 func (pb *ProgramBuilder) emitAndInstallXferProc(colorIn, coverageIn string) bool {
-	// Program builders have a bit of state we need to clear with each effect.
 	pb.advanceStage()
 
 	if pb.xpImpl != nil {
@@ -456,7 +443,6 @@ func (pb *ProgramBuilder) emitAndInstallXferProc(colorIn, coverageIn string) boo
 	xp := pb.pipeline().XferProcessor()
 	pb.xpImpl = xp.MakeProgramImpl()
 
-	// Enable dual source secondary output if we have one.
 	if xpHasSecondaryOutput(xp) {
 		pb.fs.EnableSecondaryOutput()
 	}
@@ -502,7 +488,6 @@ func (pb *ProgramBuilder) emitSampler(textureType gpu.TextureType, swizzle gpu.S
 	return h
 }
 
-// checkSamplerCounts reports whether the number of fragment samplers used is within the driver's limit.
 func (pb *ProgramBuilder) checkSamplerCounts() bool {
 	return pb.numFragmentSamplers <= pb.shaderCaps().MaxFragmentSamplers
 }
@@ -613,8 +598,8 @@ func (pb *ProgramBuilder) computeCountsAndStrides(programID uint32, geomProc Geo
 	}
 }
 
-// bindProgramResourceLocations resolves uniform locations and, where the driver requires it, explicitly binds the
-// fragment color output location(s) before linking.
+// bindProgramResourceLocations explicitly binds the fragment color output location(s) before linking, where the driver
+// supports it. Uniform locations are resolved after link (bindUniformLocations is a no-op).
 func (pb *ProgramBuilder) bindProgramResourceLocations(programID uint32) {
 	pb.uniformHandler.bindUniformLocations(programID, pb.gpu.glCaps())
 

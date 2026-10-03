@@ -60,8 +60,8 @@ func MakePreClipResultRect(rect geom.Rect, aa gpu.AA) PreClipResult {
 // Clip is an abstract base for applying a clip, constructing a clip mask if necessary and filling out an AppliedClip
 // instructing the caller on how to set up the draw state.
 type Clip interface {
-	// GetConservativeBounds returns a conservative pixel bounds restricted to the given render target dimensions;
-	// anything outside will be entirely clipped out.
+	// GetConservativeBounds returns conservative pixel bounds restricted to the render target; anything outside will be
+	// entirely clipped out.
 	GetConservativeBounds() geom.IRect
 	// Apply computes an AppliedClip from the clip. On input 'bounds' is a conservative bounds of the draw to be
 	// clipped; if Clipped or Unclipped is returned it has been updated to be contained within the clip bounds. The op
@@ -215,10 +215,8 @@ func (c *FixedClip) PreApply(drawBounds geom.Rect, aa gpu.AA) PreClipResult {
 	}
 
 	if !c.scissorState.Enabled() || c.scissorState.Rect().ContainsRect(pixelBounds) {
-		// Either no scissor or the scissor doesn't clip the draw.
 		return MakePreClipResult(ClipEffectUnclipped)
 	}
-	// Report the scissor as a degenerate round rect.
 	return MakePreClipResultRect(c.scissorState.Rect().ToRect(), gpu.AANo)
 }
 

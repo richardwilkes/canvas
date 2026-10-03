@@ -60,8 +60,8 @@ func LocalCoordsFromMatrix(localMatrix *geom.Matrix) FillRRectLocalCoords {
 	return FillRRectLocalCoords{matrix: *localMatrix, isMatrix: true}
 }
 
-// skewsAreRelevant reports whether m's skew components are large enough to matter. Note: just checking m.RectStaysRect
-// is not sufficient.
+// skewsAreRelevant reports whether m's skew components are large enough to matter. Just checking m.RectStaysRect is not
+// sufficient.
 func skewsAreRelevant(m *geom.Matrix) bool {
 	if m.HasPerspective() {
 		panic("perspective is unreachable here")
@@ -103,8 +103,7 @@ type fillRRectOp struct {
 	baseInstance int
 	// instancesArr backs instances for the common single-instance case so a freshly constructed op does not
 	// heap-allocate a separate backing array (see the aaStrokeRectOp.rectsArr note); combining more instances grows
-	// past it into the heap as normal. FillRRectOp is unison's most common styled primitive, so this is the
-	// highest-frequency of the instance ops.
+	// past it into the heap as normal.
 	instancesArr   [1]fillRRectInstance
 	processorFlags uint32
 }
@@ -145,7 +144,6 @@ func NewFillRRectOp(caps *Caps, paint *Paint, viewMatrix *geom.Matrix, rrect geo
 	return newFillRRectOp(processors, color, viewMatrix, rrect, localCoords, flags)
 }
 
-// newFillRRectOp creates a fillRRectOp.
 func newFillRRectOp(processors *ProcessorSet, paintColor colorcore.PMColor4f, viewMatrix *geom.Matrix, rrect geom.RRect, localCoords FillRRectLocalCoords, flags uint32) *fillRRectOp {
 	o := fillRRectOpPool.borrow()
 	o.instances = bootstrapInstances(o.instances, o.instancesArr[:0])
@@ -280,7 +278,6 @@ func (o *fillRRectOp) ClipToShape(clipOp raster.ClipOp, clipMatrix *geom.Matrix,
 			}
 		}
 
-		// Update the round rect.
 		head.rrect = isectRRect
 		return ClipResultClippedGeometrically
 	}
@@ -510,7 +507,6 @@ func fillRRectStaticBuffers() {
 	})
 }
 
-// createProgramInfo builds the program info for this op's draw.
 func (o *fillRRectOp) createProgramInfo(state *OpFlushState) {
 	args := state.OpArgs()
 	if args.UsesMSAASurface() {
@@ -633,7 +629,6 @@ type fillRRectProcessor struct {
 	flags uint32
 }
 
-// makeFillRRectProcessor builds a fillRRectProcessor geometry processor.
 func makeFillRRectProcessor(flags uint32) GeometryProcessor {
 	gp := fillRRectGPPool.borrow()
 	gp.flags = flags
@@ -683,7 +678,6 @@ func (g *fillRRectProcessor) MakeProgramImpl(*gpu.ShaderCaps) GPProgramImpl {
 	return &fillRRectProcessorImpl{}
 }
 
-// fillRRectProcessorImpl is the shader implementation for fillRRectProcessor.
 type fillRRectProcessorImpl struct {
 	GPImplBase
 }

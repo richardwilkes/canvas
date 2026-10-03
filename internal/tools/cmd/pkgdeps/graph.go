@@ -101,7 +101,7 @@ func testSupport(name string) bool {
 }
 
 // relative strips the module path from an import path, leaving the module-relative package name. Paths outside the
-// module are returned unchanged, though loadGraph only ever passes it packages from "go list ./...".
+// module are returned unchanged, which is how internalImports recognizes them.
 func relative(modPath, importPath string) string {
 	if prefix := modPath + "/"; strings.HasPrefix(importPath, prefix) {
 		return importPath[len(prefix):]
@@ -139,8 +139,8 @@ func (g *graph) discardUnlisted() {
 	}
 }
 
-// computeDepths assigns each package the length of the longest import path below it, which is what orders both the
-// layers of the node-link panel and the axes of the matrix.
+// computeDepths assigns each package the length of the longest import path below it, which orders the axes of the
+// matrix; dot ranks the layers of the node-link panel itself.
 func (g *graph) computeDepths() {
 	var depthOf func(string) int
 	depthOf = func(name string) int {

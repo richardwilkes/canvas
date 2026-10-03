@@ -16,8 +16,8 @@ import (
 
 // The conversion-row benchmarks drive the dispatch variables, so one binary measures whichever kernel the build wired
 // in: the portable form, or (under goexperiment.simd) the archsimd kernel. Compare builds with benchstat. Rows are
-// benchConvertPixels wide, a multiple of the sixteen-pixel vector chunk so every kernel runs with an empty tail. The
-// two word kernels whose R/B exchange changes their inner loop are measured both ways.
+// benchConvertPixels wide, a multiple of the sixteen-pixel vector chunk so every kernel runs with an empty tail. Each
+// word kernel is measured with and without the R/B exchange.
 
 // benchConvertPixels is the benchmark row width, wide enough to amortize per-call setup and to make the row, not the
 // dispatch, the thing being measured.

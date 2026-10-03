@@ -186,8 +186,8 @@ func TestLiveTessellationMergedColors(t *testing.T) {
 func TestLiveTessellationExplicitCurveType(t *testing.T) {
 	// The live desktop contexts report GLSL >= 3.30 (infinity support), so the explicit curve-type lane — what
 	// production GL 3.2/GLSL 1.50 contexts take — would go uncompiled. Clearing InfinitySupport on a fresh context
-	// forces the tessellators to write the kExplicitCurveType attrib and every tessellation shader to branch on it
-	// instead of isinf(), across all three fill ops.
+	// forces the tessellators to write the PatchAttribExplicitCurveType attrib and every tessellation shader to branch
+	// on it instead of isinf(), across all three fill ops.
 	env := newGLEnv(t)
 	dc := gl.MakeGLDirectContext(env.intf, nil)
 	if dc == nil {

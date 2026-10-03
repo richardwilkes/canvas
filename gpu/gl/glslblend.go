@@ -128,7 +128,7 @@ func glslBlendFuncBody(mode raster.BlendMode) string {
 			"return result;"
 	case raster.BlendDarken:
 		// blend_darken_mode is the registry key; ensureBlendHelper emits it under the name blend_darken, so the
-		// three-argument overload has to be called by that name (as blend_overlay_flip's body does for blend_overlay).
+		// three-argument overload has to be called by that name.
 		return "return blend_darken(1.0, src, dst);"
 	case raster.BlendLighten:
 		return "vec4 result = blend_src_over(src, dst);\n" +
@@ -302,8 +302,8 @@ var glslBlendHelpers = map[string]glslBlendHelper{
 		helpers: []string{"_blend_color_saturation"},
 	},
 	// blend_darken_mode is the shared uniform-driven blend_darken(float mode, vec4 src, vec4 dst) helper (darken: 1,
-	// lighten: -1); GLSL has overloading, but a distinct name keeps this form separable from the two-argument mode
-	// function in dumps.
+	// lighten: -1). It is emitted as an overload of blend_darken; the distinct registry key keeps it apart from the
+	// two-argument mode function in blendFuncsEmitted.
 	"blend_darken_mode": {
 		params: "float mode, vec4 src, vec4 dst",
 		body: "vec4 a = blend_src_over(src, dst);\n" +

@@ -8,9 +8,8 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // The set of modifications to the draw state that implement a clip — the fixed-function hard clip (scissor and a
-// stencil-clip stack ID) and the coverage fragment processor. Window rectangles are not supported:
-// EXT_window_rectangles is absent from this codebase's target drivers, so that state is unreachable; the stencil stack
-// ID is carried for the stencil-clip lanes.
+// stencil-clip stack ID) and the coverage fragment processor. Window rectangles are not supported, since
+// EXT_window_rectangles is absent from this codebase's target drivers.
 
 package gl
 
@@ -143,7 +142,6 @@ func (c *AppliedClip) AddCoverageFP(fp FragmentProcessor) {
 	if c.coverageFP == nil {
 		c.coverageFP = fp
 	} else {
-		// Compose this coverage FP with the previously-added coverage.
 		c.coverageFP = ComposeFP(fp, c.coverageFP)
 	}
 }

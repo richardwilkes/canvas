@@ -79,8 +79,7 @@ func TestCapsLiveContext(t *testing.T) {
 	if !caps.VertexArrayObjectSupport() {
 		t.Error("core contexts must have VAO support")
 	}
-	// The version decl the caps derived must match what the spike derives from the raw version, so generated programs
-	// will compile on this context.
+	// The caps must derive a real version decl, or generated programs will not compile on this context.
 	if got := caps.ShaderCaps.VersionDeclString; got == "<no version>" || got == "" {
 		t.Errorf("version decl = %q", got)
 	}

@@ -81,17 +81,14 @@ func (v *GlyphVector) SetAtlasGeneration(gen uint64) { v.atlasGeneration = gen }
 // BulkUseUpdater returns the plot updater tracking this vector's atlas plots.
 func (v *GlyphVector) BulkUseUpdater() *gpu.BulkUsePlotUpdater { return &v.bulkUseUpdater }
 
-// PackedGlyphIDToGlyph resolves this vector's GPU strike and Glyph records. Must run in single-threaded (flush) mode.
-// On first use it resolves the GPU strike and the Glyph records, then drops the source-strike ref so the CPU strike can
-// be purged if needed.
+// PackedGlyphIDToGlyph resolves, on first use, this vector's GPU strike and Glyph records, then drops the source-strike
+// ref so the CPU strike can be purged if needed. Must run in single-threaded (flush) mode.
 func (v *GlyphVector) PackedGlyphIDToGlyph(cache *StrikeCache) {
 	if v.textStrike == nil {
 		v.textStrike = cache.FindOrCreateStrike(&v.spec)
-		// Get all the atlas locations for each glyph.
 		for i := range v.glyphs {
 			v.glyphs[i].Glyph = v.textStrike.GetGlyph(v.glyphs[i].PackedID)
 		}
-		// Drop the ref to the strike so that it can be purged if needed.
 		v.sourceStrike = nil
 	}
 }

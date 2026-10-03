@@ -24,7 +24,6 @@ func fillRect(c *canvas.Canvas, r geom.Rect, color colorcore.Color) {
 	c.DrawRect(r, p)
 }
 
-// TestSurfaceCanvasDrawsIntoBackingStore verifies the canvas↔surface wiring.
 func TestSurfaceCanvasDrawsIntoBackingStore(t *testing.T) {
 	s := NewRasterN32Premul(20, 10, nil)
 	if s == nil {
@@ -39,7 +38,6 @@ func TestSurfaceCanvasDrawsIntoBackingStore(t *testing.T) {
 	}
 }
 
-// TestSurfaceInvalidSizes verifies nil returns for degenerate dimensions.
 func TestSurfaceInvalidSizes(t *testing.T) {
 	if NewRasterN32Premul(0, 10, nil) != nil || NewRasterN32Premul(10, -1, nil) != nil {
 		t.Fatalf("degenerate surface sizes should return nil")
@@ -59,14 +57,12 @@ func TestWrapPixelsStrideValidation(t *testing.T) {
 		t.Fatalf("pixmap with RowPixels > Width and a Width*Height buffer must be rejected")
 	}
 
-	// One word short of the strided requirement ((Height-1)*RowPixels+Width) must still be rejected.
 	const w, h, stride = 8, 8, 16
 	short := &raster.Pixmap{Pix: make([]uint32, (h-1)*stride+w-1), Width: w, Height: h, RowPixels: stride}
 	if WrapPixels(short, nil) != nil {
 		t.Fatalf("pixmap one word short of the strided size must be rejected")
 	}
 
-	// Exactly the strided requirement must be accepted, and drawing must reach the last row without overflowing.
 	ok := &raster.Pixmap{Pix: make([]uint32, (h-1)*stride+w), Width: w, Height: h, RowPixels: stride}
 	s := WrapPixels(ok, nil)
 	if s == nil {
@@ -77,7 +73,6 @@ func TestWrapPixelsStrideValidation(t *testing.T) {
 		t.Fatalf("clear did not reach the last strided pixel")
 	}
 
-	// RowPixels < Width is a malformed stride and must be rejected.
 	narrow := &raster.Pixmap{Pix: make([]uint32, 8*8), Width: 8, Height: 8, RowPixels: 4}
 	if WrapPixels(narrow, nil) != nil {
 		t.Fatalf("pixmap with RowPixels < Width must be rejected")
@@ -96,12 +91,10 @@ func TestSnapshotCopyOnWrite(t *testing.T) {
 	}
 	before := img.Pixmap().Pix[0]
 
-	// Same-state second snapshot shares the image (the cached snapshot is returned).
 	if s.MakeImageSnapshot() != img {
 		t.Fatalf("second snapshot without mutation should be the same image")
 	}
 
-	// Mutate the surface: image must be unaffected, surface must retain prior content plus the draw.
 	fillRect(s.Canvas(), geom.RectLTRB(0, 0, 16, 8), 0xFF0000FF)
 	if img.Pixmap().Pix[0] != before {
 		t.Fatalf("snapshot pixels changed after surface draw")
@@ -115,7 +108,6 @@ func TestSnapshotCopyOnWrite(t *testing.T) {
 		t.Fatalf("surface lost retained content: %08x vs %08x", bottom, before)
 	}
 
-	// A new snapshot now differs from the first.
 	img2 := s.MakeImageSnapshot()
 	if img2 == img {
 		t.Fatalf("post-mutation snapshot should be a new image")
@@ -146,7 +138,6 @@ func TestWrapPixelsSnapshotCopies(t *testing.T) {
 	}
 }
 
-// TestMakeSurfaceCompatible verifies the compatible-surface factory.
 func TestMakeSurfaceCompatible(t *testing.T) {
 	props := Props{Flags: 1, PixelGeometry: PixelGeometryRGBH}
 	s := NewRasterN32Premul(10, 10, &props)

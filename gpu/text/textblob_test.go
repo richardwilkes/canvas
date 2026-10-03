@@ -25,7 +25,6 @@ func TestBlobKeyCaching(t *testing.T) {
 	list := runListForText(t, f, "key", geom.Pt(3, 4))
 	m := geom.IdentityMatrix()
 
-	// Blob-backed fills cache.
 	canCache, key := MakeBlobKey(list, fillPaint(), &m, nil, noSDFTControl())
 	if !canCache {
 		t.Fatal("blob-backed fill must cache")
@@ -34,7 +33,6 @@ func TestBlobKeyCaching(t *testing.T) {
 		t.Fatal("16px identity draw must have direct subruns")
 	}
 
-	// The same parameters produce an equal key; a different blob does not.
 	_, key2 := MakeBlobKey(list, fillPaint(), &m, nil, noSDFTControl())
 	if !key.equal(&key2) {
 		t.Fatal("identical draws must produce equal keys")
@@ -76,7 +74,6 @@ func TestBlobKeyCaching(t *testing.T) {
 		t.Fatal("blur must change the key")
 	}
 
-	// Non-blob lists never cache.
 	builder := textblob.NewGlyphRunBuilder()
 	direct := builder.TextToGlyphRunList(f, nil, []byte("t"), font.TextEncodingUTF8,
 		geom.Pt(0, 0))
@@ -99,7 +96,6 @@ func TestCoordinatorReuse(t *testing.T) {
 		t.Fatal("cached blob must be accounted")
 	}
 
-	// The same draw reuses the cached blob; an integer translate does too.
 	if blob2 := c.findOrCreateBlob(&m, list, fillPaint(), nil, noSDFTControl()); blob2 != blob1 {
 		t.Fatal("identical draw must reuse the blob")
 	}
@@ -109,7 +105,6 @@ func TestCoordinatorReuse(t *testing.T) {
 		t.Fatal("integer translate must reuse the blob")
 	}
 
-	// A scale change regenerates (and replaces) the cached blob.
 	var scaled geom.Matrix
 	scaled.SetScale(2, 2)
 	blob4 := c.findOrCreateBlob(&scaled, list, fillPaint(), nil, noSDFTControl())
@@ -180,11 +175,9 @@ func TestCoordinatorBudgetPurge(t *testing.T) {
 	if c.UsedBytes() > c.sizeBudget {
 		t.Fatalf("over budget after purge: %d > %d", c.UsedBytes(), c.sizeBudget)
 	}
-	// The most recent blob survives.
 	if got := c.findOrCreateBlob(&m, lists[7], fillPaint(), nil, noSDFTControl()); got != blobs[7] {
 		t.Fatal("most recent blob must survive the purge")
 	}
-	// The oldest blob was evicted and regenerates.
 	if got := c.findOrCreateBlob(&m, lists[0], fillPaint(), nil, noSDFTControl()); got == blobs[0] {
 		t.Fatal("oldest blob must have been evicted")
 	}

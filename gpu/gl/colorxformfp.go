@@ -47,8 +47,7 @@ func ColorXformFP(child FragmentProcessor, steps uint32) FragmentProcessor {
 		return child
 	}
 	fp := &colorXformFP{steps: steps}
-	// Optimization flags: coverage-as-alpha, preserves-opaque, and constant-output, intersected with the child's flags
-	// (a nil child contributes all flags).
+	// The declared flags are intersected with the child's (a nil child contributes all flags).
 	declared := FPCompatibleWithCoverageAsAlpha | FPPreservesOpaqueInput |
 		FPConstantOutputForConstantInput
 	fp.initFP(ColorSpaceXformEffectClassID, declared)
@@ -86,9 +85,8 @@ func (f *colorXformFP) constantOutputForConstantInput(input colorcore.PMColor4f)
 // applyColorXformSteps is the CPU-side equivalent of the emitted shader (using the scalar transfer-function math).
 func applyColorXformSteps(steps uint32, c colorcore.PMColor4f) colorcore.PMColor4f {
 	if steps&XformStepUnpremul != 0 {
-		// Mirror the emitted shader's unpremul (rgb / max(a, 0.0001)) exactly: this function is the CPU twin the
-		// constant-folding path uses, so a folded draw must render the same as the unfolded one. A plain 1/a with a
-		// zero-alpha special case diverges for a premul input with 0 < a < 1e-4.
+		// Mirror the emitted shader's unpremul (rgb / max(a, 0.0001)) exactly, so a folded draw renders the same as the
+		// unfolded one. A plain 1/a with a zero-alpha special case diverges for a premul input with 0 < a < 1e-4.
 		a := max32(c.A, 1e-4)
 		c.R /= a
 		c.G /= a

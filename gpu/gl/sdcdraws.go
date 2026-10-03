@@ -10,8 +10,7 @@
 // The SurfaceDrawContext draw entry points: DrawRect (with stroke styles via StrokeRectOp), DrawRRect, DrawOval,
 // DrawArc, DrawStrokedLine, DrawShape, drawSimpleShape (including the nested-rect StrokeRectOp lane), and
 // drawShapeUsingPathRenderer over the path-renderer chain. Styles carry no path effect (they devolve to styled paths at
-// the device). The DMSAA lanes (paths always trigger MSAA, the FillRRectOp preferences, and the StrokeRectOp bevel
-// avoidance) are live.
+// the device).
 
 package gl
 
@@ -24,10 +23,8 @@ import (
 	"github.com/richardwilkes/canvas/stroke"
 )
 
-// simpleFillStrokeRec returns the stroke rec for a simple (unstroked) fill style.
 func simpleFillStrokeRec() stroke.Rec { return stroke.NewStrokeRec(stroke.InitStyleFill) }
 
-// clipConservativeBounds returns clip's conservative bounds, or the full surface bounds if clip is nil.
 func (sdc *SurfaceDrawContext) clipConservativeBounds(clip Clip) geom.IRect {
 	if clip != nil {
 		return clip.GetConservativeBounds()
@@ -154,10 +151,8 @@ func (sdc *SurfaceDrawContext) DrawOval(clip Clip, paint *Paint, aa gpu.AA, view
 		op = MakeCircleOp(paint, viewMatrix, oval, style)
 	}
 	if op == nil && style.IsFillStyle() {
-		// FillRRectOp has special geometry and a fragment-shader branch to conditionally evaluate the arc equation.
-		// This same special geometry and fragment branch also turn out to be a substantial optimization for drawing
-		// ovals (namely, by not evaluating the arc equation inside the oval's inner diamond). Given these
-		// optimizations, it's a clear win to draw ovals the exact same way we do round rects.
+		// FillRRectOp's special geometry and fragment-shader branch skip the arc equation inside the oval's inner
+		// diamond, a substantial optimization, so ovals are drawn exactly the way round rects are.
 		op = NewFillRRectOp(sdc.Caps(), paint, viewMatrix,
 			geom.MakeRRect(oval, oval.Width()/2, oval.Height()/2), LocalCoordsFromRect(oval),
 			gpu.AA(aaType != gpu.AATypeNone))
@@ -170,8 +165,7 @@ func (sdc *SurfaceDrawContext) DrawOval(clip Clip, paint *Paint, aa gpu.AA, view
 		return
 	}
 
-	// The oval's path representation starts at index 2 to match the historical winding used by callers that expect a
-	// specific starting point.
+	// The oval's path representation starts at index 2, as in Skia's drawOval.
 	styled := MakeStyledShapeRRectWithWinding(
 		geom.MakeRRect(oval, oval.Width()/2, oval.Height()/2), geom.DirectionCW, 2, false,
 		MakeStyle(*style), DoSimplifyNo,
@@ -248,12 +242,10 @@ func (sdc *SurfaceDrawContext) DrawStrokedLine(clip Clip, paint *Paint, aa gpu.A
 	p0 := points[0]
 	p1 := points[1]
 	if style.Cap() == stroke.CapSquare {
-		// Extra extension for square caps.
 		p0 = geom.Point{X: p0.X - parallel.X, Y: p0.Y - parallel.Y}
 		p1 = geom.Point{X: p1.X + parallel.X, Y: p1.Y + parallel.Y}
 	}
 
-	// If we are using dmsaa or reduced shader mode then attempt to draw with FillRRectOp.
 	if sdc.Caps().DrawInstancedSupport &&
 		(sdc.alwaysAntialias() || (sdc.Caps().ReducedShaderMode() && aa == gpu.AAYes)) {
 		var localMatrix geom.Matrix
@@ -288,7 +280,6 @@ func (sdc *SurfaceDrawContext) DrawStrokedLine(clip Clip, paint *Paint, aa gpu.A
 // drawSimpleShape attempts to draw shape with a dedicated op (stroked line, rect/oval/rrect, or nested-rect stroke),
 // skipping general path rendering. Returns true when the shape was consumed.
 func (sdc *SurfaceDrawContext) drawSimpleShape(clip Clip, paint *Paint, aa gpu.AA, viewMatrix *geom.Matrix, shape *StyledShape) bool {
-	// No path effects exist, so this whole body assumes none apply.
 	aaType := sdc.chooseAAType(aa)
 	// We can ignore the starting point and direction since there is no path effect.
 	if linePts, inverted, isLine := shape.AsLine(); isLine && !inverted &&

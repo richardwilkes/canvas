@@ -18,8 +18,8 @@ import (
 	"github.com/richardwilkes/canvas/path"
 )
 
-// TestOpOutOfRangeOperator verifies Op's operator-range guard (the deprecated bool Op wrapper's contract): an
-// out-of-range operator fails with (nil, false) instead of computing anything.
+// TestOpOutOfRangeOperator verifies Op's operator-range guard: an out-of-range operator fails with (nil, false) instead
+// of computing anything.
 func TestOpOutOfRangeOperator(t *testing.T) {
 	one := path.New()
 	one.AddRect(geom.RectLTRB(0, 0, 10, 10), geom.DirectionCW)

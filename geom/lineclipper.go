@@ -18,7 +18,6 @@ const (
 	LineClipperMaxClippedLineSegments = LineClipperMaxPoints - 1
 )
 
-// pinUnsorted pins value to the (possibly unsorted) limits.
 func pinUnsorted(value, limit0, limit1 float32) float32 {
 	if limit1 < limit0 {
 		limit0, limit1 = limit1, limit0
@@ -82,13 +81,13 @@ func sectClampWithVertical(src *[2]Point, x float32) float32 {
 	return pinUnsorted(sectWithVertical(src, x), src[0].Y, src[1].Y)
 }
 
-// nestedLT reports a < b, or a == b when the interval is degenerate (dim zero).
+// nestedLT reports a < b, or a == b when the interval is not degenerate (dim > 0).
 func nestedLT(a, b, dim float32) bool {
 	return a <= b && (a < b || dim > 0)
 }
 
-// containsNoEmptyCheck returns true if outer contains inner, even if inner is empty (Rect.Contains always returns false
-// for an empty inner).
+// containsNoEmptyCheck returns true if outer contains inner, even if inner is empty (Rect.ContainsRect always returns
+// false for an empty inner).
 func containsNoEmptyCheck(outer, inner Rect) bool {
 	return outer.Left <= inner.Left && outer.Top <= inner.Top &&
 		outer.Right >= inner.Right && outer.Bottom >= inner.Bottom

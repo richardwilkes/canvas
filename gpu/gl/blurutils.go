@@ -14,8 +14,8 @@
 // blur costs N+1 texture reads.
 //
 // Two simplifications, neither changing output for the reachable (decal/clamp) tile modes:
-//   - convolveGaussian always takes the single-draw shader-tiling branch; a left/mid/right/top/ bottom split is a
-//     draw-count optimization that would produce identical pixels because the texture effect's wrap mode + domain
+//   - convolveGaussian always takes the single-draw shader-tiling branch; Skia's left/mid/right/top/bottom split is a
+//     shader-cost optimization that would produce identical pixels because the texture effect's wrap mode + domain
 //     already enforce the tile mode.
 //   - rescaleIntoRepeatedLinear implements only the rescale configuration GaussianBlur uses (repeated bilinear
 //     halving/doubling over a texturable source); cubic and linear-gamma rescale lanes are unreachable in an sRGB-only
@@ -39,7 +39,6 @@ import (
 	"github.com/richardwilkes/canvas/shaders"
 )
 
-// blurDirection is the axis a 1D convolution pass runs along.
 type blurDirection int
 
 const (
@@ -47,7 +46,6 @@ const (
 	blurDirY
 )
 
-// tileModeToWrapMode maps a shader tile mode to the corresponding GL sampler wrap mode.
 func tileModeToWrapMode(mode shaders.TileMode) gpu.WrapMode {
 	switch mode {
 	case shaders.TileClamp:
@@ -146,8 +144,7 @@ func convolveGaussian(ctx *DirectContext, srcView SurfaceProxyView, srcColorType
 	return dstSDC
 }
 
-// twoPassGaussian runs an X pass (inflated for the Y pass and clipped in a tile-mode-dependent way) followed by an
-// in-place Y pass.
+// twoPassGaussian runs an X pass followed by a Y pass over its result, skipping either pass whose radius is 0.
 func twoPassGaussian(ctx *DirectContext, srcView SurfaceProxyView, srcColorType gpu.ColorType, srcAlphaType gpu.AlphaType, srcBounds, dstBounds geom.IRect, sigmaX, sigmaY float32, radiusX, radiusY int32, mode shaders.TileMode, fit gpu.BackingFit) *SurfaceDrawContext {
 	var dstSDC *SurfaceDrawContext
 	if radiusX > 0 {
@@ -241,8 +238,8 @@ func twoPassGaussian(ctx *DirectContext, srcView SurfaceProxyView, srcColorType 
 	return yPassSDC
 }
 
-// rescaleIntoRepeatedLinear implements the rescale configuration GaussianBlur drives (over a texturable source):
-// repeated bilinear halving/doubling passes until srcRect reaches dstRect's size.
+// rescaleIntoRepeatedLinear rescales srcRect of srcView into dstRect of dst with repeated bilinear halving/doubling
+// passes.
 func rescaleIntoRepeatedLinear(ctx *DirectContext, srcView SurfaceProxyView, colorType gpu.ColorType, alphaType gpu.AlphaType, dst *SurfaceDrawContext, dstRect, srcRect geom.IRect) bool {
 	if !geom.IRectSize(dst.Dimensions()).ContainsRect(dstRect) {
 		return false
@@ -421,7 +418,6 @@ func GaussianBlur(ctx *DirectContext, srcView SurfaceProxyView, srcColorType gpu
 	// Round down so the recomputed sigmas stay below kMaxSigma (clamp to 1 for a non-empty texture).
 	rescaledW := max(int32(math.Floor(float64(float32(srcBounds.Width())*scaleX))), 1)
 	rescaledH := max(int32(math.Floor(float64(float32(srcBounds.Height())*scaleY))), 1)
-	// Recompute the scale factors from the integerized size, then the reduced sigmas.
 	scaleX = float32(rescaledW) / float32(srcBounds.Width())
 	scaleY = float32(rescaledH) / float32(srcBounds.Height())
 	sigmaX *= scaleX
@@ -442,8 +438,8 @@ func GaussianBlur(ctx *DirectContext, srcView SurfaceProxyView, srcColorType gpu
 	if rescaledSDC == nil {
 		return nil
 	}
-	// Everything below reads the rescaled texture through draws recorded on this context's ops task, which holds the
-	// ref that keeps it alive until flush; the context's own ref is dropped on the way out.
+	// This context's ops task holds the ref that keeps the rescaled texture alive until flush, so the context's own ref
+	// is dropped on the way out.
 	defer rescaledSDC.Release()
 	if (padX != 0 || padY != 0) && mode == shaders.TileDecal {
 		rescaledSDC.Clear([4]float32{})
@@ -482,8 +478,7 @@ func GaussianBlur(ctx *DirectContext, srcView SurfaceProxyView, srcColorType gpu
 }
 
 // blurRescaleClampEdges applies the clamp-mode edge/corner padding after the interior rescale: rather than multi-pass
-// rescale single rows/columns, it does one bilinear draw per edge and a nearest draw per corner from the original
-// source.
+// rescale single rows/columns, it does one bilinear draw per edge and a 1:1 copy per corner from the original source.
 func blurRescaleClampEdges(rescaledSDC *SurfaceDrawContext, srcView SurfaceProxyView, srcAlphaType gpu.AlphaType, srcBounds geom.IRect, rescaledSize geom.ISize) {
 	dw := rescaledSize.Width
 	dh := rescaledSize.Height

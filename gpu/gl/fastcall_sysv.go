@@ -9,13 +9,13 @@
 
 // The fixed-arity GL call lane for the SysV platforms (darwin/linux on amd64/arm64): glCall dispatches a resolved
 // GL proc through the in-repo glcall9 assembly trampoline (fastcall_sysv_*.s) via runtime.cgocall, replacing
-// purego.SyscallN for the all-integer wrappers in interface.go. purego.SyscallN costs two heap allocations per call —
-// the escaping variadic []uintptr at the call site (forced by its //go:uintptrescapes tag) and its internal 25-slot
-// syscall15Args struct, which escapes because purego's runtime.cgocall linkname carries no //go:noescape — measured at
-// ~240-256 B/call and ~85% of the panel frame's allocations. This lane is fixed-arity (no slice), reuses one
-// heap-resident argument block per Functions (see the glCall contract below), loads integer registers only, and skips
-// purego's errno read-back (GL never reports through errno), so a GL call performs zero heap allocations in steady
-// state and one fewer libc call on darwin.
+// purego.SyscallN for the all-integer wrappers in interface.go. purego.SyscallN allocates on every call: its
+// //go:uintptrescapes tag forces the variadic []uintptr at the call site to escape, and in purego v0.10, which this
+// lane was measured against, its internal argument struct escaped too (v0.11 pools it) — ~240-256 B/call and ~85% of
+// the panel frame's allocations. This lane is fixed-arity (no slice), reuses one heap-resident argument block per
+// Functions (see the glCall contract below), loads integer registers only, and skips purego's errno read-back (GL never
+// reports through errno), so a GL call performs zero heap allocations in steady state and one fewer libc call on
+// darwin.
 //
 // ABI notes — two constraints every glCall-dispatched wrapper in interface.go must satisfy. Both are holes inherited
 // deliberately from the purego.SyscallN path this lane replaced, so the routing that path already used stays valid
@@ -53,7 +53,7 @@ type glcall9Args struct {
 }
 
 // glcall9ABI0 holds the C-ABI entry address of the glcall9 trampoline (bound by the DATA directive in
-// fastcall_sysv_*.s), in the same style as purego's syscall15XABI0.
+// fastcall_sysv_*.s), in the same style as purego's syscallXABI0.
 var glcall9ABI0 uintptr
 
 // glCallState is this lane's per-Functions call state: the reusable, heap-resident glcall9Args block glCall marshals

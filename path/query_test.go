@@ -109,7 +109,6 @@ func TestTightBounds(t *testing.T) {
 		t.Errorf("oval tight bounds = %v, want %v", got, oval)
 	}
 
-	// Empty path.
 	if got = New().ComputeTightBounds(); got != (geom.Rect{}) {
 		t.Errorf("empty tight bounds = %v", got)
 	}
@@ -202,7 +201,6 @@ func TestContainsCurves(t *testing.T) {
 		t.Error("point above the quad should not be contained")
 	}
 
-	// Cubic region.
 	p = New()
 	p.MoveTo(0, 0).CubicTo(30, 90, 70, 90, 100, 0).Close()
 	if !p.Contains(50, 30) {
@@ -279,7 +277,6 @@ func TestTransformTranslateScale(t *testing.T) {
 	// Source unchanged.
 	checkPoints(t, p, pts(1, 2, 3, 4, 5, 6, 7, 8))
 
-	// In-place.
 	p.Transform(&m)
 	checkPoints(t, p, pts(12, 26, 16, 32, 20, 38, 24, 44))
 }
@@ -305,9 +302,9 @@ func TestTransformPreservesOval(t *testing.T) {
 	}
 }
 
-// TestTransformShapeIdentity covers the whole of what a transform carries for a simple shape: the identity itself (an
-// oval stays an oval, a rrect stays a rrect and is never mistaken for one) whenever the matrix keeps rects as rects,
-// and nothing more — no direction or start index is tracked, so a mirror needs no bookkeeping beyond the flag.
+// TestTransformShapeIdentity checks that a transform carries a simple shape's identity (an oval stays an oval, a rrect
+// stays a rrect and never reports as an oval) whenever the matrix keeps rects as rects. No direction or start index is
+// tracked, so a mirror needs no bookkeeping beyond the flag.
 func TestTransformShapeIdentity(t *testing.T) {
 	var mirror geom.Matrix
 	mirror.SetScale(-1, 1)
@@ -414,7 +411,7 @@ func TestTransformIdentity(t *testing.T) {
 }
 
 func TestArcToOval(t *testing.T) {
-	// Quarter arc on a circle: all points on the circle radius.
+	// Quarter arc on a circle.
 	oval := geom.RectLTRB(0, 0, 100, 100)
 	p := New()
 	p.ArcToOval(oval, 0, 90, true)

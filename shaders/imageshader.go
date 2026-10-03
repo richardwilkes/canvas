@@ -44,9 +44,8 @@ func optimizeTile(tm TileMode, dimension int32) TileMode {
 }
 
 // NewImage builds an image shader (optionally wrapped in a local matrix) over a CPU-backed image. Returns nil for a nil
-// image or invalid cubic parameters. The internal callers (filtercore, pdf, font) build shaders over raster images and
-// use this concrete-typed entry so its nil check is on the pointer, not an interface; the general entry point goes
-// through NewImageDrawable so a texture-backed image can draw GPU-natively.
+// image or invalid cubic parameters. Its concrete parameter type keeps the nil check on the pointer rather than an
+// interface; use NewImageDrawable for a texture-backed image to draw GPU-natively.
 func NewImage(img *imagecore.Image, tmx, tmy TileMode, sampling SamplingOptions, localMatrix *geom.Matrix) Shader {
 	if img == nil {
 		return nil
@@ -123,7 +122,7 @@ func (s *ImageShader) TileModes() (tmx, tmy TileMode) { return s.tileX, s.tileY 
 // AsImage reports whether s (possibly behind a local-matrix wrapper) is an image shader. On success it returns the
 // image, its tile modes, and the shader's local matrix: an image shader's own texture matrix is the identity, so a
 // wrapping local-matrix shader's matrix passes through unchanged. The PDF backend consumes this to build a tiled image
-// pattern. Kept beside AsGradient as a small introspection surface separate from the raster-pipeline evaluation stages.
+// pattern.
 func AsImage(s Shader) (img *imagecore.Image, tmx, tmy TileMode, localMatrix geom.Matrix, ok bool) {
 	localMatrix = geom.IdentityMatrix()
 	if lm, isLM := s.(*LocalMatrixShader); isLM {

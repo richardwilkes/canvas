@@ -143,7 +143,8 @@ func drawTiledBorder(surface *autoSurface, tileMode shaders.TileMode, pp *PaintP
 
 // rescale returns an equivalent FilterResult whose backing image is reduced by the scale factors (in [0,1]), with a
 // deferred upscale transform. When enforceDecal is true the result is decal-sampled with tiling already applied. All
-// deferred effects except possibly the tile mode are applied. (Color-type/color-space conversion is a no-op here.)
+// deferred effects except possibly the tile mode are applied, and a non-N32 image is re-rendered as N32 (there is no
+// color-space conversion).
 func (f *FilterResult) rescale(ctx *Context, scale geom.Size, enforceDecal, allowOverscaling bool) FilterResult {
 	visibleLayerBounds := f.layerBounds
 	if f.image == nil || !visibleLayerBounds.Intersect(ctx.DesiredOutput()) ||
@@ -187,7 +188,7 @@ func (f *FilterResult) rescale(ctx *Context, scale geom.Size, enforceDecal, allo
 		// Deferring visible tiling means rescaling the original image uses smaller buffers.
 		srcRect = geom.IRectXYWH(origin.X, origin.Y, f.image.Width(), f.image.Height())
 		if f.tileMode == shaders.TileDecal {
-			// Like applyColorFilter: evaluate the transparent color-filtered border and clamp.
+			// Like ApplyColorFilter: evaluate the transparent color-filtered border and clamp.
 			tileMode = shaders.TileClamp
 			cfBorder = true
 		} else {

@@ -7,8 +7,6 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// The PathMeasure probe.
-//
 // TestPathMeasureProbe drives the contour package against Skia's PathMeasure: contour lengths, closedness, pos/tan
 // samples, matrices, and segment extraction, iterated in lock-step across contours. The oracle's whole walk is
 // replayed from the frozen reference fixtures (see ref_test.go).
@@ -159,8 +157,8 @@ func TestPathMeasureProbe(t *testing.T) {
 						}
 					}
 
-					// The frozen walk's length is the oracle's contour count, so running off its end is the same
-					// disagreement NextContour() used to report.
+					// The frozen walk's length is the oracle's contour count, so it stands in for the oracle's
+					// NextContour().
 					cNext := contourIdx+1 < len(cContours)
 					gNext := gm.NextContour()
 					if cNext != gNext {

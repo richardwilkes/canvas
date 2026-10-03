@@ -25,9 +25,8 @@ import (
 // self-captured per-platform DMSAA goldens under the exact1 profile (see checkGPUGoldens for why exact1 and why the
 // software-renderer pin).
 //
-// DMSAA output cannot be compared against the plain GPU goldens: promoting path draws to a 4x MSAA attachment resolves
-// every antialiased edge differently from coverage-AA. The lane needs its own reference, which is why a separate
-// golden set exists.
+// DMSAA output cannot be compared against the plain GPU goldens (promoting path draws to a 4x MSAA attachment resolves
+// every antialiased edge differently from coverage-AA), so the lane has its own golden set.
 //
 // darwin_arm64 deliberately has no DMSAA golden set: Apple's software renderer on arm64 renders MSAA-quantized edges
 // in one of two bit-exact flavors per GL session (structural whole-pixel edge shifts, far beyond the ±1 envelope),
@@ -36,11 +35,10 @@ import (
 // deterministically.
 //
 // The skip for a missing set must stay ahead of the renderer pin and context creation: with no set there is nothing to
-// gate, and the darwin fail-not-skip contract below only applies once a set exists. Having requested the pin, a
-// context-creation failure on darwin is a hard failure, not a skip: the usual err-means-no-GL-stack skip would let the
-// gate silently vanish if a runner's driver stopped exposing the pinned pixel format, and a gate that quietly stops
-// running is worse than a red leg that says why. On other platforms the variable is a no-op (see context_linux.go /
-// context_windows.go) and a missing GL stack remains the legitimate, graceful skip it is everywhere else.
+// gate, and the darwin fail-not-skip contract only applies once a set exists. Having requested the pin, a
+// context-creation failure on darwin is a hard failure: skipping would let the gate silently vanish if a runner's
+// driver stopped exposing the pinned pixel format. On other platforms the variable is a no-op (see context_linux.go /
+// context_windows.go) and a missing GL stack remains a legitimate skip.
 //
 // Rendered inline on the test goroutine: NewGPUContext locks the OS thread and the GL context is current only on the
 // goroutine that created it, so there are no t.Run subtests.

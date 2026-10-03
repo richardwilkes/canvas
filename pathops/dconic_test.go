@@ -25,10 +25,9 @@ func mkConic(pts [3]dPoint, w float32) dConic {
 	return c
 }
 
-// TestConicSubDivide verifies the sub-conic over [t1,t2] pins its endpoints to the parent arc exactly (s=0→t1, s=1→t2)
-// and that subDivide(0,1) is the identity. A rational conic's interior parameterization under subdivision is a Möbius
-// (not linear) reparameterization, so interior samples don't line up with a linear parent-T map; the interior arc
-// geometry is exercised thoroughly by the conic intersection drivers.
+// TestConicSubDivide verifies that the sub-conic over [t1,t2] matches the parent arc at its endpoints (s=0→t1, s=1→t2)
+// and that subDivide(0,1) is the identity. Subdivision reparameterizes a rational conic's interior by a Möbius (not
+// linear) map, so interior samples are not compared here; the conic intersection drivers exercise them.
 func TestConicSubDivide(t *testing.T) {
 	conics := []dConic{
 		mkConic(cp3(0, 0, 1, 2, 2, 0), 1),

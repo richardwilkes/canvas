@@ -17,19 +17,17 @@ import (
 )
 
 // FrameTarget is a persistent GL render target for frame-loop measurement: one SurfaceDrawContext wrapped in a GL
-// canvas device, reused across many frames — unlike RenderScenarioGPU, which creates a fresh surface per call for the
-// once-per-scenario golden render. It backs the per-frame allocation gate (framealloc_test.go), mirroring the
-// persistent surface a real render loop (unison) reuses across frames so the measurement is the steady-state per-frame
-// recording/batching/flush cost, not surface creation.
+// canvas device and reused across frames, unlike RenderScenarioGPU's fresh surface per call. It backs the per-frame
+// allocation gate (framealloc_test.go), mirroring the surface a real render loop (unison) reuses, so the measurement is
+// the steady-state recording/batching/flush cost, not surface creation.
 type FrameTarget struct {
 	g   *GPUContext
 	sdc *gl.SurfaceDrawContext
 	c   *gocanvas.Canvas
 }
 
-// NewFrameTarget creates a w x h RGBA8888-premul top-left offscreen draw context and a GL canvas over it — the same
-// assembly RenderScenarioGPU performs, but retained on the returned target so callers render many frames into the one
-// surface. It panics if the draw context could not be created (a benchmark harness treats that as fatal).
+// NewFrameTarget creates a w x h RGBA8888-premul top-left offscreen draw context and a GL canvas over it, the same
+// assembly RenderScenarioGPU performs. It panics if the draw context cannot be created.
 func (g *GPUContext) NewFrameTarget(w, h int) *FrameTarget {
 	dims := geom.ISize{Width: int32(w), Height: int32(h)}
 	sdc := gl.MakeSurfaceDrawContext(g.dc, gpu.ColorTypeRGBA8888, dims, gpu.BackingFitExact, 1,
@@ -43,12 +41,11 @@ func (g *GPUContext) NewFrameTarget(w, h int) *FrameTarget {
 // Canvas returns the target's persistent GL canvas (owned by the target).
 func (t *FrameTarget) Canvas() *gocanvas.Canvas { return t.c }
 
-// DirectContext returns the owning GL direct context, for the frame benchmark's warm-up GL-draw-count check and any
-// resource-cache / batching stats.
+// DirectContext returns the owning GL direct context, for GL-draw-count and resource-cache stats.
 func (t *FrameTarget) DirectContext() *gl.DirectContext { return t.g.dc }
 
-// Flush flushes and submits the frame's recorded GPU work without reading anything back (syncCPU=false), matching the
-// Go-side gpu/gl frame benchmark.
+// Flush flushes and submits the frame's recorded GPU work without reading anything back (syncCPU=false), matching
+// gpu/gl's frame benchmarks.
 func (t *FrameTarget) Flush() { t.g.dc.FlushAndSubmit(false) }
 
 // Release frees the draw context's GPU resources. The owning GPUContext must still be Disposed by the caller.

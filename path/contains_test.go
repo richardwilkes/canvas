@@ -16,8 +16,7 @@ import (
 )
 
 // TestCheckOnCurveHorizontalIsHalfOpen pins the half-open X range checkOnCurve accepts for a horizontal segment:
-// start.X is in, end.X is out, in either direction. The doc used to call the range "strict", which is wrong at both
-// ends and hides the property TestCheckOnCurveSharedVertexCountedOnce depends on.
+// start.X is in, end.X is out, in either direction. TestCheckOnCurveSharedVertexCountedOnce depends on this.
 func TestCheckOnCurveHorizontalIsHalfOpen(t *testing.T) {
 	for _, tc := range []struct {
 		name       string

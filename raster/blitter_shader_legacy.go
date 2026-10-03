@@ -123,7 +123,7 @@ func (lb *LegacyShaderBlitter) BlitAntiH(x, y int32, antialias []Alpha, runs []i
 			d := lb.dst.addr(x, y)
 			device := lb.dst.Pix[d : d+int(n)]
 			if lb.opaque && aa == 255 {
-				// cool, have the shader draw right into the device
+				// Have the shader draw straight into the device.
 				lb.shade.ShadeSpan32(x, y, device)
 			} else {
 				span := lb.buffer[:n]
@@ -171,12 +171,10 @@ func (lb *LegacyShaderBlitter) BlitAntiRect(x, y, width, height int32, leftAlpha
 	BlitAntiRectViaVH(lb, x, y, width, height, leftAlpha, rightAlpha)
 }
 
-// approxScale computes (x*y + x) / 256.
 func approxScale(x, y uint32) uint32 {
 	return (x*y + x) >> 8
 }
 
-// div255Round computes (x + 127) / 255, bit-exact.
 func div255Round(x uint32) uint32 {
 	return (x + 127) / 255
 }
@@ -200,7 +198,7 @@ func blendRowA8(dst []uint32, cov []uint8, src []uint32) {
 	}
 }
 
-// blendRowA8Opaque computes dst = div255(s*c + d*(255-c)).
+// blendRowA8Opaque computes dst = div255Round(s*c + d*(255-c)).
 func blendRowA8Opaque(dst []uint32, cov []uint8, src []uint32) {
 	for i := range dst {
 		c := uint32(cov[i])

@@ -8,11 +8,8 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // Package probe holds the oracle numeric probes: bit-exact differential tests that drive the library over shared input
-// corpora and compare against the oracle's frozen answers. These lock in the math-core and path requirement that pure
-// math match the oracle exactly.
-//
-// The oracle's answers were captured once, keyed by a hash of the inputs, into testdata/ref (see ref_test.go). This
-// package is cgo-free.
+// corpora and compare against the oracle's frozen answers, captured once into testdata/ref keyed by a hash of the
+// inputs (see ref_test.go).
 package probe
 
 import (
@@ -27,11 +24,10 @@ import (
 // invert via dcross, rect ops, scalar rounding), the library must match bit-exactly. Where the C++ does float
 // arithmetic (perspective rowcol3/scross, mapPoints procs, Skia's Geometry interpolation), clang's default
 // -ffp-contract=on fuses mul+add chains into FMAs, and which chains fuse is a per-compiler, per-platform choice this
-// library cannot (economically) replicate, so the tolerance-based policy declines to chase it. For those paths the probes
-// instead require both results to lie within probeK*eps32*mag of each other, where mag is the magnitude of the
-// expression's terms evaluated in float64 — tight enough that any formula or fast-path porting bug fails, while
-// contraction-level noise (including its amplification through cancellation and perspective division) passes by
-// construction.
+// library cannot economically replicate. For those paths the probes instead require both results to lie within
+// probeK*eps32*mag of each other, where mag is the magnitude of the expression's terms evaluated in float64: tight
+// enough that any formula or fast-path porting bug fails, while contraction-level noise (including its amplification
+// through cancellation and perspective division) passes by construction.
 
 const eps32 = 1.0 / (1 << 23) // 2^-23, one part in the last place of a float32 mantissa
 
@@ -144,8 +140,8 @@ func matEq(a, b geom.Matrix) bool {
 	return true
 }
 
-// matrixCorpus builds a deterministic corpus covering every Skia's Matrix type-mask class, built through the same
-// setters Skia would use so lazy type masks are realistic, plus SetAll cases with awkward float values.
+// matrixCorpus builds a deterministic corpus covering every Skia Matrix type-mask class, built through the same setters
+// Skia would use so lazy type masks are realistic, plus SetAll cases with awkward float values.
 func matrixCorpus() []geom.Matrix {
 	var out []geom.Matrix
 	add := func(m geom.Matrix) { out = append(out, m) }

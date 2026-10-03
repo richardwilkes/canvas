@@ -7,7 +7,7 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// A 36-set / 277-case corpus exercising the CSS3 style match (selectStyleCSS3's first candidate; style names
+// A 39-set / 292-case corpus exercising the CSS3 style match (selectStyleCSS3's first candidate; style names
 // camel-cased). The invalidFontStyle sentinel marks cases expected to produce a null match (empty set).
 
 package fontmgr
@@ -65,8 +65,8 @@ var (
 	normalNormal900 = font.NewStyle(font.WeightBlack, font.WidthNormal, font.SlantUpright)
 )
 
-// TestMatchStyleCSS3 exercises the style match MatchStyle performs — the first selectStyleCSS3 candidate — against
-// the corpus above.
+// TestMatchStyleCSS3 exercises the style match MatchStyle performs (the first selectStyleCSS3 candidate) against
+// matchStyleCSS3Tests.
 func TestMatchStyleCSS3(t *testing.T) {
 	for ti, test := range matchStyleCSS3Tests {
 		for ci, c := range test.cases {
@@ -144,13 +144,12 @@ func css3SlantRanking(patternSlant font.Slant) []font.Slant {
 
 // TestCSS3ScoreTierPriority pins the priority css3Score documents — width, then slant, then weight — as a strict tier
 // ordering: no difference in a lower tier may ever outrank a difference in a higher one. Upstream Skia shifts both
-// tiers by 8 bits, which is one bit too few for a weight addend that reaches 1000, so a weight score >= 256 carries
+// tiers by 8 bits, which is two bits too few for a weight addend that reaches 1000, so a weight score >= 256 carries
 // into the slant field.
 //
-// Every pattern width and slant is the pattern in turn, not just the normal-width upright one. A pattern wider than
-// normal takes the *other* branch of the width tier — the one whose exact-width comparison diverges from upstream — and
-// its tier floors and ceilings are laid out in the opposite direction, so pinning the separation for a normal-width
-// pattern alone leaves the half of the tier a real expanded request walks entirely unchecked.
+// Every pattern width and slant is tried in turn: a pattern wider than normal takes the other branch of the width tier
+// (the one whose exact-width comparison diverges from upstream), which a normal-width pattern alone would leave
+// unchecked.
 func TestCSS3ScoreTierPriority(t *testing.T) {
 	weights := []int{
 		font.WeightInvisible, font.WeightThin, font.WeightLight, font.WeightNormal,
@@ -229,12 +228,10 @@ func TestCSS3ScoreTierPriority(t *testing.T) {
 	}
 }
 
-// TestCSS3ScoreWidthTierOrder pins the width tier — the tier with the greatest priority — against the CSS3
-// font-stretch rule, for every pattern width against every candidate width: the exact width ranks first, then, for a
-// pattern wider than normal, the wider widths ascending followed by the narrower ones descending; for a normal or
-// narrower pattern, the narrower widths descending followed by the wider ones ascending. Upstream Skia's strict
-// `current.width() > pattern.width()` test drops the exact-width candidate into the other branch, where it scores its
-// raw width instead of the full 10, so for a pattern of width 6, 7 or 8 a wider face outranks the exact one.
+// TestCSS3ScoreWidthTierOrder pins the width tier against the CSS3 font-stretch rule (see css3WidthRanking) for every
+// pattern width against every candidate width. Upstream Skia's strict `current.width() > pattern.width()` test scores
+// the exact-width candidate its raw width instead of the full 10, so for a pattern of width 6, 7 or 8 a wider face
+// outranks the exact one.
 func TestCSS3ScoreWidthTierOrder(t *testing.T) {
 	// Every candidate carries the same weight and slant, so only the width tier separates them.
 	set := make([]font.Style, len(allWidths))
@@ -256,11 +253,9 @@ func TestCSS3ScoreWidthTierOrder(t *testing.T) {
 }
 
 // TestSelectStyleCSS3WalkOrder pins the order the walk produces: exactly the stable descending-score order a full sort
-// of the candidates produces. Only the maximum is extracted up front, so the common case (the first candidate answers)
-// never orders the rest; every caller depends on the remainder still arriving best-first, with ties keeping first-wins
-// preference. The large tie-heavy set at the end is what puts the deferred sort under load — it is the only part of the
-// walk the maximum extraction does not cover, and the order it produces has to be indistinguishable from the
-// extraction's.
+// of the candidates produces. Only the maximum is extracted up front, but every caller depends on the remainder still
+// arriving best-first, with ties keeping first-wins preference. The large tie-heavy sets at the end put the deferred
+// sort under load.
 func TestSelectStyleCSS3WalkOrder(t *testing.T) {
 	sets := make([][]font.Style, 0, len(matchStyleCSS3Tests)+2)
 	for _, test := range matchStyleCSS3Tests {
@@ -353,9 +348,9 @@ func TestSelectStyleCSS3Fallthrough(t *testing.T) {
 }
 
 // TestCSS3ScoreRawStyleComponents covers styles that never passed through font.NewStyle. font.Style is an exported
-// int32 whose packed form is the documented round-trip, so a caller can hand any component in: an out-of-range slant
-// used to index the 3x3 slant table out of range and panic, and an out-of-range width or weight overflows its tier's
-// field. Each component must instead score as its pinned equivalent.
+// int32, so a caller can hand any component in: unpinned, an out-of-range slant would index the 3x3 slant table out of
+// range and panic, and an out-of-range width or weight would overflow its tier's field. Each component must instead
+// score as its pinned equivalent.
 func TestCSS3ScoreRawStyleComponents(t *testing.T) {
 	for _, test := range []struct {
 		name   string
@@ -409,7 +404,7 @@ func TestCSS3ScoreRawStyleComponents(t *testing.T) {
 	}
 }
 
-// TestMatchRawStyleThroughPublicAPI walks the raw-style panic out through the exported entry points that reach
+// TestMatchRawStyleThroughPublicAPI drives a raw (unpinned) style through the exported entry points that reach
 // css3Score, over the hermetic corpus.
 func TestMatchRawStyleThroughPublicAPI(t *testing.T) {
 	m := newTestManager(t)
@@ -453,11 +448,10 @@ func BenchmarkSelectStyleCSS3FirstAccepted(b *testing.B) {
 }
 
 // BenchmarkSelectStyleCSS3FullWalk and its Big twin measure the case the maximum extraction cannot help with: every
-// candidate turned down, so the whole set has to be ordered. That is not an exotic case — it is what a character
-// *nothing* covers costs, on every tier of every BCP-47 tag. Ordering the remainder by repeated max extraction made it
-// quadratic; a stable sort makes it n log n, which is the difference between 75 µs and 16 µs at n=300 and between
-// 7.5 ms and 0.32 ms at n=3000. Read the pair together: the scaling from 300 to 3000 is what separates the two, 100x
-// against 21x.
+// candidate turned down, so the whole set has to be ordered (see selectStyleCSS3 for why that is not rare). Ordering
+// the remainder by repeated max extraction made it quadratic; a stable sort makes it n log n, which is the difference
+// between 75 µs and 16 µs at n=300 and between 7.5 ms and 0.32 ms at n=3000. Read the pair together: the scaling from
+// 300 to 3000 is what separates the two, 100x against 21x.
 func BenchmarkSelectStyleCSS3FullWalkBig(b *testing.B) {
 	set := benchmarkStyleSet(3000)
 	pattern := font.NewStyle(font.WeightNormal, font.WidthNormal, font.SlantUpright)

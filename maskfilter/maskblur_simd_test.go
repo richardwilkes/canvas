@@ -23,7 +23,7 @@ import (
 )
 
 // smallBlurSigmaLo and smallBlurSigmaHi bracket the sigmas that actually reach the small-sigma direct convolution:
-// boxBlur rejects anything at or below the 1/3 no-window cutoff, and blur() hands anything from 2 up to the sliding-box
+// boxBlur rejects anything below the 1/3 no-window cutoff, and blur() hands anything from 2 up to the sliding-box
 // planGauss engine instead. Over that half-open range newGaussFilter produces radius 1 through 4 (roughly evenly
 // split), which is exactly the set of unrolled kernels.
 const (

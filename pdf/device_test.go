@@ -93,7 +93,8 @@ func mustContain(t *testing.T, haystack, needle string) {
 // TestGlyphBoundsDeviceSpaceNegativeScale pins that the device-space glyph bounds come back sorted whatever the sign of
 // the glyph scales. The x scale carries the font's ScaleX + SkewX and the y scale its size/upem, and Font.SetScaleX /
 // Font.SetSkewX accept arbitrary values, so an unsorted scaled rect really does reach MapRect; the clip-reject in
-// drawGlyphRun (IsEmpty, then Intersects) would drop every glyph of such a run if MapRect did not sort its result.
+// internalDrawGlyphRun (IsEmpty, then Intersects) would drop every glyph of such a run if MapRect did not sort its
+// result.
 func TestGlyphBoundsDeviceSpaceNegativeScale(t *testing.T) {
 	tf := loadTestTypeface(t)
 	gid := tf.UnicharToGlyph('H')
@@ -402,8 +403,7 @@ func TestDeviceBalancedSaveRestore(t *testing.T) {
 }
 
 func TestDeviceSaveLayerCompositesContent(t *testing.T) {
-	// Before the compositing slice, the PDF drawDevice was a no-op and saveLayer content was silently dropped; it must
-	// now survive inside a form XObject the page invokes.
+	// saveLayer content must survive inside a form XObject the page invokes rather than being silently dropped.
 	data := renderPDF(t, 100, 100, func(c *canvas.Canvas) {
 		c.SaveLayer(nil, nil)
 		red := canvas.NewPaint()

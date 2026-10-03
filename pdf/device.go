@@ -8,26 +8,12 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // Device is the page/layer drawing context that turns canvas draw ops into a PDF content stream. This file covers the
-// direct geometry lanes — drawPaint/drawRect/drawOval/drawRRect/drawPath/drawArc/drawPoints, clips
-// (rect/path/region/replace), transforms, solid colors, per-paint alpha and the PDF-expressible blend modes — via
-// setUpContentEntry over the graphic-stack state and the path emitters, plus the path-effect (FillPathWithPaint) and
-// inverse-fill (pathops) lowerings and the /Resources + content() output the document consumes at EndPage.
-//
-// Image draws (drawImageRect → the direct Image XObject lanes) land via internalDrawImageRect + the image serializer
-// (bitmap.go), including the alpha-only luminosity-SMask, mask-filter, perspective, and color-filter sub-lanes.
-//
-// The saveLayer transparency-group compositing (drawDevice via makeFormXObjectFromDevice) and the advanced-blend-mode
-// form-XObject dance in setUp/finishContentEntry (drawFormXObjectWithMask + the two content buffers) landed in the
-// compositing slice.
-//
-// The mask-filter soft-mask lane (internalDrawPathWithFilter → a luminosity SMask over the path shape) and the
-// color-filter fold (cleanPaint's removal of the color filter, into the shader or paint color) landed in the
-// mask/color-filter slice.
-//
-// A saveLayer whose paint carries an image or color filter renders on a raster device (createDevice's bitmap-device
-// branch) and is drawn back as an Image XObject at restore — the color-filter layer through DrawDevice →
-// drawRasterLayerBack, the image-filter layer through the canvas's internalDrawDeviceWithFilter over AsFilterDevice's
-// adapter (filterdevice.go). Every other layer stays a PDF device and composites as a transparency-group form XObject.
+// geometry draws, clips, transforms, colors, and blend modes (via setUpContentEntry over the graphic-stack state and
+// the path emitters), the path-effect and inverse-fill (pathops) lowerings, image draws (internalDrawImageRect plus
+// bitmap.go), the mask-filter soft-mask lane, the color-filter fold in cleanPaint, saveLayer compositing as
+// transparency-group form XObjects, the advanced-blend-mode form-XObject compositing in setUp/finishContentEntry, and
+// the /Resources and content output the document consumes at EndPage. Filtered layers render on a raster device; see
+// CreateDevice.
 
 package pdf
 
@@ -270,7 +256,7 @@ func (d *Device) DrawPoints(mode canvas.PointMode, pts []geom.Point, paint *canv
 	if mode != canvas.PointModePoints {
 		p.Style = canvas.StyleStroke
 	}
-	// The path-effect / perspective lane for point drawing is deferred.
+	// Skia's path-effect/perspective lane for points is not implemented; such draws are dropped.
 	if p.PathEffect != nil || d.localToDevice.HasPerspective() {
 		return
 	}
@@ -331,17 +317,15 @@ func (d *Device) DrawImageRect(img imagecore.DrawableImage, src *geom.Rect, dst 
 	d.internalDrawImageRect(newKeyedImage(rasterImg), src, dst, paint, d.localToDevice)
 }
 
-// DrawAtlas implements canvas.Device. PDF has no drawVertices/atlas primitive to lower to, so a PDF DrawAtlas is a
-// no-op beyond the empty-clip check, rather than routed through the raster per-sprite lowering.
+// DrawAtlas implements canvas.Device. PDF has no drawVertices/atlas primitive to lower to, so DrawAtlas is a no-op
+// rather than routed through the raster per-sprite lowering.
 func (d *Device) DrawAtlas(_ []geom.RSXform, _ []geom.Rect, _ []colorcore.Color, _ raster.BlendMode, _ *canvas.Paint) {
 }
 
-// internalDrawImageRect implements the direct Image XObject lanes (src→dst transform, subsetting, the opaque+srcOver
-// fast path, sub-pixel clipping, the scaled content entry + drawFormXObject), plus the alpha-only luminosity-SMask lane
-// (blend-before-color-filter and the greyscale mask form XObject), the mask-filter lane (image-as-shader through
-// internalDrawPath), the perspective rasterization lane, and the color-filter lane (color-filtering into an N32 image).
-// The subset is always serialized as-is, with no size comparison against the original; DCT/JPEG encoding and ICC
-// profiles remain deferred.
+// internalDrawImageRect draws an image as an Image XObject, with lanes for alpha-only images (a luminosity SMask), mask
+// filters (the image as a shader through internalDrawPath), perspective (rasterized), and color filters (baked into an
+// N32 image). The subset is always serialized as-is, with no size comparison against the original; DCT/JPEG encoding
+// and ICC profiles are not implemented.
 func (d *Device) internalDrawImageRect(imageSubset keyedImage, src *geom.Rect, dst geom.Rect, paint *canvas.Paint, ctm geom.Matrix) {
 	if d.hasEmptyClip() || !imageSubset.valid() {
 		return
@@ -717,9 +701,9 @@ func (d *Device) CreateDevice(width, height int32, layerPaint *canvas.Paint) can
 
 // DrawDevice implements canvas.Device: composite a saveLayer's device back into this one. A PDF layer device becomes a
 // transparency-group form XObject drawn through a scoped content entry, so the layer paint's alpha, the PDF-expressible
-// blend modes, and the advanced-blend form-XObject compositing all apply exactly as for any other draw. A raster layer
-// device — CreateDevice's bitmap-device lane for a color-filter layer — is instead drawn back as an Image XObject, so
-// the layer paint's color filter, alpha, and blend apply; internalDrawImageRect bakes the color filter into the image.
+// blend modes, and the advanced-blend form-XObject compositing all apply as for any other draw. A raster layer device
+// (a color-filter layer; see CreateDevice) is drawn back as an Image XObject, with the color filter baked into the
+// image.
 func (d *Device) DrawDevice(device canvas.Device, paint *canvas.Paint) {
 	if bd, ok := device.(*canvas.BitmapDevice); ok {
 		d.drawRasterLayerBack(bd, paint)
@@ -812,7 +796,6 @@ func checkFastPathIsSrcOver(p *canvas.Paint) bool {
 	}
 }
 
-// strokeSpecOf builds the stroke.PaintSpec for a paint.
 func strokeSpecOf(p *canvas.Paint) stroke.PaintSpec {
 	return stroke.PaintSpec{
 		PathEffect: p.PathEffect,
@@ -1006,7 +989,6 @@ type scopedContentEntry struct {
 	blendMode      raster.BlendMode
 }
 
-// newScopedContentEntry sets up a content entry for a draw and returns the scopedContentEntry that tracks it.
 func (d *Device) newScopedContentEntry(clipStack *ClipStack, matrix *geom.Matrix, paint *canvas.Paint, textScale float32) *scopedContentEntry {
 	sce := &scopedContentEntry{device: d, clipStack: clipStack, blendMode: raster.BlendSrcOver}
 	if matrix.HasPerspective() {
@@ -1050,14 +1032,12 @@ func (sce *scopedContentEntry) needSource() bool { return sce.blendMode != raste
 // a rectangular shape).
 func (sce *scopedContentEntry) setShape(shape *path.Path) { sce.shape = shape }
 
-// isContentEmpty reports whether both the main content and the compositing buffer are empty.
 func (d *Device) isContentEmpty() bool {
 	return d.content.BytesWritten() == 0 && d.contentBuffer.BytesWritten() == 0
 }
 
-// reset drops the per-form-XObject resources and content. The active graphics stack is already drained by
-// content()/contentBytes() beforehand; makeFormXObjectFromDevice calls this after the device's content has been pulled
-// into a form XObject.
+// reset drops the per-form-XObject resources and content. makeFormXObjectFromDeviceBounds calls it after contentBytes
+// has drained the graphics stack and the content has been pulled into a form XObject.
 func (d *Device) reset() {
 	d.graphicStateResources = map[IndirectReference]struct{}{}
 	d.xObjectResources = map[IndirectReference]struct{}{}
@@ -1249,15 +1229,15 @@ func (d *Device) makeFormXObjectFromDeviceBounds(bounds geom.IRect, alpha bool) 
 	if alpha {
 		colorSpace = "DeviceGray"
 	}
-	// content() drains the graphics stack and resets the main content; makeResourceDict() reads the resource sets
-	// before reset() clears them.
+	// contentBytes drains the graphics stack and resets the main content; makeResourceDict reads the resource sets
+	// before reset clears them.
 	contentData := d.contentBytes()
 	resourceDict := d.makeResourceDict()
 	xobject := makeFormXObject(d.doc, contentData,
 		makeArrayInts(bounds.Left, bounds.Top, bounds.Right, bounds.Bottom),
 		resourceDict, &inverseTransform, colorSpace)
-	// We always draw the form XObjects we create back into the device, so we preserve font usage by simply resetting
-	// instead of pulling it out and merging it back later.
+	// The form XObject is always drawn back into this device, so resetting preserves font usage without pulling it out
+	// and merging it back later.
 	d.reset()
 	return xobject
 }
@@ -1278,7 +1258,6 @@ func (d *Device) drawFormXObjectWithMask(xObject, sMask IndirectReference, mode 
 	d.clearMaskOnGraphicState(sce.content)
 }
 
-// setGraphicState selects the /ExtGState gs into content.
 func (d *Device) setGraphicState(gs IndirectReference, content stream.WStream) {
 	applyGraphicState(addResource(d.graphicStateResources, gs), content)
 }
@@ -1374,12 +1353,10 @@ func rectToRect(from, to geom.Rect) geom.Matrix {
 	return m
 }
 
-// isIntegralRect reports whether all four edges of r are integers.
 func isIntegralRect(r geom.Rect) bool {
 	return isInteger(r.Left) && isInteger(r.Top) && isInteger(r.Right) && isInteger(r.Bottom)
 }
 
-// isInteger reports whether x has no fractional part.
 func isInteger(x float32) bool { return x == float32(math.Trunc(float64(x))) }
 
 // ---- content / resource output ----------------------------------------------------------------------

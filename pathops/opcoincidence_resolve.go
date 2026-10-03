@@ -13,19 +13,11 @@
 // transfers winding across coincident edges (apply), and constructs new pairs where different receivers overlap
 // (findOverlaps). The recording/traversal surface (add, release, fixUp, markCollapsed, isEmpty, coincidenceOrdered)
 // lives in opcoincidence.go.
-//
-// correctOneEnd takes get/set closures rather than a member pointer, since Go has no equivalent. ordered returns a
-// (result, ok) pair instead of using an out-parameter for the "not fully processed" case. Every t value is a float64,
-// matching the precision the boolean-op math needs throughout this package.
-//
-// This machinery runs inside handleCoincidence (common.go), which the Op/Simplify drivers invoke.
 
 package pathops
 
-// ---- coincidentSpans resolution methods ----
-
 // correctOneEnd resets one end to the pt-t referenced by the previous-next span, so span ends agree with the segment's
-// spans that define them.
+// spans that define them. The get/set closures stand in for C++'s pointer-to-member.
 func (cs *coincidentSpans) correctOneEnd(getEnd func() *opPtT, setEnd func(*opPtT)) {
 	origPtT := getEnd()
 	origSpan := origPtT.span
@@ -171,8 +163,6 @@ func (cs *coincidentSpans) ordered() (result, ok bool) {
 	}
 	return true, true
 }
-
-// ---- opCoincidence resolution methods ----
 
 // extend reports whether an existing pair overlaps the addition; if so it extends that pair in place.
 func (co *opCoincidence) extend(coinPtTStart, coinPtTEnd, oppPtTStart, oppPtTEnd *opPtT) bool {
@@ -590,11 +580,10 @@ func (co *opCoincidence) checkOverlap(check *coincidentSpans, coinSeg, oppSeg *o
 }
 
 // addIfMissing maps the (already ordered) tStart/tEnd range from over1s/over2s onto coinSeg and oppSeg and, unless the
-// mapped range collapses, adds or overlaps the pair. It returns false only for a collapsed range: addOrOverlap's own
-// result is deliberately discarded, because from here a false means "there was nothing to add", not "abort". The sole
-// caller, addMissing, treats a false as a fatal abort of the whole operation, so propagating one would turn every
-// nothing-to-add into a failed Op/Simplify. Upstream discards it the same way (an explicit `(void)` cast on the call in
-// SkOpCoincidence::addIfMissing); see addOrOverlap's own comment for the two callers' opposing conventions.
+// mapped range collapses, adds or overlaps the pair. It returns false only when the collapse test reports a corrupt
+// loop (spanCollapsedError). addOrOverlap's result is deliberately discarded, as upstream does with a `(void)` cast:
+// from here its false means "nothing to add", but addMissing treats any false from this function as a fatal abort of
+// the whole Op/Simplify. See addOrOverlap for the two callers' opposing conventions.
 func (co *opCoincidence) addIfMissing(over1s, over2s *opPtT, tStart, tEnd float64, coinSeg, oppSeg *opSegment, added *bool) bool {
 	coinTs := trange(over1s, tStart, coinSeg)
 	coinTe := trange(over1s, tEnd, coinSeg)
@@ -640,9 +629,9 @@ func coincidentRunIsReal(coinSeg, oppSeg *opSegment, coinTs, coinTe float64) boo
 
 // addOrOverlap adds a coincident pair, or extends an overlapping one. Its two callers read a false return oppositely:
 // from addEndMovedSpans it propagates out to an abort, while addIfMissing discards it as "there was nothing to add".
-// Note that several of the false returns below fire after addT has already placed spans and span.addOpp has already
-// spliced pt-t loops, so a false does not imply the span graph was left untouched -- that is upstream's behavior too,
-// and the reason the abort/no-abort split is the caller's decision rather than this function's.
+// Several of the false returns below fire after addT has placed spans and span.addOpp has spliced pt-t loops, so a
+// false does not imply the span graph was left untouched -- upstream behaves the same, which is why the abort/no-abort
+// split is the caller's decision.
 func (co *opCoincidence) addOrOverlap(coinSeg, oppSeg *opSegment, coinTs, coinTe, oppTs, oppTe float64, added *bool) bool {
 	var overlaps []*coincidentSpans
 	if co.top == nil {

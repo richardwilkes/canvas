@@ -14,10 +14,10 @@ import (
 	"testing"
 )
 
-// TestInitTeardownOrder pins the ordering init's teardown depends on: a half-built context is destroyed while the X error
-// handler installed during setup is still in place, and only then is the previous handler restored. The reverse order
-// (what two separate defers produce) leaves the teardown's X protocol errors to the default Xlib handler, which exits the
-// process instead of letting the GPU tests skip.
+// TestInitTeardownOrder pins the ordering init's teardown depends on: a half-built context is destroyed while the X
+// error handler installed during setup is still in place, and only then is the previous handler restored. The reverse
+// order (what two separate defers produce) leaves the teardown's X protocol errors to the default Xlib handler, which
+// exits the process instead of letting the GPU tests skip.
 func TestInitTeardownOrder(t *testing.T) {
 	var order []string
 	record := func(name string) func() { return func() { order = append(order, name) } }

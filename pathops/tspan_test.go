@@ -9,9 +9,8 @@
 
 // Focused tests for the tSect span layer (tcurve.go + tspan.go): the tQuad wrapper's delegation, the tCoincident
 // perpendicular-match, and the tSpan geometry (bounds, splitting, hull/linear-intersection checks, the bounded-span
-// list). These primitives have no dedicated test of their own elsewhere — they are exercised through the quad/quad
-// intersection, which needs the full tSect solver body — so the checks here cross-validate against the already-verified
-// dQuad geometry and against closed-form expectations.
+// list). Elsewhere these primitives are exercised only through the full quad/quad solver, so the checks here
+// cross-validate against dQuad geometry and closed-form expectations.
 
 package pathops
 
@@ -157,7 +156,7 @@ func TestTSpanInitBounds(t *testing.T) {
 	}
 	// The [0,1] part is the whole curve.
 	requireApproxPt(t, s.part.ptAtT(0.5), q.ptAtT(0.5), "part midpoint")
-	// The coincidents start uninitialized-to-match (perpT == -1).
+	// The coincidents start with no match recorded (perpT == -1).
 	if s.coinStart.perpT() != -1 || s.coinEnd.perpT() != -1 {
 		t.Errorf("coincidents not init'd: %g %g", s.coinStart.perpT(), s.coinEnd.perpT())
 	}

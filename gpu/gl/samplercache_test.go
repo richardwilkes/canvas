@@ -19,7 +19,6 @@ func TestUnbindSamplerBoundsGuard(_ *testing.T) {
 	// bounds guard fired before textureUnitStates was indexed.
 	c := &samplerObjectCache{numTextureUnits: 2, textureUnitStates: make([]samplerUnitState, 2)}
 
-	// A unit index at or above the unit count must be ignored, not indexed.
 	c.unbindSampler(2)
 	c.unbindSampler(99)
 

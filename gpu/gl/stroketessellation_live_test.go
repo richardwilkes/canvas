@@ -219,8 +219,9 @@ func TestLiveStrokeTessellationTranslucentStencil(t *testing.T) {
 }
 
 func TestLiveStrokeTessellationExplicitCurveType(t *testing.T) {
-	// Clearing InfinitySupport on a fresh context forces the stroke tessellator to write the kExplicitCurveType attrib
-	// and the shader to branch on it instead of isinf() — the GL 3.2/GLSL-1.50 production lane.
+	// Clearing InfinitySupport on a fresh context forces the stroke tessellator to write the
+	// PatchAttribExplicitCurveType attrib and the shader to branch on it instead of isinf() — the GL 3.2/GLSL-1.50
+	// production lane.
 	env := newGLEnv(t)
 	dc := gl.MakeGLDirectContext(env.intf, nil)
 	if dc == nil {

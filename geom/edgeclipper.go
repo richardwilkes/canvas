@@ -95,7 +95,6 @@ func clampGE(value *float32, minValue float32) {
 // sortIncreasingY copies src into dst sorted to be increasing in Y (src must be monotonic in Y) and returns whether the
 // order was reversed.
 func sortIncreasingY(dst, src []Point, count int) bool {
-	// we need the data to be monotonically increasing in Y
 	if src[0].Y > src[count-1].Y {
 		for i := 0; i < count; i++ {
 			dst[i] = src[count-i-1]
@@ -443,8 +442,8 @@ func (e *EdgeClipper) clipMonoCubic(src []Point, clip Rect) {
 	}
 }
 
-// tooBigForReliableFloatMath is the largest float extent for which chopping at extrema and clip values still computes
-// reliably. Chosen by experiment.
+// tooBigForReliableFloatMath reports whether r extends past the largest coordinate magnitude (chosen by experiment) at
+// which chopping at extrema and clip values still computes reliably.
 func tooBigForReliableFloatMath(r Rect) bool {
 	const limit = 1 << 22
 	return r.Left < -limit || r.Top < -limit || r.Right > limit || r.Bottom > limit

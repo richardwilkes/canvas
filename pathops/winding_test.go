@@ -45,14 +45,14 @@ func TestWindingRayHelpers(t *testing.T) {
 	if !lessThan(rayDirLeft) || !lessThan(rayDirTop) || lessThan(rayDirRight) || lessThan(rayDirBottom) {
 		t.Fatal("lessThan wrong")
 	}
-	// ccw_dxdy: for a +x,+y slope, kLeft is clockwise (false), kTop counterclockwise (true).
+	// ccwDxDy: for a +x,+y slope, rayDirLeft is clockwise (false), rayDirTop counterclockwise (true).
 	if ccwDxDy(dVector{x: 1, y: 1}, rayDirLeft) {
 		t.Fatal("ccwDxDy(+, kLeft) should be false")
 	}
 	if !ccwDxDy(dVector{x: 1, y: 1}, rayDirTop) {
 		t.Fatal("ccwDxDy(+, kTop) should be true")
 	}
-	// sideways_overlap: for a horizontal ray, the point's Y must fall within [top, bottom].
+	// sidewaysOverlap: for a horizontal ray, the point's Y must fall within [top, bottom].
 	box := pathOpsBounds{left: 0, top: 0, right: 10, bottom: 10}
 	if !sidewaysOverlap(box, geom.Point{X: 5, Y: 5}, rayDirLeft) {
 		t.Fatal("interior point should overlap")
@@ -80,7 +80,7 @@ func TestGetTGuess(t *testing.T) {
 	}
 }
 
-// TestCurveIntercept checks the CurveIntercept dispatch for each verb: the returned roots must reproduce the axis
+// TestCurveIntercept checks the curveIntercept dispatch for each verb: the returned roots must reproduce the axis
 // intercept when the curve is evaluated at them.
 func TestCurveIntercept(t *testing.T) {
 	evalY := func(verb path.Verb, pts []geom.Point, w float32, tv float64) float64 {
@@ -100,7 +100,7 @@ func TestCurveIntercept(t *testing.T) {
 	if n := curveIntercept(path.VerbLine, line, 1, 5, 1, roots[:]); n != 1 || math.Abs(roots[0]-0.5) > 1e-9 {
 		t.Fatalf("line v intercept: n=%d roots[0]=%v, want 1/0.5", n, roots[0])
 	}
-	// A horizontal line has no vertical crossing for a horizontal ray.
+	// A horizontal line never crosses a horizontal ray.
 	flat := []geom.Point{{X: 0, Y: 0}, {X: 10, Y: 0}}
 	if n := curveIntercept(path.VerbLine, flat, 1, 5, 0, roots[:]); n != 0 {
 		t.Fatalf("horizontal line h intercept: n=%d, want 0", n)
@@ -143,8 +143,8 @@ func TestCurveIntercept(t *testing.T) {
 	}
 }
 
-// TestUseInnerWinding checks useInnerWinding's truth table (equal magnitudes pick the negative; otherwise the smaller
-// magnitude).
+// TestUseInnerWinding checks useInnerWinding's truth table (on equal magnitudes, true when the outer is negative;
+// otherwise true when the inner magnitude is larger).
 func TestUseInnerWinding(t *testing.T) {
 	cases := []struct {
 		outer, inner int
@@ -168,7 +168,7 @@ func TestUseInnerWinding(t *testing.T) {
 	}
 }
 
-// TestSpanSignOppSign checks SpanSign/OppSign on a fresh (windValue 1, oppValue 0) square edge.
+// TestSpanSignOppSign checks spanSign/oppSign on a fresh (windValue 1, oppValue 0) square edge.
 func TestSpanSignOppSign(t *testing.T) {
 	p := path.New()
 	p.MoveTo(0, 0).LineTo(10, 0).LineTo(10, 10).LineTo(0, 10).Close()
@@ -187,7 +187,7 @@ func TestSpanSignOppSign(t *testing.T) {
 	}
 }
 
-// TestFindSortableTopSquare is the end-to-end ray-cast seed test: a single closed square. FindSortableTop projects a
+// TestFindSortableTopSquare is the end-to-end ray-cast seed test: a single closed square. findSortableTop projects a
 // ray from a span, and markAndChaseWinding propagates the unit fill winding around the whole contour, so every span
 // ends with windSum -1 (the closed CW square's fill) and no opposite winding.
 func TestFindSortableTopSquare(t *testing.T) {
@@ -253,15 +253,13 @@ func TestComputeWindSumTwoRects(t *testing.T) {
 	if got != -1 {
 		t.Fatalf("computeWindSum = %d, want -1", got)
 	}
-	// The crossing sits inside rectangle B, so its opposite (operand) winding is nonzero.
 	if sp.oppSum != -1 {
 		t.Fatalf("cross oppSum = %d, want -1 (inside the other rectangle)", sp.oppSum)
 	}
 }
 
-// TestComputeOneSumBowtie exercises the angle-loop transfer (the direct consumer of the sorted angle loops):
-// after seeding one angle's winding at the bow-tie crossing, ComputeOneSum transfers it onto the next angle in the
-// counterclockwise loop.
+// TestComputeOneSumBowtie exercises the angle-loop transfer: after seeding one angle's winding at the bow-tie crossing,
+// computeOneSum transfers it onto the next angle in the counterclockwise loop.
 func TestComputeOneSumBowtie(t *testing.T) {
 	base := bowtieCrossAngle(t)
 	base.starter().windSum = 1
@@ -281,7 +279,7 @@ func TestComputeOneSumBowtie(t *testing.T) {
 }
 
 // TestComputeOneSumBinary exercises the binary (op) angle-loop transfer: at the crossing where rectangle A's right edge
-// meets rectangle B's top edge, ComputeOneSum with a binary include type transfers both the main and opposite winding
+// meets rectangle B's top edge, computeOneSum with a binary include type transfers both the main and opposite winding
 // onto the next angle (driving setUpWindingsBinary / markAngleBinary / updateOppWinding).
 func TestComputeOneSumBinary(t *testing.T) {
 	a := path.New()

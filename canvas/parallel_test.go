@@ -111,9 +111,9 @@ func TestRectFillBandBoundsByteIdentical(t *testing.T) {
 	}
 }
 
-// TestDrawRectShadedParallelMatchesSerial drives the full public canvas path (whose rect-fill lane now bands large
-// shaded fills) and requires it to match a serial reference fill byte-for-byte, confirming the dispatch is wired
-// correctly and stays byte-exact.
+// TestDrawRectShadedParallelMatchesSerial drives the full public canvas path (whose rect-fill lane bands large shaded
+// fills) and requires it to match a serial reference fill byte-for-byte, confirming the dispatch is wired correctly and
+// stays byte-exact.
 func TestDrawRectShadedParallelMatchesSerial(t *testing.T) {
 	const w, h = 256, 256
 	ident := geom.IdentityMatrix()
@@ -258,7 +258,7 @@ func TestDrawPaintBandByteIdentical(t *testing.T) {
 	}
 }
 
-// TestDrawPaintShadedParallelMatchesSerial drives the full public canvas path (DrawPaint, whose lane now bands large
+// TestDrawPaintShadedParallelMatchesSerial drives the full public canvas path (DrawPaint, whose lane bands large
 // full-device shaded fills) unclipped and requires it to match a serial reference fill byte-for-byte, confirming the
 // dispatch is wired correctly and stays byte-exact.
 func TestDrawPaintShadedParallelMatchesSerial(t *testing.T) {

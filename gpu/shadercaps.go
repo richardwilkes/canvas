@@ -96,8 +96,8 @@ type ShaderCaps struct {
 	BitManipulationSupport  bool
 	HalfIs32Bits            bool
 	HasLowFragmentPrecision bool
-	// ReducedShaderMode uses a reduced set of rendering algorithms or less optimal effects in order to reduce the
-	// number of unique shaders generated.
+	// ReducedShaderMode uses a reduced set of rendering algorithms or less optimal effects to reduce the number of
+	// unique shaders generated.
 	ReducedShaderMode bool
 
 	// Driver-workaround fields consulted by the GLSL emitters. Only the ones settable through desktop code paths

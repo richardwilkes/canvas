@@ -18,8 +18,7 @@ import (
 	"github.com/richardwilkes/canvas/imagecore"
 )
 
-// TestEncodeNilImage keeps the C-parity nil tolerance the encoders themselves guarantee: encoding a nil image returns
-// nil rather than panicking.
+// TestEncodeNilImage checks the encoders' nil tolerance: encoding a nil image returns nil rather than panicking.
 func TestEncodeNilImage(t *testing.T) {
 	if EncodePNG(nil, 6) != nil {
 		t.Error("EncodePNG(nil image): want nil")
@@ -76,7 +75,6 @@ func TestEncodeWebPLossyAlphaContainer(t *testing.T) {
 	if back.Width() != 64 || back.Height() != 48 {
 		t.Fatalf("decoded dims %dx%d, want 64x48", back.Width(), back.Height())
 	}
-	// The alpha plane is coded losslessly, so the decoded premul alpha bytes match the source exactly.
 	wantPix := timg.PeekPixels(imagecore.CachingAllow)
 	gotPix := back.PeekPixels(imagecore.CachingAllow)
 	for y := int32(0); y < 48; y++ {

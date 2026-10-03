@@ -32,7 +32,6 @@ var pathRendererOpNames = []string{
 	"TriangulatingPathOp",
 }
 
-// chainHeadNames returns the Name() of every recorded op-chain head, in record order.
 func chainHeadNames(sdc *SurfaceDrawContext) []string {
 	task := sdc.GetOpsTask()
 	names := make([]string, task.NumOpChains())

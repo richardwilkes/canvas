@@ -9,9 +9,8 @@
 //   - storeSpanQuads: toUnorm(v) = round-to-nearest-even(min(max(v*255, 0-or-NaN->0), 255)) maps to
 //     FMUL 255, FMAXNM 0, FMINNM 255, FCVTNS — the same mul rounding, the same clamps, and FCVTNS is
 //     exactly RoundToEven for the in-range integral result.
-//   - pmSrcOverQuads mirrors blit_row_s32a_opaque's NEON kernel: per byte
-//     satAdd8(src, mulDiv255Round(dst, 255-srcA)) with the identical widening math (see
-//     pmSrcOverRow's lane-bound analysis; UQADD is the saturating add).
+//   - pmSrcOverQuads mirrors blit_row_s32a_opaque's NEON kernel: per byte satAdd8(src, mulDiv255Round(dst, 255-srcA))
+//     with the identical widening math (see pmSrcOverRowGeneric's lane-bound analysis; UQADD is the saturating add).
 //
 // Vector registers stay within V0-V7/V16-V31 (V8-V15 have callee-saved low halves). Unsupported
 // mnemonics are WORD-encoded with the intended instruction in the comment; the kernels are locked

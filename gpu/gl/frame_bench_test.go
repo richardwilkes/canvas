@@ -7,16 +7,16 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// GPU-frame benchmarks: render a representative UI-like frame through the GPU canvas device — gl.Device → canvas draw
-// ops → OpsTask recording → DrawingManager flush → GL draw calls — and report the two first-class GPU outputs:
-// allocations per frame (the GC-pressure gate on the recording layer) and the batching metric (primitives recorded vs
-// GL draw calls issued, via DirectContext.NumGLDraws). These complement the CPU-side canvas/bench_test.go suite. The
-// benchmarks skip when no GL context is available, exactly like the gpu/gl live tests. Run e.g.:
+// GPU-frame benchmarks: render a representative UI-like frame through the GPU canvas device (canvas draw ops →
+// gl.Device → OpsTask recording → DrawingManager flush → GL draw calls) and report allocations per frame (the recording
+// layer's GC pressure) and the batching metric (primitives recorded vs GL draw calls issued, via
+// DirectContext.NumGLDraws). They complement the CPU-side canvas/bench_test.go suite and skip when no GL context is
+// available. Run e.g.:
 //
 //	go test ./gpu/gl/ -run '^$' -bench BenchmarkGLFrame -benchmem
 //
 // A warm-up frame precedes the timed loop so first-frame shader compiles and texture uploads are excluded and the
-// reported allocs/frame and GLdraws/frame reflect the steady state.
+// reported metrics reflect the steady state.
 
 package gl_test
 
@@ -33,11 +33,10 @@ import (
 )
 
 // benchPanels draws a batching-friendly UI-like frame: an opaque background fill, then a grid of filled rounded-rect
-// "panels" each with a stroked border. The panel fills lower to instanced FillRRectOp and the borders to StrokeRectOp,
-// both of which batch across the grid, so a well-batched frame issues far fewer GL draw calls than the 2*rows*cols
-// primitives recorded — the batching metric the GLdraws/frame report exposes. The paints are provided by the caller
-// (built once, outside the timed loop) so the measured allocations are the device/op/flush pipeline's, not per-frame
-// paint construction; the per-cell fill color is mutated in place to exercise the per-instance color attribute.
+// panels, each with a stroked border. The fills lower to instanced FillRRectOp and the borders to StrokeRectOp, both of
+// which batch across the grid, so a well-batched frame issues far fewer GL draw calls than the 2*rows*cols primitives
+// recorded. The caller builds the paints once, outside the timed loop, so the measured allocations are the
+// device/op/flush pipeline's; the per-cell fill color is mutated in place to exercise the per-instance color attribute.
 func benchPanels(c *canvas.Canvas, bg, fill, border *canvas.Paint, side float32, rows, cols int) {
 	c.DrawPaint(bg)
 	const pad = 6
@@ -69,9 +68,7 @@ func newFramePanelPaints() (bg, fill, border *canvas.Paint) {
 	return bg, fill, border
 }
 
-// BenchmarkGLFramePanels measures the batching-friendly rrect/stroke grid frame. The GLdraws/frame metric shows how few
-// GL draw calls the grid batches into; prims/frame is the number of canvas primitives recorded, so prims/frame ÷
-// GLdraws/frame is the batching factor.
+// BenchmarkGLFramePanels measures the batching-friendly rrect/stroke grid frame.
 func BenchmarkGLFramePanels(b *testing.B) {
 	_, dc := newLiveDirectContext(b)
 	const side = 256
@@ -81,7 +78,6 @@ func BenchmarkGLFramePanels(b *testing.B) {
 	c := canvas.New(gl.NewDevice(sdc))
 	bg, fill, border := newFramePanelPaints()
 
-	// Warm the program/resource caches with one full frame so the measurement is steady state.
 	benchPanels(c, bg, fill, border, side, rows, cols)
 	dc.FlushAndSubmit(false)
 	if dc.NumGLDraws() == 0 {
@@ -209,12 +205,10 @@ func BenchmarkGLFramePathsAA(b *testing.B) { benchGLFramePaths(b, false) }
 // BenchmarkGLFramePathsDMSAA measures the same frame with DMSAA on.
 func BenchmarkGLFramePathsDMSAA(b *testing.B) { benchGLFramePaths(b, true) }
 
-// reportFrameMetrics attaches the GPU frame's first-class outputs: GL draw calls issued per frame (the batching
-// metric), total GL calls issued per frame (the FFI-pressure metric — every call pays purego.SyscallN's marshaling
-// allocations, so this is the number state shadowing drives down) and, when prims >= 0, the primitives recorded per
-// frame (so the batching factor is prims÷draws), plus the steady-state program-cache hit rate (should be ~1.0 after
-// warm-up — a lower value means the cache is thrashing). The caller must reset both stats (ResetGLDrawStats,
-// ResetCallCounts) right before the timed loop.
+// reportFrameMetrics reports per-frame GL draw calls (the batching metric), total GL calls (the FFI-pressure metric
+// that state shadowing drives down) and, when prims >= 0, primitives recorded (the batching factor is prims÷draws),
+// plus the steady-state program-cache hit rate (~1.0 after warm-up; lower means the cache is thrashing). The caller
+// must reset both stats (ResetGLDrawStats, ResetCallCounts) right before the timed loop.
 func reportFrameMetrics(b *testing.B, dc *gl.DirectContext, pcBefore gl.PipelineStats, prims int) {
 	b.Helper()
 	frames := float64(b.N)

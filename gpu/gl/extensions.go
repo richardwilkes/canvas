@@ -117,11 +117,11 @@ func (e *Extensions) All() []string {
 
 // rawCall invokes a proc address before a Functions table exists (extension/version queries during assembly).
 // Integer/pointer arguments only. The //go:uintptrescapes tag is the same GC-stack contract the interface.go wrappers
-// carry: a Go pointer handed in as uintptr(unsafe.Pointer(x)) at a rawCall call site (e.g. Extensions.Init's &
-// extensionCnt) must be kept alive and heap-resident for the duration of the call. SyscallN's own tag does not cover it
-// — the pragma only applies to conversions written at the tagged function's direct call site — so without this tag the
-// pointee stays on the stack, and any stack growth during the call (SyscallN's own prologue, or a purego-callback fake
-// driver in the tests re-entering Go) moves the stack and strands the callee's write on the old copy.
+// carry: a Go pointer handed in as uintptr(unsafe.Pointer(x)) at a rawCall call site (e.g. &extensionCnt in
+// Extensions.Init) must be kept alive and heap-resident for the duration of the call. SyscallN's own tag does not cover
+// it — the pragma only applies to conversions written at the tagged function's direct call site — so without this tag
+// the pointee stays on the stack, and any stack growth during the call (SyscallN's own prologue, or a purego-callback
+// fake driver in the tests re-entering Go) moves the stack and strands the callee's write on the old copy.
 //
 //go:uintptrescapes
 func rawCall(fn uintptr, args ...uintptr) uintptr {

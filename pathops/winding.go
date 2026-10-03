@@ -18,8 +18,7 @@
 //     sorted angle loop built by calcAngles/sortAngles lets the winding transfer counterclockwise to its neighbors via
 //     markAndChaseWinding.
 //
-// This file also provides the opSegment winding helpers both mechanisms share (markAndChaseWinding, markWinding,
-// nextChase, updateWinding family, setUpWindings, markAngle, useInnerWinding, spanSign/oppSign, spanToAngle).
+// This file also provides the opSegment winding helpers both mechanisms share.
 //
 // Pathops computes in double precision; the winding accumulators are plain int. Sorting uses an ascending
 // slices.SortFunc — ties that would matter cause sortableTop to report unsortable regardless, so the exact tie order
@@ -46,7 +45,7 @@ const (
 	rayDirBottom
 )
 
-// rayXYIndex returns 0 for a horizontal ray (rayDirLeft/rayDirRight), 1 for a vertical ray (rayDirTop/ rayDirBottom).
+// rayXYIndex returns 0 for a horizontal ray (rayDirLeft/rayDirRight), 1 for a vertical ray (rayDirTop/rayDirBottom).
 func rayXYIndex(dir opRayDir) int { return int(dir) & 1 }
 
 // ptXY returns the point coordinate the ray travels along.
@@ -98,15 +97,12 @@ func rectSide(b pathOpsBounds, dir opRayDir) float32 {
 // sidewaysOverlap reports whether pt's perpendicular coordinate lies within the bounds span perpendicular to the ray.
 func sidewaysOverlap(b pathOpsBounds, pt geom.Point, dir opRayDir) bool {
 	if rayXYIndex(dir) == 0 {
-		// horizontal ray: check Y within [top, bottom]
 		return approximatelyBetween(float64(b.top), float64(pt.Y), float64(b.bottom))
 	}
-	// vertical ray: check X within [left, right]
 	return approximatelyBetween(float64(b.left), float64(pt.X), float64(b.right))
 }
 
-// lessThan reports whether rayDirLeft/rayDirTop compare with '<' (true) versus rayDirRight/rayDirBottom with '>'
-// (false).
+// lessThan reports whether dir is rayDirLeft or rayDirTop, which compare with '<'; the other two compare with '>'.
 func lessThan(dir opRayDir) bool { return int(dir)&2 == 0 }
 
 // ccwDxDy reports whether the slope, in the ray's frame, sweeps counterclockwise.
@@ -117,7 +113,7 @@ func ccwDxDy(v dVector, dir opRayDir) bool {
 }
 
 // getTGuess returns the tTry'th ray origin t (0.5, then a bisection ladder) plus the direction offset (0/1) that
-// rotates rayDirLeft->rayDirTop / rayDirRight->rayDirBottom on odd tries.
+// rotates rayDirLeft->rayDirTop / rayDirTop->rayDirRight on odd tries.
 func getTGuess(tTry int, dirOffset *int) float64 {
 	t := 0.5
 	*dirOffset = tTry & 1
@@ -138,7 +134,7 @@ func getTGuess(tTry int, dirOffset *int) float64 {
 	return t
 }
 
-// opRayHit is one curve crossing found by the ray (span is always a non-terminal span).
+// opRayHit is one curve crossing found by the ray.
 type opRayHit struct {
 	next  *opRayHit
 	span  *opSpan
@@ -182,7 +178,6 @@ func curveIntercept(verb path.Verb, pts []geom.Point, weight float32, intercept 
 	}
 }
 
-// lineIntercept computes the single root at which the line meets the horizontal or vertical intercept.
 func lineIntercept(pts []geom.Point, intercept float64, horizontal bool, roots []float64) int {
 	var l dLine
 	l.set([2]geom.Point{pts[0], pts[1]})
@@ -203,8 +198,6 @@ func lineIntercept(pts []geom.Point, intercept float64, horizontal bool, roots [
 	return 0
 }
 
-// quadIntercept computes the roots at which the quad meets the horizontal or vertical intercept, via a
-// lineQuadraticIntersections built from just the quad.
 func quadIntercept(pts []geom.Point, intercept float64, horizontal bool, roots []float64) int {
 	var q dQuad
 	q.set([3]geom.Point{pts[0], pts[1], pts[2]})
@@ -215,7 +208,6 @@ func quadIntercept(pts []geom.Point, intercept float64, horizontal bool, roots [
 	return lq.verticalIntersectRoots(intercept, roots)
 }
 
-// conicIntercept computes the roots at which the conic meets the horizontal or vertical intercept.
 func conicIntercept(pts []geom.Point, weight float32, intercept float64, horizontal bool, roots []float64) int {
 	var c dConic
 	c.set([3]geom.Point{pts[0], pts[1], pts[2]}, weight)
@@ -226,7 +218,6 @@ func conicIntercept(pts []geom.Point, weight float32, intercept float64, horizon
 	return lc.verticalIntersectRoots(intercept, roots)
 }
 
-// cubicIntercept computes the roots at which the cubic meets the horizontal or vertical intercept.
 func cubicIntercept(pts []geom.Point, intercept float64, horizontal bool, roots []float64) int {
 	var c dCubic
 	c.set([4]geom.Point{pts[0], pts[1], pts[2], pts[3]})
@@ -358,7 +349,6 @@ func (s *opSpan) sortableTop(contourHead *opContourHead) bool {
 		}
 		contour.rayCheck(&hitBase, dir, &hitHead)
 	}
-	// gather hits into a slice
 	var sorted []*opRayHit
 	for hit := hitHead; hit != nil; hit = hit.next {
 		sorted = append(sorted, hit)
@@ -378,7 +368,6 @@ func (s *opSpan) sortableTop(contourHead *opContourHead) bool {
 		}
 		return cmp.Compare(av, bv)
 	})
-	// verify windings
 	var last *geom.Point
 	wind := 0
 	oppWind := 0
@@ -531,7 +520,6 @@ func (s *opSpan) computeWindSum() int {
 
 // ---- opSegment winding helpers ----
 
-// intAbs returns the absolute value of x.
 func intAbs(x int) int {
 	if x < 0 {
 		return -x
@@ -555,8 +543,8 @@ func oppSign(start, end *opSpanBase) int {
 	return end.upCast().oppValue
 }
 
-// useInnerWinding reports whether the inner (smaller-magnitude, or negative-on-tie) winding should be preferred over
-// the outer one.
+// useInnerWinding reports whether to prefer the inner winding over the outer one: when the inner has the larger
+// magnitude or, on a tie, when the outer is negative.
 func useInnerWinding(outerWinding, innerWinding int) bool {
 	absOut := intAbs(outerWinding)
 	absIn := intAbs(innerWinding)
@@ -662,7 +650,6 @@ func (s *opSegment) nextChase(startPtr **opSpanBase, stepPtr *int, minPtr **opSp
 	return other
 }
 
-// markWindingUnary sets span's wind sum to winding, unless the span is already done.
 func (s *opSegment) markWindingUnary(span *opSpan, winding int) bool {
 	if span.done {
 		return false
@@ -671,7 +658,6 @@ func (s *opSegment) markWindingUnary(span *opSpan, winding int) bool {
 	return true
 }
 
-// markWindingBinary sets span's wind sum and opposite-operand wind sum, unless the span is already done.
 func (s *opSegment) markWindingBinary(span *opSpan, winding, oppWinding int) bool {
 	if span.done {
 		return false
@@ -778,8 +764,8 @@ func (s *opSegment) markAngleBinary(maxWinding, sumWinding, oppMaxWinding, oppSu
 	return s.markAndChaseWindingBinary(angle.start, angle.end, maxWinding, oppMaxWinding, result)
 }
 
-// setUpWindingsUnary derives maxWinding and sumWinding for the start/end span from the running total sumMiWinding, then
-// updates sumMiWinding by the span's signed contribution.
+// setUpWindingsUnary sets maxWinding to the running total sumMiWinding, subtracts the start/end span's signed
+// contribution from that total, and sets sumWinding to the result.
 func (s *opSegment) setUpWindingsUnary(start, end *opSpanBase, sumMiWinding, maxWinding, sumWinding *int) {
 	deltaSum := spanSign(start, end)
 	*maxWinding = *sumMiWinding
@@ -787,9 +773,8 @@ func (s *opSegment) setUpWindingsUnary(start, end *opSpanBase, sumMiWinding, max
 	*sumWinding = *sumMiWinding
 }
 
-// setUpWindingsBinary derives maxWinding/sumWinding and oppMaxWinding/oppSumWinding for the start/end span from the
-// running totals sumMiWinding and sumSuWinding, swapping which running total is "this operand's" versus "the opposite
-// operand's" depending on s.operand().
+// setUpWindingsBinary is setUpWindingsUnary for both operands: sumMiWinding is this operand's running total and
+// sumSuWinding the opposite operand's, or the reverse when s.operand().
 func (s *opSegment) setUpWindingsBinary(start, end *opSpanBase, sumMiWinding, sumSuWinding, maxWinding, sumWinding, oppMaxWinding, oppSumWinding *int) {
 	deltaSum := spanSign(start, end)
 	oppDeltaSum := oppSign(start, end)
@@ -822,12 +807,10 @@ func (s *opSegment) updateOppWinding(start, end *opSpanBase) int {
 	return oppWinding
 }
 
-// updateOppWindingAngle returns updateOppWinding(angle.end, angle.start).
 func (s *opSegment) updateOppWindingAngle(angle *opAngle) int {
 	return s.updateOppWinding(angle.end, angle.start)
 }
 
-// updateOppWindingReverse returns updateOppWinding(angle.start, angle.end).
 func (s *opSegment) updateOppWindingReverse(angle *opAngle) int {
 	return s.updateOppWinding(angle.start, angle.end)
 }
@@ -849,12 +832,10 @@ func (s *opSegment) updateWinding(start, end *opSpanBase) int {
 	return winding
 }
 
-// updateWindingAngle returns updateWinding(angle.end, angle.start).
 func (s *opSegment) updateWindingAngle(angle *opAngle) int {
 	return s.updateWinding(angle.end, angle.start)
 }
 
-// updateWindingReverse returns updateWinding(angle.start, angle.end).
 func (s *opSegment) updateWindingReverse(angle *opAngle) int {
 	return s.updateWinding(angle.start, angle.end)
 }

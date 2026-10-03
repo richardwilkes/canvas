@@ -241,9 +241,8 @@ type colrV1GradientPaintBuilder struct {
 	name  string
 }
 
-// colrV1GradientPaintBuilders is the set of gradient paint formats, each reduced to a call taking just the color line,
-// with geometry chosen to reach the shader (non-degenerate for linear, a real circle pair for radial, a 180° sector for
-// sweep).
+// colrV1GradientPaintBuilders returns every gradient paint format, with geometry chosen to reach the shader
+// (non-degenerate for linear, a real circle pair for radial, a 180° sector for sweep).
 func colrV1GradientPaintBuilders(w *colrV1Walker) []colrV1GradientPaintBuilder {
 	return []colrV1GradientPaintBuilder{
 		{name: "linear", build: func(stops []float32, colors []colorcore.Color4f) (colrV1Paint, bool) {
@@ -1215,7 +1214,7 @@ func TestCOLRv1RadialNegativeRadius(t *testing.T) {
 	// COLR radii are UFWORD, but radialPaint's stop rescale computes startRadius + (endRadius-startRadius)*stops[0], so
 	// an unsigned pair plus a stop offset outside [0, 1] — every value below is legal F2Dot14 — still yields a negative
 	// radius. shaders.NewTwoPointConicalGradient rejects a negative radius by returning nil, which would fail the paint
-	// node and drop the rest of the glyph's paint graph mid-draw, so the radius has to be resolved instead.
+	// node and skip its layer, so the radius has to be resolved instead.
 	w := &colrV1Walker{}
 	for _, c := range []struct {
 		name   string

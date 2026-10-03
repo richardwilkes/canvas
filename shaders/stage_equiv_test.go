@@ -46,8 +46,7 @@ func quietFloat(bits uint32) float32 {
 }
 
 // randLanes fills a lanes register file with a mix of hostile and random values for all 16 lanes. The dst registers are
-// seeded too: the image-sampler kernels (accumulate, move_dst_src) read them, and for the kernels that do not they are
-// simply carried through both sides of the comparison unchanged.
+// seeded too because the image-sampler kernels (accumulate, move_dst_src) read them.
 func randLanes(rng *rand.Rand) lanes {
 	var z lanes
 	for _, reg := range []*[stride]float32{&z.r, &z.g, &z.b, &z.a, &z.dr, &z.dg, &z.db, &z.da} {

@@ -42,7 +42,7 @@ func TestCanvasClearAndDrawColor(t *testing.T) {
 		}
 	}
 
-	// DrawColor with kDst must be a no-op (CheckFastPath kSkipDrawing).
+	// DrawColor with BlendDst must be a no-op (nothingToDraw).
 	c.DrawColor(0xFF000000, raster.BlendDst)
 	for _, v := range pix.Pix {
 		if v != 0xFFFFFFFF {
@@ -136,7 +136,7 @@ func TestCanvasQuickReject(t *testing.T) {
 	if !c.QuickReject(geom.RectLTRB(80, 80, 100, 100)) {
 		t.Fatal("rect far outside the clip must be rejected")
 	}
-	// The QR bounds are outset by 1 for AA slop, so a rect just touching is not rejected.
+	// The QR bounds are outset by 1 for AA slop, so a rect just outside is not rejected.
 	if c.QuickReject(geom.RectLTRB(60.5, 20, 70, 30)) {
 		t.Fatal("rect within the 1px AA slop must not be rejected")
 	}

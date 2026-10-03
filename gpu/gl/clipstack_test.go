@@ -9,8 +9,8 @@
 
 // Fake-driver tests for the clip stack: the stencil-settings translation tables, styled-shape simplification, the
 // uniform-rrect helpers, rect subtraction, the SW mask helper's replace-mode rasterization, clip-stack state/element
-// bookkeeping (merging, invalidation, save/restore), preApply lanes, and the apply() lanes (scissor-only, analytic FPs,
-// cached SW masks, stencil masks with the mustRenderClip idempotence).
+// bookkeeping (merging, invalidation, save/restore), PreApply lanes, and the Apply lanes (scissor-only, analytic FPs,
+// cached SW masks, stencil masks with the MustRenderClip idempotence).
 
 package gl
 
@@ -36,8 +36,8 @@ func TestUserStencilSettingsFlags(t *testing.T) {
 	if !unused.IsDisabled(false) || unused.IsDisabled(true) == false && false {
 		t.Fatal("kUnused must be disabled without a stencil clip")
 	}
-	// With a stencil clip, kAlwaysIfInClip no longer always passes, so the settings are enabled (they test the clip
-	// bit) but don't modify the stencil.
+	// With a stencil clip, UserStencilTestAlwaysIfInClip no longer always passes, so the settings are enabled (they
+	// test the clip bit) but don't modify the stencil.
 	if unused.IsDisabled(true) {
 		t.Fatal("kUnused must be enabled when a stencil clip is present")
 	}
@@ -45,7 +45,7 @@ func TestUserStencilSettingsFlags(t *testing.T) {
 		t.Fatal("kUnused is single sided")
 	}
 
-	// gDrawToStencil: always passes, modifies user bits, no wrap ops.
+	// drawToStencilSettings: always passes, modifies user bits, no wrap ops.
 	if drawToStencilSettings.IsDisabled(false) || drawToStencilSettings.IsDisabled(true) {
 		t.Fatal("drawToStencil must be enabled")
 	}
@@ -86,7 +86,7 @@ func TestStencilSettingsReset(t *testing.T) {
 		t.Fatal("replaceClip writes the clip bit")
 	}
 
-	// The kUnused settings with a stencil clip translate to a clip-bit equality test.
+	// The unused settings with a stencil clip translate to a clip-bit equality test.
 	s3 := MakeStencilSettings(UnusedStencilSettings(), true, 8)
 	face3 := s3.SingleSidedFace()
 	if face3.Test != StencilTestEqual || face3.TestMask != 0x80 || face3.Ref != 0x80 {
@@ -232,9 +232,8 @@ func TestRRectHelpers(t *testing.T) {
 		t.Fatalf("offset rrect intersect = %+v", got)
 	}
 
-	// A rect that squares off only the bottom corners produces mixed per-corner radii — that would need a
-	// nine-patch-ish rrect representation, but the uniform storage cannot express it, so the helper conservatively
-	// reports empty.
+	// A rect that squares off only the bottom corners produces mixed per-corner radii, which the uniform storage cannot
+	// express, so the helper conservatively reports empty.
 	e := geom.MakeRRect(geom.Rect{Left: 0, Top: 0, Right: 20, Bottom: 10}, 0, 0)
 	if !rrectConservativeIntersect(a, e).IsEmpty() {
 		t.Fatal("mixed-radii intersection must conservatively report empty")
@@ -472,7 +471,7 @@ func TestClipStackElementCombining(t *testing.T) {
 		t.Fatalf("combined rect = %v", back.Shape.Rect())
 	}
 
-	// An rrect intersected with a rect that contains its rounded corners combines through ConservativeIntersect.
+	// An rrect intersected with a rect that squares off its bottom corners cannot combine.
 	cs = NewClipStack(deviceBounds64(), false)
 	rr := geom.MakeRRect(geom.Rect{Left: 10, Top: 10, Right: 40, Bottom: 40}, 5, 5)
 	cs.ClipRRect(&identity, rr, gpu.AAYes, raster.ClipIntersect)
@@ -699,8 +698,8 @@ func concaveClipPath() *path.Path {
 }
 
 // TestClipStackReleaseInvalidatesMasks covers the teardown a dropped stack needs: a mask still live when the owner goes
-// away has no other eviction path (Restore/ReplaceClip/clip are the only ones), so its texture would stay unique-keyed in
-// the resource cache — where isUsableAsScratch excludes it from reuse — until budget pressure or context teardown.
+// away has no other eviction path (Restore/ReplaceClip/clip are the only ones), so its texture would stay unique-keyed
+// in the resource cache, where isUsableAsScratch excludes it from reuse, until budget pressure or context teardown.
 func TestClipStackReleaseInvalidatesMasks(t *testing.T) {
 	dc := newFakeDirectContext(t)
 	sdc := newDrawTestSDC(t, dc, 64, 64)
@@ -857,7 +856,7 @@ func TestClipStackApplyStencil(t *testing.T) {
 		t.Fatal("rendering the stencil mask must record ops (clear + stencil draws)")
 	}
 
-	// An identical query skips re-rendering the stencil mask (mustRenderClip false).
+	// An identical query skips re-rendering the stencil mask (MustRenderClip false).
 	op, bounds = applyTestOp(geom.Rect{Left: 22, Top: 22, Right: 42, Bottom: 42})
 	out = MakeAppliedClip(sdc.Dimensions())
 	if effect := cs.Apply(sdc, op, gpu.AATypeNone, &out, &bounds); effect != ClipEffectClipped {

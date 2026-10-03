@@ -19,9 +19,6 @@ import (
 	"github.com/richardwilkes/canvas/gpu"
 )
 
-//////////////////////////////////////////////////////////////////////////////
-// CircleGeometryProcessor
-
 // circleGeometryProcessor produces a modulation of the input color and coverage for a circle, operating in a space
 // normalized by the circle radius (outer radius for strokes) with origin at the circle center. Additional clip planes
 // support arcs, and round caps for stroking are supported through cap-center circles.
@@ -78,7 +75,6 @@ func (g *circleGeometryProcessor) MakeProgramImpl(*gpu.ShaderCaps) GPProgramImpl
 	return &circleGPImpl{}
 }
 
-// circleGPImpl is the program implementation for circleGeometryProcessor.
 type circleGPImpl struct {
 	GPImplBase
 	localMatrixPrev    geom.Matrix
@@ -99,7 +95,6 @@ func (i *circleGPImpl) onEmitCode(args *GPEmitArgs, gpArgs *GPArgs) {
 	uniformHandler := args.UniformHandler
 	fragBuilder := args.FragBuilder
 
-	// Emit attributes.
 	varyingHandler.EmitAttributes(cgp)
 	fragBuilder.CodeAppend("vec4 circleEdge;")
 	varyingHandler.AddPassThroughAttribute(cgp.attrs[2].AsShaderVar(), "circleEdge",
@@ -135,12 +130,10 @@ func (i *circleGPImpl) onEmitCode(args *GPEmitArgs, gpArgs *GPArgs) {
 			cgp.attrs[2].Name())
 	}
 
-	// Set up pass-through color.
 	fragBuilder.CodeAppendf("vec4 %s;", args.OutputColor)
 	varyingHandler.AddPassThroughAttribute(cgp.attrs[1].AsShaderVar(), args.OutputColor,
 		InterpolationCanBeFlat)
 
-	// Set up position.
 	WriteOutputPosition(vertBuilder, gpArgs, cgp.attrs[0].Name())
 	WriteLocalCoord(vertBuilder, uniformHandler, args.ShaderCaps, gpArgs,
 		cgp.attrs[0].AsShaderVar(), &cgp.localMatrix, &i.localMatrixUniform)
@@ -191,9 +184,6 @@ func (i *circleGPImpl) onEmitCode(args *GPEmitArgs, gpArgs *GPArgs) {
 	fragBuilder.CodeAppendf("vec4 %s = vec4(edgeAlpha);", args.OutputCoverage)
 }
 
-//////////////////////////////////////////////////////////////////////////////
-// EllipseGeometryProcessor
-
 // ellipseGeometryProcessor produces a modulation of the input color and coverage for an ellipse, specified as a 2D
 // offset from center, an outer vector radii pair, and an inner pair for strokes.
 type ellipseGeometryProcessor struct {
@@ -206,8 +196,7 @@ type ellipseGeometryProcessor struct {
 }
 
 func makeEllipseGeometryProcessor(stroke, wideColor, useScale bool, localMatrix *geom.Matrix) GeometryProcessor {
-	// Borrow the shell from the free list (gppool.go); the struct-literal assignment zeroes the inline attrs array,
-	// re-populated by the sets below.
+	// Borrowed and zeroed as in makeCircleGeometryProcessor.
 	gp := ellipseGPPool.borrow()
 	*gp = ellipseGeometryProcessor{localMatrix: *localMatrix, stroke: stroke, useScale: useScale}
 	gp.initGP(EllipseGeometryProcessorClassID)
@@ -236,7 +225,6 @@ func (g *ellipseGeometryProcessor) MakeProgramImpl(*gpu.ShaderCaps) GPProgramImp
 	return &ellipseGPImpl{}
 }
 
-// ellipseGPImpl is the program implementation for ellipseGeometryProcessor.
 type ellipseGPImpl struct {
 	GPImplBase
 	localMatrixPrev    geom.Matrix
@@ -256,7 +244,6 @@ func (i *ellipseGPImpl) onEmitCode(args *GPEmitArgs, gpArgs *GPArgs) {
 	varyingHandler := args.VaryingHandler
 	uniformHandler := args.UniformHandler
 
-	// Emit attributes.
 	varyingHandler.EmitAttributes(egp)
 
 	offsetType := GLSLTypeFloat2
@@ -272,12 +259,10 @@ func (i *ellipseGPImpl) onEmitCode(args *GPEmitArgs, gpArgs *GPArgs) {
 	vertBuilder.CodeAppendf("%s = %s;", ellipseRadii.VsOut(), egp.attrs[3].Name())
 
 	fragBuilder := args.FragBuilder
-	// Set up pass-through color.
 	fragBuilder.CodeAppendf("vec4 %s;", args.OutputColor)
 	varyingHandler.AddPassThroughAttribute(egp.attrs[1].AsShaderVar(), args.OutputColor,
 		InterpolationCanBeFlat)
 
-	// Set up position.
 	WriteOutputPosition(vertBuilder, gpArgs, egp.attrs[0].Name())
 	WriteLocalCoord(vertBuilder, uniformHandler, args.ShaderCaps, gpArgs,
 		egp.attrs[0].AsShaderVar(), &egp.localMatrix, &i.localMatrixUniform)
@@ -344,9 +329,6 @@ func (i *ellipseGPImpl) onEmitCode(args *GPEmitArgs, gpArgs *GPArgs) {
 	fragBuilder.CodeAppendf("vec4 %s = vec4(edgeAlpha);", args.OutputCoverage)
 }
 
-//////////////////////////////////////////////////////////////////////////////
-// DIEllipseGeometryProcessor
-
 // diEllipseStyle selects the fill/stroke/hairline variant of the device-independent ellipse geometry processor.
 type diEllipseStyle int32
 
@@ -368,8 +350,7 @@ type diEllipseGeometryProcessor struct {
 }
 
 func makeDIEllipseGeometryProcessor(wideColor, useScale bool, viewMatrix *geom.Matrix, style diEllipseStyle) GeometryProcessor {
-	// Borrow the shell from the free list (gppool.go); the struct-literal assignment zeroes the inline attrs array,
-	// re-populated by the sets below.
+	// Borrowed and zeroed as in makeCircleGeometryProcessor.
 	gp := diEllipseGPPool.borrow()
 	*gp = diEllipseGeometryProcessor{viewMatrix: *viewMatrix, useScale: useScale, style: style}
 	gp.initGP(DIEllipseGeometryProcessorClassID)
@@ -398,7 +379,6 @@ func (g *diEllipseGeometryProcessor) MakeProgramImpl(*gpu.ShaderCaps) GPProgramI
 	return &diEllipseGPImpl{}
 }
 
-// diEllipseGPImpl is the program implementation for diEllipseGeometryProcessor.
 type diEllipseGPImpl struct {
 	GPImplBase
 	viewMatrixPrev    geom.Matrix
@@ -418,7 +398,6 @@ func (i *diEllipseGPImpl) onEmitCode(args *GPEmitArgs, gpArgs *GPArgs) {
 	varyingHandler := args.VaryingHandler
 	uniformHandler := args.UniformHandler
 
-	// Emit attributes.
 	varyingHandler.EmitAttributes(diegp)
 
 	offsetType := GLSLTypeFloat2
@@ -438,7 +417,6 @@ func (i *diEllipseGPImpl) onEmitCode(args *GPEmitArgs, gpArgs *GPArgs) {
 	varyingHandler.AddPassThroughAttribute(diegp.attrs[1].AsShaderVar(), args.OutputColor,
 		InterpolationCanBeFlat)
 
-	// Set up position.
 	WriteOutputPositionWithMatrix(vertBuilder, uniformHandler, args.ShaderCaps, gpArgs,
 		diegp.attrs[0].Name(), &diegp.viewMatrix, &i.viewMatrixUniform)
 	gpArgs.LocalCoordVar = diegp.attrs[0].AsShaderVar()

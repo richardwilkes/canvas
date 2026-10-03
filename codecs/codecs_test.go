@@ -167,7 +167,7 @@ func TestJPEGEXIFOrientation(t *testing.T) {
 	}
 	plain := buf.Bytes()
 
-	app1 := exifAPP1(6) // orientation 6 = rotate 90 CW
+	app1 := exifAPP1(6)
 	withEXIF := append(append(append([]byte{}, plain[:2]...), app1...), plain[2:]...)
 
 	if got := jpegOrigin(withEXIF); got != 6 {
@@ -223,7 +223,6 @@ func TestJPEGGrayEXIFOrientation(t *testing.T) {
 	if p.Bytes == nil {
 		t.Fatal("expected Bytes-backed Gray8 pixels")
 	}
-	// Decode dims must match DecodeInfo dims (the mismatch this test guards against).
 	if p.Info.Width != info.Width || p.Info.Height != info.Height {
 		t.Fatalf("Decode dims %dx%d != DecodeInfo %dx%d", p.Info.Width, p.Info.Height, info.Width, info.Height)
 	}
@@ -581,7 +580,6 @@ func TestICOOverflowRejected(t *testing.T) {
 	binary.LittleEndian.PutUint16(dib[12:], 1)         // planes
 	binary.LittleEndian.PutUint16(dib[14:], 32)        // bpp
 
-	// dibHeader must reject the oversized dimensions outright.
 	if _, _, _, ok := dibHeader(dib); ok {
 		t.Fatal("dibHeader accepted oversized dimensions")
 	}

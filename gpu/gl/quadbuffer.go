@@ -9,12 +9,10 @@
 
 // The per-op storage for accumulated (device quad, optional local quad, metadata) entries that batching concatenates.
 // Entries are kept in insertion order over a plain slice, with a per-entry has-locals flag and buffer-level tracking of
-// the most general quad type seen; iterators hand out damageable scratch copies. A denser packed layout is a
-// memory-layout detail the pooling work revisits.
+// the most general quad type seen; iterators hand out damageable scratch copies.
 
 package gl
 
-// quadBufferEntry is one (device, optional local, metadata) tuple.
 type quadBufferEntry[T any] struct {
 	metadata  T
 	device    Quad
@@ -29,17 +27,16 @@ type QuadBuffer[T any] struct {
 	localType  QuadType
 }
 
-// NewQuadBuffer creates a QuadBuffer with capacity reserved for count entries. If needsLocals is true, space is
-// reserved assuming each entry also carries a local quad.
+// NewQuadBuffer creates a QuadBuffer with capacity reserved for count entries. needsLocals does not affect the
+// reservation.
 func NewQuadBuffer[T any](count int, needsLocals bool) *QuadBuffer[T] {
 	_ = needsLocals // Reservation shape only; the Go slice stores both forms uniformly.
 	return &QuadBuffer[T]{entries: make([]quadBufferEntry[T], 0, count)}
 }
 
-// borrowQuadBuffer is NewQuadBuffer from a free list: a pooled op that owns a QuadBuffer borrows the shell (and, when
-// batching grew it past a single entry on some earlier frame, its preserved entries backing) instead of allocating both
-// every frame. The entry payload is pointer-free POD (device/local Quad, the metadata color/AA/subset structs), so a
-// preserved backing pins nothing.
+// borrowQuadBuffer is NewQuadBuffer from a free list: a pooled op that owns a QuadBuffer borrows the shell and its
+// preserved entries backing instead of allocating both every frame. The entry payload is pointer-free POD (device/local
+// Quad, the metadata color/AA/subset structs), so a preserved backing pins nothing.
 func borrowQuadBuffer[T any](p *opPool[QuadBuffer[T]], count int, needsLocals bool) *QuadBuffer[T] {
 	_ = needsLocals
 	b := p.borrow()

@@ -23,16 +23,14 @@ import "simd/archsimd"
 //     byte in its own 16-bit lane. This is raster's layout, and premulWordRowSIMD's bound below shows nothing carries
 //     into a neighbor, so the packed results are identical to the scalar words.
 //   - div255Round(x*a) is computed as the mulDiv255Round chain (prod = x*a + 128; (prod + prod>>8) >> 8), which is the
-//     same expression the scalar (v+128 + (v+128)/256)/256 evaluates, in 16-bit lanes. Exhaustively checked against
-//     the scalar over every (channel, alpha) pair, on both arches.
+//     same expression the scalar (v+128 + (v+128)/256)/256 evaluates, in 16-bit lanes.
 //   - unpremulChannelRP is transcribed literally, including its association: normA = a * (1/255), invA = 1/normA,
 //     normC = c * (1/255), denorm = (normC * invA) * 255, round-to-nearest-even, clamp to 255. The division is a real
 //     IEEE divide (VDIVPS / FDIV, both correctly rounded), and the a == 0 guard is applied to invA *before* any
 //     float-to-int conversion — that is what removes the +Inf and the 0*Inf NaN the reciprocal would otherwise hand
 //     ConvertToInt32, whose out-of-range and NaN results differ per arch. archsimd's ConvertToInt32 is the truncating
 //     convert, so the rounding is done first by Round (VFRINTN / VROUNDPS in round-to-nearest-even mode), which is
-//     exactly math.RoundToEven's rule; the convert then only moves an already-integral in-range value across. The whole
-//     chain is checked exhaustively against the scalar over all 65536 (channel, alpha) pairs, on both arches.
+//     exactly math.RoundToEven's rule; the convert then only moves an already-integral in-range value across.
 //   - Destination rows are byte slices, so the results are stored through ReshapeToUint8s().Store rather than through
 //     a reinterpreted []uint32: a byte store needs no alignment reasoning and no unsafe, and this file's build tag
 //     guarantees the little-endian lane order that makes it equal to four binary.LittleEndian.PutUint32 calls (probed).
@@ -41,7 +39,8 @@ import "simd/archsimd"
 // accommodation only — see convert_simd_arm64.go. The word→byte gather is per-arch for the reason maskfilter's
 // narrowing is (every pack-and-narrow method archsimd offers for it is AVX-512 on amd64); see narrowWordAlphas.
 //
-// Every kernel here is locked against its portable twin by TestConvertSIMDMatchesScalar.
+// Every kernel here is locked against its portable twin by TestConvertSIMDMatchesScalar, which checks the two alpha
+// chains exhaustively over all 65536 (channel, alpha) pairs.
 
 // init swaps the dispatch variables to the simd kernels the per-arch preference constants elect. Unqualified CPUs keep
 // the portable forms.

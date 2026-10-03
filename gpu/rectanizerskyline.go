@@ -76,7 +76,6 @@ func (r *RectanizerSkyline) AddRect(width, height int) (locX, locY int, ok bool)
 		}
 	}
 
-	// Add the rectangle to the skyline.
 	if bestIndex != -1 {
 		r.addSkylineLevel(bestIndex, bestX, bestY, width, height)
 		r.areaSoFar += width * height

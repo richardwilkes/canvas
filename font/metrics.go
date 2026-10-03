@@ -24,7 +24,7 @@ const (
 )
 
 // Metrics holds font-wide layout metrics. All values are in the font's device space (scaled by the font size); y-down,
-// so values above the baseline (Top, Ascent, XMin's partner YMax, ...) are typically negative.
+// so values above the baseline (Top, Ascent) are typically negative.
 type Metrics struct {
 	Flags              uint32  // which metrics are valid
 	Top                float32 // greatest extent above origin of any glyph bounding box, typically negative
@@ -44,7 +44,6 @@ type Metrics struct {
 	StrikeoutPosition  float32 // distance from baseline to bottom of stroke, typically negative
 }
 
-// scale multiplies every scalar metric by s.
 func (m *Metrics) scale(s float32) {
 	m.Top *= s
 	m.Ascent *= s

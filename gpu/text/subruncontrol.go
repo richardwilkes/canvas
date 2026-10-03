@@ -57,8 +57,8 @@ type SubRunControl struct {
 	forcePathAA bool
 }
 
-// minSDFTRange returns the minimum device text size for SDFT use, forcing small text to the large bucket when
-// useSDFTForSmallText is false.
+// minSDFTRange returns the minimum device text size for SDFT use: minVal, or largeDFFontLimit when useSDFTForSmallText
+// is false.
 func minSDFTRange(useSDFTForSmallText bool, minVal float32) float32 {
 	if !useSDFTForSmallText {
 		return largeDFFontLimit
@@ -67,7 +67,7 @@ func minSDFTRange(useSDFTForSmallText bool, minVal float32) float32 {
 }
 
 // NewSubRunControl returns a SubRunControl configured with the given SDFT policy (forcePathAA is false at every
-// reachable construction site currently, but is kept for the path-lane rule).
+// reachable construction site, but is kept for the path-lane rule).
 func NewSubRunControl(ableToUseSDFT, useSDFTForSmallText, useSDFTForPerspectiveText bool, minSize, maxSize float32, forcePathAA bool) SubRunControl {
 	if !(0 < minSize && minSize <= maxSize) {
 		panic("invalid SDFT size range")

@@ -26,7 +26,6 @@ import (
 // aligned.
 var DefaultSampling = shaders.SamplingOptions{Filter: shaders.FilterLinear}
 
-// nearestSampling is the nearest-neighbor sampling constant used in analyzeBounds.
 var nearestSampling = shaders.SamplingOptions{}
 
 // pixelBoundary records what's known about the pixels bordering a FilterResult's image subset.
@@ -609,7 +608,6 @@ func (f *FilterResult) subset(knownOrigin geom.IPoint, subsetBounds geom.IRect, 
 // Draw applies the remaining layer-to-device transform and composites this result onto target. A nil blender means
 // src-over.
 func (f *FilterResult) Draw(ctx *Context, target Device, blender *raster.BlendMode) {
-	// Install layerToDevice for the draw, restoring the prior transform afterwards.
 	prior := target.LocalToDevice()
 	target.SetLocalToDevice(ctx.Mapping().LayerToDevice())
 	f.draw(ctx, target, true, blender)
@@ -622,12 +620,12 @@ func (f *FilterResult) Draw(ctx *Context, target Device, blender *raster.BlendMo
 func blendModeAffectsTransparentBlack(mode raster.BlendMode) bool {
 	dst, ok := blendModeDstCoeff(mode)
 	if !ok {
-		return false // advanced blend modes do not affect transparent black
+		return false
 	}
 	return dst != coeffOne && dst != coeffISA && dst != coeffISC
 }
 
-// draw is the internal draw entry point shared by Draw and resolve.
+// draw is the internal draw entry point shared by Draw, resolve, and Builder.Merge.
 func (f *FilterResult) draw(ctx *Context, device Device, preserveDeviceState bool, blender *raster.BlendMode) {
 	blendAffectsTransparentBlack := blender != nil && blendModeAffectsTransparentBlack(*blender)
 	if f.image == nil {
@@ -647,7 +645,7 @@ func (f *FilterResult) draw(ctx *Context, device Device, preserveDeviceState boo
 
 	if analysis&boundsRequiresLayerCrop != 0 {
 		if blendAffectsTransparentBlack {
-			// Like applyColorFilter's resolve path: the blend must apply after the layer bounds clip. Mapping
+			// Like ApplyColorFilter's resolve path: the blend must apply after the layer bounds clip. Mapping
 			// devClipBounds by the local-to-device matrix works for both the final device and intermediate layers.
 			dstBounds, ok := inverseMapIRect(&localToDevice, device.DevClipBounds())
 			if !ok {

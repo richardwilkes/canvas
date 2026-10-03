@@ -23,8 +23,7 @@ import (
 )
 
 // TestDeviceColorFilterLayerDrawsBackAsImage exercises the color-filter saveLayer lane: a layer whose paint carries a
-// color filter renders on a raster device and is drawn back as a color-filtered Image XObject. Before this lane the
-// color filter was dropped and the layer composited as a plain transparency group.
+// color filter renders on a raster device and is drawn back as a color-filtered Image XObject.
 func TestDeviceColorFilterLayerDrawsBackAsImage(t *testing.T) {
 	lp := canvas.NewPaint()
 	lp.ColorFilter = colorfilter.NewBlend(colorcore.ARGB(255, 0, 0, 255), raster.BlendSrc)
@@ -53,7 +52,7 @@ func TestDeviceColorFilterLayerDrawsBackAsImage(t *testing.T) {
 // TestDeviceImageFilterLayerDrawsFilteredImageBack exercises the image-filter saveLayer lane: a layer whose paint
 // carries an image filter renders on a raster device; the filter DAG evaluates on the CPU raster backend
 // (CreateFilterBackend) and the resolved result is drawn back as an Image XObject through the PDF device's
-// AsFilterDevice adapter (DrawSpecial). Before this lane image-filter layers were dropped entirely.
+// AsFilterDevice adapter (DrawSpecial).
 func TestDeviceImageFilterLayerDrawsFilteredImageBack(t *testing.T) {
 	lp := canvas.NewPaint()
 	lp.ImageFilter = imagefilter.Blur(3, 3, shaders.TileDecal, nil, nil)

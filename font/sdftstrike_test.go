@@ -7,10 +7,10 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// Unit tests for the SDF strike lane: MakeSDFTMaskSpec produces MaskSDF glyphs whose bounds are the A8 bounds
-// outset by SK_DistanceFieldPad, the kSDFT digest action accepts exactly the SDF-format in-atlas glyphs, and the
-// generated image is a distance field consistent with the A8 coverage (inside > 128 where coverage is high, far pad
-// below threshold).
+// Unit tests for the SDF strike lane: MakeSDFTMaskSpec produces MaskSDF glyphs whose bounds are the A8 bounds outset by
+// DistanceFieldPad, the ActionSDFT digest action accepts exactly the SDF-format in-atlas glyphs, and the generated
+// image is a distance field consistent with the A8 coverage (inside > 128 where coverage is high, far pad below
+// threshold).
 
 package font
 
@@ -45,8 +45,8 @@ func sdfGlyphID(t *testing.T, f *Font) uint16 {
 }
 
 func TestSDFTMaskSpecGlyph(t *testing.T) {
-	// The SDF strike font is what getSDFFont produces: kAntiAlias edging, no subpixel; use the DF mask size directly
-	// (162, the large bucket).
+	// The SDF strike font is what gpu/text's GetSDFFont produces: EdgingAntiAlias, no subpixel; use the DF mask size
+	// directly (162, the large bucket).
 	f := loadSDFTestFont(t, 162)
 	f.SetEdging(EdgingAntiAlias)
 	f.SetSubpixel(false)
@@ -119,10 +119,9 @@ func TestSDFTMaskSpecGlyph(t *testing.T) {
 	}
 }
 
-// TestSDFTEmptyGlyphDrops pins the other half of the kSDFT gate: a glyph that rasterizes to nothing (the space) drops
-// rather than reaching the atlas. Resolving the space is a precondition of the case, not a condition on it — a cmap
-// lane regressing to glyph 0 is itself a bug worth failing on, and guarding the assertion on the lookup would delete
-// the check exactly when that happened.
+// TestSDFTEmptyGlyphDrops pins the ActionSDFT gate's empty case: a glyph that rasterizes to nothing (the space) drops
+// rather than reaching the atlas. Failing to resolve the space is fatal rather than a skip: a cmap lane regressing to
+// glyph 0 is itself a bug, and guarding the assertion on the lookup would drop the check exactly then.
 func TestSDFTEmptyGlyphDrops(t *testing.T) {
 	f := loadSDFTestFont(t, 162)
 	f.SetEdging(EdgingAntiAlias)
@@ -183,8 +182,8 @@ func TestSDFTStyledGlyphKeepsSDFFormat(t *testing.T) {
 			a8Glyph.Left, a8Glyph.Top, a8Glyph.Width, a8Glyph.Height, DistanceFieldPad)
 	}
 
-	// The image really is a distance field: the pad corner reads fully outside, and the strongest texel of the styled A8
-	// mask reads inside at the corresponding padded position.
+	// The image is a distance field: the pad corner reads fully outside, and the strongest texel of the styled A8 mask
+	// reads inside at the corresponding padded position.
 	sdfGlyph = sdfSpec.FindOrCreateStrike().PrepareImage(PackGlyphID(gid))
 	if !sdfGlyph.HasImage() {
 		t.Fatal("styled SDF glyph has no image")
@@ -212,7 +211,7 @@ func TestSDFTStyledGlyphKeepsSDFFormat(t *testing.T) {
 }
 
 func TestSDFTActionRejectsNonSDFFormats(t *testing.T) {
-	// A plain A8 strike's glyphs never accept the kSDFT action (maskFormat must be kSDF).
+	// A plain A8 strike's glyphs never accept ActionSDFT (the format must be MaskSDF).
 	f := loadSDFTestFont(t, 100)
 	gid := sdfGlyphID(t, f)
 	spec := MakeWithNoDeviceSpec(f, nil)
@@ -222,9 +221,9 @@ func TestSDFTActionRejectsNonSDFFormats(t *testing.T) {
 	}
 }
 
-// TestSDFTActionRejectsAtAtlasSize covers the other half of the kSDFT gate: the glyph must also fit the atlas, judged
-// on the padded SDF dimensions rather than the A8 ones the field is generated from. The text sizes below bracket the
-// bound ('A' grows a bit under a pixel per point), so the walk sees the action flip.
+// TestSDFTActionRejectsAtAtlasSize covers the size half of the ActionSDFT gate: the glyph must also fit the atlas,
+// judged on the padded SDF dimensions rather than the A8 ones the field is generated from. The text sizes below bracket
+// the bound ('A' grows a bit under a pixel per point), so the walk sees the action flip.
 func TestSDFTActionRejectsAtAtlasSize(t *testing.T) {
 	accepted, rejected := 0, 0
 	for size := float32(320); size <= 400; size += 4 {

@@ -17,12 +17,10 @@ import (
 	"github.com/richardwilkes/canvas/geom"
 )
 
-// The drawAtlas corpus: the four atlas scenarios, drawing sprites from a shared procedural atlas through the
-// scenario.Canvas DrawAtlas hook. They gate exactly as every other scenario does — the raster lane bit-exactly under
-// `exact`, the gpu and gpudmsaa lanes under `exact1` — against this platform's self-captured goldens. The looser
-// `gpu` profile bounds only the Go-GPU-vs-Go-CPU self-consistency check (gorender's
-// TestAtlasGPUvsCPUSelfConsistency), which compares the library's two live backends against each other rather than
-// against a golden, and guards the per-sprite CPU-lowering equivalence claim.
+// The drawAtlas corpus: four scenarios drawing sprites from a shared procedural atlas through the scenario.Canvas
+// DrawAtlas hook. They gate against the goldens like every other scenario; gorender's TestAtlasGPUvsCPUSelfConsistency
+// also compares the library's two backends against each other under the looser `gpu` profile, guarding the per-sprite
+// CPU-lowering equivalence claim.
 
 // atlasSize is the shared atlas's dimension (four 32x32 tiles in a 64x64 square).
 const atlasSize = 64
@@ -111,8 +109,7 @@ func atlasSpriteRing(n int, cx, cy, radius float32) (xforms []geom.RSXform, tex 
 	return xforms, tex
 }
 
-// atlasDraw issues one DrawAtlas over the shared atlas with the standard paint (AA flag is irrelevant — the lowering is
-// non-AA — but set to mirror typical callers).
+// atlasDraw issues one DrawAtlas over the shared atlas. The paint's AA flag is irrelevant: the lowering is non-AA.
 func atlasDraw(c Canvas, xforms []geom.RSXform, tex []geom.Rect, colors []colorcore.Color, mode BlendMode, linear bool, cull *geom.Rect, p Paint) {
 	w, h, rgba := AtlasPixels()
 	c.DrawAtlas(w, h, rgba, xforms, tex, colors, mode, linear, cull, p)

@@ -130,12 +130,11 @@ func FaceCoversRuneData(data []byte, index int, r rune) bool {
 // maxCmapEntries bounds the walk over a face's cmap. A well-formed subtable maps each code point at most once, so the
 // 0x110000 code points Unicode defines are all one can yield and no real font is truncated here. A malformed one is:
 // typesetting's format-12/13 iterator walks a group one code point at a time and takes the group's length from
-// EndCharCode-StartCharCode in unsigned arithmetic, so a single group declaring End == 0xFFFFFFFF — or any End below its
-// Start, which wraps to the same count — asks for 4.29e9 iterations and ~17 GB of appended runes, killing the process.
-// The parse happens inside typesetting, which does not reject such a group the way FreeType's cmap validation does, so
-// the walk is the only place left to bound it. Stopping early under-claims coverage, which is what a face with no
-// usable cmap already reports (nil), and the font manager verifies every candidate through the face's own cmap before
-// answering with it.
+// EndCharCode-StartCharCode in unsigned arithmetic, so a single group declaring End == 0xFFFFFFFF — or an End just
+// below its Start, which wraps to the same count — asks for 4.29e9 iterations and ~17 GB of appended runes, killing the
+// process. typesetting's parse does not reject such a group the way FreeType's cmap validation does, so the walk is the
+// only place left to bound it. Stopping early under-claims coverage, which is what a face with no usable cmap already
+// reports (nil), and the font manager verifies every candidate through the face's own cmap before answering with it.
 const maxCmapEntries = 0x110000
 
 // FaceRunesData reports every rune face index of data maps to a real (nonzero) glyph through its own cmap, in the

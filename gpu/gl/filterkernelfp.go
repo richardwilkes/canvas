@@ -9,8 +9,8 @@
 
 // Hand-written GLSL forms of the shader-evaluating image filters' runtime effects: morphology, displacement, lighting's
 // normal+lighting pair, magnifier, matrix convolution, and the arithmetic blend. These are the GPU twins of
-// shaders/filterkernels.go, which documents the same formulas for the CPU pipeline. With these, every shader form the
-// last CPU-only filters emit converts to an FP, so their DAGs evaluate on the GPU backend instead of falling back to a
+// shaders/filterkernels.go, which documents the same formulas for the CPU pipeline. With these, every shader form these
+// filters emit converts to an FP, so their DAGs evaluate on the GPU backend instead of falling back to a
 // readback-CPU-upload path. Each FP starts with no optimization flags, derives usesSampleCoords from the effect, and
 // computes each child's sample usage (explicit for kernel-offset taps, pass-through for same-coord evals). The kernel
 // uniforms (radius, size/offset, light and material state, convolve-alpha) stay uniforms with runtime branches, so each
@@ -142,7 +142,6 @@ func (i *morphologyFPImpl) EmitCode(args *FPEmitArgs) {
 		fb.CodeAppend("}")
 		fb.CodeAppendf("return %s * aggregate;", flipName)
 	} else {
-		// Sparse morphology form: a single +/-offset tap pair.
 		fb.CodeAppendf("vec4 aggregate = max(%s * %s, %s * %s);",
 			flipName, child(fmt.Sprintf("%s + %s", coord, offName)),
 			flipName, child(fmt.Sprintf("%s - %s", coord, offName)))

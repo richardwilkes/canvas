@@ -89,10 +89,9 @@ func TestImageShaderRepeatTiling(t *testing.T) {
 	}
 }
 
-// TestImageShaderAlphaOnlyTintsCoverage exercises make_image_shader over an alpha-only (A8) source image. adjust_color
+// TestImageShaderAlphaOnlyTintsCoverage exercises makeImageShader over an alpha-only (A8) source image. adjustColor
 // keeps the paint color, so the pattern cell draws the A8 image tinted by that color; the draw routes through
 // internalDrawImageRect's alpha-only lane, which renders the alpha as a luminosity SMask over a paint-color fill.
-// Before that lane landed the pattern cell drew empty.
 func TestImageShaderAlphaOnlyTintsCoverage(t *testing.T) {
 	w, h := int32(4), int32(4)
 	alphas := make([]byte, int(w)*int(h))
@@ -138,7 +137,7 @@ func TestImageShaderPatternDedup(t *testing.T) {
 	})
 	validatePDF(t, data)
 
-	// The identical image shader drawn twice shares exactly one tiling pattern (fImageShaderMap).
+	// The identical image shader drawn twice shares exactly one tiling pattern (Document.imageShaderMap).
 	if n := countPatternType1(data); n != 1 {
 		t.Errorf("expected 1 shared tiling pattern, got %d\nobjects=%v", n, dictObjects(data))
 	}
@@ -152,8 +151,8 @@ func TestImageShaderPatternDedup(t *testing.T) {
 }
 
 func TestFallbackShaderTilingPattern(t *testing.T) {
-	// A blend shader is neither a gradient nor an image, so it takes make_fallback_shader: the whole shader is
-	// rasterized into an N32 surface and wrapped as a clamp/clamp image-shader pattern.
+	// A blend shader is neither a gradient nor an image, so it takes makeFallbackShader: the whole shader is rasterized
+	// into an N32 surface and wrapped as a clamp/clamp image-shader pattern.
 	dst := shaders.NewColor(colorcore.ARGB(255, 200, 40, 40))
 	src := shaders.NewColor(colorcore.ARGB(255, 40, 40, 200))
 	blend := shaders.NewBlend(raster.BlendPlus, dst, src)

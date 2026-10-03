@@ -9,15 +9,15 @@
 
 // GL version-string parsing: GetStandardInUseFromString and GetVersionFromString extract the GL standard (desktop, ES,
 // or WebGL) and version number from the string returned by glGetString(GL_VERSION). Both are built on scanFormat, a
-// small sscanf-style matcher (' ' matches a run of whitespace, %d skips whitespace then reads an optional sign and
-// digits, %c reads one byte verbatim) that reports how many conversions completed, so each pattern's expected-count
-// check tells the caller whether the match held.
+// small sscanf-style matcher that reports how many conversions completed, so each pattern's expected-count check tells
+// the caller whether the match held.
 
 package gl
 
-// scanFormat is the mini-sscanf used by the version parsers. Supported verbs: %d (int32) and %c (any byte). A ' ' in
-// the format matches any run of whitespace, including none. Returns the number of conversions completed before the
-// first mismatch or end of input.
+// scanFormat is the mini-sscanf used by the version parsers. Supported verbs: %d (skips whitespace, then reads an
+// optionally signed decimal integer) and %c (any one byte). A ' ' in the format matches any run of whitespace,
+// including none. Returns the converted values and the number of conversions completed before the first mismatch or end
+// of input.
 func scanFormat(s, format string) (values []int, count int) {
 	si := 0
 	fi := 0
@@ -83,7 +83,6 @@ func GetStandardInUseFromString(versionString string) Standard {
 	if versionString == "" {
 		return StandardNone
 	}
-	// Check for desktop.
 	if _, n := scanFormat(versionString, "%d.%d"); n == 2 {
 		return StandardGL
 	}
@@ -95,7 +94,6 @@ func GetStandardInUseFromString(versionString string) Standard {
 	if _, n := scanFormat(versionString, "OpenGL ES-%c%c %d.%d"); n == 4 {
 		return StandardNone
 	}
-	// Check for ES2.
 	if _, n := scanFormat(versionString, "OpenGL ES %d.%d"); n == 2 {
 		return StandardGLES
 	}
@@ -108,7 +106,6 @@ func GetVersionFromString(versionString string) Version {
 	if versionString == "" {
 		return InvalidVersion
 	}
-	// Check for mesa.
 	if v, n := scanFormat(versionString, "%d.%d Mesa %d.%d"); n == 4 {
 		return Ver(uint32(v[0]), uint32(v[1]))
 	}

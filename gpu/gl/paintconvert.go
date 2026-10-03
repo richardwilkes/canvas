@@ -8,11 +8,8 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // Paint conversion (turning a canvas paint into a GPU Paint plus fragment processor tree) and the
-// shader-to-fragment-processor dispatcher over the shader descriptors. The primitive-color blender and replace-shader
-// lanes serve the ops that use them; there are no runtime blenders or non-blend-mode blenders, so the paint blend is
-// always a blend mode (Porter-Duff XP or a custom transfer mode). Image shaders convert via makeImageShaderFP (over the
-// polymorphic image, so a same-context texture-backed image shader draws from its own view) and perlin-noise shaders
-// via makePerlinNoiseFP (perlinnoisefp.go); the remaining tail is the image-filter source lane.
+// shader-to-fragment-processor dispatcher over the shader descriptors. There are no runtime blenders or non-blend-mode
+// blenders, so the paint blend is always a blend mode (Porter-Duff XP or a custom transfer mode).
 
 package gl
 
@@ -126,13 +123,12 @@ func MakeShaderFP(shader shaders.Shader, args *FPArgs, mRec *shaders.MatrixRec) 
 }
 
 // makeImageShaderFP converts an image shader into a fragment processor: it resolves the shader's image to a texture
-// view (drawableAsView — a same-context texture image contributes its own view with no readback, the GPU-native lane; a
-// CPU image uploads once through the shared upload-by-image-ID cache the image-draw lane uses) and samples it with the
-// shader's per-axis tile modes and sampling, then wraps the texture effect in the local-matrix effect that maps device
-// coords back to image (local) space. Image shaders always cover the whole image — no entry point exposes a subset (see
-// shaders/imageshader.go) — so the subset lane is never taken. Cubic/mipmap/aniso sampling degrades to the base level's
-// filter, exactly as the DrawImageRect general lane does; the color-space transform is the identity. Returns nil if the
-// upload/readback fails or the total local matrix is singular.
+// view (see drawableAsView), samples it with the shader's per-axis tile modes and sampling, then wraps the texture
+// effect in the local-matrix effect that maps device coords back to image (local) space. Image shaders always cover the
+// whole image — no entry point exposes a subset (see shaders/imageshader.go) — so there is no subset lane.
+// Cubic/mipmap/aniso sampling degrades to the base level's filter, exactly as the DrawImageRect general lane does; the
+// color-space transform is the identity. Returns nil if the upload/readback fails or the total local matrix is
+// singular.
 func makeImageShaderFP(s *shaders.ImageShader, args *FPArgs, mRec *shaders.MatrixRec) FragmentProcessor {
 	img := s.DrawableImage()
 	view, _ := drawableAsView(args.Ctx, img)
@@ -271,8 +267,8 @@ type PaintParams struct {
 	Color          colorcore.Color4f   // unpremul sRGB paint color
 	BlendMode      raster.BlendMode
 	Dither         bool
-	HasMaskFilter  bool // participates in ShouldDither only
-	HasImageFilter bool // participates in ShouldDither only
+	HasMaskFilter  bool // participates in shouldDitherPaint only
+	HasImageFilter bool // participates in shouldDitherPaint only
 }
 
 // shouldDitherDraw reports whether a draw should apply dithering: the surface's always-dither prop forces it on for
@@ -283,7 +279,6 @@ func shouldDitherDraw(props surface.Props, pp *PaintParams, dstCT gpu.ColorType)
 	return props.Flags&surface.AlwaysDitherFlag != 0 || shouldDitherPaint(pp, dstCT)
 }
 
-// shouldDitherPaint reports whether the paint's draw should apply dithering for the destination color type.
 func shouldDitherPaint(pp *PaintParams, dstCT gpu.ColorType) bool {
 	// The paint dither flag can veto.
 	if !pp.Dither || dstCT == gpu.ColorTypeUnknown {
@@ -383,7 +378,7 @@ func makePaintImpl(sdc *SurfaceDrawContext, pp *PaintParams, ctm geom.Matrix, sh
 		// The primitive itself has color (the GP's per-vertex color output); the Paint color won't be used. kDst keeps
 		// the primitive color as-is; every other mode blends the opaque paint color with it, and the paint's alpha
 		// applies after the blend.
-		gpuPaint.SetColor4f(colorcore.PMColor4f{R: 1, G: 1, B: 1, A: 1}) // won't be used
+		gpuPaint.SetColor4f(colorcore.PMColor4f{R: 1, G: 1, B: 1, A: 1})
 		if blenderRequiresShader {
 			paintFP = MakeColorFP(colorcore.PMColor4f{
 				R: origColor.R, G: origColor.G, B: origColor.B, A: 1,
@@ -402,8 +397,8 @@ func makePaintImpl(sdc *SurfaceDrawContext, pp *PaintParams, ctm geom.Matrix, sh
 
 	if pp.ColorFilter != nil {
 		if applyColorFilterToPaintColor {
-			// FilterColor4f premuls, runs the filter's stages, and unpremuls; the round trip back to premul below
-			// matches its exact rounding.
+			// FilterColor4f returns the raw premul result. Upstream's filterColor4f unpremuls it and the caller premuls
+			// again; pmRoundTripUnpremul replays that round trip to match its exact rounding.
 			filtered, ok := shaders.FilterColor4f(pp.ColorFilter, premulColor4f(origColor))
 			if !ok {
 				recyclePaint(gpuPaint)
@@ -440,8 +435,8 @@ func makePaintImpl(sdc *SurfaceDrawContext, pp *PaintParams, ctm geom.Matrix, sh
 	return gpuPaint, true
 }
 
-// pmRoundTripUnpremul re-premultiplies a color that was unpremultiplied by a color filter, matching the
-// unpremul-then-premul round trip exactly except at alpha == 0, where both produce transparent black.
+// pmRoundTripUnpremul unpremultiplies and re-premultiplies c, reproducing the exact rounding of upstream's
+// unpremul-then-premul round trip of a color-filtered paint color. Alpha == 0 yields transparent black.
 func pmRoundTripUnpremul(c colorcore.PMColor4f) colorcore.PMColor4f {
 	if c.A == 0 {
 		return colorcore.PMColor4f{}

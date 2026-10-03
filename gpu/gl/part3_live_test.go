@@ -90,8 +90,7 @@ func TestLiveCircularRRectOp(t *testing.T) {
 // TestLiveStrokedCircularRRectOp is a regression test for a stroked circular round-rect overrunning its index buffer.
 // rrectTypeToIndices returned the full nine-patch (54 indices, including the center quad) for the stroke case, but
 // rrectTypeToIndexCount sizes the stroke index buffer for 48 (center quad dropped), so OnPrepare wrote 6 indices past
-// the end of the allocation and panicked on the first drawn frame. It also confirms strokes leave the interior unfilled
-// (the whole point of dropping the center quad).
+// the end of the allocation and panicked. It also confirms strokes leave the interior unfilled.
 func TestLiveStrokedCircularRRectOp(t *testing.T) {
 	_, dc := newLiveDirectContext(t)
 	sdc := newLiveDrawSDC(t, dc, 64, 64)
@@ -120,7 +119,7 @@ func TestLiveStrokedCircularRRectOp(t *testing.T) {
 }
 
 // TestLiveOverstrokedCircularRRectOp exercises the rrectGeomOverstroke path (stroke wider than twice the corner
-// radius), which was correct but had no live coverage.
+// radius).
 func TestLiveOverstrokedCircularRRectOp(t *testing.T) {
 	_, dc := newLiveDirectContext(t)
 	sdc := newLiveDrawSDC(t, dc, 64, 64)
@@ -174,8 +173,7 @@ func TestLiveCircleAndArcOps(t *testing.T) {
 	probeAt(t, data, rb, 20, 20, white, 1, "circle stroke hole")
 	probeAt(t, data, rb, 20, 5, white, 1, "circle exterior")
 
-	// Wedge: inside the 0..90° quadrant at (52,52); outside the wedge at (40,40)±... the wedge occupies x,y >= center;
-	// (40, 52) is 180°-ish → outside.
+	// Wedge: the 0..90° quadrant occupies x,y >= center, so (52,52) is inside and (40,52) is outside.
 	probeAt(t, data, rb, 52, 52, purple, 2, "arc wedge interior")
 	probeAt(t, data, rb, 40, 52, white, 1, "arc wedge exterior (wrong quadrant)")
 	probeAt(t, data, rb, 59, 59, white, 1, "arc wedge exterior (beyond radius)")
@@ -323,7 +321,7 @@ func TestLiveMSAARenderPass(t *testing.T) {
 		&identity, geom.Rect{Left: 10.5, Top: 8, Right: 30, Bottom: 30},
 		geom.Rect{Left: 10.5, Top: 8, Right: 30, Bottom: 30})
 
-	// A filled rrect exercises FillRRectOp's kMSAAEnabled wide-ramp lane on the MSAA surface.
+	// A filled rrect exercises FillRRectOp's fillRRectFlagMSAAEnabled wide-ramp lane on the MSAA surface.
 	sdc.DrawRRect(nil, livePaint(colorcore.PMColor4f{R: 0, G: 0, B: 1, A: 1}), gpu.AAYes,
 		&identity, geom.MakeRRect(geom.Rect{Left: 34, Top: 34, Right: 60, Bottom: 58}, 6, 8),
 		nil)
@@ -360,7 +358,6 @@ func sceneCanvas(c *canvas.Canvas, img *imagecore.Image) {
 	blue.AntiAlias = true
 	c.DrawRoundRect(geom.Rect{Left: 6, Top: 6, Right: 60, Bottom: 44}, 8, 11, blue)
 
-	// Red stroked rect, AA.
 	red := canvas.NewPaint()
 	red.Color = 0xFFCC2200
 	red.AntiAlias = true
@@ -368,7 +365,6 @@ func sceneCanvas(c *canvas.Canvas, img *imagecore.Image) {
 	red.StrokeWidth = 4
 	c.DrawRect(geom.Rect{Left: 70, Top: 8, Right: 118, Bottom: 40}, red)
 
-	// Green filled circle.
 	green := canvas.NewPaint()
 	green.Color = 0xFF117722
 	green.AntiAlias = true
@@ -392,7 +388,6 @@ func sceneCanvas(c *canvas.Canvas, img *imagecore.Image) {
 	purple.AntiAlias = true
 	c.DrawPath(star, purple)
 
-	// Scaled image draw, nearest.
 	c.DrawImageRect(img, geom.Rect{Right: 4, Bottom: 4},
 		geom.Rect{Left: 8, Top: 104, Right: 40, Bottom: 120},
 		shaders.SamplingOptions{Filter: shaders.FilterNearest}, nil, canvas.ConstraintStrict)
@@ -405,7 +400,6 @@ func sceneCanvas(c *canvas.Canvas, img *imagecore.Image) {
 	line.StrokeWidth = 3
 	c.DrawLine(48, 104, 62, 122, line)
 
-	// saveLayer alpha with an orange oval inside.
 	c.SaveLayerAlpha(nil, 128)
 	orange := canvas.NewPaint()
 	orange.Color = 0xFFFF8800
@@ -443,12 +437,10 @@ func TestLiveGLDeviceScene(t *testing.T) {
 
 	img := newCheckerImage(t)
 
-	// CPU reference.
 	cpuPix := raster.NewPixmap(w, h)
 	cpuCanvas := canvas.NewForPixmap(cpuPix)
 	sceneCanvas(cpuCanvas, img)
 
-	// GPU device.
 	sdc := newLiveDrawSDC(t, dc, w, h)
 	defer sdc.Release()
 	dev := gl.NewDevice(sdc)

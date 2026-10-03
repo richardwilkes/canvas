@@ -7,14 +7,14 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// FFI allocation probe: purego.SyscallN heap-allocates its argument struct and the caller-side variadic []uintptr on
-// every GL call — the FFI-variadic tier that was ~85% of the panels frame until the fixed-arity glCall lane
-// (fastcall_*.go) closed it. This probe keeps three per-call characterizations live on the *identical* dlsym'd proc
-// addresses: the production wrapper (the glCall lane — must stay zero-alloc on the trampoline platforms and never worse
-// than SyscallN anywhere), a raw purego.SyscallN (the comparison baseline), and a purego.RegisterFunc-bound typed func
-// (the standing verdict that reflection-marshaled calls allocate strictly more, which is why the 12 float-carrying
-// entry points ride it only for ABI correctness). This is an in-package test so it can read the unexported proc-address
-// fields the assembler resolved (f.vertexAttribPointer, …).
+// FFI allocation probe: purego.SyscallN heap-allocates on every GL call (see fastcall_sysv.go) — the FFI-variadic tier
+// that was ~85% of the panels frame until the fixed-arity glCall lane (fastcall_*.go) closed it. This probe keeps three
+// per-call characterizations live on the *identical* dlsym'd proc addresses: the production wrapper (the glCall lane —
+// must stay zero-alloc on the trampoline platforms and never worse than SyscallN anywhere), a raw purego.SyscallN (the
+// comparison baseline), and a purego.RegisterFunc-bound typed func (the standing verdict that reflection-marshaled
+// calls allocate strictly more, which is why the 12 entry points the glCall lane cannot carry ride it only for ABI
+// correctness). This is an in-package test so it can read the unexported proc-address fields the assembler resolved
+// (f.vertexAttribPointer, …).
 
 package gl
 
@@ -66,8 +66,7 @@ func probeSetupGeometry(tb testing.TB, f *Functions) {
 
 // TestFFIAllocProbe reports allocs/op for three all-integer procs called three ways: through the production wrapper
 // (the fixed-arity glCall lane), through a raw purego.SyscallN of the identical proc address (kept for the
-// head-to-head), and through a purego.RegisterFunc-bound typed func. Run with -v to see
-// the table:
+// head-to-head), and through a purego.RegisterFunc-bound typed func. Run with -v to see the table:
 //
 //	go test ./gpu/gl/ -run TestFFIAllocProbe -v
 func TestFFIAllocProbe(t *testing.T) {
@@ -122,11 +121,10 @@ func TestFFIAllocProbe(t *testing.T) {
 				"path regressed", c.name, gc, sn)
 		}
 		// The verdict this probe exists to keep live: RegisterFunc is not a cheaper allocation path than SyscallN (it
-		// boxes each argument into a heap reflect.Value on top of the same arg-struct escape, so allocs scale with
-		// arity — measured on darwin/arm64 against purego v0.10.1 at 6 vs 2 allocs/op for a 4-int glDrawElements and 8
-		// vs 2 for a 6-int glVertexAttribPointer). If this ever flips — a future purego/Go making RegisterFunc-bound
-		// calls allocation-free — it re-opens a low-risk route for the remaining float-carrying entry points, and this
-		// failure is the signal to re-evaluate.
+		// boxes each argument into a heap reflect.Value, so allocs scale with arity — measured on darwin/arm64 against
+		// purego v0.10.1 at 6 vs 2 allocs/op for a 4-int glDrawElements and 8 vs 2 for a 6-int glVertexAttribPointer).
+		// If this ever flips — a future purego/Go making RegisterFunc-bound calls allocation-free — it re-opens a
+		// low-risk route for the remaining float-carrying entry points, and this failure is the signal to re-evaluate.
 		if rf <= sn {
 			t.Errorf("%s: RegisterFunc %.2f allocs/op is no longer worse than SyscallN %.2f — the "+
 				"cheap path may have re-opened; re-evaluate routing hot entry points through RegisterFunc",

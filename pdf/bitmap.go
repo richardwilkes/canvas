@@ -8,12 +8,11 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // This file serializes an image as a PDF Image XObject, plus the keyed-image de-dup helpers that avoid re-serializing
-// the same (sub)image within a document. It implements the Flate/Uncompressed lanes (doDeflatedImage plus the
-// DeviceGray SMask via doDeflatedAlpha) that the default configuration uses (encodingQuality 101 → lossless → Flate).
-// The DCT/JPEG lanes (passthrough of already-encoded JPEG data, and re-encoding opaque images for encodingQuality ≤
-// 100) are deferred: they only trigger when the caller explicitly requests lossy encoding, and the Flate lane produces
-// a correct — if larger — image either way. ICC color-profile embedding is dropped, since all content is sRGB: images
-// use DeviceRGB/ DeviceGray directly.
+// the same (sub)image within a document. Only the Flate/Uncompressed lanes (doDeflatedImage plus the DeviceGray SMask
+// via doDeflatedAlpha) are implemented, which is what the default EncodingQuality of 101 (lossless) selects. Skia's
+// DCT/JPEG lanes (passthrough of already-encoded JPEG data, and re-encoding opaque images for EncodingQuality ≤ 100)
+// are not: Flate produces a correct, if larger, image either way. ICC color-profile embedding is dropped, since all
+// content is sRGB: images use DeviceRGB/DeviceGray directly.
 
 package pdf
 
@@ -95,7 +94,7 @@ func (k keyedImage) subset(sub geom.IRect) keyedImage {
 type pdfStreamFormat uint8
 
 const (
-	pdfFormatDCT pdfStreamFormat = iota // deferred
+	pdfFormatDCT pdfStreamFormat = iota // never produced
 	pdfFormatFlate
 	pdfFormatUncompressed
 )
@@ -110,7 +109,7 @@ type pdfPixels struct {
 }
 
 // serializeImage reads the image's pixels and emits the color Image XObject plus (for non-opaque images) a DeviceGray
-// SMask. Only the Flate/Uncompressed lane is implemented.
+// SMask.
 func serializeImage(k keyedImage, doc *Document, ref IndirectReference) {
 	pm := readImagePixels(k)
 	doDeflatedImage(pm, doc, computeIsOpaque(pm), ref)
@@ -129,8 +128,8 @@ func readImagePixels(k keyedImage) pdfPixels {
 	case k.img.ColorType() == imagecore.ColorTypeGray8:
 		ct, at, bpp = imagecore.ColorTypeGray8, imagecore.AlphaTypeOpaque, 1
 	default:
-		// The color channels are always read unpremultiplied; doDeflatedImage recomputes opacity by scanning the read
-		// alpha rather than trusting the source image's opaque flag.
+		// The color channels are always read unpremultiplied; computeIsOpaque scans the read alpha rather than trusting
+		// the source image's opaque flag.
 		ct, at, bpp = imagecore.ColorTypeRGBA8888, imagecore.AlphaTypeUnpremul, 4
 	}
 	info := imagecore.ImageInfo{Width: w, Height: h, ColorType: ct, AlphaType: at}
@@ -153,7 +152,7 @@ func eraseBlack(data []byte, ct imagecore.ColorType) {
 		// Black is gray 0; data is already zero.
 	default:
 		for i := 0; i+3 < len(data); i += 4 {
-			data[i+3] = 0xFF // opaque
+			data[i+3] = 0xFF
 		}
 	}
 }
@@ -235,7 +234,7 @@ func buildRGBPlane(pm pdfPixels) []byte {
 		for x := 0; x < w; x++ {
 			i := (y*w + x) * 4
 			r, g, b := pm.data[i], pm.data[i+1], pm.data[i+2]
-			if pm.data[i+3] == 0 { // fully transparent
+			if pm.data[i+3] == 0 {
 				r, g, b = neighborAvgColor(pm, x, y)
 			}
 			out = append(out, r, g, b)
@@ -271,9 +270,8 @@ func neighborAvgColor(pm pdfPixels, xOrig, yOrig int) (avgR, avgG, avgB byte) {
 	return 0, 0, 0
 }
 
-// deflateForPDF compresses raw with FlateDecode unless the document disables compression. Both doDeflatedImage and
-// doDeflatedAlpha compress image data unconditionally — there is no minimum-savings heuristic, as there is for
-// text/content streams — because image data essentially always compresses.
+// deflateForPDF compresses raw with FlateDecode unless the document disables compression. Unlike StreamOut's content
+// streams, there is no minimum-savings heuristic, because image data essentially always compresses.
 func deflateForPDF(doc *Document, raw []byte) ([]byte, pdfStreamFormat) {
 	if doc.metadata.CompressionLevel == CompressionNone {
 		return raw, pdfFormatUncompressed
@@ -285,8 +283,8 @@ func deflateForPDF(doc *Document, raw []byte) ([]byte, pdfStreamFormat) {
 	return append([]byte(nil), buf.Bytes()...), pdfFormatFlate
 }
 
-// emitImageStream builds the Image XObject dictionary and emits its stream. ICC color spaces are dropped, since all
-// content is sRGB: colorSpace is always DeviceRGB or DeviceGray.
+// emitImageStream builds the Image XObject dictionary and emits its stream. colorSpace is always DeviceRGB or
+// DeviceGray.
 func emitImageStream(doc *Document, ref IndirectReference, content []byte, size geom.ISize, colorSpace string, sMask IndirectReference, format pdfStreamFormat) {
 	if !ref.IsValid() {
 		return

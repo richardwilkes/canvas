@@ -58,7 +58,7 @@ func makeProcSet() *Array {
 }
 
 // addSubdict inserts a resourceList's entries into dst under the type's dictionary key, keyed by their resource names;
-// a nil list adds nothing.
+// an empty list adds nothing.
 func addSubdict(resourceList []IndirectReference, typ resourceType, dst *Dict) {
 	if len(resourceList) == 0 {
 		return

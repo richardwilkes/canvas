@@ -121,7 +121,6 @@ func TestGlyphMapping(t *testing.T) {
 	if n := f.TextToGlyphs(utf16, TextEncodingUTF16, g16); n != 2 || g16[0] != 44 || g16[1] != 0 {
 		t.Errorf("utf16 = %d %v", n, g16)
 	}
-	// UTF-32.
 	utf32 := []byte{0x48, 0, 0, 0, 0xAC, 0x20, 0, 0}
 	g32 := make([]uint16, 2)
 	if n := f.TextToGlyphs(utf32, TextEncodingUTF32, g32); n != 2 || g32[0] != 44 || g32[1] != 159 {
@@ -142,7 +141,6 @@ func TestGlyphMapping(t *testing.T) {
 	if n := f.TextToGlyphs(text, TextEncodingUTF8, small); n != len(want) || small[0] != 0 {
 		t.Errorf("small buffer: n=%d small=%v", n, small)
 	}
-	// UnicharsToGlyphs.
 	out := make([]uint16, 3)
 	f.UnicharsToGlyphs([]int32{'H', 0x20AC, 0x1F600}, out)
 	if out[0] != 44 || out[1] != 159 || out[2] != 0 {
@@ -211,7 +209,6 @@ func TestMeasureText(t *testing.T) {
 	if w2 := f.MeasureText(text, TextEncodingUTF8, nil, nil); w2 != w {
 		t.Errorf("width without bounds = %v", w2)
 	}
-	// Empty text.
 	bounds = geom.RectLTRB(1, 2, 3, 4)
 	if w2 := f.MeasureText(nil, TextEncodingUTF8, &bounds, nil); w2 != 0 || !bounds.IsEmpty() {
 		t.Errorf("empty text = %v %v", w2, bounds)

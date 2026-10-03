@@ -10,9 +10,9 @@
 // StencilClip is a hard clip carrying the currently-rendered stencil-clip contents plus a fixed clip, and
 // StencilMaskHelper renders merged clip elements into the stencil buffer's clip bit using the user-to-clip stencil
 // settings tables below. Window rectangles are not supported. ClipStack diverts AA elements to a SW mask whenever the
-// target has no MSAA to resolve them with (a 1-sample target that is not running dynamic MSAA), so the drawPath lane is
-// reached only from multisample and dynamic-MSAA targets; the inverse-fill table rows are present as data but only the
-// non-inverted Replace/Intersect/Difference rows are reachable from the clip stack.
+// target has no MSAA to resolve them with (a 1-sample target that is not running dynamic MSAA), so AA elements reach
+// this helper only on multisample and dynamic-MSAA targets; the inverse-fill table rows are present as data but only
+// the non-inverted Replace/Intersect/Difference rows are reachable from the clip stack.
 
 package gl
 
@@ -190,9 +190,6 @@ func getStencilPasses(op raster.RegionOp, canRenderDirectToStencil, fillInverted
 	}
 	return userToClipTable[inv][op], false
 }
-
-//////////////////////////////////////////////////////////////////////////////
-// StencilMaskHelper.
 
 // StencilMaskHelper renders the merged elements of a clip query into the stencil buffer's clip bit.
 type StencilMaskHelper struct {

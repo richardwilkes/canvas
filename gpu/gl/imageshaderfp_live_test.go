@@ -7,10 +7,9 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// Live-context tests for the GPU image-shader fragment-processor lane (paintconvert.go's makeImageShaderFP): image shaders
-// converted via the paint-to-FP conversion and rendered through the fill-rect op, compared against the CPU image-shader
-// pipeline (the Go-GPU vs Go-CPU self-consistency lane). Before this lane existed a paint carrying an image shader
-// failed fragment-processor conversion and the draw was a silent no-op. Skips when no GL context is available.
+// Live-context tests for the GPU image-shader fragment-processor lane (paintconvert.go's makeImageShaderFP): image
+// shaders converted via the paint-to-FP conversion and rendered through the fill-rect op, compared against the CPU
+// image-shader pipeline (the Go-GPU vs Go-CPU self-consistency lane). Skips when no GL context is available.
 
 package gl_test
 
@@ -110,8 +109,8 @@ func TestLiveImageShaderSwatches(t *testing.T) {
 }
 
 // TestLiveImageShaderAlphaOnly renders an alpha-only image shader tinted by an opaque colored paint. The GPU lane wraps
-// the texture effect in a dst-in blend against the input color; the CPU leg tints the same way, applying appendSetRGB
-// from the paint color after the image's own appendStages runs. Both must agree.
+// the texture effect in a dst-in blend against the input color; the CPU leg tints the same way, with the image shader's
+// appendStages applying appendSetRGB from the paint color. Both must agree.
 func TestLiveImageShaderAlphaOnly(t *testing.T) {
 	env, dc := newLiveDirectContext(t)
 	_ = env

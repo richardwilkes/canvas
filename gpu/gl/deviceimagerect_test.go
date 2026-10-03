@@ -7,8 +7,8 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// Tests for Device.DrawImageRect's edge-AA selection, which must come from chooseAA like every other draw entry point so
-// a DMSAA surface never sees an AANo quad (the invariant DrawFilledQuad documents).
+// Tests for Device.DrawImageRect's edge-AA selection, which must come from chooseAA like every other draw entry point
+// so a DMSAA surface never sees an AANo quad (the invariant DrawFilledQuad documents).
 
 package gl
 

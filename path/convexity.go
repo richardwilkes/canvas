@@ -72,8 +72,8 @@ func (c *convexicator) addPt(pt geom.Point) bool {
 	if c.lastPt == pt {
 		return true
 	}
-	// should only be true for first non-zero vector after setMovePt was called. It is possible we doubled backed at the
-	// start so need to check if lastVec is zero or not.
+	// True only for the first non-zero vector after setMovePt. The path may have doubled back at the start, so lastVec
+	// must also be zero.
 	if c.firstPt == c.lastPt && c.expected == dirChangeInvalid && c.lastVec == (geom.Point{}) {
 		c.lastVec = pt.Sub(c.lastPt)
 		c.firstVec = c.lastVec
@@ -171,7 +171,6 @@ func isConcaveBySign(points []geom.Point) bool {
 		for idx < count {
 			vec := points[idx].Sub(currPt)
 			if !vec.IsZero() {
-				// give up if vector construction failed
 				if !vec.IsFinite() {
 					return true // treat as concave
 				}
@@ -191,8 +190,8 @@ func isConcaveBySign(points []geom.Point) bool {
 				break
 			}
 		}
-		// wrap around to the first point for one more vector. Backed by a stack array rather than a slice literal: this
-		// runs on every convexity computation (every non-AA path fill), and the literal was a per-call heap allocation.
+		// Wrap around to the first point for one more vector. A stack array, not a slice literal, avoids a heap
+		// allocation on every convexity computation (every non-AA path fill).
 		wrap[0] = firstPt
 		points = wrap[:]
 		count = 1
@@ -225,7 +224,6 @@ func computeConvexitySpans(points []geom.Point, verbs []Verb, conicWeights []flo
 		return ConvexityConvexDegenerate
 	}
 
-	// Check to see if path changes direction more than three times as quick concave test
 	if isConcaveBySign(points) {
 		return ConvexityConcave
 	}
@@ -246,7 +244,7 @@ func computeConvexitySpans(points []geom.Point, verbs []Verb, conicWeights []flo
 			if verb == VerbMove {
 				state.setMovePt(pts[0])
 			} else {
-				// Starting the actual contour, fall through to c=1 to add the points
+				// Starting the actual contour; the contourCount == 1 case below adds the points.
 				contourCount++
 				needsClose = true
 			}

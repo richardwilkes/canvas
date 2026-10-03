@@ -72,8 +72,8 @@ func newSurface(pix *raster.Pixmap, props *Props, owns bool) *Surface {
 		s.props = *props
 	}
 	s.canvas = canvas.NewForPixmap(pix)
-	// The bitmap device receives the surface's props at creation; layers created from this device keep unknown geometry
-	// (canvas.BitmapDevice.CreateDevice), matching the canvas's layer-props cloning.
+	// Only the base device gets the surface's props; layers created from it keep unknown geometry (see
+	// canvas.BitmapDevice.CreateDevice), matching the canvas's layer-props cloning.
 	if dev, ok := s.canvas.BaseDevice().(*canvas.BitmapDevice); ok {
 		dev.SetDeviceProps(s.props.DeviceProps())
 	}
@@ -89,14 +89,10 @@ func NewRasterN32Premul(width, height int32, props *Props) *Surface {
 	return newSurface(raster.NewPixmap(width, height), props, true)
 }
 
-// WrapPixels creates a surface rendering into caller-provided pixels. The pixmap's backing store is the caller's;
-// snapshots always deep-copy.
+// WrapPixels creates a surface rendering into caller-owned pixels; snapshots always deep-copy.
 func WrapPixels(pix *raster.Pixmap, props *Props) *Surface {
-	// The backing slice must hold every pixel the strided layout can address. Rendering computes a pixel's index as
-	// y*RowPixels+x, so the last valid pixel (Width-1, Height-1) lives at word (Height-1)*RowPixels+Width-1; the slice
-	// must therefore span at least (Height-1)*RowPixels+Width words. Validating against Width*Height instead would let a
-	// caller-built pixmap with RowPixels > Width pass yet write out of bounds. RowPixels < Width is likewise rejected as
-	// a malformed stride.
+	// Pixel (x, y) lives at word y*RowPixels+x, so the slice must span (Height-1)*RowPixels+Width words. Checking
+	// against Width*Height instead would let a pixmap with RowPixels > Width pass yet write out of bounds.
 	if pix == nil || pix.Width <= 0 || pix.Height <= 0 || pix.RowPixels < pix.Width ||
 		len(pix.Pix) < int(pix.Height-1)*int(pix.RowPixels)+int(pix.Width) {
 		return nil
@@ -144,8 +140,7 @@ func (s *Surface) AboutToDraw() {
 	if s.snapshot == nil {
 		return
 	}
-	// The snapshot image already holds the old Pix slice (it captured the Pixmap by value); give the surface a fresh
-	// copy to mutate, retaining its current contents.
+	// The snapshot captured the Pixmap by value, so it already holds the old Pix slice.
 	old := s.pix.Pix
 	fresh := make([]uint32, len(old))
 	copy(fresh, old)

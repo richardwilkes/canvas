@@ -14,7 +14,6 @@ package gl
 
 import "github.com/richardwilkes/canvas/gpu"
 
-// maxCachedSamplers is the maximum number of distinct sampler objects the cache keeps alive.
 const maxCachedSamplers = 32
 
 type samplerUnitState struct {
@@ -68,7 +67,6 @@ func (c *samplerObjectCache) bindSampler(unitIdx int, state gpu.SamplerState) {
 			return
 		}
 		if len(c.samplers) >= maxCachedSamplers && len(c.lru) > 0 {
-			// Evict the least recently used sampler.
 			evictKey := c.lru[0]
 			c.lru = c.lru[1:]
 			if evictID, exists := c.samplers[evictKey]; exists {
@@ -108,7 +106,7 @@ func (c *samplerObjectCache) bindSampler(unitIdx int, state gpu.SamplerState) {
 	}
 }
 
-// unbindSampler binds sampler 0 to unitIdx if a non-zero sampler is currently bound there.
+// unbindSampler binds sampler 0 to unitIdx unless it is already known to be bound there.
 func (c *samplerObjectCache) unbindSampler(unitIdx int) {
 	if unitIdx >= c.numTextureUnits {
 		return

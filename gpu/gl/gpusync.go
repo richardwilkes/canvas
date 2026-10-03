@@ -133,7 +133,6 @@ func (g *Gpu) SubmitToGpu(syncCPU bool) bool {
 		g.callAllFinishedCallbacks(true)
 	} else {
 		g.Flush(false)
-		// See if any previously inserted finish procs are good to go.
 		g.CheckFinishedCallbacks()
 	}
 	if !g.glCaps().SkipErrorChecks() {
@@ -142,13 +141,11 @@ func (g *Gpu) SubmitToGpu(syncCPU bool) bool {
 	return true
 }
 
-// clearErrorsAndCheckForOOM drains the GL error queue, recording whether an out-of-memory error occurred.
 func (g *Gpu) clearErrorsAndCheckForOOM() {
 	for g.getErrorAndCheckForOOM() != NO_ERROR {
 	}
 }
 
-// getErrorAndCheckForOOM returns the next pending GL error, recording an out-of-memory occurrence.
 func (g *Gpu) getErrorAndCheckForOOM() uint32 {
 	err := g.fns().GetError()
 	if err == OUT_OF_MEMORY {

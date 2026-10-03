@@ -426,7 +426,6 @@ func TestCalcSortAnglesParallelQuads(t *testing.T) {
 	}
 }
 
-// sectorsOf collects the sectorStart of each angle in the slice.
 func sectorsOf(loop []*opAngle) []int {
 	out := make([]int, len(loop))
 	for i, a := range loop {

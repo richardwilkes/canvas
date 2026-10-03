@@ -12,9 +12,9 @@
 package shaders
 
 // The hot span stages dispatch through these fn variables so arm64 can substitute NEON kernels (stage_arm64.go /
-// stage_arm64.s) while every other platform runs the portable forms. The NEON kernels are bit-identical to the portable
-// stages — the substitution never changes rendered output, only throughput — so the choice of lane is invisible to the
-// differential suite.
+// stage_arm64.s) and a goexperiment.simd build its simd kernels (stage_simd.go), while every other build runs the
+// portable forms. The substitutes are bit-identical to the portable stages, so they change throughput only, never
+// rendered output.
 var (
 	seedStageFn                 stageFn = seedStage
 	clampX1StageFn              stageFn = clampX1Stage

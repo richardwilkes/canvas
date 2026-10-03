@@ -85,7 +85,7 @@ func (a *DrawOpAtlas) NumAllocatedForTest() int {
 	return count
 }
 
-// SetMaxPagesForTest overrides the atlas's maximum page count (for tests).
+// SetMaxPagesForTest overrides the atlas's maximum page count.
 func (a *DrawOpAtlas) SetMaxPagesForTest(maxPages uint32) {
 	if a.numActivePages != 0 {
 		panic("SetMaxPages with active pages")
@@ -93,7 +93,7 @@ func (a *DrawOpAtlas) SetMaxPagesForTest(maxPages uint32) {
 	a.maxPages = maxPages
 }
 
-// SetMaxPagesForTest overrides every atlas's maximum page count (for tests).
+// SetMaxPagesForTest overrides every atlas's maximum page count.
 func (m *AtlasManager) SetMaxPagesForTest(maxPages uint32) {
 	for i := range gpu.MaskFormatCount {
 		if m.atlases[i] != nil {
@@ -102,8 +102,8 @@ func (m *AtlasManager) SetMaxPagesForTest(maxPages uint32) {
 	}
 }
 
-// SetAtlasDimensionsToMinimumForTest deletes any old atlases and sets all the atlas sizes to one plot each (safe
-// outside a flush).
+// SetAtlasDimensionsToMinimumForTest deletes any old atlases and sets all the atlas sizes to the minimum, a single plot
+// or four for A8 (safe outside a flush).
 func (m *AtlasManager) SetAtlasDimensionsToMinimumForTest() {
 	for i := range gpu.MaskFormatCount {
 		m.atlases[i] = nil
@@ -111,7 +111,7 @@ func (m *AtlasManager) SetAtlasDimensionsToMinimumForTest() {
 	m.atlasConfig = MakeDrawOpAtlasConfig(maxAtlasDim, 0)
 }
 
-// AtlasForTest exposes the manager's atlas for a format (initializing it as getViews would).
+// AtlasForTest exposes the manager's atlas for a format (initializing it as GetViews would).
 func (m *AtlasManager) AtlasForTest(format gpu.MaskFormat) *DrawOpAtlas {
 	format = m.resolveMaskFormat(format)
 	if !m.initAtlas(format) {

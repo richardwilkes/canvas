@@ -221,9 +221,9 @@ func TestSpanSIMDMatchesScalar(t *testing.T) {
 	})
 }
 
-// TestSpanSIMDWiring locks that where the simd kernels are the preferred lane (amd64 with AVX2+FMA; arm64 declines in
-// favor of the faster NEON assembly, see span_simd_arm64.go), the goexperiment.simd build's init actually repointed
-// the dispatch variables at them, so a refactor cannot silently fall back to the default forms.
+// TestSpanSIMDWiring locks that where the simd kernels are the preferred lane (amd64 with AVX2; arm64 declines in favor
+// of the faster NEON assembly, see span_simd_arm64.go), the goexperiment.simd build's init actually repointed the
+// dispatch variables at them, so a refactor cannot silently fall back to the default forms.
 func TestSpanSIMDWiring(t *testing.T) {
 	if !simdKernelsPreferred() {
 		t.Skip("the simd span kernels are not the preferred lane on this hardware; dispatch keeps the default forms")

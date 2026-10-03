@@ -127,8 +127,7 @@ func (it *Iter) IsClosedContour() bool {
 // autoClose synthesizes the closing verb (a line back to moveTo, or a bare close if already there).
 func (it *Iter) autoClose(pts *[4]geom.Point) Verb {
 	if it.lastPt != it.moveTo {
-		// A special case: if both points are NaN, an equality compare returns false, but the iterator expects that they
-		// are treated as the same.
+		// NaN points never compare equal, but the iterator treats them as the same point.
 		if math.IsNaN(float64(it.lastPt.X)) || math.IsNaN(float64(it.lastPt.Y)) ||
 			math.IsNaN(float64(it.moveTo.X)) || math.IsNaN(float64(it.moveTo.Y)) {
 			return VerbClose

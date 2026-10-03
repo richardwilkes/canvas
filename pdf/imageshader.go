@@ -26,28 +26,24 @@ import (
 	"github.com/richardwilkes/canvas/surface"
 )
 
-// isTiled reports whether m wraps the pattern cell: true for mirror/repeat, false for clamp/decal.
 func isTiled(m shaders.TileMode) bool {
 	return m == shaders.TileMirror || m == shaders.TileRepeat
 }
 
-// scaleTranslate builds a matrix that scales by (sx, sy) then translates by (tx, ty).
 func scaleTranslate(sx, sy, tx, ty float32) geom.Matrix {
 	var m geom.Matrix
 	m.SetScaleTranslate(sx, sy, tx, ty)
 	return m
 }
 
-// drawImageIntoCell draws image at (0,0) with a solid paint carrying paintColor (default nearest sampling, src-over).
-// For a color image the paint RGB is ignored; for an alpha-only image it tints the coverage (internalDrawImageRect's
-// alpha-only luminosity-SMask lane).
+// drawImageIntoCell draws img at (0,0) with a paint carrying paintColor, whose RGB matters only for an alpha-only image
+// (it tints the coverage; see the file comment).
 func drawImageIntoCell(c *canvas.Canvas, img *imagecore.Image, paintColor colorcore.Color4f) {
 	paint := canvas.NewPaint()
 	paint.Color = paintColor.ToColor()
 	c.DrawImage(img, 0, 0, shaders.SamplingOptions{}, paint)
 }
 
-// drawImageMatrix concats matrix onto the canvas, draws image at (0,0), then restores.
 func drawImageMatrix(c *canvas.Canvas, img *imagecore.Image, matrix geom.Matrix, paintColor colorcore.Color4f) {
 	if img == nil {
 		return
@@ -81,7 +77,6 @@ func toPatternBitmap(img *imagecore.Image) patternBitmap {
 	return bm
 }
 
-// color4f returns the unpremultiplied color at (x, y) in the stored bitmap.
 func (bm patternBitmap) color4f(x, y int32) colorcore.Color4f {
 	i := (int(y)*int(bm.w) + int(x)) * 4
 	return colorcore.Color4f{
@@ -261,7 +256,6 @@ func makeImageShader(doc *Document, finalMatrix geom.Matrix, tileModesX, tileMod
 	return doc.StreamOut(dict, imageShader, true)
 }
 
-// pinInt clamps x to the range [lo, hi].
 func pinInt(x, lo, hi int32) int32 {
 	if x < lo {
 		return lo
@@ -275,7 +269,7 @@ func pinInt(x, lo, hi int32) int32 {
 // makeFallbackShader rasterizes the whole shader into an N32 surface (clamped to ~1M pixels), snapshots it, and
 // image-shaders the result with clamp/clamp.
 func makeFallbackShader(doc *Document, shader shaders.Shader, canvasTransform geom.Matrix, surfaceBBox geom.IRect, paintColor colorcore.Color4f) IndirectReference {
-	// surfaceBBox is device space; map it to shader space for the adjustments make_image_shader expects.
+	// surfaceBBox is device space; map it to shader space for the adjustments makeImageShader expects.
 	shaderRect := surfaceBBox.ToRect()
 	if !inverseTransformBBox(&canvasTransform, &shaderRect) {
 		return IndirectReference{}
@@ -320,8 +314,8 @@ func makeFallbackShader(doc *Document, shader shaders.Shader, canvasTransform ge
 		image, paintColor)
 }
 
-// imageShaderKeyString serializes the image-shader parameters into a collision-free byte string suitable for use as a
-// map key in Document.imageShaderMap.
+// imageShaderKeyString serializes the image-shader parameters into a collision-free string for use as a
+// Document.imageShaderMap key.
 func imageShaderKeyString(finalMatrix geom.Matrix, surfaceBBox geom.IRect, k bitmapKey, tmx, tmy shaders.TileMode, paintColor colorcore.Color4f) string {
 	var b []byte
 	putU32 := func(v uint32) { b = append(b, byte(v), byte(v>>8), byte(v>>16), byte(v>>24)) }

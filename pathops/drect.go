@@ -7,19 +7,16 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// A double-precision axis-aligned bounding box. The quad, conic, and cubic bounds lanes are present (set/add plus
-// setBoundsQuad/setBoundsConic/setBoundsCubic, which use each curve's extrema).
+// A double-precision axis-aligned bounding box, with quad, conic, and cubic bounds built from each curve's extrema.
 
 package pathops
 
 import "math"
 
-// dRect is a double-precision bounding box.
 type dRect struct {
 	left, top, right, bottom float64
 }
 
-// set collapses r to a single point.
 func (r *dRect) set(pt dPoint) {
 	r.left = pt.x
 	r.right = pt.x
@@ -27,7 +24,6 @@ func (r *dRect) set(pt dPoint) {
 	r.bottom = pt.y
 }
 
-// add grows r to include pt.
 func (r *dRect) add(pt dPoint) {
 	r.left = math.Min(r.left, pt.x)
 	r.top = math.Min(r.top, pt.y)
@@ -35,13 +31,10 @@ func (r *dRect) add(pt dPoint) {
 	r.bottom = math.Max(r.bottom, pt.y)
 }
 
-// width returns the horizontal extent of r.
 func (r dRect) width() float64 { return r.right - r.left }
 
-// height returns the vertical extent of r.
 func (r dRect) height() float64 { return r.bottom - r.top }
 
-// valid reports whether r's edges are properly ordered (left <= right, top <= bottom).
 func (r dRect) valid() bool { return r.left <= r.right && r.top <= r.bottom }
 
 // intersects reports whether the two (sorted) rectangles overlap.
@@ -49,13 +42,12 @@ func (r dRect) intersects(o dRect) bool {
 	return o.left <= r.right && r.left <= o.right && o.top <= r.bottom && r.top <= o.bottom
 }
 
-// setBoundsQuadFull sets r to the bounds of the whole curve.
 func (r *dRect) setBoundsQuadFull(curve dQuad) {
 	r.setBoundsQuad(curve, curve, 0, 1)
 }
 
-// setBoundsQuad sets r to the bounds of the sub-curve sub, mapping its extrema T values back onto the parent curve
-// (spanning the T range [startT, endT]) to accumulate points on the parent's exact curve.
+// setBoundsQuad sets r to the bounds of sub, the part of curve spanning the T range [startT, endT]. Extrema found on
+// sub are mapped back to T values on curve so the points added lie exactly on the parent.
 func (r *dRect) setBoundsQuad(curve, sub dQuad, startT, endT float64) {
 	r.set(sub.pts[0])
 	r.add(sub.pts[2])
@@ -73,13 +65,11 @@ func (r *dRect) setBoundsQuad(curve, sub dQuad, startT, endT float64) {
 	}
 }
 
-// setBoundsConicFull sets r to the bounds of the whole curve.
 func (r *dRect) setBoundsConicFull(curve dConic) {
 	r.setBoundsConic(curve, curve, 0, 1)
 }
 
-// setBoundsConic sets r to the bounds of the sub-conic sub, mapping its extrema T values back onto the parent conic
-// (spanning the T range [startT, endT]) to accumulate points on the parent's exact curve.
+// setBoundsConic is setBoundsQuad for conics.
 func (r *dRect) setBoundsConic(curve, sub dConic, startT, endT float64) {
 	r.set(sub.pts.pts[0])
 	r.add(sub.pts.pts[2])
@@ -97,13 +87,11 @@ func (r *dRect) setBoundsConic(curve, sub dConic, startT, endT float64) {
 	}
 }
 
-// setBoundsCubicFull sets r to the bounds of the whole curve.
 func (r *dRect) setBoundsCubicFull(curve dCubic) {
 	r.setBoundsCubic(curve, curve, 0, 1)
 }
 
-// setBoundsCubic sets r to the bounds of the sub-curve sub, mapping its extrema T values back onto the parent curve
-// (spanning the T range [startT, endT]) to accumulate points on the parent's exact curve.
+// setBoundsCubic is setBoundsQuad for cubics.
 func (r *dRect) setBoundsCubic(curve, sub dCubic, startT, endT float64) {
 	r.set(sub.pts[0])
 	r.add(sub.pts[3])

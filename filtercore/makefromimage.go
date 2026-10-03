@@ -52,7 +52,7 @@ func MakeFromImage(ctx *Context, image imagecore.DrawableImage, srcRect, dstRect
 		return subset.ApplyTransform(ctx, &transform, sampling)
 	}
 
-	// For now, draw the src->dst subset of the image into a new image.
+	// A fractional srcRect draws the src->dst subset of the image into a new image.
 	dstBounds := RoundOut(ctx.Mapping().ParamToLayerRect(dstRect))
 	if !dstBounds.Intersect(ctx.DesiredOutput()) {
 		return FilterResult{}

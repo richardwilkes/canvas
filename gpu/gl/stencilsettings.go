@@ -78,7 +78,6 @@ const (
 	lastClipOnlyStencilOp = UserStencilOpInvertClipBit
 )
 
-// Stencil flags.
 const (
 	stencilFlagDisabled         uint16 = 1 << 0
 	stencilFlagTestAlwaysPasses uint16 = 1 << 1
@@ -144,7 +143,6 @@ func userStencilAttrFlags(test UserStencilTest, passOp, failOp UserStencilOp, ha
 	return flags
 }
 
-// userStencilTestIgnoresRef reports whether test never reads the reference value.
 func userStencilTestIgnoresRef(test UserStencilTest) bool {
 	return test == UserStencilTestAlwaysIfInClip || test == UserStencilTestAlways ||
 		test == UserStencilTestNever
@@ -250,7 +248,6 @@ func (s *UserStencilSettings) UsesWrapOp(hasStencilClip bool) bool {
 // IsUnused reports whether these are the shared "no stencil" sentinel settings (by pointer identity).
 func (s *UserStencilSettings) IsUnused() bool { return s == unusedStencilSettings }
 
-// unusedStencilSettings is the shared sentinel meaning "no stencil work."
 var unusedStencilSettings = func() *UserStencilSettings {
 	s := MakeUserStencilSettings(0x0000, UserStencilTestAlwaysIfInClip, 0xffff,
 		UserStencilOpKeep, UserStencilOpKeep, 0x0000)
@@ -292,8 +289,8 @@ const (
 	StencilOpInvert
 	StencilOpIncWrap
 	StencilOpDecWrap
-	// NOTE: clamping occurs before the write mask. So if the MSB is zero and masked out, stencil values will still wrap
-	// when using clamping ops.
+	// Clamping occurs before the write mask, so if the MSB is zero and masked out, stencil values will still wrap when
+	// using clamping ops.
 	StencilOpIncClamp
 	StencilOpDecClamp
 )
@@ -544,7 +541,6 @@ func (s *StencilSettings) PostOriginCCWFace(origin gpu.SurfaceOrigin) *StencilFa
 	return &s.cwFace
 }
 
-// The clip-bit set/zero settings.
 var (
 	zeroStencilClipBit = MakeUserStencilSettings(0x0000, UserStencilTestAlways, 0xffff,
 		UserStencilOpZeroClipBit, UserStencilOpZeroClipBit, 0x0000)

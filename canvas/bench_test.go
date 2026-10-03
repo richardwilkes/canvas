@@ -7,11 +7,9 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// CPU benchmark suite: testing.B benchmarks of the canvas-level operations unison actually issues per frame —
-// fill/stroke path, styled rect/rrect, gradient fill, blur mask, text run, image scale. Each reports allocs/op
-// (b.ReportAllocs), because per-frame heap traffic is the most likely Go-specific perf failure mode and is a
-// first-class benchmark output. These are pure-Go (no cgo), so they run in the shipped module; the cgo baseline
-// comparison lives in internal/oracle/probe. Run: go test -run '^$' -bench . -benchmem ./canvas/
+// CPU benchmarks of the canvas-level operations unison issues per frame: fill/stroke path, styled rect/rrect, gradient
+// fill, blur mask, text run, image scale, atlas. Each reports allocs/op, because per-frame heap traffic is the most
+// likely Go-specific perf failure mode. Run: go test -run '^$' -bench . -benchmem ./canvas/
 
 package canvas
 
@@ -31,13 +29,12 @@ import (
 	"github.com/richardwilkes/canvas/textblob"
 )
 
-// benchCanvas returns a fresh canvas drawing into an owned N32 surface of the given size.
 func benchCanvas(w, h int32) *Canvas {
 	return NewForPixmap(raster.NewPixmap(w, h))
 }
 
-// benchPath builds a deterministic 3-contour mixed-segment path spanning the given box, matching the shape used by the
-// raster-level fill benchmarks so the numbers are comparable across layers.
+// benchPath builds a deterministic 3-contour mixed-segment path spanning the given box, the same structure as the
+// seeded-random path the raster-level fill benchmarks use.
 func benchPath(w, h float32) *path.Path {
 	p := path.New()
 	// A pseudo-random-but-fixed walk; no rng dependency so the shape is stable across runs.
@@ -83,7 +80,7 @@ func BenchmarkDrawRectFillNonAA(b *testing.B) {
 	}
 }
 
-// BenchmarkDrawRectFillAA is the same rect with analytic AA (the default styled-fill path).
+// BenchmarkDrawRectFillAA is a fractional-edge rect with analytic AA (the default styled-fill path).
 func BenchmarkDrawRectFillAA(b *testing.B) {
 	c := benchCanvas(256, 256)
 	paint := benchFillPaint(true)
@@ -95,8 +92,7 @@ func BenchmarkDrawRectFillAA(b *testing.B) {
 	}
 }
 
-// BenchmarkDrawRRectFillAA covers unison's most common styled primitive (FillRRectOp note): a filled, antialiased
-// rounded rectangle.
+// BenchmarkDrawRRectFillAA covers unison's most common styled primitive: a filled, antialiased rounded rectangle.
 func BenchmarkDrawRRectFillAA(b *testing.B) {
 	c := benchCanvas(256, 256)
 	paint := benchFillPaint(true)
@@ -224,7 +220,7 @@ func benchImage(w, h int32) *imagecore.Image {
 
 // BenchmarkGradientPaintFill fills the whole device with a multi-stop linear gradient via DrawPaint (the full-device
 // background-gradient lane — the drawPaint counterpart of BenchmarkGradientRectFill, exercising the row-band
-// parallelism added for full-device shaded fills).
+// parallelism of full-device shaded fills).
 func BenchmarkGradientPaintFill(b *testing.B) {
 	c := benchCanvas(256, 256)
 	sh := shaders.NewLinearGradient(geom.Pt(0, 0), geom.Pt(256, 256),
@@ -278,9 +274,8 @@ func benchAtlasSprites(n int) (xforms []geom.RSXform, tex []geom.Rect, colors []
 	return xforms, tex, colors
 }
 
-// BenchmarkDrawAtlas measures the CPU per-sprite lowering: allocs/op must stay O(1) per call — the per-sprite scratch
-// work makes each sprite allocation-free. Sub-benchmarks cover 100/1000 sprites, with and without per-sprite color
-// modulation.
+// BenchmarkDrawAtlas measures the CPU per-sprite lowering: allocs/op must stay O(1) per call (atlasDrawScratch makes
+// each sprite allocation-free). Sub-benchmarks cover 100/1000 sprites, with and without per-sprite color modulation.
 func BenchmarkDrawAtlas(b *testing.B) {
 	img := benchImage(64, 64)
 	sampling := shaders.SamplingOptions{Filter: shaders.FilterLinear}

@@ -32,7 +32,7 @@ func benchBlurGauss(sigma float64) (radius int, factors [5]uint16) {
 	return f.radius(), factors
 }
 
-// benchBlurMask returns a 64x64 A8 mask shaped like the shadow casters this path actually blurs: a solid core with a
+// benchBlurMask returns a w x h A8 mask shaped like the shadow casters this path actually blurs: a solid core with a
 // soft, ragged border. The kernels are branch-free integer code, so the content cannot change the timing — it exists
 // so a profile taken on the benchmark shows plausible values.
 func benchBlurMask(w, h int) []uint8 {

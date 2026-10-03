@@ -8,10 +8,9 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // A write-stream wrapper that DEFLATE-compresses everything written to it into an underlying stream, producing the
-// zlib-format data a PDF /FlateDecode filter expects (a 2-byte zlib header + adler32 trailer, windowBits 15 — Go's
-// compress/zlib emits exactly that container). The compressed bytes themselves differ from zlib's C reference output (a
-// different DEFLATE implementation), which is invisible through a FlateDecode reader; gzip output is not needed by the
-// PDF backend and is omitted.
+// zlib-format data a PDF /FlateDecode filter expects (2-byte header, adler32 trailer, windowBits 15), which is exactly
+// what Go's compress/zlib emits. The compressed bytes differ from C zlib's output, which is invisible through a
+// FlateDecode reader. Skia's gzip mode is omitted; the PDF backend does not need it.
 
 package pdf
 
@@ -49,8 +48,8 @@ type errWrite struct{}
 func (errWrite) Error() string { return "pdf: stream write failed" }
 
 // NewDeflateWStream wraps out so that data written through the returned stream is DEFLATE-compressed into out.
-// compressionLevel is 1 (best speed) through 9 (best compression); -1 selects the default level. A level of 0 must
-// never be passed here — the caller compresses only when the level is not None.
+// compressionLevel is 1 (best speed) through 9 (best compression), or -1 for the default level. Callers never pass 0
+// (CompressionNone); they skip compression instead.
 func NewDeflateWStream(out stream.WStream, compressionLevel int) *DeflateWStream {
 	a := &wstreamAdapter{s: out}
 	// NewWriterLevel only errors for an out-of-range level; the PDF caller always passes a valid one.

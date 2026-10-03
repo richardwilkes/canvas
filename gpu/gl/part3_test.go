@@ -8,8 +8,8 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // Fake-driver tests for the rrect/oval/stroke-rect/texture ops: FillRRectOp batching and its clipToShape geometric
-// reduction, the attemptQuadOptimization rrect-clip → drawRRect conversion, circle/ellipse op merging, StrokeRectOp's
-// compute_aa_rects math, and TextureOp's same-proxy merge gate.
+// reduction, the attemptQuadOptimization rrect-clip → drawRRect conversion, circle op merging and ellipse op selection,
+// StrokeRectOp's computeAARects math, and TextureOp's same-proxy merge gate.
 
 package gl
 
@@ -120,7 +120,7 @@ func TestRRectClipDrawReduction(t *testing.T) {
 	identity := geom.IdentityMatrix()
 
 	// An axis-aligned rrect clip plus a constant-color fill covering the clip reduces to a drawRRect of the clip shape
-	// (attemptQuadOptimization's kSubmitted rrect lane).
+	// (attemptQuadOptimization's quadOptSubmitted rrect lane).
 	cs := NewClipStack(geom.IRectWH(64, 64), false)
 	cs.ClipRRect(&identity,
 		geom.MakeRRect(geom.Rect{Left: 8, Top: 8, Right: 56, Bottom: 56}, 10, 12), gpu.AAYes,
@@ -172,8 +172,6 @@ func TestCircleOpMerge(t *testing.T) {
 	}
 }
 
-// isCoverageAAHelper reports whether the helper is doing fragment-coverage AA: not hardware MSAA, and carrying the
-// coverage AA type rather than AATypeNone.
 func isCoverageAAHelper(h *SimpleMeshDrawOpHelper) bool {
 	return !h.UsesMSAA() && h.AAType() == gpu.AATypeCoverage
 }
@@ -331,7 +329,7 @@ func TestTextureOpMergeGate(t *testing.T) {
 		t.Fatalf("expected 2 quads in the merged texture op, got %d", op.NumQuads())
 	}
 
-	// A different proxy cannot merge (the chaining lane is deferred).
+	// A different proxy cannot merge (there is no chaining lane).
 	viewB := makeView("texB")
 	sdc.DrawTexture(nil, viewB, gpu.AlphaTypePremul, gpu.FilterModeNearest, gpu.MipmapModeNone,
 		raster.BlendSrcOver, white, src, geom.Rect{Left: 40, Top: 40, Right: 56, Bottom: 56},

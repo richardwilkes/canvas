@@ -114,7 +114,7 @@ func bandCount(rows int32, workers int) int32 {
 // scanlines, filling each [bounds[i], bounds[i+1]) sub-rect with the same AA/BW rect converter (and an independent
 // per-worker blitter — shader blitters carry per-span scratch and cannot cross goroutines) is byte-identical to filling
 // the whole rect serially. The minBandRows floor guarantees no band isolates the fractional top or bottom edge row on
-// its own (see the antiFillDot8 note above).
+// its own (see minBandRows).
 func RectFillBandBounds(top, bottom float32, workers int) []float32 {
 	iTop := int32(math.Ceil(float64(top)))
 	iBot := int32(math.Floor(float64(bottom)))
@@ -135,10 +135,9 @@ func RectFillBandBounds(top, bottom float32, workers int) []float32 {
 // IRectFillBandBounds splits an integer device rect spanning rows [top, bottom) into up to workers bands (each at least
 // minBandRows scanlines tall), returning the n+1 integer band boundaries [top, c_1, …, c_{n-1}, bottom], or nil when
 // the rect is too short to be worth parallelizing. workers <= 0 uses the fixed machine-independent default split (see
-// bandCount). This is the drawPaint (full-device
-// shaded fill) counterpart of RectFillBandBounds: every boundary is an integer scanline, so — because an integer rect
-// fill through FillIRectRasterClip is per-row independent for any clip (each row intersects the clip spans on its own,
-// with no AA-rect edge coverage) — filling each [bounds[i], bounds[i+1]) band with an independent per-worker blitter is
+// bandCount). This is the drawPaint (full-device shaded fill) counterpart of RectFillBandBounds. An integer rect fill
+// through FillIRectRasterClip is per-row independent for any clip (each row intersects the clip spans on its own, with
+// no AA-rect edge coverage), so filling each [bounds[i], bounds[i+1]) band with an independent per-worker blitter is
 // byte-identical to the serial fill regardless of the clip shape.
 func IRectFillBandBounds(top, bottom int32, workers int) []int32 {
 	rows := bottom - top

@@ -9,7 +9,7 @@
 
 // Hermetic tests for StyledShape: unstyled keys (state flags, geometry words, the small-path key-from-data lane and the
 // gen-ID lane), the inherited style-key machinery (closed/no-joins flag trimming), the stroke simplifications,
-// MakeFilled, and asNestedRects, covering the in-scope lanes.
+// MakeFilledStyledShape, and AsNestedRects.
 
 package gl
 
@@ -177,13 +177,13 @@ func TestStyledShapeInheritedStyleKey(t *testing.T) {
 		t.Fatal("different joins share a key on an open shape")
 	}
 
-	// The starPath is closed, so cap style cannot affect the output and is dropped from the key (kClosed_KeyFlag).
+	// The starPath is closed, so cap style cannot affect the output and is dropped from the key (StyleKeyClosed).
 	capped := mk(4, stroke.CapRound, stroke.JoinMiter)
 	if !slices.Equal(keyA, unstyledKey(t, &capped)) {
 		t.Fatal("cap variation altered the key of a closed shape")
 	}
 
-	// A diagonal line has no joins, so join style is dropped (kNoJoins_KeyFlag) but caps count.
+	// A diagonal line has no joins, so join style is dropped (StyleKeyNoJoins) but caps count.
 	mkLine := func(capType stroke.Cap, join stroke.Join) StyledShape {
 		p := &path.Path{}
 		p.MoveTo(3, 4).LineTo(23, 37)

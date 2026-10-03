@@ -33,7 +33,7 @@ func TestPackedGlyphID(t *testing.T) {
 	}
 
 	// The X sub-pixel field quantizes the fractional position into quarters; the packing expects the rounding constant
-	// to have been added already (the direct-mask-drawing path adds halfSampleFreq).
+	// to have been added already (the glyph-run painters add HalfAxisSampleFreq).
 	mask := geom.IPoint{X: 3, Y: 0}
 	cases := []struct {
 		frac float32
@@ -61,12 +61,11 @@ func TestPackedGlyphID(t *testing.T) {
 	}
 }
 
-// TestPackedGlyphIDSubY is TestPackedGlyphID for the sub-pixel *Y* lane, which the X-only mask above never reaches.
-// The lane is live: it is what the unaligned spec (baseline snapping off) and the Y-aligned one (90-degree-rotated
-// text) select, and canvas/text.go and gpu/text/subrun.go pack every glyph through the strike's own field mask. Its
-// field sits directly above the 16-bit glyph ID, so a wrong shift spills sub-y bits into the ID and the strike resolves
-// an entirely different glyph — which is why the packed values are pinned against literals here rather than against the
-// shift constant the packing itself uses.
+// TestPackedGlyphIDSubY is TestPackedGlyphID for the sub-pixel Y lane, which the X-only mask above never reaches. The
+// unaligned spec (baseline snapping off) and the Y-aligned one (90-degree-rotated text) select it, and canvas/text.go
+// and gpu/text/subrun.go pack every glyph through the strike's field mask. Its field sits directly above the 16-bit
+// glyph ID, so a wrong shift spills sub-y bits into the ID and the strike resolves a different glyph, which is why the
+// packed values are pinned against literals rather than the shift constant the packing uses.
 func TestPackedGlyphIDSubY(t *testing.T) {
 	yMask := geom.IPoint{Y: 3 << packedSubPixelYShift}
 	cases := []struct {
@@ -305,10 +304,10 @@ func TestStrikeMaskGeneration(t *testing.T) {
 	}
 }
 
-// TestAtlasActionSizeGates drives the two atlas-bound mask actions across their bound: kDirectMask takes glyphs up to
-// SideTooBigForAtlas, kMask stops two pixels short of it for the bilerp padding, and both must reject everything above.
-// The text sizes bracket the crossing ('A' grows a bit under a pixel per point), so the walk sees each action flip —
-// and sees kMask flip first, which is the whole point of the -2.
+// TestAtlasActionSizeGates drives the two atlas-bound mask actions across their bound: ActionDirectMask takes glyphs up
+// to SideTooBigForAtlas, ActionMask stops two pixels short of it for the bilerp padding, and both must reject
+// everything above. The text sizes bracket the crossing ('A' grows a bit under a pixel per point), so the walk sees
+// each action flip, with ActionMask flipping first, which is the point of the -2.
 func TestAtlasActionSizeGates(t *testing.T) {
 	tf := loadTypeface(t, "Roboto-Regular.ttf", 0)
 	gid := tf.UnicharToGlyph('A')
@@ -350,7 +349,7 @@ func TestAtlasActionSizeGates(t *testing.T) {
 				test.name, accepted, rejected)
 		}
 	}
-	// kMask's two pixels of bilerp padding must cost it a real size: it gives up before kDirectMask does.
+	// ActionMask's two pixels of bilerp padding must cost it a real size: it gives up before ActionDirectMask does.
 	if tests[1].firstReject >= tests[0].firstReject {
 		t.Errorf("kMask first rejects at size %v, kDirectMask at %v; kMask must give up first",
 			tests[1].firstReject, tests[0].firstReject)
@@ -712,10 +711,10 @@ func TestStrikeCacheLRUAndBudget(t *testing.T) {
 	if n := cache.StrikeCount(); n >= 31 {
 		t.Errorf("cache kept all %d strikes", n)
 	}
-	// Only strike creation runs a purge pass, so the glyphs resolved since the last one are charged but unpurged and
-	// the total is legitimately over the limit here. Creating one more strike runs the pass that has to reclaim them.
-	// Assert against the limit rather than a byte count, so the assertion stays about purging rather than about how
-	// much one strike's worth of glyphs happens to cost.
+	// Only FindOrCreateStrike runs a purge pass, so the glyphs resolved since the last call are charged but unpurged
+	// and the total is legitimately over the limit here. One more call runs the pass that has to reclaim them. Assert
+	// against the limit rather than a byte count, so the assertion stays about purging rather than about how much one
+	// strike's worth of glyphs happens to cost.
 	before := cache.TotalMemoryUsed()
 	purgingFont := NewFont(tf, 41, 1, 0)
 	purgingSpec := MakeMaskSpec(purgingFont, nil, &identity, nil)
@@ -740,8 +739,8 @@ func TestStrikeCacheLRUAndBudget(t *testing.T) {
 }
 
 // There is no non-path glyph host, so generating a mask materializes and retains the device path too. The strike budget
-// must charge those bytes whichever generation order the caller uses, or an image-first draw under-reports the retention
-// by the whole path (path bytes are comparable to mask bytes for typical glyphs).
+// must charge those bytes whichever generation order the caller uses, or an image-first draw under-reports the
+// retention by the whole path (path bytes are comparable to mask bytes for typical glyphs).
 func TestStrikeMemoryChargesRetainedPathOnce(t *testing.T) {
 	tf := loadTypeface(t, "Roboto-Regular.ttf", 0)
 	f := NewFont(tf, 24, 1, 0)

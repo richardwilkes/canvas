@@ -7,14 +7,13 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// Regression tests for insertTaskBeforeLast's reorder-blocker bookkeeping. reorderBlockerTaskIndices holds indices into
-// dm.dag identifying the tasks that block reordering; sortTasks relies on those indices to partition the DAG into
-// topo-sorted spans (the blocker task sits on the boundary between spans). When insertTaskBeforeLast swaps the new task
-// in ahead of the current last task, and that last task is itself a reorder blocker, its recorded index must follow it
-// from len(dag)-1 to len(dag). The predicate that bumps the index therefore has to compare against len(dm.dag)-1;
-// comparing against len(dm.dag) (as upstream Skia's GrDrawingManager::insertTaskBeforeLast does) can never fire because
-// a recorded index is always a valid task index in [0, len(dag)-1], leaving the index stale and mis-partitioning the
-// spans. These tests construct the DAG directly with tiny stub tasks, so they need no GL context.
+// Regression tests for insertTaskBeforeLast's reorder-blocker bookkeeping. sortTasks partitions the DAG into
+// topo-sorted spans at the indices in reorderBlockerTaskIndices. When insertTaskBeforeLast swaps the new task in ahead
+// of a last task that is itself a reorder blocker, the blocker's recorded index must follow it from len(dag)-1 to
+// len(dag), so the predicate that bumps it has to compare against len(dm.dag)-1. Comparing against len(dm.dag), as
+// upstream Skia's GrDrawingManager::insertTaskBeforeLast does, can never fire (a recorded index never exceeds
+// len(dag)-1), leaving the index stale and mis-partitioning the spans. The tests use stub tasks, so they need no GL
+// context.
 
 package gl
 
@@ -24,8 +23,7 @@ import (
 	"github.com/richardwilkes/canvas/geom"
 )
 
-// stubRenderTask is a minimal concrete RenderTask used only to exercise the drawing-manager DAG bookkeeping. Its
-// blocker flag is set at construction so BlocksReordering reflects the intent.
+// stubRenderTask is a minimal RenderTask for exercising the drawing-manager DAG bookkeeping.
 type stubRenderTask struct {
 	RenderTaskBase
 }

@@ -11,8 +11,8 @@
 // segments, quads, and conics; lines become 6-vertex bloated segments with per-vertex coverage through the default
 // geometry processor, while quads and conics become 5-sided bounding polys shaded by the quad/conic distance
 // approximations (bezierfx.go). The program characterization (which of the line/quad/conic programs are needed) is
-// computed at prepare time and consumed at execute time; overflow of the int32 line/quad/conic counts is guarded with
-// the same maxLines/maxQuadsAndConics bail-outs.
+// computed at prepare time and consumed at execute time; the maxLines/maxQuadsAndConics bail-outs guard against int32
+// overflow of the vertex counts.
 
 package gl
 
@@ -28,12 +28,10 @@ import (
 	"github.com/richardwilkes/canvas/stroke"
 )
 
-// Quadratics are rendered as 5-sided polys in order to bound the AA stroke around the center-curve. See the comments in
-// aaHairlineQuadIdxPattern and bloatQuad. Quadratics and conics share an index buffer.
-
-// Each quadratic is rendered as a five sided polygon. This poly bounds the quadratic's bounding triangle but has been
-// expanded so that the 1-pixel wide area around the curve is inside the poly. If a,b,c are the original control points
-// then the poly a0,b0,c0,c1,a1 that is rendered would look like this:
+// Each quadratic or conic (they share an index buffer) is rendered as a five sided polygon. This poly bounds the
+// curve's bounding triangle but has been expanded so that the 1-pixel wide area around the curve is inside the poly
+// (see bloatQuad). If a,b,c are the original control points then the poly a0,b0,c0,c1,a1 that is rendered would look
+// like this:
 //
 //	         b0
 //	         b
@@ -102,7 +100,6 @@ func getQuadsIndexBuffer(rp *ResourceProvider) *Buffer {
 		aaHairlineQuadsNumInIdxBuf, aaHairlineQuadNumVertices, &aaHairlineQuadsIndexBufferKey)
 }
 
-// getLinesIndexBuffer returns the shared patterned index buffer for bloated line segments.
 func getLinesIndexBuffer(rp *ResourceProvider) *Buffer {
 	aaHairlineIndexBufferKeys()
 	return rp.findOrCreatePatternedIndexBuffer(aaHairlineLineSegIdxPattern,
@@ -110,7 +107,7 @@ func getLinesIndexBuffer(rp *ResourceProvider) *Buffer {
 		&aaHairlineLinesIndexBufferKey)
 }
 
-// getFloatExp returns the (biased) binary exponent of x.
+// getFloatExp returns the unbiased binary exponent of x.
 func getFloatExp(x float32) int {
 	return int((math.Float32bits(x)&0x7f800000)>>23) - 127
 }
@@ -120,9 +117,8 @@ func getFloatExp(x float32) int {
 // dst[1] are the two new conics.
 func splitConic(src []geom.Point, dst *[2]geom.Conic, weight float32) int {
 	t := geom.FindQuadMaxCurvature(src)
-	// FindQuadMaxCurvature() returns either a value in [0, 1) or NaN. However, passing NaN to ChopAt will assert.
-	// Checking to see if t is in (0,1) will also cover the NaN case since NaN comparisons are always false, so we'll
-	// drop down into the else block in that case.
+	// FindQuadMaxCurvature returns either a value in [0, 1] or NaN. Requiring t in (0,1) also rejects NaN, since NaN
+	// comparisons are always false.
 	if 0 < t && t < 1 {
 		if dst != nil {
 			conic := geom.MakeConic(src[0], src[1], src[2], weight)
@@ -258,7 +254,6 @@ func gatherLinesAndQuads(p *path.Path, m *geom.Matrix, devClipBounds geom.IRect,
 		}
 	}
 
-	// Common code for handling lines.
 	handleLineVerb := func(pathPts []geom.Point) {
 		var devPts [2]geom.Point
 		m.MapPoints(devPts[:], pathPts[:2])
@@ -273,7 +268,7 @@ func gatherLinesAndQuads(p *path.Path, m *geom.Matrix, devClipBounds geom.IRect,
 		verbsInContour++
 	}
 
-	// Applies the view matrix to quad source points and calls the above helper.
+	// Applies the view matrix to quad source points and calls addChoppedQuad.
 	addSrcChoppedQuad := func(srcSpaceQuadPts []geom.Point, isContourStart bool) {
 		var devPts [3]geom.Point
 		m.MapPoints(devPts[:], srcSpaceQuadPts[:3])
@@ -341,8 +336,8 @@ func gatherLinesAndQuads(p *path.Path, m *geom.Matrix, devClipBounds geom.IRect,
 			var choppedPts [5]geom.Point
 			// Chopping the quad helps when the quad is either degenerate or nearly degenerate. When it is degenerate it
 			// allows the approximation with lines to work since the chop point (if there is one) will be at the
-			// parabola's vertex. In the nearly degenerate the QuadUVMatrix computed for the points is almost singular
-			// which can cause rendering artifacts.
+			// parabola's vertex. In the nearly degenerate case the quadUVMatrix computed for the points is almost
+			// singular, which can cause rendering artifacts.
 			n := geom.ChopQuadAtMaxCurvature(pathPts[:3], choppedPts[:])
 			for i := 0; i < n; i++ {
 				addSrcChoppedQuad(choppedPts[i*2:i*2+3], verbsInContour == 0 && i == 0)
@@ -353,8 +348,7 @@ func gatherLinesAndQuads(p *path.Path, m *geom.Matrix, devClipBounds geom.IRect,
 			m.MapPoints(devPts[:], pathPts[:4])
 			if devClipBounds.Intersects(safeIBounds(devPts[:])) {
 				var q []geom.Point
-				// We convert cubics to quadratics (for now). In perspective we have to do the conversion in source
-				// space.
+				// Cubics are converted to quadratics. In perspective the conversion has to be done in source space.
 				src := pathPts
 				if persp {
 					tolScale := scaleToleranceToSrc(1, m, p.Bounds())
@@ -372,9 +366,8 @@ func gatherLinesAndQuads(p *path.Path, m *geom.Matrix, devClipBounds geom.IRect,
 			}
 			verbsInContour++
 		case path.VerbClose:
-			// The closing line (when the contour's last point differs from its start) has already been emitted by the
-			// iterator as a VerbLine. Contour is closed, so we don't need to grow the starting line, unless it's *just*
-			// a zero length subpath (SVG spec 11.4, 'stroke').
+			// Contour is closed, so we don't need to grow the starting line, unless it's *just* a zero length subpath
+			// (SVG spec 11.4, 'stroke').
 			if capLength > 0 {
 				if seenZeroLengthVerb && verbsInContour == 1 {
 					*lines = append(*lines,
@@ -412,7 +405,7 @@ type aaHairlineLineVertex struct {
 // aaHairlineBezierVertex is a quad/conic vertex: position + the conic KLM / quad UV union (24 bytes serialized).
 type aaHairlineBezierVertex struct {
 	pos geom.Point
-	// coeffs is fConic.fKLM[0..2] + padding for conics, or fQuadCoord (u, v) in the first two entries for quads.
+	// coeffs is the K, L, M values + padding for conics, or the UV coordinate in the first two entries for quads.
 	coeffs [4]float32
 }
 
@@ -473,7 +466,7 @@ func bloatQuad(qpts *[3]geom.Point, toDevice, toSrc *geom.Matrix, verts []aaHair
 	//         b      |
 	//                |
 	//                |     a0            c0
-	// a c | a1 c1
+	// a         c    |        a1       c1
 	//
 	// edges a0->b0 and b0->c0 are parallel to original edges a->b and b->c, respectively.
 	ab := b.Sub(a)
@@ -525,7 +518,7 @@ func bloatQuad(qpts *[3]geom.Point, toDevice, toSrc *geom.Matrix, verts []aaHair
 // setConicCoeffs computes each vertex's implicit-form coefficients. Equations based off of Loop-Blinn Quadratic GPU
 // Rendering. Input parametric:
 //
-//	P(t) = (P0*(1-t)^2 + 2*w*P1*t*(1-t) + P2*t^2) / (1-t)^2 + 2*w*t*(1-t) + t^2)
+//	P(t) = (P0*(1-t)^2 + 2*w*P1*t*(1-t) + P2*t^2) / ((1-t)^2 + 2*w*t*(1-t) + t^2)
 //
 // Output implicit: f(x, y, w) = f(P) = K^2 - LM, with K = dot(k, P), L = dot(l, P), M = dot(m, P); k, l, m are
 // calculated by getConicKLM.
@@ -549,7 +542,7 @@ func addConics(p []geom.Point, weight float32, toDevice, toSrc *geom.Matrix, ver
 	}
 }
 
-// addQuads subdivides a quad subdiv times, bloating and writing vertices for each piece.
+// addQuads chops a quad into 2^subdiv pieces, bloating and writing vertices for each piece.
 func addQuads(p []geom.Point, subdiv int, toDevice, toSrc *geom.Matrix, verts []aaHairlineBezierVertex, vertIdx *int) {
 	if subdiv < 0 {
 		panic("subdiv must be non-negative")
@@ -646,9 +639,6 @@ func addLine(p []geom.Point, toSrc *geom.Matrix, coverage uint8, verts []aaHairl
 
 	*vertIdx += aaHairlineLineSegNumVerts
 }
-
-//////////////////////////////////////////////////////////////////////////////
-// AAHairlineOp
 
 // aaHairlineProgram is a bitmask of which of the line/quad/conic programs a draw needs.
 type aaHairlineProgram uint8
@@ -840,7 +830,6 @@ func (o *aaHairlineOp) createProgramInfos(state *OpFlushState) {
 
 // OnPrepare implements Op.
 func (o *aaHairlineOp) OnPrepare(state *OpFlushState) {
-	// Setup the viewmatrix and localmatrix for the geometry processor.
 	inverse, ok := o.viewMatrix().Invert()
 	if !ok {
 		return
@@ -878,7 +867,6 @@ func (o *aaHairlineOp) OnPrepare(state *OpFlushState) {
 		return
 	}
 
-	// Do lines first.
 	if lineCount != 0 {
 		actualPrograms |= aaHairlineProgramLine
 
@@ -915,7 +903,6 @@ func (o *aaHairlineOp) OnPrepare(state *OpFlushState) {
 			return
 		}
 
-		// Setup vertices.
 		bezVerts := make([]aaHairlineBezierVertex, vertexCount)
 		vertIdx := 0
 
@@ -930,7 +917,6 @@ func (o *aaHairlineOp) OnPrepare(state *OpFlushState) {
 			addQuads(quads[3*i:3*i+3], qSubdivs[i], toDevice, toSrc, bezVerts, &vertIdx)
 		}
 
-		// Start Conics.
 		for i := 0; i < conicCount; i++ {
 			addConics(conics[3*i:3*i+3], cWeights[i], toDevice, toSrc, bezVerts, &vertIdx)
 		}
@@ -1027,9 +1013,6 @@ func (o *aaHairlineOp) OnCombineIfPossible(t Op) CombineResult {
 	return CombineResultMerged
 }
 
-//////////////////////////////////////////////////////////////////////////////
-// AAHairLinePathRenderer
-
 // AAHairLinePathRenderer is a PathRenderer for coverage-AA hairlines.
 type AAHairLinePathRenderer struct{}
 
@@ -1039,7 +1022,7 @@ func NewAAHairLinePathRenderer() *AAHairLinePathRenderer { return &AAHairLinePat
 // Name implements PathRenderer.
 func (r *AAHairLinePathRenderer) Name() string { return "AAHairline" }
 
-// OnGetStencilSupport implements PathRenderer (the base-class kNoSupport default).
+// OnGetStencilSupport implements PathRenderer, reporting StencilSupportNone.
 func (r *AAHairLinePathRenderer) OnGetStencilSupport(*StyledShape) StencilSupport {
 	return StencilSupportNone
 }
@@ -1081,7 +1064,7 @@ func (r *AAHairLinePathRenderer) OnDrawPath(args *DrawPathArgs) bool {
 	return true
 }
 
-// OnStencilPath implements PathRenderer (never reached: kNoSupport).
+// OnStencilPath implements PathRenderer (never reached: StencilSupportNone).
 func (r *AAHairLinePathRenderer) OnStencilPath(*StencilPathArgs) {
 	panic("AAHairLinePathRenderer cannot stencil paths")
 }

@@ -44,9 +44,8 @@ func (s *FilterDecalShader) IsOpaque() bool { return false }
 func (s *FilterDecalShader) IsConstant() bool { return false }
 
 // filterDecalCtx holds the decal kernel's saved coordinates plus the ramp bounds (copied from the shader) in reused
-// pipeline storage, so the weight stage reads them through z.ctx instead of a per-compile new([2][stride]float32) plus
-// two capturing closures. coords is written in full by appendStoreCoords before the weight stage reads it within each
-// ShadeSpan chunk, so pooled reuse needs no zeroing.
+// pipeline storage, so the weight stage reads them through z.ctx rather than allocating per compile. appendStoreCoords
+// writes coords in full before the weight stage reads it within each ShadeSpan chunk, so pooled reuse needs no zeroing.
 type filterDecalCtx struct {
 	coords     [2][stride]float32
 	l, t, r, b float32
@@ -86,7 +85,6 @@ func filterDecalWeightStage(z *lanes) {
 	for i := range z.n {
 		x := c.coords[0][i]
 		y := c.coords[1][i]
-		// d = saturate((bounds - coord.xyxy) * (-1,-1,1,1) + 0.5)
 		dx0 := clamp01(x - l + 0.5)
 		dy0 := clamp01(y - t + 0.5)
 		dx1 := clamp01(r - x + 0.5)

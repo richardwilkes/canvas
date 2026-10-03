@@ -7,8 +7,9 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// A Form XObject wraps a content stream. Two lanes use it: the gradient alpha (luminosity SMask) path, and saveLayer
-// transparency groups via Device.DrawDevice → makeFormXObjectFromDevice → makeFormXObjectFromDeviceBounds.
+// A Form XObject wraps a content stream. Two callers build them: the gradient alpha (luminosity SMask) path, and
+// Device.makeFormXObjectFromDeviceBounds, which serves saveLayer transparency groups, soft-mask devices, and
+// advanced-blend compositing.
 
 package pdf
 
@@ -26,7 +27,7 @@ func makeFormXObject(doc *Document, content []byte, mediaBox *Array, resourceDic
 	dict.InsertObject("Resources", resourceDict)
 	dict.InsertObject("BBox", mediaBox)
 
-	// Form XObjects are used for saveLayer and alpha masks, both of which want isolated blending.
+	// Every use (layers, masks, compositing) wants isolated blending.
 	group := NewTypedDict("Group")
 	group.InsertName("S", "Transparency")
 	if colorSpace != "" {

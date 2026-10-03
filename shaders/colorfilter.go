@@ -50,7 +50,7 @@ func NewWithColorFilter(s Shader, cf ColorFilter) Shader {
 	return NewColorFilterShader(s, 1, cf)
 }
 
-// Shader returns the wrapped shader; Filter and Alpha return the other descriptor fields — the GPU side consumes these.
+// Shader returns the wrapped shader.
 func (s *ColorFilterShader) Shader() Shader { return s.shader }
 
 // Filter returns the wrapped color filter.

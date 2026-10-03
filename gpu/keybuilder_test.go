@@ -59,9 +59,8 @@ func TestKeyBuilderResetReuseByteIdentical(t *testing.T) {
 		t.Fatalf("short reuse key = %v, want %v", short, shortFresh)
 	}
 
-	// Reset must clear a dirty in-progress bit state (bits added but never flushed): the leftover bits must not corrupt
-	// the next key. This has teeth — without clearing curValue/bitsUsed the leftover 0x3ff would fold into the
-	// following key.
+	// Reset must clear a dirty in-progress bit state (bits added but never flushed): without clearing curValue/bitsUsed
+	// the leftover 0x3ff would fold into the following key.
 	var dirty []uint32
 	rb.Reset(&dirty)
 	rb.AddBits(10, 0x3ff, "leftover")

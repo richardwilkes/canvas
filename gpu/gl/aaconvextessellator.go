@@ -20,8 +20,7 @@ import (
 	"github.com/richardwilkes/canvas/stroke"
 )
 
-// aaTessAntialiasingRadius is the device-space distance which we inset/outset points in order to create the soft
-// antialiased edge.
+// aaTessAntialiasingRadius is the device-space distance points are inset/outset to create the soft antialiased edge.
 const aaTessAntialiasingRadius = 0.5
 
 // The tolerance for fusing vertices and eliminating colinear lines (in device space).
@@ -70,7 +69,6 @@ func aaTessPerpIntersect(p0, n0, p1, perp geom.Point) (t float32, ok bool) {
 	return t, geom.IsFinite(t)
 }
 
-// aaTessDuplicatePt reports whether p0 and p1 are close enough to be treated as the same point.
 func aaTessDuplicatePt(p0, p1 geom.Point) bool {
 	return p0.DistanceToSqd(p1) < aaTessCloseSqd
 }
@@ -78,7 +76,6 @@ func aaTessDuplicatePt(p0, p1 geom.Point) bool {
 // aaTessPointsAreColinearAndBIsMiddle reports whether b lies close enough to the line through a and c, and between
 // them, that it can be dropped as a near-collinear point.
 func aaTessPointsAreColinearAndBIsMiddle(a, b, c geom.Point, accumError *float32) bool {
-	// First check distance from b to the infinite line through a, c.
 	aToC := c.Sub(a)
 	n := geom.Point{X: aToC.Y, Y: -aToC.X}
 	n.Normalize()
@@ -221,7 +218,6 @@ func (r *aaTessRing) initFromTess(tess *aaConvexTessellator) {
 	r.computeBisectors(tess)
 }
 
-// initFrom sets this ring's per-point normals and bisectors directly from precomputed slices.
 func (r *aaTessRing) initFrom(norms, bisectors []geom.Point) {
 	for i := range r.pts {
 		r.pts[i].norm = norms[i]
@@ -295,7 +291,6 @@ type aaConvexTessellator struct {
 	side             geom.PointSide // winding of the original polygon
 }
 
-// newAAConvexTessellator creates a tessellator configured with the given style, stroke width, join, and miter limit.
 func newAAConvexTessellator(style stroke.Style, strokeWidth float32, join stroke.Join, miterLimit float32) *aaConvexTessellator {
 	return &aaConvexTessellator{
 		side:        geom.PointSideOn,
@@ -306,7 +301,7 @@ func newAAConvexTessellator(style stroke.Style, strokeWidth float32, join stroke
 	}
 }
 
-// The next five should only be called after tessellate to extract the result.
+// The next six should only be called from outside after tessellate, to extract the result.
 func (t *aaConvexTessellator) numPts() int { return len(t.pts) }
 
 func (t *aaConvexTessellator) numIndices() int { return len(t.indices) }
@@ -319,8 +314,8 @@ func (t *aaConvexTessellator) index(index int) int { return t.indices[index] }
 
 func (t *aaConvexTessellator) coverage(index int) float32 { return t.coverages[index] }
 
-// addPt appends a point to the global pool. Movable points are those that can be slid along their bisector; a point is
-// immovable if it is part of the original polygon or it results from the fusing of two bisectors.
+// addPt appends a point to the global pool. A point is immovable if it is part of the original polygon or it results
+// from the fusing of two bisectors.
 func (t *aaConvexTessellator) addPt(pt geom.Point, coverage float32, movable bool, curve aaTessCurveState) int {
 	if !pt.IsFinite() {
 		panic("addPt requires a finite point")
@@ -487,10 +482,10 @@ func (t *aaConvexTessellator) createInsetRings(previousRing *aaTessRing, initial
 	return currentRing, done
 }
 
-// tessellate runs the tessellation. The general idea is to, conceptually, start with the original polygon and slide the
-// vertices along the bisectors until the first intersection. At that point two of the edges collapse and the process
-// repeats on the new polygon. The polygon state is captured in the Ring class while the tessellator controls the
-// iteration. The CandidateVerts holds the formative points for the next ring.
+// tessellate conceptually starts with the original polygon and slides the vertices along the bisectors until the first
+// intersection. At that point two of the edges collapse and the process repeats on the new polygon. aaTessRing captures
+// the polygon state while the tessellator controls the iteration; aaTessCandidateVerts holds the formative points for
+// the next ring.
 func (t *aaConvexTessellator) tessellate(m *geom.Matrix, p *path.Path) bool {
 	if !t.extractFromPath(m, p) {
 		return false
@@ -666,7 +661,6 @@ func (t *aaConvexTessellator) extractFromPath(m *geom.Matrix, p *path.Path) bool
 		return false
 	}
 
-	// Check if last point is a duplicate of the first point. If so, remove it.
 	if aaTessDuplicatePt(t.pts[t.numPts()-1], t.pts[0]) {
 		t.popLastPt()
 	}
@@ -687,7 +681,6 @@ func (t *aaConvexTessellator) extractFromPath(m *geom.Matrix, p *path.Path) bool
 		}
 	}
 
-	// Compute the normals and bisectors.
 	if len(t.norms) != 0 {
 		panic("norms must be empty at extraction")
 	}
@@ -790,14 +783,13 @@ func (t *aaConvexTessellator) createOuterRing(previousRing *aaTessRing, outset, 
 				// Bevel or round depending upon curvature.
 				dotProd := normal1.Dot(normal2)
 				if dotProd < aaTessRoundCapThreshold {
-					// Currently we "round" by creating a single extra point, which produces good results for common
-					// cases. For thick strokes with high curvature, we will need to add more points; for the time being
-					// we simply fall back to software rendering for thick strokes.
+					// We "round" by creating a single extra point, which produces good results for common cases. Thick
+					// strokes with high curvature would need more points; AALinearizingConvexPathRenderer declines
+					// those instead (see aaLinearizingMaxStrokeWidth).
 					miter := previousRing.bisector(cur)
 					miter.SetLength(-outset)
 					miter = miter.Add(t.pts[originalIdx])
 
-					// For very shallow angles all the corner points could fuse.
 					if !aaTessDuplicatePt(miter, t.point(perp1Idx)) {
 						miterIdx := t.addPt(miter, coverage, false, aaTessCurveSharp)
 						nextRing.addIdx(miterIdx, originalIdx)
@@ -826,7 +818,6 @@ func (t *aaConvexTessellator) createOuterRing(previousRing *aaTessRing, outset, 
 					miter.SetLength(-geom.ScalarSqrt(lengthSq))
 					miter = miter.Add(t.pts[originalIdx])
 
-					// For very shallow angles all the corner points could fuse.
 					if !aaTessDuplicatePt(miter, t.point(perp1Idx)) {
 						miterIdx := t.addPt(miter, coverage, false, aaTessCurveSharp)
 						nextRing.addIdx(miterIdx, originalIdx)
@@ -840,8 +831,8 @@ func (t *aaConvexTessellator) createOuterRing(previousRing *aaTessRing, outset, 
 				case stroke.JoinBevel:
 					t.addTri(originalIdx, perp1Idx, perp2Idx)
 				default:
-					// kRound_Join is unsupported for now. AALinearizingConvexPathRenderer is only willing to draw
-					// mitered or beveled, so we should never get here.
+					// stroke.JoinRound is unsupported. AALinearizingConvexPathRenderer only draws mitered or beveled
+					// joins, so we should never get here.
 					panic("unsupported round join in outer ring creation")
 				}
 			}
@@ -1071,9 +1062,9 @@ func (t *aaConvexTessellator) lineTo(p geom.Point, curve aaTessCurveState) {
 		t.pts[len(t.pts)-1], p, &t.accumLinearError) {
 		// The old last point is on the line from the second to last to the new point.
 		t.popLastPt()
-		// Double-check that the new last point is not a duplicate of the new point. In an ideal world this wouldn't be
-		// necessary (since it's only possible for non-convex paths), but floating point precision issues mean it can
-		// actually happen on paths that were determined to be convex.
+		// Double-check that the new last point is not a duplicate of the new point. In theory that is only possible for
+		// non-convex paths, but floating point precision issues let it happen on paths that were determined to be
+		// convex.
 		if aaTessDuplicatePt(p, t.lastPoint()) {
 			return
 		}

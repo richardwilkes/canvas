@@ -7,12 +7,11 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// The factory that layers scratch and unique-key reuse over the raw Gpu creation entry points. Functions that return
-// resources return them with a ref owned by the caller. Trims: compressed textures, semaphores, the backend-texture
-// wrap paths, and the callback-initialized overload of FindOrMakeStaticBuffer are not implemented (semaphores are not
-// publicly reachable). Cross-color-type conversion of initial texel data is deferred until the imagecore integration;
-// the color types the provider is asked to upload today map straight through, and a mismatch fails creation just like
-// an unsupported write.
+// ResourceProvider functions that return resources return them with a ref owned by the caller. Trims: compressed
+// textures, semaphores, the backend-texture wrap paths, and the callback-initialized overload of FindOrMakeStaticBuffer
+// are not implemented (semaphores are not publicly reachable). Cross-color-type conversion of initial texel data is not
+// implemented: callers supply a color type the format accepts directly, and a mismatch fails creation just like an
+// unsupported write.
 
 package gl
 
@@ -40,13 +39,10 @@ type ResourceProvider struct {
 	nonAAQuadIndexBuffer *Buffer
 	aaQuadIndexBuffer    *Buffer
 
-	// dynBufKeys memoizes the transient scratch keys CreateBuffer builds to look up a recyclable dynamic buffer, keyed
-	// on the (binned size, type) that fully determines the key. CreateBuffer runs single-threaded per context and never
-	// lets the cache retain the query key, so caching one built key per distinct request lets the size/type-stable
-	// per-frame geometry-pool requests (a vertex pool and an index pool, both at the default block size) rebuild
-	// nothing, avoiding a fresh heap-allocated key on every call. A first-seen request builds and caches its key
-	// exactly as the un-memoized path did, so the memo is never worse. Lazily created; nil until the first
-	// dynamic-buffer request.
+	// dynBufKeys memoizes the scratch keys CreateBuffer builds to look up a recyclable dynamic buffer, keyed on the
+	// (binned size, type) that fully determines the key, so the per-frame geometry-pool requests avoid a heap-allocated
+	// key on every call. This is safe because CreateBuffer runs single-threaded per context and the cache never retains
+	// the query key. Lazily created; nil until the first dynamic-buffer request.
 	dynBufKeys map[dynBufKeyID]*gpu.ScratchKey
 }
 
@@ -350,7 +346,6 @@ func (rp *ResourceProvider) CreateBuffer(size uint64, intendedType gpu.BufferTyp
 	} else {
 		allocSize = max(allocSize, minSize)
 	}
-	// Round up to the next power of two.
 	ceilPow2 := uint64(1)
 	for ceilPow2 < allocSize {
 		ceilPow2 <<= 1
@@ -363,8 +358,7 @@ func (rp *ResourceProvider) CreateBuffer(size uint64, intendedType gpu.BufferTyp
 		allocSize = ceilPow2
 	}
 
-	// Reuse the transient lookup key for this (size, type) across calls (see the dynBufKeys field comment); a
-	// first-seen request builds and caches it, which is what the un-memoized path did on every call.
+	// Reuse the lookup key for this (size, type) across calls (see the dynBufKeys field comment).
 	id := dynBufKeyID{size: allocSize, typ: intendedType}
 	key := rp.dynBufKeys[id]
 	if key == nil {
@@ -422,8 +416,6 @@ func (rp *ResourceProvider) AttachStencilAttachment(rt *RenderTarget, useMSAASur
 		if !ok {
 			return false
 		}
-		// Under dynamic MSAA the stencil buffer matches the internal multisample count (the caller ensured DMSAA
-		// support before using it).
 		numStencilSamples := rt.NumSamples()
 		if numStencilSamples == 1 && useMSAASurface {
 			numStencilSamples = rp.Caps().InternalMultisampleCount(rt.GLFormat())
@@ -436,7 +428,6 @@ func (rp *ResourceProvider) AttachStencilAttachment(rt *RenderTarget, useMSAASur
 			AttachmentUsageStencil, numStencilSamples, &sbKey)
 		keyedStencil, _ := rp.FindByUniqueKey(&sbKey).(*Attachment)
 		if keyedStencil == nil {
-			// Need to try and create a new stencil.
 			keyedStencil = rp.gpu.MakeStencilAttachment(rt.GLFormat(), rt.Surface().Dimensions(),
 				numStencilSamples)
 			if keyedStencil == nil {
@@ -478,8 +469,7 @@ func (rp *ResourceProvider) GetDiscardableMSAAAttachment(dims geom.ISize, format
 	return attachment
 }
 
-// MakeMSAAAttachment builds (or recycles) an MSAA color renderbuffer attachment (memoryless is a Vulkan/Metal-only
-// concept and is trimmed).
+// MakeMSAAAttachment builds (or recycles) an MSAA color renderbuffer attachment.
 func (rp *ResourceProvider) MakeMSAAAttachment(dims geom.ISize, format Format, sampleCnt int) *Attachment {
 	if sampleCnt <= 1 {
 		panic("MSAA attachment requires >1 sample")
@@ -511,8 +501,8 @@ func (rp *ResourceProvider) refScratchMSAAAttachment(dims geom.ISize, format For
 }
 
 // prepareLevels prepares mip level data for upload: row bytes are populated (never 0) and tightened by copying when the
-// backend lacks row-byte support; a color type the format cannot accept directly fails (cross-color-type conversion
-// arrives with the image integration). Returns the write color type, the prepared levels, and success.
+// backend lacks row-byte support; a color type the format cannot accept directly fails (cross-color-type conversion is
+// not implemented). Returns the write color type, the prepared levels, and success.
 func (rp *ResourceProvider) prepareLevels(format Format, colorType gpu.ColorType, baseSize geom.ISize, texels []gpu.MipLevel, mipLevelCount int) (gpu.ColorType, []gpu.MipLevel, bool) {
 	if mipLevelCount == 0 || len(texels) == 0 || texels[0].Pixels == nil {
 		panic("prepareLevels requires base level data")
@@ -520,7 +510,6 @@ func (rp *ResourceProvider) prepareLevels(format Format, colorType gpu.ColorType
 	allowedColorType := rp.Caps().SupportedWritePixelsColorType(colorType, format,
 		colorType).ColorType
 	if allowedColorType != colorType {
-		// Cross-color-type conversion is not yet implemented, so treat it as an unsupported write.
 		return gpu.ColorTypeUnknown, nil, false
 	}
 	rowBytesSupport := rp.Caps().WritePixelsRowBytesSupport

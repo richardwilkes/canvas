@@ -127,10 +127,9 @@ func decBool(s string) (bool, error) {
 	return v, nil
 }
 
-// encPath encodes a path's geometry: fill type, then one record per verb. This is what the path-ops fixtures freeze —
-// the oracle's *result geometry*, not a rasterization of it. Freezing pixels would bind the fixture to today's
-// rasterizer, so a later rasterizer change would surface as a false divergence in a path-ops test; freezing geometry
-// lets replay rasterize with whatever is current and keeps the comparison honest.
+// encPath encodes a path's geometry: fill type, then one record per verb. The path-ops fixtures freeze the oracle's
+// result geometry rather than a rasterization of it, so replay rasterizes with the current rasterizer and a later
+// rasterizer change cannot surface as a false path-ops divergence.
 //
 // Verb records carry only the points the verb contributes (the iterator's pts[0] repeats the current point), so the
 // encoding is exactly what the builder calls need to reconstruct the path.
@@ -348,8 +347,7 @@ func encStrokePaint(sp *strokePaint) string {
 		f32(sp.resScale))
 }
 
-// builderAdd is one (path, op) step of a Skia OpBuilder script. It lives here rather than in the probe that drives
-// it so both the replay and capture halves can key on the same encoding.
+// builderAdd is one (path, op) step of a Skia OpBuilder script; encBuilderScript encodes a script as its fixture key.
 type builderAdd struct {
 	spec *scenario.PathSpec
 	op   int

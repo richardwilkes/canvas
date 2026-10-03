@@ -9,8 +9,7 @@
 
 // The sRGB transfer function and its inverse. The inverse constants are derived at init time with the same scalar powf
 // approximation used to derive the reference values (log2/exp2 with truncating float→int conversion — subtly different
-// from ApproxPowf, which rounds), so the derived constants are stable bit for bit. They live here, rather than in
-// colorfilter, so imagecore's pixel-conversion steps can share them without an import cycle.
+// from ApproxPowf, which rounds), so the derived constants are stable bit for bit.
 
 package colorcore
 
@@ -38,7 +37,7 @@ func skcmsLog2(x float32) float32 {
 	return e - 124.225514990 - 1.498030302*m - 1.725879990/(0.3520887068+m)
 }
 
-// skcmsExp2 is the matching fast scalar exp2 approximation (note the truncating cast, where ApproxPow2 rounds).
+// skcmsExp2 is the matching fast scalar exp2 approximation (its final cast truncates, where ApproxPow2 rounds).
 func skcmsExp2(x float32) float32 {
 	if x > 128.0 {
 		return math.Float32frombits(0x7f800000) // +inf
@@ -85,7 +84,7 @@ func EvalSkcmsTF(tf *TransferFn, x float32) float32 {
 func InvertSRGBishTF(src *TransferFn) TransferFn {
 	var inv TransferFn
 
-	// We'll start by finding the new threshold inv.d.
+	// Find the new threshold inv.D.
 	dl := src.C*src.D + src.F
 	dr := skcmsPow(src.A*src.D+src.B, src.G) + src.E
 	if d := dl - dr; d > 1.0/512.0 || d < -1.0/512.0 {
@@ -93,7 +92,7 @@ func InvertSRGBishTF(src *TransferFn) TransferFn {
 	}
 	inv.D = dl
 
-	// When d=0, the linear section collapses to a point. We leave c,d,f all zero in that case.
+	// When d=0, the linear section collapses to a point, so c, d, and f all stay zero.
 	if inv.D > 0 {
 		inv.C = 1.0 / src.C
 		inv.F = -src.F / src.C
@@ -113,7 +112,7 @@ func InvertSRGBishTF(src *TransferFn) TransferFn {
 		inv.B = -inv.A * inv.D
 	}
 
-	// Tweak e or f so that inv(src(1.0f)) == 1.0f, preserving that valuable invariant.
+	// Tweak e or f so that inv(src(1.0)) == 1.0.
 	s := EvalSkcmsTF(src, 1.0)
 	sign := float32(1)
 	if s < 0 {

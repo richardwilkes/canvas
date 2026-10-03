@@ -10,7 +10,7 @@
 // The geometry processor for atlas text — device-space positions (2D, or 3D under perspective), packed atlas texel
 // coordinates carrying the 2-bit page index in bits 13/14 of x, and a per-vertex color for the coverage formats. The
 // GLSL is emitted directly. Trims: the color-space xform is identity (color emoji are sRGB, as is the destination) and
-// wide color is never requested by AtlasTextOp (which also hard-codes wideColor=false there).
+// wide color is never requested (Skia's AtlasTextOp hard-codes wideColor=false too).
 
 package gl
 
@@ -34,8 +34,6 @@ type bitmapTextGeoProc struct {
 	usesW           bool
 }
 
-// newBitmapTextGeoProc builds a bitmapTextGeoProc (the color-space xform is dropped, since it is always the identity;
-// wideColor is always false at the only call site).
 func newBitmapTextGeoProc(caps *gpu.ShaderCaps, color colorcore.PMColor4f, views []SurfaceProxyView, numActiveViews int, params gpu.SamplerState, maskFormat gpu.MaskFormat, localMatrix *geom.Matrix, usesW bool) *bitmapTextGeoProc {
 	if numActiveViews > bitmapTextMaxTextures {
 		panic("too many atlas views")
@@ -86,7 +84,6 @@ func (g *bitmapTextGeoProc) hasVertexColor() bool { return g.attrs[1].IsInitiali
 
 // AddNewViews updates the sampler set to match the atlas's current page count.
 func (g *bitmapTextGeoProc) AddNewViews(views []SurfaceProxyView, numActiveViews int, params gpu.SamplerState) {
-	// Just to make sure we don't try to add too many proxies.
 	numActiveViews = min(numActiveViews, bitmapTextMaxTextures)
 	if len(g.textureSamplers) == 0 {
 		g.atlasDimensions = views[0].Proxy().Dimensions()
@@ -103,8 +100,7 @@ func (g *bitmapTextGeoProc) AddNewViews(views []SurfaceProxyView, numActiveViews
 	g.setTextureSamplers(samplers)
 }
 
-// AddToKey implements GeometryProcessor (the color-space-xform key is constant, since the xform is always the
-// identity).
+// AddToKey implements GeometryProcessor (the always-identity color-space xform adds nothing to the key).
 func (g *bitmapTextGeoProc) AddToKey(caps *gpu.ShaderCaps, b *gpu.KeyBuilder) {
 	b.AddBool(g.usesW, "usesW")
 	b.AddBits(2, uint32(g.maskFormat), "maskFormat")
@@ -117,7 +113,6 @@ func (g *bitmapTextGeoProc) MakeProgramImpl(*gpu.ShaderCaps) GPProgramImpl {
 	return &bitmapTextGeoProcImpl{}
 }
 
-// bitmapTextGeoProcImpl is the shader implementation for bitmapTextGeoProc.
 type bitmapTextGeoProcImpl struct {
 	GPImplBase
 	localMatrixPrev        geom.Matrix
@@ -176,7 +171,6 @@ func appendIndexUVVaryings(args *GPEmitArgs, numTextureSamplers int, inTexCoords
 		}
 	}
 
-	// Multiply by 1/atlasDimensions to get normalized texture coordinates.
 	*uv = NewVarying(GLSLTypeFloat2)
 	args.VaryingHandler.AddVarying("TextureCoords", uv)
 	vb.CodeAppendf("%s = unormTexCoords * %s;", uv.VsOut(), atlasDimensionsInvName)
@@ -214,7 +208,6 @@ func appendMultitextureLookup(args *GPEmitArgs, numTextureSamplers int, texIdx *
 			coordName))
 }
 
-// onEmitCode implements GPProgramImpl.
 func (i *bitmapTextGeoProcImpl) onEmitCode(args *GPEmitArgs, gpArgs *GPArgs) {
 	btgp := args.GeomProc.(*bitmapTextGeoProc)
 	vertBuilder := args.VertBuilder
@@ -222,7 +215,6 @@ func (i *bitmapTextGeoProcImpl) onEmitCode(args *GPEmitArgs, gpArgs *GPArgs) {
 	uniformHandler := args.UniformHandler
 	fragBuilder := args.FragBuilder
 
-	// Emit attributes.
 	varyingHandler.EmitAttributes(btgp)
 
 	var atlasDimensionsInvName string
@@ -233,7 +225,6 @@ func (i *bitmapTextGeoProcImpl) onEmitCode(args *GPEmitArgs, gpArgs *GPArgs) {
 	appendIndexUVVaryings(args, btgp.NumTextureSamplers(), btgp.attrs[2].Name(),
 		atlasDimensionsInvName, &uv, &texIdx, nil)
 
-	// Set up pass-through color.
 	fragBuilder.CodeAppendf("vec4 %s;", args.OutputColor)
 	if btgp.hasVertexColor() {
 		varyingHandler.AddPassThroughAttribute(btgp.attrs[1].AsShaderVar(), args.OutputColor,
@@ -242,7 +233,6 @@ func (i *bitmapTextGeoProcImpl) onEmitCode(args *GPEmitArgs, gpArgs *GPArgs) {
 		i.setupUniformColor(fragBuilder, uniformHandler, args.OutputColor, &i.colorUniform)
 	}
 
-	// Set up position.
 	gpArgs.PositionVar = btgp.attrs[0].AsShaderVar()
 	WriteLocalCoord(vertBuilder, uniformHandler, args.ShaderCaps, gpArgs,
 		btgp.attrs[0].AsShaderVar(), &btgp.localMatrix, &i.localMatrixUniform)
@@ -251,7 +241,6 @@ func (i *bitmapTextGeoProcImpl) onEmitCode(args *GPEmitArgs, gpArgs *GPArgs) {
 	appendMultitextureLookup(args, btgp.NumTextureSamplers(), &texIdx, uv.FsIn(), "texColor")
 
 	if btgp.maskFormat == gpu.MaskFormatARGB {
-		// Modulate by color.
 		fragBuilder.CodeAppendf("%s = %s * texColor;", args.OutputColor, args.OutputColor)
 		fragBuilder.CodeAppendf("vec4 %s = vec4(1);", args.OutputCoverage)
 	} else {
@@ -259,7 +248,6 @@ func (i *bitmapTextGeoProcImpl) onEmitCode(args *GPEmitArgs, gpArgs *GPArgs) {
 	}
 }
 
-// Compile-time check.
 var _ GeometryProcessor = (*bitmapTextGeoProc)(nil)
 
 // bitmapTextFilterFromNeedsTransform maps the op's needsGlyphTransform flag to the atlas sampler filter

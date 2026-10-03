@@ -16,9 +16,7 @@ import "errors"
 type platformContext struct{}
 
 func (p *platformContext) init() error {
-	// The darwin (CGL), Linux (GLX over Xvfb/llvmpipe), and Windows (WGL over a Mesa3D opengl32.dll drop-in) legs are
-	// implemented (context_darwin.go / context_linux.go / context_windows.go). Until a leg exists for this platform,
-	// GPU tests skip on it.
+	// Only the darwin (CGL), Linux (GLX), and Windows (WGL) legs exist; GPU tests skip on every other platform.
 	return errors.New("gltest: headless GL context creation is not implemented on this platform yet")
 }
 

@@ -332,9 +332,8 @@ func TestDrawPointsRoundCapCircle(t *testing.T) {
 }
 
 // TestDrawPointsNonFiniteWithTransparentBlackFilter verifies DrawPoints bails out when the point bounds are non-finite
-// and the paint carries a filter. Without that bail-out the draw falls through to aboutToDraw with nil bounds, which
-// sizes the auto filter layer to the whole clip; a filter that affects transparent black (here a src-blend color
-// filter, which floods) then composites its output across the entire clip at restore, where nothing should be drawn.
+// and the paint carries a filter. Otherwise the auto filter layer is sized to the whole clip, and a filter that affects
+// transparent black (here a src-blend color filter, which floods) composites its output across it at restore.
 func TestDrawPointsNonFiniteWithTransparentBlackFilter(t *testing.T) {
 	cf := colorfilter.NewBlend(colorcore.Color(0xFF00FF00), raster.BlendSrc)
 	if !filtercore.ColorFilterAffectsTransparentBlack(cf) {
@@ -678,8 +677,8 @@ func TestDrawWithColorFilterOnShader(t *testing.T) {
 }
 
 func TestDrawRectWithBlurMaskFilter(t *testing.T) {
-	// A blurred fill must produce coverage outside the rect, keep the center saturated, and be horizontally symmetric
-	// about the rect's axis.
+	// A blurred fill must produce coverage outside the rect, keep the center nearly saturated, and be horizontally
+	// symmetric about the rect's axis.
 	cv, pix := newWhiteCanvasWH(80, 60)
 	p := NewPaint()
 	p.Color = 0xFF000000

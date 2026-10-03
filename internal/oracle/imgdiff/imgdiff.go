@@ -8,13 +8,10 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // Package imgdiff compares RGBA8888-premul pixel buffers under the named threshold profiles below and renders diff
-// heatmaps and side-by-side images for failures. It is cgo-free, like the rest of the harness.
+// heatmaps and side-by-side images for failures.
 //
 // The gating profiles are (near-)bit-exact: the golden references are the library's own per-platform output, so the
-// gates ask "did the output change at all?", not "are two renderers visually equivalent?". Exact gates the raster
-// lane; Exact1 gates the GPU lanes, tolerating only the ±1 LSB driver-internal wobble of software GL rasterizers. The
-// looser GPU profile gates no goldens at all: it bounds gorender's atlas CPU-vs-GPU self-consistency cross-check
-// between the library's two live backends, where the two rasterizers legitimately differ at antialiased edges.
+// gates ask "did the output change at all?", not "are two renderers visually equivalent?".
 package imgdiff
 
 import (
@@ -31,12 +28,12 @@ type Profile struct {
 	MaxDiffFraction float64
 }
 
-// The threshold profiles. Exact (delta 0) gates the raster lane against its self-captured per-platform goldens. Exact1
-// is "exact modulo ±1 LSB" — every channel delta must be ≤ 1 and zero pixels may exceed it — and gates the GPU lanes:
-// software GL rasterizers wobble ±1 intermittently between GL sessions, proven driver-internal (identical inputs and
-// GL command streams still produce ±1-differing output; see the oracle soak command's doc comment), while real breaks
-// measure ≥32 LSB. GPU is the one cross-renderer tolerance left, loose enough to absorb the drift between the
-// library's raster and GL backends drawing the same scene.
+// The threshold profiles. Exact (delta 0) gates the raster lane. Exact1 (every channel delta ≤ 1, zero pixels beyond)
+// gates the GPU lanes: software GL rasterizers wobble ±1 intermittently between GL sessions, proven driver-internal
+// (identical inputs and GL command streams still produce ±1-differing output; see the oracle soak command's doc
+// comment), while real breaks measure ≥32 LSB. GPU gates no goldens: it is the one cross-renderer tolerance left, loose
+// enough to absorb the drift between the library's raster and GL backends at antialiased edges, and bounds gorender's
+// atlas CPU-vs-GPU self-consistency cross-check.
 var (
 	Exact  = Profile{Name: "exact", MaxChannelDelta: 0, MaxDiffFraction: 0}
 	Exact1 = Profile{Name: "exact1", MaxChannelDelta: 1, MaxDiffFraction: 0}

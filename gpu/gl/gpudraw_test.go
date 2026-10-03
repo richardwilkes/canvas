@@ -57,10 +57,9 @@ func newDrawRecordingPass(t *testing.T, d *capsFakeDriver) (recGpu *Gpu, pass *O
 	return g, pass, vb, ib, instb
 }
 
-// TestFlushProgramClearsShadow pins the fix for the exported FlushProgram: binding a raw program ID must clear the
-// linked-*Program shadow (g.hwProgram) so the shadow-consistency invariant flushProgram asserts stays true. Before the
-// fix, FlushProgram set hwProgramID but left a stale hwProgram, so the next flushProgram panicked "program shadow out of
-// sync".
+// TestFlushProgramClearsShadow pins that the exported FlushProgram clears the linked-*Program shadow (g.hwProgram) when
+// binding a raw program ID, keeping the shadow-consistency invariant flushProgram asserts. A stale hwProgram made the
+// next flushProgram panic with "program shadow out of sync".
 func TestFlushProgramClearsShadow(t *testing.T) {
 	g := newRecordingGpuWithDriver(t, appleM4MaxDriver())
 
@@ -69,7 +68,6 @@ func TestFlushProgramClearsShadow(t *testing.T) {
 	g.hwProgram = prog
 	g.hwProgramID = 1
 
-	// Bind a different raw program ID directly.
 	g.FlushProgram(2)
 	if g.hwProgramID != 2 {
 		t.Fatalf("FlushProgram left hwProgramID = %d, want 2", g.hwProgramID)

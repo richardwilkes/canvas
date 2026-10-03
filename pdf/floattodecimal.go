@@ -16,8 +16,7 @@ package pdf
 import "math"
 
 // maxFloatToDecimalLength is the longest possible encoded length: -FLT_MIN serializes as
-// "-.0000000000000000000000000000000000000117549435" (48 characters), and 48 bytes suffice since the result is returned
-// as a length-carrying slice with no terminating NUL to reserve space for.
+// "-.0000000000000000000000000000000000000117549435" (48 characters). No NUL terminator needs space reserved.
 const maxFloatToDecimalLength = 48
 
 // powBySquaring returns value * pow(base, e), assuming e is positive.
@@ -81,8 +80,6 @@ func pow10(e int) float64 {
 // appendFloatToDecimal appends value's PDF-scalar decimal form to dst and returns the extended slice. It accepts any
 // input, including non-finite values, always emitting a syntactically valid number.
 func appendFloatToDecimal(dst []byte, value float32) []byte {
-	// This function is written to accept any possible input value, including non-finite values such as INF and NAN; in
-	// those cases correctness is ignored and a syntactically-valid number is emitted.
 	if value == float32(math.Inf(1)) {
 		value = math.MaxFloat32 // nearest finite float.
 	}
@@ -117,7 +114,7 @@ func appendFloatToDecimal(dst []byte, value float32) []byte {
 		d /= 10
 		decimalShift++
 	}
-	var buffer [9]byte // decimal value buffer.
+	var buffer [9]byte
 	bufferIndex := 0
 	for {
 		buffer[bufferIndex] = byte(d % 10)

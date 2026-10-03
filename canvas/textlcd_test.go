@@ -125,8 +125,8 @@ func TestLCDTextEndToEnd(t *testing.T) {
 		t.Error("BGR_H output is not the R/B mirror of RGB_H")
 	}
 
-	// Unknown geometry degrades subpixel edging to grayscale AA — byte-identical to kAntiAlias for unstyled glyphs (the
-	// FreeType host renders plain A8 there; the 4x filter lane is styled-only).
+	// Unknown geometry degrades subpixel edging to grayscale AA — byte-identical to EdgingAntiAlias for unstyled glyphs
+	// (the FreeType host renders plain A8 there; the 4x filter lane is styled-only).
 	if !pixEqual(gray, aa) {
 		t.Error("subpixel edging on unknown geometry != plain AA bytes")
 	}
@@ -162,7 +162,7 @@ func TestLCDTextDegrades(t *testing.T) {
 		t.Errorf("non-srcOver text has %d fringed pixels, want 0", f)
 	}
 
-	// kUseDeviceIndependentFonts disables LCD.
+	// UseDeviceIndependentFonts disables LCD.
 	dif := font.DeviceProps{PixelGeometry: font.PixelGeometryRGBH, UseDeviceIndependentFonts: true}
 	difPix := renderLCDText(t, dif, font.EdgingSubpixelAntiAlias, nil)
 	if f := fringePixels(difPix); f != 0 {

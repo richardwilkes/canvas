@@ -8,13 +8,9 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // The per-segment "walking" phase: the methods the bridgeOp/bridgeWinding/bridgeXor output-tracing drivers use to walk
-// the resolved segment graph, decide which edge is active for the pending operation, and emit it. Covered here: the
-// active-edge decision tables (kUnaryActiveEdge/kActiveEdge), activeAngle(+Inner/Other), activeOp/activeWinding (both
-// overloads: activeOp/activeOpWindings and activeWinding/activeWindingSum), setUpWinding (the unary singular form),
-// addCurveTo (emit an edge into the path writer), findNextOp/findNextWinding/findNextXor, markAndChaseDone, undoneSpan,
-// joinEnds, isSimple, and doneAngle. The winding/coincidence/angle machinery these consume lives in winding.go,
-// opangle.go, opcoincidence*.go, and opsegment_move.go. The chase worklist is a *[]*opSpanBase; the active-edge lookup
-// uses the PathOp enum directly.
+// the resolved segment graph, decide which edge is active for the pending operation, and emit it. The
+// winding/coincidence/angle machinery these consume lives in winding.go, opangle.go, opcoincidence*.go, and
+// opsegment_move.go.
 
 package pathops
 
@@ -137,7 +133,6 @@ func (s *opSegment) activeOpWindings(xorMiMask, xorSuMask int, start, end *opSpa
 	return kActiveEdge[op][b2i(miFrom)][b2i(miTo)][b2i(suFrom)][b2i(suTo)]
 }
 
-// activeWinding computes the running sum winding for the start/end span and defers to activeWindingSum.
 func (s *opSegment) activeWinding(start, end *opSpanBase) bool {
 	sumWinding := s.updateWinding(end, start)
 	return s.activeWindingSum(start, end, &sumWinding)
@@ -195,7 +190,7 @@ func (s *opSegment) addCurveTo(start, end *opSpanBase, writer *pathWriter) bool 
 }
 
 // findNextOp advances the trace to the next active edge for a boolean op, marking passed-over edges done and appending
-// their chase spans. Advances *nextStart/*nextEnd/*simple.
+// their chase spans. Updates *nextStart, *nextEnd, and *simple.
 func (s *opSegment) findNextOp(chase *[]*opSpanBase, nextStart, nextEnd **opSpanBase, unsortable, simple *bool, op PathOp, xorMiMask, xorSuMask int) *opSegment {
 	start := *nextStart
 	end := *nextEnd
@@ -203,7 +198,6 @@ func (s *opSegment) findNextOp(chase *[]*opSpanBase, nextStart, nextEnd **opSpan
 	other := s.isSimple(nextStart, &step) // advances nextStart
 	*simple = other != nil
 	if other != nil {
-		// mark the smaller of startIndex, endIndex done, and all adjacent spans with the same T value
 		startSpan := start.starter(end)
 		if startSpan.done {
 			return nil
@@ -473,12 +467,10 @@ func (s *opSegment) joinEnds(start *opSegment) {
 	s.tail.ptT.addOpp(&start.head.ptT, &start.head.ptT)
 }
 
-// isSimple is nextChase with no min/last tracking.
 func (s *opSegment) isSimple(end **opSpanBase, step *int) *opSegment {
 	return s.nextChase(end, step, nil, nil)
 }
 
-// doneAngle reports whether the angle's starter span is done.
 func (s *opSegment) doneAngle(angle *opAngle) bool {
 	return angle.start.starter(angle.end).done
 }

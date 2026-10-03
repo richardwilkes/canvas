@@ -44,12 +44,11 @@ const analyticCurveSnapAccuracy = 2
 // kInverseTableSize is FDot6One * 16.
 const kInverseTableSize = 1024
 
-// quickInverse returns +4194304 / x with C-style truncating division, so the result carries x's sign. It replaces a
-// 1025-entry lookup table whose entries are exactly -4194304 / (1024 - i): the negation lives in the indexing, which
-// negates the entry for x > 0 and reads the mirrored entry for x < 0, so it cancels for both signs. Verified against
-// the table's endpoints and spot values, so the direct division reproduces it bit-for-bit. The sign matters — the DY
-// callers pass an already-absolute slope and use the result as a non-negative reciprocal slope. x == 0 maps to 0
-// (updateLine reaches it when a non-zero Fixed slope truncates to zero FDot6).
+// quickInverse returns +4194304 / x with C-style truncating division, so the result carries x's sign. It reproduces
+// Skia's 1025-entry table of -4194304 / (1024 - i) bit for bit: that table's indexing negates the entry for x > 0 and
+// reads the mirrored entry for x < 0, so the negation cancels for both signs. The sign matters — the DY callers pass an
+// already-absolute slope and use the result as a non-negative reciprocal slope. x == 0 maps to 0 (updateLine reaches it
+// when a non-zero Fixed slope truncates to zero FDot6).
 func quickInverse(x FDot6) Fixed {
 	if x == 0 {
 		return 0
@@ -57,7 +56,7 @@ func quickInverse(x FDot6) Fixed {
 	return Fixed((FDot6One << 16) / x)
 }
 
-// quickDiv computes a/b as Fixed via the inverse table when |b| is in [8, 1024) and |a| is small enough that the 32-bit
+// quickDiv computes a/b as Fixed via quickInverse when |b| is in [8, 1024) and |a| is small enough that the 32-bit
 // product cannot overflow.
 func quickDiv(a, b FDot6) Fixed {
 	const kMinBits = 3
@@ -173,7 +172,7 @@ func (e *AnalyticEdge) goYShift(y Fixed, yShift int) {
 	e.X += e.DX >> yShift
 }
 
-// update returns true if we're NOT done with this edge.
+// update advances a curve edge to its next segment, reporting whether one remains.
 func (e *AnalyticEdge) update() bool {
 	if e.CurveCount != 0 {
 		return e.curve.updateCurve()
@@ -198,17 +197,15 @@ func (e *AnalyticEdge) SetLine(p0, p1 geom.Point) bool {
 		winding = WindingCCW
 	}
 
-	// are we a zero-height line?
 	dy := FixedToFDot6(y1 - y0)
 	if dy == 0 {
 		return false
 	}
 	dx := FixedToFDot6(x1 - x0)
 	slope := quickDiv(dx, dy)
-	// quickInverse is defined over FDot6, so the slope must be converted before it is handed over — otherwise DY comes
-	// out 1024x too small and means something different here than it does for the curve segments updateLine feeds.
-	// Abs of the FDot6 conversion, in that order, matching updateLine: the arithmetic shift floors negative slopes away
-	// from zero, so e.g. slope -3734 gives absSlope 4, not 3.
+	// quickInverse is defined over FDot6, so the slope must be converted first; otherwise DY comes out 1024x too small
+	// and means something different here than for the curve segments updateLine feeds. As in updateLine, abs follows
+	// the conversion.
 	absSlope := FixedToFDot6(slope)
 	if absSlope < 0 {
 		absSlope = -absSlope
@@ -236,11 +233,11 @@ func (e *AnalyticEdge) SetLine(p0, p1 geom.Point) bool {
 	return true
 }
 
-// updateLine sets up a line segment between the given fixed-point endpoints; the caller computes the slope once and
-// sends it in (to avoid a second division); y snapping already happened.
+// updateLine sets up a line segment between the given fixed-point endpoints, whose y values are already snapped. The
+// caller passes in the slope to avoid a second division.
 func (e *AnalyticEdge) updateLine(x0, y0, x1, y1, slope Fixed) bool {
-	// We don't chop at y extrema for cubics, so y is not guaranteed to be increasing for them. In that case, we have to
-	// swap x/y and negate the winding.
+	// Cubics are not chopped at y extrema, so their y is not guaranteed to increase; then the endpoints swap and the
+	// winding flips.
 	if y0 > y1 {
 		x0, x1 = x1, x0
 		y0, y1 = y1, y0
@@ -250,12 +247,11 @@ func (e *AnalyticEdge) updateLine(x0, y0, x1, y1, slope Fixed) bool {
 	dx := FixedToFDot6(x1 - x0)
 	dy := FixedToFDot6(y1 - y0)
 
-	// are we a zero-height line?
 	if dy == 0 {
 		return false
 	}
 
-	// abs of the FDot6 conversion, in that order: the arithmetic shift floors negative slopes away from zero, so e.g.
+	// Abs of the FDot6 conversion, in that order: the arithmetic shift floors negative slopes away from zero, so e.g.
 	// slope -3734 gives absSlope 4, not 3.
 	absSlope := FixedToFDot6(slope)
 	if absSlope < 0 {
@@ -531,7 +527,7 @@ func (c *AnalyticCubicEdge) setCubicWithoutUpdate(pts []geom.Point, shift, snapA
 
 	// Since our incoming data is initially shifted down by 10 (or 8 in antialias), the most we can shift up is 8.
 	// However, we compute coefficients with a 3*, so the safest upshift is really 6.
-	upShift := 6 // largest safe value
+	upShift := 6
 	downShift := shift + upShift - 10
 	if downShift < 0 {
 		downShift = 0
@@ -625,8 +621,7 @@ func (c *AnalyticCubicEdge) updateCurve() bool {
 			newy = c.cLastY
 		}
 
-		// we want to say assert(oldy <= newy), but our finite fixedpoint doesn't always achieve that, so we have to
-		// explicitly pin it here.
+		// Finite fixed-point precision does not always keep oldy <= newy, so pin it here.
 		if newy < oldy {
 			newy = oldy
 		}

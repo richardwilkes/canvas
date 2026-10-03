@@ -7,8 +7,8 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// Tests for OpsTask's op-recording bookkeeping: the dst-proxy reference recordOp consumes must be accounted for on every
-// exit, including the paths that drop the op.
+// Tests for OpsTask's op-recording bookkeeping: the dst-proxy reference recordOp consumes must be accounted for on
+// every exit, including the paths that drop the op.
 
 package gl
 
@@ -21,9 +21,9 @@ import (
 )
 
 // TestOpsTaskRecordOpReleasesDstProxy covers the reference setupDstProxyView leaves on the dst proxy for recordOp to
-// consume: the merge path releases it and makeOpChain transfers it into the chain, so the non-finite-bounds early return
-// (reachable through the exported OpsTask.AddDrawOp) must release it too or the backing texture never returns to the
-// resource cache.
+// consume: the merge path releases it and makeOpChain transfers it into the chain, so the non-finite-bounds early
+// return (reachable through the exported OpsTask.AddDrawOp) must release it too or the backing texture never returns to
+// the resource cache.
 func TestOpsTaskRecordOpReleasesDstProxy(t *testing.T) {
 	inf := float32(math.Inf(1))
 	for _, c := range []struct {

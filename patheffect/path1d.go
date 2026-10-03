@@ -29,11 +29,10 @@ const (
 	Path1DMorph                        // transform each point, and turn lines into curves
 )
 
-// maxReasonable1DIterations bounds the stepping loop: since we are stepping by a float, the loop might go on forever
-// (or nearly so); this governor limits pathological values from looping too long (and allocating too much memory).
+// maxReasonable1DIterations bounds the stepping loop, which steps by a float and so could, for pathological values, run
+// nearly forever and allocate too much memory.
 const maxReasonable1DIterations = 100000
 
-// path1DEffect is the 1D path stamp effect implementation, including the contour walk.
 type path1DEffect struct {
 	noAsPoints
 	path          *path.Path

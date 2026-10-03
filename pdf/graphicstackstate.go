@@ -29,8 +29,7 @@ import (
 // gsMaxStackDepth is the deepest the q/Q stack ever needs to go: one level for the matrix, one for the clip.
 const gsMaxStackDepth = 2
 
-// gsEntry is one level of the q/Q stack: the CTM, clip gen-ID, fill/stroke color or pattern, applied graphic state, and
-// text horizontal scale in effect at that depth.
+// gsEntry is the state in effect at one level of the q/Q stack.
 type gsEntry struct {
 	matrix            geom.Matrix
 	color             colorcore.Color4f
@@ -64,7 +63,6 @@ type graphicStackState struct {
 	stackDepth    int
 }
 
-// newGraphicStackState creates a graphicStackState that writes q/Q and state-transition operators to s.
 func newGraphicStackState(s stream.WStream) *graphicStackState {
 	g := &graphicStackState{contentStream: s}
 	for i := range g.entries {
@@ -168,7 +166,6 @@ func (g *graphicStackState) updateClip(clipStack *ClipStack, bounds geom.IRect) 
 	}
 }
 
-// matrixEqual reports whether two matrices are element-wise equal.
 func matrixEqual(a, b *geom.Matrix) bool {
 	av, bv := a.As9(), b.As9()
 	return av == bv
@@ -186,7 +183,6 @@ func emitPDFColor(color colorcore.Color4f, result stream.WStream) {
 
 // ---- appendClip and helpers ---------------------------------------------------------------------------
 
-// rectPath returns a clockwise-wound rect path.
 func rectPath(r geom.Rect) *path.Path { return (&path.Path{}).AddRect(r, geom.DirectionCW) }
 
 // rectIntersect returns the intersection of u and v, or an empty rect if either is empty or they don't overlap.
@@ -240,8 +236,8 @@ func isComplexClip(cs *ClipStack) bool {
 // clipHuge is the "large enough to not bother clipping against" bound used by applyClip.
 var clipHuge = geom.Rect{Left: -30000, Top: -30000, Right: 30000, Bottom: 30000}
 
-// applyClip calls fn with each clip stack element's path, in order, intersected with the shrinking running bounds; it
-// assumes the stack is not complex (no replace ops).
+// applyClip calls fn with each clip stack element's path in order, first combining it with the shrinking running bounds
+// when it is a difference, inverse-filled, or not within clipHuge. It assumes the stack has no replace ops.
 func applyClip(cs *ClipStack, outerBounds geom.Rect, fn func(*path.Path)) {
 	bounds := outerBounds
 	for _, element := range cs.elements() {
@@ -263,7 +259,8 @@ func applyClip(cs *ClipStack, outerBounds geom.Rect, fn func(*path.Path)) {
 	}
 }
 
-// appendClipPath emits clipPath as a fill followed by a clip (W/W*) operator; inverse fills are unreachable here.
+// appendClipPath emits clipPath's construction operators followed by a clip (W/W*) operator; inverse fills are
+// unreachable here.
 func appendClipPath(clipPath *path.Path, wStream stream.WStream) {
 	emitPath(clipPath, styleFill, true, wStream, 0.25)
 	if clipPath.FillType() == path.FillEvenOdd {

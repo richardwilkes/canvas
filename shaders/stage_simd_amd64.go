@@ -21,14 +21,13 @@ func simdKernelsSupported() bool {
 }
 
 // Per-kernel dispatch preference: whether the simd kernel is at least as fast as this build's default lane. On amd64
-// the only alternative is the portable scalar code, which every arithmetic kernel beats, so they are all preferred (on
-// arm64 the NEON assembly wins three of them back — see stage_simd_arm64.go, where the stages ported after the assembly
-// are measured against this same portable code and win by 36-80%). move_src_dst is the one exception on both arches:
-// its scalar form is four whole-array assignments the compiler already copies 128 bits at a time, so the vector
-// spelling only adds a bounds-checked slice per quad and measures as a tie.
+// that lane is the portable scalar code, which every arithmetic kernel beats (on arm64 the NEON assembly wins three
+// back; see stage_simd_arm64.go). move_src_dst is the one exception on both arches: its scalar form is four whole-array
+// assignments the compiler already copies 128 bits at a time, so the vector spelling only adds a bounds-checked slice
+// per quad and measures as a tie.
 //
-// Measured on real amd64 hardware (Xeon W-2191B, darwin/amd64, benchstat n=10, 2026-08-20, via simd-bench.sh): every
-// wired kernel wins, -49% to -84%, and move_src_dst ties there too — so the whole table is confirmed, not inferred.
+// Measured on a Xeon W-2191B (darwin/amd64, benchstat n=10, 2026-08-20, via simd-bench.sh): every wired kernel wins,
+// -49% to -84%, and move_src_dst ties.
 const (
 	preferSIMDSeed                 = true
 	preferSIMDClampX1              = true

@@ -231,9 +231,8 @@ func TestBlendModeAffectsTransparentBlackMatchesKernels(t *testing.T) {
 	}
 }
 
-// TestAlphaMulInv256Domain pins alphaMulInv256's domain and range. It is not the "255*255 - value*alpha256 in
-// [0, 255*255], rounded up to [0, 256]" its old doc claimed: the numerator is 0xFFFF = 257*255, and the (x + (x>>8))>>8
-// divide falls one short of an exact 0xFFFF/255 at the top end, which is precisely what keeps the result within 256.
+// TestAlphaMulInv256Domain pins alphaMulInv256's domain and range: the numerator is 0xFFFF = 257*255, not 255*255, and
+// the (x + (x>>8))>>8 divide falls one short of an exact 0xFFFF/255 at the top end, which keeps the result within 256.
 func TestAlphaMulInv256Domain(t *testing.T) {
 	if got := alphaMulInv256(0, 256); got != 256 {
 		t.Fatalf("alphaMulInv256(0, 256) = %d, want 256", got)

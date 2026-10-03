@@ -115,7 +115,6 @@ func getGLSLVersion(versionString string) Version {
 	return InvalidVersion
 }
 
-// getVendor maps a GL_VENDOR string to a Vendor.
 func getVendor(vendorString string) Vendor {
 	switch {
 	case vendorString == "ARM":
@@ -259,7 +258,6 @@ func getRenderer(rendererString string) Renderer {
 
 func isDigit(c byte) bool { return c >= '0' && c <= '9' }
 
-// isVirgl reports whether rendererString identifies the virgl guest driver.
 func isVirgl(rendererString string) bool { return strings.Contains(rendererString, "virgl") }
 
 // getDriverAndVersion parses the driver and its version from a GL_VERSION string, desktop-GL branches only. The ES

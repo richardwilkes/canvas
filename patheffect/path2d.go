@@ -19,8 +19,7 @@ import (
 	"github.com/richardwilkes/canvas/stroke"
 )
 
-// grid2D is the shared 2D lattice state: the lattice matrix, its inverse, and the per-cell callback supplied by the
-// concrete effect (a path stamp, or a line span for line2DEffect).
+// grid2D is the 2D lattice state shared by line2DEffect and path2DEffect: the lattice matrix and its inverse.
 type grid2D struct {
 	matrix    geom.Matrix
 	inverse   geom.Matrix
@@ -55,10 +54,6 @@ func (g *grid2D) filterPath(dst, src *path.Path, nextSpan func(x, y, ucount int3
 	return true
 }
 
-///////////////////////////////////////////////////////////////////////////////
-// 2D line lattice effect
-
-// line2DEffect is the 2D line lattice effect implementation.
 type line2DEffect struct {
 	noAsPoints
 	grid  grid2D
@@ -66,7 +61,7 @@ type line2DEffect struct {
 }
 
 // MakeLine2D creates horizontal lattice lines of the given stroke width, in the coordinate system defined by matrix.
-// Returns nil for a negative width.
+// Returns nil for a negative or NaN width.
 func MakeLine2D(width float32, matrix *geom.Matrix) stroke.PathEffect {
 	if !(width >= 0) {
 		return nil
@@ -102,10 +97,6 @@ func (e *line2DEffect) ComputeFastBounds(*geom.Rect) bool {
 	return false
 }
 
-///////////////////////////////////////////////////////////////////////////////
-// 2D path lattice effect
-
-// path2DEffect is the 2D path lattice effect implementation.
 type path2DEffect struct {
 	noAsPoints
 	path *path.Path

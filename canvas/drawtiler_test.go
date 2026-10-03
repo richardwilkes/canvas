@@ -11,11 +11,10 @@
 // empty-tile skipping via draw bounds. Strips (rather than squares) keep the big devices cheap: a 20000x16 pixmap is
 // ~1.25MB.
 //
-// These are now the tiler's whole gate. A seam-parity differential against the C library once complemented them
-// (rendering big strips of hairlines, strokes and gradients through both tilers), and went with the rest of the C
-// dependency. What it uniquely covered was AA coverage at a per-tile re-clip boundary for *path-lowered* draws, which
-// TestDrawTilerSeamEquivalence deliberately cannot cover (see its comment); the tiler machinery it shared with the
-// rect-fill and glyph lanes is still gated here and by internal/oracle/gorender's TestTilerTextSeamWindow.
+// These are the tiler's whole gate. AA coverage at a per-tile re-clip boundary for path-lowered draws is uncovered:
+// TestDrawTilerSeamEquivalence deliberately cannot cover it (see its comment), and the C-parity differential that
+// covered it went with the C dependency. The rect-fill and glyph lanes are gated here and by internal/oracle/gorender's
+// TestTilerTextSeamWindow.
 
 package canvas
 
@@ -123,14 +122,14 @@ func TestDrawTilerWalkOrderVertical(t *testing.T) {
 func TestDrawTilerBoundsAnchorAndSkip(t *testing.T) {
 	dev := NewBitmapDevice(raster.NewPixmap(20000, 16))
 
-	// Bounds that fit within kMaxDim of the origin cancel tiling after the srcBounds recheck: one untiled draw against
-	// the root device.
+	// Bounds that fit within tilerMaxDim of the origin cancel tiling after the srcBounds recheck: one untiled draw
+	// against the root device.
 	fits := geom.RectLTRB(100, 2, 8000, 14)
 	if steps, tiled := walkTiles(t, dev, &fits); tiled {
 		t.Errorf("bounds within 8191 must cancel tiling, got %d tiles", len(steps))
 	}
 
-	// Bounds entirely past kMaxDim tighten srcBounds so the walk is anchored at the bounds' left edge: one tile at
+	// Bounds entirely past tilerMaxDim tighten srcBounds so the walk is anchored at the bounds' left edge: one tile at
 	// x=10000 (not the device-anchored grid), skipping everything before it. The tile's height is the device
 	// intersection (16-2=14) — the subset is clipped by the pixmap, not srcBounds.
 	narrow := geom.RectLTRB(10000, 2, 10100, 14)
@@ -213,10 +212,9 @@ func TestDrawTilerPathGlyphsDrawOnce(t *testing.T) {
 // must match an untiled window render of the same scene translated into view, for draws whose rasterization is
 // invariant under integer translation and clip masking — rect fills (AA and non-AA, the AA rect lane's analytic
 // coverage is per-rect) and translucent blends over them. Path-lowered draws (strokes, rrects, hairlines) are
-// deliberately absent: the AA supersampler's coverage rounding depends on where the clip crops the path, so a tiled
-// strip and an untiled window legitimately differ at those boundary pixels and this test cannot speak to them. They
-// were covered by the C-parity differential, which tiled both sides identically and so sidestepped the problem; it is
-// gone with the C dependency, and that lane is now uncovered (see the file comment).
+// deliberately absent: the AA scan converter's coverage rounding depends on where the clip crops the path, so a tiled
+// strip and an untiled window legitimately differ at those boundary pixels and this test cannot speak to them; that
+// lane is uncovered (see the file comment).
 func TestDrawTilerSeamEquivalence(t *testing.T) {
 	const w, h = 20000, 24
 	scene := func(c *Canvas) {

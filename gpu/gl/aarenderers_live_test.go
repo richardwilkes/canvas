@@ -54,7 +54,8 @@ func liveConvexCurvedPath() *path.Path {
 	return p
 }
 
-// renderAAScene renders the scene through the CPU rasterizer and the live GPU device, returning both RGBA byte buffers.
+// renderAAScene renders the scene through the CPU rasterizer and the live GPU device, returning the GPU's RGBA bytes
+// and the CPU pixmap.
 func renderAAScene(t *testing.T, dc *gl.DirectContext, w, h int, scene func(c *canvas.Canvas)) (gpuData []byte, cpuPix *raster.Pixmap) {
 	t.Helper()
 	cpuPix = raster.NewPixmap(int32(w), int32(h))

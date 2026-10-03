@@ -8,9 +8,8 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // The PDF object model: Object is the interface every primitive PDF element implements (emit); union is a tagged value
-// holding the non-compound Name/String/Number/Boolean payloads; Array/OptionalArray/Dict are the compound objects built
-// from unions. union carries a single active payload behind a type tag rather than a move-only variant, since Go's GC
-// makes ownership transfer unnecessary; every emit path produces exact, deterministic PDF byte output.
+// holding one primitive payload, nested object, or indirect reference; Array/OptionalArray/Dict are the compound
+// objects built from unions. Every emit path produces exact, deterministic PDF byte output.
 
 package pdf
 
@@ -22,12 +21,11 @@ import (
 
 // Object is a primitive PDF element that can serialize itself.
 type Object interface {
-	// emit writes the object to the stream.
 	emit(s stream.WStream)
 }
 
-// IndirectReference is a handle to an indirect object, identified by its object number. The zero value is invalid,
-// since object numbers start at 1 and any non-positive value is treated as unset.
+// IndirectReference is a handle to an indirect object, identified by its object number. Object numbers start at 1, so
+// the zero value is invalid.
 type IndirectReference struct {
 	value int32
 }
@@ -77,10 +75,8 @@ func unionByteString(v string) union  { return union{typ: utByteString, s: v} }
 func unionTextString(v string) union  { return union{typ: utTextString, s: v} }
 func unionObject(o Object) union      { return union{typ: utObject, obj: o} }
 
-// unionRef wraps an indirect reference as a union payload.
 func unionRef(r IndirectReference) union { return union{typ: utRef, i: r.value} }
 
-// emit writes the union's active payload in its PDF-serialized form.
 func (u *union) emit(s stream.WStream) {
 	switch u.typ {
 	case utInt:
@@ -202,7 +198,7 @@ func writeTextString(s stream.WStream, cin string) {
 			inputIsValidUTF8 = false
 			break
 		}
-		// See Table D.2 (PDFDocEncoding Character Set) in the PDF3200_2008 spec.
+		// See Table D.2 (PDFDocEncoding Character Set) in the PDF32000_2008 spec.
 		if (0x15 < unichar && unichar < 0x20) || 0x7E < unichar {
 			inputIsPDFDocEncoding = false
 			break
@@ -276,7 +272,7 @@ func (a *Array) AppendObject(o Object) { a.append(unionObject(o)) }
 // AppendRef appends an indirect reference value.
 func (a *Array) AppendRef(r IndirectReference) { a.append(unionRef(r)) }
 
-// emit writes the array in PDF array syntax: "[ v1 v2 ... ]".
+// emit writes the array in PDF array syntax: "[v1 v2 ...]".
 func (a *Array) emit(s stream.WStream) {
 	writeText(s, "[")
 	for i := range a.values {
@@ -297,7 +293,6 @@ type OptionalArray struct {
 // NewOptionalArray returns an empty optional array.
 func NewOptionalArray() *OptionalArray { return &OptionalArray{} }
 
-// emit writes the array, or its single element bare if it holds exactly one entry.
 func (a *OptionalArray) emit(s stream.WStream) {
 	if a.Size() == 1 {
 		a.values[0].emit(s)
@@ -364,7 +359,7 @@ func (d *Dict) InsertByteString(key, value string) { d.insert(unionName(key), un
 // InsertTextString inserts a text string value under key.
 func (d *Dict) InsertTextString(key, value string) { d.insert(unionName(key), unionTextString(value)) }
 
-// emit writes the dictionary in PDF dictionary syntax: "<< key value ... >>".
+// emit writes the dictionary in PDF dictionary syntax, one entry per line: "<</Key value\n/Key value ...>>".
 func (d *Dict) emit(s stream.WStream) {
 	writeText(s, "<<")
 	for i := range d.records {
@@ -380,7 +375,6 @@ func (d *Dict) emit(s stream.WStream) {
 
 // ---- variadic array constructors -----------------------------------------------------------------------
 
-// makeArrayInts builds an array from a list of integers.
 func makeArrayInts(vs ...int32) *Array {
 	a := &Array{}
 	a.values = make([]union, 0, len(vs))
@@ -390,7 +384,6 @@ func makeArrayInts(vs ...int32) *Array {
 	return a
 }
 
-// makeArrayScalars builds an array from a list of floating-point scalars.
 func makeArrayScalars(vs ...float32) *Array {
 	a := &Array{}
 	a.values = make([]union, 0, len(vs))
@@ -400,8 +393,7 @@ func makeArrayScalars(vs ...float32) *Array {
 	return a
 }
 
-// emitToBytes writes obj as a self-contained byte slice, used by tests and for one-off object encoding that does not go
-// through the document catalog.
+// emitToBytes returns o's serialized bytes. Only tests use it.
 func emitToBytes(o Object) []byte {
 	s := stream.NewMemoryWStream()
 	o.emit(s)

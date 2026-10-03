@@ -49,9 +49,9 @@ func TestEdgeIterAutoClosesOpenContour(t *testing.T) {
 	}
 }
 
-// TestEdgeIterReleaseDropsPath: Release must clear the retained *Path (and leave the iterator in the same state a
-// fresh one has, ready for Reset), so a pooled owner — the rasterizer's edge builders hold an EdgeIter and an
-// EdgeClipScratch across fills — pins no caller path while idle.
+// TestEdgeIterReleaseDropsPath checks that Release clears the retained *Path and leaves the iterator in its fresh
+// state, so a pooled owner (the rasterizer's edge builders keep an EdgeIter and an EdgeClipScratch across fills) pins
+// no path while idle.
 func TestEdgeIterReleaseDropsPath(t *testing.T) {
 	p := New()
 	p.MoveTo(0, 0)
@@ -156,7 +156,7 @@ func TestMapRectPerspectiveStraddling(t *testing.T) {
 		1, 0, 0,
 		0, 1, 0,
 		0, -0.01, 0.05,
-	) // w = 1 at y=... w crosses zero within y ∈ [0, 100]
+	) // w = 0.05 - 0.01*y crosses zero at y = 5
 	src := geom.RectLTRB(0, 0, 10, 100)
 	got, stays := MapRect(&m, src)
 	if stays {
@@ -198,8 +198,7 @@ func TestPerspectiveClipStraddlingProducesFinitePath(t *testing.T) {
 	if dst.IsEmpty() {
 		t.Error("straddling path should not be fully clipped out")
 	}
-	// Every surviving point must be on the visible side (w >= ~1/16384 pre-projection means bounded projected
-	// coordinates; just check boundedness).
+	// Surviving points were clipped to w >= ~1/16384, so their projected coordinates must be bounded.
 	b := dst.Bounds()
 	const big = 1e7
 	if b.Left < -big || b.Right > big || b.Top < -big || b.Bottom > big {

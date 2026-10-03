@@ -1,8 +1,8 @@
 #! /usr/bin/env bash
 
-# Collects the benchmark and gate data needed to settle the goexperiment.simd dispatch preferences on this machine.
-# Run it from the repo root on the `simd` branch. It writes everything into ./simd-bench-results and packs that
-# directory into simd-bench-results.tgz. See SIMD-BENCH.md for the directions.
+# Collects the benchmark and gate data needed to settle the goexperiment.simd dispatch preferences on this machine. Run
+# it from the repo root. It writes everything into ./simd-bench-results and packs that directory into
+# simd-bench-results.tgz. See SIMD-BENCH.md for the directions.
 
 set -eo pipefail
 

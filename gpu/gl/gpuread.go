@@ -47,12 +47,11 @@ func (g *Gpu) readOrTransferPixelsFrom(surface *Surface, rect geom.IRect, surfac
 		}
 		g.flushRenderTarget(renderTarget, useMultisampleFBO)
 	} else {
-		// Use a temporary FBO.
 		g.bindSurfaceFBOForPixelOps(surface, 0, FRAMEBUFFER, tempFBOSrc)
 		g.hwBoundRenderTargetUniqueID = 0
 	}
 
-	// Determine if GL can read using the passed rowBytes or if we need a scratch buffer.
+	// The callers only pass a row wider than the rect when PACK_ROW_LENGTH is supported.
 	if rowWidthInPixels != rect.Width() {
 		if !g.Caps().ReadPixelsRowBytesSupport {
 			panic("row bytes without support")
@@ -133,7 +132,6 @@ func (g *Gpu) TransferPixelsTo(texture *Texture, rect geom.IRect, textureColorTy
 	}
 	g.handleDirtyContext()
 
-	// Bind the destination texture and the source transfer buffer.
 	g.bindTextureToScratchUnit(texture.Target(), texture.TextureID())
 
 	if transferBuffer.IsMapped() {
@@ -188,7 +186,6 @@ func (g *Gpu) TransferPixelsFrom(surface *Surface, rect geom.IRect, surfaceColor
 	}
 	g.handleDirtyContext()
 
-	// Bounds-check the destination transfer buffer.
 	if transferBuffer.Size() < offset+
 		uint64(rect.Width())*uint64(rect.Height())*uint64(bufferColorType.BytesPerPixel()) {
 		panic("transfer buffer too small")

@@ -57,7 +57,7 @@ func TestRectJoinProbe(t *testing.T) {
 // TestRectSetBoundsProbe: geom.Rect.SetBounds vs Skia's Rect::setBoundsCheck (poison-accumulator finite check).
 func TestRectSetBoundsProbe(t *testing.T) {
 	pts := pointCorpus()
-	// Prefix slices of the corpus, plus slices starting at a non-finite point.
+	// Prefix slices of the corpus, plus slices that reach or start at its non-finite points.
 	cases := [][]geom.Point{nil, pts[:1], pts[:2], pts[:7], pts, pts[38:], pts[40:44]}
 	for i, c := range cases {
 		wantRect, wantOK := refRectSetBounds(c)

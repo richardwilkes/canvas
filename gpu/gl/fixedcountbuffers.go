@@ -75,8 +75,7 @@ func fixedCountStrokesPreallocCount(totalCombinedStrokeVerbCnt int) int {
 	return totalCombinedStrokeVerbCnt*2 + 8 /* caps */
 }
 
-// fixedCountStrokesVertexCountForTolerances counts two vertices per edge. (Does not account for a fallback path for no
-// vertex-ID support — that lane is trimmed along with the fallback vertex buffer.)
+// fixedCountStrokesVertexCountForTolerances counts two vertices per edge.
 func fixedCountStrokesVertexCountForTolerances(tolerances *linearTolerances) int {
 	return min(tolerances.requiredStrokeEdges(), fixedCountStrokesMaxEdges) * 2
 }
@@ -138,7 +137,6 @@ func writeFixedCountCurveIndexData(buf []byte, baseIndex uint16) {
 	}
 	indexData := make([][3]uint16, 0, triangleCount)
 
-	// Resolve level 1 is just a single triangle at T=[0, 1/2, 1].
 	indexData = append(indexData, [3]uint16{baseIndex, baseIndex + 2, baseIndex + 1})
 	neighborInLastResolveLevel := 0
 

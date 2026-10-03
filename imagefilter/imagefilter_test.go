@@ -49,7 +49,6 @@ func TestBlurImageFilterOnPaint(t *testing.T) {
 	pix := drawSquare(t, func(p *canvas.Paint) {
 		p.ImageFilter = imagefilter.Blur(3, 3, shaders.TileDecal, nil, nil)
 	})
-	// Center remains saturated red.
 	if got := pixel(pix, 30, 30); got != 0xFF0000FF && alphaOf(got) < 250 {
 		t.Fatalf("center = %08x, want nearly opaque red", got)
 	}
@@ -57,15 +56,12 @@ func TestBlurImageFilterOnPaint(t *testing.T) {
 	if a := alphaOf(pixel(pix, 44, 30)); a == 0 || a == 255 {
 		t.Fatalf("blur fringe alpha = %d, want partial", a)
 	}
-	// Far corner unaffected.
 	if got := pixel(pix, 2, 2); got != 0 {
 		t.Fatalf("far corner = %08x, want transparent", got)
 	}
-	// Symmetry: left and right fringes match.
 	if l, r := alphaOf(pixel(pix, 16, 30)), alphaOf(pixel(pix, 43, 30)); l != r {
 		t.Fatalf("asymmetric blur: left %d right %d", l, r)
 	}
-	// Monotonic falloff away from the square.
 	prev := uint32(256)
 	for x := int32(40); x < 52; x++ {
 		a := alphaOf(pixel(pix, x, 30))
@@ -472,10 +468,10 @@ func solidTypedImage(t *testing.T, ct imagecore.ColorType, at imagecore.AlphaTyp
 
 // TestBlurNonN32SourceImage blurs an image-source leaf of every supported color type. The leaf hands its pixels to
 // FilterResult.rescale in their native form, so rescale must re-render anything that is not N32 into an N32 surface
-// before the raster blur engine reads pixel storage as 32-bit words: a 1- or 2-byte-per-pixel source (Gray8, Alpha8,
-// RGB565, RGBA_F16) has no word storage at all and used to panic, and a BGRA_8888 source used to blur through with its
-// R and B channels swapped. Every opaque-red source must therefore land on the same N32 result as the RGBA_8888
-// control, both in the blur's flat interior and in its falloff.
+// before the raster blur engine reads pixel storage as 32-bit words: a source stored as bytes or 16-bit elements
+// (Gray8, Alpha8, RGB565, RGBA_F16) has no word storage at all and used to panic, and a BGRA_8888 source used to blur
+// through with its R and B channels swapped. Every opaque-red source must therefore land on the same N32 result as the
+// RGBA_8888 control, both in the blur's flat interior and in its falloff.
 func TestBlurNonN32SourceImage(t *testing.T) {
 	const dim = 32
 	for _, tc := range []struct {
@@ -533,10 +529,8 @@ func TestColorFilterAffectsTransparentBlackFloods(t *testing.T) {
 	pix := drawSquare(t, func(p *canvas.Paint) {
 		p.ImageFilter = imagefilter.ColorFilter(cf, nil, nil)
 	})
-	// Far corner is filled by the flood (add color, alpha preserved at... transparent-black input keeps alpha 0?
-	// Lighting's mul/add applies to RGB only, leaving alpha — premul rules clamp RGB to alpha, producing transparent
-	// black again unless alpha changes. Use a simpler check: the filter must at least not corrupt the square's
-	// interior.
+	// Lighting's mul/add applies to RGB only and premul rules clamp RGB to alpha, so the flood stays transparent black
+	// unless alpha changes; only check that the filter does not corrupt the square's interior.
 	if a := alphaOf(pixel(pix, 30, 30)); a == 0 {
 		t.Fatalf("interior missing")
 	}

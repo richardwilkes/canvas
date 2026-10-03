@@ -11,9 +11,7 @@
 // StyledShape whose geometry reflects the styling), and the unstyled/inherited key machinery the mask and geometry
 // caches build on. No path effects reach the surface draw context, so the path-effect application lanes and the dash
 // simplifications don't apply. There is no destruction hook for gen-ID change notifications, so stale mask-cache
-// entries age out of the budgeted LRU instead. The arc shape type doesn't exist as its own geometry: MakeStyledShapeArc
-// builds the equivalent arc path directly, and winding-sensitive simplification stays disabled for non-butt-cap arcs
-// the same way it would for that path form.
+// entries age out of the budgeted LRU instead. There is no arc shape type; see MakeStyledShapeArc.
 
 package gl
 
@@ -25,8 +23,8 @@ import (
 	"github.com/richardwilkes/canvas/stroke"
 )
 
-// styledShapeMaxKeyFromDataVerbCnt is the verb-count threshold below which a path's key may be extracted directly from
-// its data rather than relying on its generation ID.
+// styledShapeMaxKeyFromDataVerbCnt is the largest verb count for which a path is keyed from its data rather than its
+// generation ID.
 const styledShapeMaxKeyFromDataVerbCnt = 10
 
 // DoSimplify controls whether a StyledShape constructor simplifies the shape immediately.
@@ -38,8 +36,7 @@ const (
 	DoSimplifyYes DoSimplify = true
 )
 
-// FillInversion informs MakeFilledStyledShape on how to modify the shape's fill rule when making a simple filled
-// version of the shape.
+// FillInversion tells MakeFilledStyledShape how to modify the shape's fill inversion.
 type FillInversion uint8
 
 // FillInversion values.
@@ -113,8 +110,7 @@ func MakeStyledShapeArc(oval geom.Rect, startAngle, sweepAngle float32, useCente
 	return MakeStyledShapePath(arcPath, style, doSimplify)
 }
 
-// makeStyledShapeFromShape wraps an existing geometry Shape with a style; the surface draw context receives ready-made
-// Shapes from the device. The shape is deep-copied.
+// makeStyledShapeFromShape wraps a deep copy of shape with a style.
 func makeStyledShapeFromShape(shape *Shape, style Style, doSimplify DoSimplify) StyledShape {
 	s := StyledShape{shape: *cloneShape(shape), style: style}
 	if doSimplify {
@@ -152,8 +148,8 @@ func MakeFilledStyledShape(original *StyledShape, inversion FillInversion) Style
 		// Going from a non-filled style to fill may allow additional simplifications (e.g. closing an open rect that
 		// wasn't closed in the original shape because it had stroke style).
 		result.simplify()
-		// The above simplify() call only sets simplified to true if its geometry was changed, since it already sees its
-		// style as a simple fill. Since the original style was not a simple fill, MakeFilled always simplifies.
+		// simplify() only sets simplified if the geometry changed, since it already sees the style as a simple fill.
+		// The original style was not a simple fill, so this always counts as a simplification.
 		result.simplified = true
 	}
 	// We don't copy the inherited key since it can contain style information that we just stripped.
@@ -184,19 +180,15 @@ func (s *StyledShape) Style() *Style { return &s.style }
 func (s *StyledShape) Simplified() bool { return s.simplified }
 
 // ApplyStyle returns a shape that has applied the styling information from this shape's style to its geometry. scale is
-// used when approximating the output geometry and typically is computed from the view matrix. (The path-effect-only
-// apply mode is unreachable, since no path effect exists; both modes behave as applying both the path effect and stroke
-// rec, minus the effect.)
+// used when approximating the output geometry and typically is computed from the view matrix. No path effect exists, so
+// StyleApplyPathEffectOnly returns an unchanged copy.
 func (s *StyledShape) ApplyStyle(apply StyleApply, scale float32) StyledShape {
 	return makeStyledShapeFromParent(s, apply, scale)
 }
 
-// makeStyledShapeFromParent builds the styled shape that results from applying parent's style to its geometry. There is
-// no path effect, so only the stroke-rec application applies.
+// makeStyledShapeFromParent implements ApplyStyle.
 func makeStyledShapeFromParent(parent *StyledShape, apply StyleApply, scale float32) StyledShape {
 	if !parent.style.Applies() || apply == StyleApplyPathEffectOnly {
-		// No path effect exists, so the path-effect-only mode has nothing to apply, and a non-applying style leaves the
-		// geometry untouched.
 		return parent.clone()
 	}
 
@@ -221,8 +213,7 @@ func makeStyledShapeFromParent(parent *StyledShape, apply StyleApply, scale floa
 // IsRect reports whether the unstyled geometry is a rect.
 func (s *StyledShape) IsRect() bool { return s.shape.IsRect() }
 
-// Shape returns the underlying geometry, for callers (such as the surface draw context's simple-shape retry lane) that
-// want the whole thing rather than a piecemeal accessor.
+// Shape returns the underlying unstyled geometry.
 func (s *StyledShape) Shape() *Shape { return &s.shape }
 
 // AsRRect returns the unstyled geometry as a round rect if possible.
@@ -263,7 +254,7 @@ func (s *StyledShape) AsNestedRects() (rects [2]geom.Rect, ok bool) {
 		// The two rects need to be wound opposite to each other.
 		return rects, false
 	}
-	// Right now, nested rects where the margin is not the same width all around do not render correctly.
+	// Nested rects whose margin is not the same width all around only render correctly when every margin is at least 1.
 	outer := [4]float32{rects[0].Left, rects[0].Top, rects[0].Right, rects[0].Bottom}
 	inner := [4]float32{rects[1].Left, rects[1].Top, rects[1].Right, rects[1].Bottom}
 	allEq := true
@@ -281,15 +272,13 @@ func (s *StyledShape) AsNestedRects() (rects [2]geom.Rect, ok bool) {
 	return rects, allEq || allGoE1
 }
 
-// AsPath returns the unstyled geometry as a path. (The simple-fill argument only affected the arc shape type, which
-// doesn't exist as its own geometry here.)
+// AsPath returns the unstyled geometry as a path.
 func (s *StyledShape) AsPath() *path.Path {
 	return s.shape.AsPath()
 }
 
-// VerbCount returns AsPath().CountVerbs() without materializing the clone AsPath would make when the geometry is
-// already a path: the path renderers' OnCanDrawPath gates call this once per candidate renderer per draw, and only need
-// the number.
+// VerbCount returns AsPath().CountVerbs() without the clone AsPath would make when the geometry is already a path: the
+// path renderers' OnCanDrawPath gates call this once per candidate renderer per draw.
 func (s *StyledShape) VerbCount() int {
 	if p := s.shape.PeekPath(); p != nil {
 		return p.CountVerbs()
@@ -297,8 +286,8 @@ func (s *StyledShape) VerbCount() int {
 	return s.shape.AsPath().CountVerbs()
 }
 
-// IsEmpty reports whether the geometry is empty. Note that applying the style could produce a non-empty shape; it also
-// may have an inverse fill.
+// IsEmpty reports whether the geometry is empty. Applying the style could produce a non-empty shape; it also may have
+// an inverse fill.
 func (s *StyledShape) IsEmpty() bool { return s.shape.IsEmpty() }
 
 // Bounds returns the bounds of the geometry without reflecting the shape's styling, ignoring the inverse fill nature.
@@ -359,7 +348,6 @@ func pathKeyFromDataSize(p *path.Path) int {
 	return 1 + (verbCnt+3)/4 + 2*pointCnt + conicWeightCnt
 }
 
-// writePathKeyFromData writes the path data key into key.
 func writePathKeyFromData(p *path.Path, key []uint32) {
 	verbCnt := p.CountVerbs()
 	i := 0
@@ -400,7 +388,6 @@ func writePathKeyFromData(p *path.Path, key []uint32) {
 		case path.VerbClose:
 		}
 	}
-	// Pad the remaining verb bytes with 0xDE.
 	for ; verbIdx < verbWords*4; verbIdx++ {
 		key[i+verbIdx/4] |= 0xDE << (8 * uint(verbIdx%4))
 	}
@@ -499,7 +486,6 @@ func (s *StyledShape) WriteUnstyledKey(key []uint32) {
 	}
 }
 
-// writeRectToKey writes a rect's four float bit patterns.
 func writeRectToKey(key []uint32, r geom.Rect) {
 	key[0] = math.Float32bits(r.Left)
 	key[1] = math.Float32bits(r.Top)
@@ -576,8 +562,8 @@ func (s *StyledShape) simplify() {
 	if s.style.IsSimpleFill() {
 		simplifyFlags = ShapeSimplifyAll
 	} else {
-		// Everything but arcs with caps that might extend beyond the oval edge can ignore winding (the arc type is
-		// trimmed — arc shapes are paths here and paths never take the destructive simplifications anyway).
+		// Everything can ignore winding: the one exception, an arc whose caps might extend beyond the oval edge, is a
+		// path here (see MakeStyledShapeArc).
 		simplifyFlags = ShapeSimplifyIgnoreWinding | ShapeSimplifyMakeCanonical
 	}
 
@@ -609,7 +595,6 @@ func (s *StyledShape) simplify() {
 	} else {
 		s.inheritedKey = nil
 		restoreInverseness()
-		// Further simplifications to the shape based on the style.
 		s.simplifyStroke()
 	}
 }
@@ -628,7 +613,7 @@ func (s *StyledShape) simplifyStroke() {
 			return
 		}
 		r := s.style.Rec().Width() / 2
-		// fShape.rect().outset(r, r) mutates the rect in place, keeping the winding params.
+		// Outset the rect in place (rather than through SetRect) to keep the winding params.
 		s.shape.rect = s.shape.rect.Outset(r, r)
 		if s.style.Rec().Join() == stroke.JoinRound {
 			// There's no dashing to worry about if we got here, so it's okay that this resets winding parameters.
@@ -640,7 +625,7 @@ func (s *StyledShape) simplifyStroke() {
 	}
 
 	// Otherwise, if we're a point or a line, we might be able to explicitly apply some of the stroking. Any other
-	// shape+style is too complicated to reduce. (The dash lanes are unreachable.)
+	// shape+style is too complicated to reduce.
 	if (!s.shape.IsPoint() && !s.shape.IsLine()) || s.style.Rec().IsHairlineStyle() {
 		return
 	}

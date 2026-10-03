@@ -14,9 +14,9 @@ package vp8enc
 
 import "math"
 
-// Encoder configuration constants, matching the reference encoder's defaults for the knobs this encoder keeps fixed:
-// sns_strength 50, filter_strength 60, filter_sharpness 0, filter_type 1 (the normal, non-simple loop filter), method
-// 3-equivalent single-pass RD (no trellis), one segment, one coefficient partition.
+// Encoder configuration constants. sns_strength 50, filter_strength 60, filter_sharpness 0, filter_type 1 (the normal,
+// non-simple loop filter) and one coefficient partition are the reference encoder's defaults; method 3-equivalent
+// single-pass RD (no trellis) and one segment are this encoder's reduced scope.
 const (
 	snsStrength      = 50
 	filterStrength   = 60

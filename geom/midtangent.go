@@ -7,9 +7,8 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// Mid-tangent finders for quads and conics, plus the bisector helper they share. The quad case solves its linear
-// equation inline; only the conic case needs the quadratic solver. The GPU stroke tessellator chops flat curves with
-// 180-degree turnarounds at these mid-tangent points.
+// Mid-tangent finders for quads and conics, plus the bisector helper they share. The GPU stroke tessellator chops flat
+// curves with 180-degree turnarounds at these mid-tangent points.
 
 package geom
 
@@ -25,11 +24,11 @@ func FindBisector(a, b Point) Point {
 		// a,b are within +/-90 degrees apart.
 		v0, v1 = a, b
 	case a.Cross(b) >= 0:
-		// a,b are >90 degrees apart. Find the bisector of their interior normals instead.
+		// a,b are >90 degrees apart.
 		v0 = Point{X: -a.Y, Y: +a.X}
 		v1 = Point{X: +b.Y, Y: -b.X}
 	default:
-		// a,b are <-90 degrees apart. Find the bisector of their interior normals instead.
+		// a,b are <-90 degrees apart.
 		v0 = Point{X: +a.Y, Y: -a.X}
 		v1 = Point{X: -b.Y, Y: +b.X}
 	}

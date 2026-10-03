@@ -137,7 +137,7 @@ func TestCanvasDrawPointMatchesDrawPoints(t *testing.T) {
 	}
 }
 
-// TestDrawImageNineCleansPaint verifies clean_paint_for_lattice on the nine-patch lane: the paint's mask filter and
+// TestDrawImageNineCleansPaint verifies cleanPaintForLattice on the nine-patch lane: the paint's mask filter and
 // anti-alias flag are stripped, so a paint carrying them renders identically to one without.
 func TestDrawImageNineCleansPaint(t *testing.T) {
 	info, _ := imagecore.MakeInfo(6, 6, imagecore.ColorTypeRGBA8888, imagecore.AlphaTypeOpaque)

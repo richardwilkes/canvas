@@ -9,9 +9,9 @@
 
 // The read view over a proxy plus the read/write pixel entry points and proxy copies. Trims: the color info is reduced
 // to the color type (alpha is always premul and the color space always sRGB), the canvas2D PM/UPM fast paths and the
-// draw-based copy fallbacks are unported (they need fragment processors), the async rescale/read entry points are not
-// publicly reachable, and CPU color-type conversion of read-back/uploaded pixels is limited to same-color-type
-// repacking and vertical flips — mismatched color types fail exactly where an unsupported read/write would.
+// draw-based copy fallbacks are unported, the async rescale/read entry points are not publicly reachable, and CPU
+// color-type conversion of read-back/uploaded pixels is limited to same-color-type repacking and vertical flips —
+// mismatched color types fail exactly where an unsupported read/write would.
 
 package gl
 
@@ -20,7 +20,7 @@ import (
 	"github.com/richardwilkes/canvas/gpu"
 )
 
-// Pixels describes CPU pixel data for the read/write entry points, pending the imagecore integration.
+// Pixels describes CPU pixel data for the read/write entry points.
 type Pixels struct {
 	Data      []byte
 	RowBytes  int
@@ -78,7 +78,6 @@ func (sc *SurfaceContext) Context() *DirectContext { return sc.ctx }
 // Caps returns the context's GL caps.
 func (sc *SurfaceContext) Caps() *Caps { return sc.ctx.GLCaps() }
 
-// drawingManager returns the owning context's drawing manager.
 func (sc *SurfaceContext) drawingManager() *DrawingManager { return sc.ctx.DrawingManager() }
 
 // AsSurfaceProxy returns the read view's proxy.
@@ -131,8 +130,7 @@ func (sc *SurfaceContext) ReadPixels(dst Pixels, pt geom.IPoint) bool {
 	caps := sc.Caps()
 
 	if caps.SurfaceSupportsReadPixels(srcSurface) != SurfaceReadPixelsSupported {
-		// The copy-to-texture lane: blit into a readable texture, then read from that. (The canvas2D fast path and the
-		// texture-source draw lane are unported.)
+		// The copy-to-texture lane: blit into a readable texture, then read from that.
 		restrictionsMustCopyWholeSrc := false
 		if rtProxy := sc.AsRenderTargetProxy(); rtProxy != nil {
 			// The GL caps never require whole-src copies on desktop GL for non-external textures; keep the variable for
@@ -157,7 +155,7 @@ func (sc *SurfaceContext) ReadPixels(dst Pixels, pt geom.IPoint) bool {
 		var tempCtx SurfaceContext
 		tempCtx.initSurfaceContext(sc.ctx,
 			MakeSurfaceProxyView(copyProxy, sc.Origin(), sc.readView.Swizzle()), sc.colorType)
-		// The temp context now holds its own ref; drop the creation ref from Copy.
+		// The temp context now holds its own ref; drop the creation ref from CopySurfaceProxy.
 		copyProxy.Unref()
 		ok := tempCtx.ReadPixels(dst, pt)
 		tempCtx.Release()
@@ -169,7 +167,7 @@ func (sc *SurfaceContext) ReadPixels(dst Pixels, pt geom.IPoint) bool {
 	supportedRead := caps.SupportedReadPixelsColorType(sc.colorType, srcProxy.Format(),
 		dst.ColorType)
 	if supportedRead.ColorType != dst.ColorType {
-		// Cross-color-type conversion of read-back data waits for the imagecore integration.
+		// Cross-color-type conversion of read-back data is unsupported (see the file comment).
 		return false
 	}
 
@@ -207,7 +205,7 @@ func (sc *SurfaceContext) ReadPixels(dst Pixels, pt geom.IPoint) bool {
 	return true
 }
 
-// WritePixels writes a single level of pixel data (the mip-level form arrives with the image work).
+// WritePixels writes a single mip level of pixel data at dstPt.
 func (sc *SurfaceContext) WritePixels(src Pixels, dstPt geom.IPoint) bool {
 	if sc.ctx.Abandoned() {
 		return false
@@ -233,15 +231,15 @@ func (sc *SurfaceContext) WritePixels(src Pixels, dstPt geom.IPoint) bool {
 	caps := sc.Caps()
 
 	if !caps.SurfaceSupportsWritePixels(dstSurface) {
-		// The draw/copy staging lanes are unported: they need fill contexts or an intermediate texture + copy; on the
-		// desktop matrix this only occurs for MSAA render targets, which no reachable caller writes to.
+		// The draw/copy staging lanes are unported. Only render targets that use MSAA renderbuffers or are not also
+		// textures land here, and no reachable caller writes to those.
 		return false
 	}
 
 	allowed := caps.SupportedWritePixelsColorType(sc.colorType, dstProxy.Format(),
 		src.ColorType).ColorType
 	if allowed != src.ColorType {
-		// Cross-color-type conversion waits for the imagecore integration.
+		// Cross-color-type conversion is unsupported (see the file comment).
 		return false
 	}
 
@@ -271,8 +269,7 @@ func (sc *SurfaceContext) WritePixels(src Pixels, dstPt geom.IPoint) bool {
 		return false
 	}
 	if !ownStorage {
-		// The task references the caller's storage; flush so the pixels are pushed to the GPU before returning
-		// (whenever the pixel data isn't owned by us).
+		// The task references the caller's storage, so flush to push the pixels to the GPU before returning.
 		sc.ctx.FlushSurfaces([]*SurfaceProxy{dstProxy}, FlushInfo{})
 	}
 	return true
@@ -324,8 +321,8 @@ func CopySurfaceProxy(ctx *DirectContext, src *SurfaceProxy, origin gpu.SurfaceO
 	return dstProxy, copyTask
 }
 
-// repackPixels repacks pixel data between two same-color-type layouts, with row-byte repacking and optional vertical
-// flip.
+// repackPixels copies src into dst, which must share its color type and dimensions, adapting the row bytes and
+// optionally flipping vertically.
 func repackPixels(dst, src *Pixels, flip bool) bool {
 	if dst.ColorType != src.ColorType || dst.Dims != src.Dims {
 		return false

@@ -7,12 +7,11 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// The replay half of the reference ops for the op groups that still have a capture counterpart
-// (ref_ops_capture_test.go, built under `-tags skiaoracle`). The tag keeps the two definitions from colliding: an
-// ordinary `go test` compiles this file and reads frozen values with no C toolchain, while a capture run compiles the
-// other and forwards to live Skia.
+// The replay reference ops: an ordinary `go test` compiles this file and reads frozen values with no C toolchain. The
+// tag excluded it from a `-tags skiaoracle` capture run, whose counterpart (ref_ops_capture_test.go) forwarded to live
+// Skia and is no longer in the tree.
 //
-// Op groups whose capture code has been retired live in untagged files instead (see ref_ops_pathops_test.go).
+// The path-ops group lives in an untagged file instead (see ref_ops_pathops_test.go).
 //go:build !skiaoracle
 
 package probe

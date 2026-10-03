@@ -116,7 +116,6 @@ type DirectMaskSubRun struct {
 	atlasSubRunBase
 }
 
-// makeDirectMaskSubRun returns a DirectMaskSubRun for the accepted glyphs.
 func makeDirectMaskSubRun(creationBounds geom.Rect, accepted []acceptedGlyph, creationMatrix *geom.Matrix, strike *font.Strike, spec *font.StrikeSpec, maskType gpu.MaskFormat) *DirectMaskSubRun {
 	positions, packedIDs := acceptedPositionsAndIDs(accepted)
 	return &DirectMaskSubRun{atlasSubRunBase: atlasSubRunBase{
@@ -151,8 +150,7 @@ func (s *DirectMaskSubRun) CanReuse(positionMatrix *geom.Matrix) bool {
 	return reuse
 }
 
-// GlyphParams returns this subrun's atlas interpretation. Since this is non-SDF, isAA will be ignored so we just pass
-// true.
+// GlyphParams returns this subrun's atlas interpretation. IsAA is ignored for non-SDF subruns, so it is just set true.
 func (s *DirectMaskSubRun) GlyphParams() GlyphParams {
 	return GlyphParams{IsSDF: false, IsLCD: s.vertexFiller.IsLCD(), IsAA: true}
 }
@@ -166,7 +164,6 @@ type TransformedMaskSubRun struct {
 	isBigEnough bool
 }
 
-// makeTransformedMaskSubRun returns a TransformedMaskSubRun for the accepted glyphs.
 func makeTransformedMaskSubRun(accepted []acceptedGlyph, initialPositionMatrix *geom.Matrix, strike *font.Strike, spec *font.StrikeSpec, creationMatrix *geom.Matrix, creationBounds geom.Rect, maskType gpu.MaskFormat) *TransformedMaskSubRun {
 	positions, packedIDs := acceptedPositionsAndIDs(accepted)
 	return &TransformedMaskSubRun{
@@ -203,8 +200,7 @@ func (s *TransformedMaskSubRun) CanReuse(*geom.Matrix) bool {
 	return s.isBigEnough
 }
 
-// GlyphParams returns this subrun's atlas interpretation. Since this is non-SDF, isAA will be ignored so we just pass
-// true.
+// GlyphParams returns this subrun's atlas interpretation. IsAA is ignored for non-SDF subruns, so it is just set true.
 func (s *TransformedMaskSubRun) GlyphParams() GlyphParams {
 	return GlyphParams{IsSDF: false, IsLCD: s.vertexFiller.IsLCD(), IsAA: true}
 }
@@ -218,7 +214,6 @@ type SDFTSubRun struct {
 	matrixRange SDFTMatrixRange
 }
 
-// makeSDFTSubRun returns an SDFTSubRun for the accepted glyphs.
 func makeSDFTSubRun(runFont *font.Font, accepted []acceptedGlyph, creationMatrix *geom.Matrix, creationBounds geom.Rect, matrixRange SDFTMatrixRange, strike *font.Strike, spec *font.StrikeSpec) *SDFTSubRun {
 	positions, packedIDs := acceptedPositionsAndIDs(accepted)
 	return &SDFTSubRun{
@@ -271,9 +266,7 @@ type idOrPath struct {
 	glyphID uint16
 }
 
-// pathOpSubmitter holds glyph IDs until drawing, when they are converted to paths through the strike. The conversion
-// mutates the submitter, and a cached blob can be handed to more than one goroutine by BlobRedrawCoordinator, so it
-// runs under a sync.Once: without it a second drawer could observe the cleared strike before the converted paths.
+// pathOpSubmitter holds glyph IDs until drawing, when ensurePaths converts them to paths through the strike.
 type pathOpSubmitter struct {
 	strike              *font.Strike // strong ref keeping the strike alive; dropped after conversion
 	idsOrPaths          []idOrPath
@@ -283,7 +276,6 @@ type pathOpSubmitter struct {
 	isAntiAliased       bool
 }
 
-// makePathOpSubmitter returns a pathOpSubmitter for the accepted glyphs.
 func makePathOpSubmitter(accepted []acceptedGlyph, isAntiAliased bool, strikeToSourceScale float32, strike *font.Strike) pathOpSubmitter {
 	idsOrPaths := make([]idOrPath, len(accepted))
 	positions := make([]geom.Point, len(accepted))
@@ -316,7 +308,8 @@ func asABlur(mf maskfilter.MaskFilter) (blurQuery, bool) {
 	return b, true
 }
 
-// ensurePaths converts the glyph IDs to paths the first time it is called, and does nothing thereafter. The once is
+// ensurePaths converts the glyph IDs to paths the first time it is called, and does nothing thereafter. The conversion
+// mutates the submitter, and BlobRedrawCoordinator can hand a cached blob to more than one goroutine, so the once is
 // load-bearing rather than an optimization: it publishes the converted paths to every other caller, which a plain
 // "already done" flag would not, and it keeps a second caller from observing the cleared strike ref before them.
 func (p *pathOpSubmitter) ensurePaths() {
@@ -402,7 +395,6 @@ func (s *PathSubRun) Draw(c *canvas.Canvas, drawOrigin geom.Point, paint *canvas
 // CanReuse always returns true: path subruns have no position-dependent state.
 func (s *PathSubRun) CanReuse(*geom.Matrix) bool { return true }
 
-// strokeRecFromPaint builds the stroke spec a paint implies for path outlining.
 func strokeRecFromPaint(paint *canvas.Paint) stroke.Rec {
 	spec := stroke.PaintSpec{
 		Style:      stroke.PaintStyle(paint.Style),
@@ -413,9 +405,6 @@ func strokeRecFromPaint(paint *canvas.Paint) stroke.Rec {
 	}
 	return stroke.NewStrokeRecFromPaint(&spec, 1)
 }
-
-//////////////////////////////////////////////////////////////////////////////
-// SubRunContainer.
 
 // SubRunContainer holds all the subruns produced from one glyph run list.
 type SubRunContainer struct {
@@ -555,8 +544,8 @@ func makeSDFTStrikeSpec(runFont *font.Font, scalerPaint *font.ScalerPaint, devic
 // and rejected and computing the accepted glyphs' bounding rect.
 func prepareForDirectMaskDrawing(strike *font.Strike, positionMatrix *geom.Matrix, glyphIDs []uint16, positions []geom.Point, accepted []acceptedGlyph, rejected []rejectedGlyph) ([]acceptedGlyph, []rejectedGlyph, geom.Rect) {
 	rounding := strike.RoundingSpec()
-	// Build up the mapping from source space to device space. Add the rounding constant halfSampleFreq, so we just need
-	// to floor to get the device result.
+	// Build up the mapping from source space to device space. Add the rounding constant HalfAxisSampleFreq, so we just
+	// need to floor to get the device result.
 	positionMatrixWithRounding := *positionMatrix
 	half := rounding.HalfAxisSampleFreq
 	positionMatrixWithRounding.PostTranslate(half.X, half.Y)
@@ -667,7 +656,7 @@ func differentialAreaScale(m *geom.Matrix, p geom.Point) float32 {
 	a10, a11, a12 := float64(m.Get(geom.MScaleX)), float64(m.Get(geom.MSkewY)), float64(m.Get(geom.MPersp0))
 	a20, a21, a22 := float64(m.Get(geom.MSkewX)), float64(m.Get(geom.MScaleY)), float64(m.Get(geom.MPersp1))
 	det := a00*(a11*a22-a12*a21) - a01*(a10*a22-a12*a20) + a02*(a10*a21-a11*a20)
-	denom := 1.0 / float64(w) // 1/w
+	denom := 1.0 / float64(w)
 	denom = denom * denom * denom
 	return absF32(float32(det * denom))
 }
@@ -777,8 +766,7 @@ func MakeSubRuns(glyphRunList *textblob.GlyphRunList, positionMatrix *geom.Matri
 				}
 			}
 
-			// Direct Mask case. (The 3D/emboss mask-filter auto-layer check is unreachable: this codebase has no 3D
-			// mask format.)
+			// Direct Mask case.
 			if len(sourceGlyphs) > 0 && !positionMatrix.HasPerspective() {
 				// Process masks including ARGB — this should be the 99.99% case.
 				spec := font.MakeMaskSpec(runFont, &scalerPaint, positionMatrix, deviceProps)
@@ -800,8 +788,6 @@ func MakeSubRuns(glyphRunList *textblob.GlyphRunList, positionMatrix *geom.Matri
 					})
 			}
 		}
-
-		// (Drawable case trimmed — no reachable scaler produces drawable glyphs.)
 
 		// Path case: mainly large or large-perspective glyphs with no color.
 		if len(sourceGlyphs) > 0 {
@@ -860,7 +846,6 @@ func MakeSubRuns(glyphRunList *textblob.GlyphRunList, positionMatrix *geom.Matri
 				creationMatrix.PostScale(reductionFactor, reductionFactor)
 			}
 
-			// Draw using the creationMatrix.
 			spec := font.MakeTransformMaskSpec(runFont, &scalerPaint, &creationMatrix, deviceProps)
 			strike := spec.FindOrCreateStrike()
 

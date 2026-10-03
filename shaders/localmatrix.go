@@ -38,7 +38,7 @@ func NewWithLocalMatrix(s Shader, localMatrix geom.Matrix) Shader {
 	return &LocalMatrixShader{wrapped: s, localMatrix: lm}
 }
 
-// Wrapped returns the wrapped shader; LocalMatrix returns the wrapper's matrix — the descriptor the GPU side consumes.
+// Wrapped returns the wrapped shader.
 func (s *LocalMatrixShader) Wrapped() Shader { return s.wrapped }
 
 // LocalMatrix returns the local matrix.

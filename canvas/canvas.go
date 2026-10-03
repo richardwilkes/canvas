@@ -8,9 +8,8 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // The canvas core: the matrix save stack with deferred saves, clip ops delegated to the device, quick-reject bounds
-// maintenance, saveLayer/saveLayerAlpha with layer devices and restore-time composition (the machinery specific to
-// image-filtered layers lives in filterlayer.go), and the draw entry points (paint, color, clear, rect, oval, rrect,
-// round-rect, arc, circle, line, point(s), path, plus the image draws in drawimage.go and text in text.go). The
+// maintenance, saveLayer with layer devices and restore-time composition (the machinery specific to image-filtered
+// layers lives in filterlayer.go), and the draw entry points (image draws are in drawimage.go, text in text.go). The
 // canvas's total matrix is the 3x3 geom.Matrix, which is what the public surface exposes.
 
 package canvas
@@ -150,8 +149,7 @@ func (c *Canvas) internalRestore() {
 	c.topDevice().PopClipStack()
 	c.topDevice().SetGlobalCTM(&c.top().matrix)
 
-	// Draw the layer's device contents into the now-current older device. We can't call public draw functions since we
-	// don't want to record them.
+	// Draw the layer's device contents into the now-current older device.
 	if layer != nil && c.predrawNotify() {
 		dstDev := c.topDevice()
 		if layer.imageFilter != nil {
@@ -194,7 +192,7 @@ func (c *Canvas) RestoreToCount(count int) {
 // the matching restore. bounds is an optional content hint that clips the layer's extent; either argument may be nil.
 func (c *Canvas) SaveLayer(bounds *geom.Rect, paint *Paint) int {
 	if paint != nil && paint.nothingToDraw() {
-		// no need for the layer (or any of the draws until the matching restore()
+		// No need for the layer, or any of the draws until the matching restore.
 		c.Save()
 		c.ClipRect(geom.Rect{}, raster.ClipIntersect, false)
 	} else {
@@ -225,8 +223,7 @@ func (c *Canvas) abortLayer() {
 // The layer's coordinate space comes from decomposing the CTM against the filter's matrix capability; filterless layers
 // keep an identity remainder so they differ from the prior device by an integer translation.
 func (c *Canvas) internalSaveLayer(bounds *geom.Rect, paint *Paint) {
-	// Do this before we create the layer. We don't call the public save() since that would invoke a possibly overridden
-	// virtual.
+	// Do this before we create the layer.
 	c.internalSave()
 
 	if c.IsClipEmpty() {
@@ -234,8 +231,7 @@ func (c *Canvas) internalSaveLayer(bounds *geom.Rect, paint *Paint) {
 		return
 	}
 
-	// Build up the paint for restoring the layer, taking only the pieces of rec.fPaint that are relevant. Filtering is
-	// chosen in internalDrawDeviceWithFilter based on the device's coordinate space.
+	// Build up the paint for restoring the layer, taking only the pieces of paint that are relevant.
 	var restorePaint Paint
 	if paint != nil {
 		restorePaint = *paint
@@ -479,7 +475,6 @@ func (c *Canvas) LocalClipBounds() geom.Rect {
 	}
 	inverse, ok := c.top().matrix.Invert()
 	if !ok {
-		// if we can't invert the CTM, we can't return local clip bounds
 		return geom.Rect{}
 	}
 	// adjust it outwards in case we are antialiasing

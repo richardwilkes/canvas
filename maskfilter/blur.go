@@ -18,14 +18,13 @@ import (
 	"github.com/richardwilkes/canvas/raster"
 )
 
-// blurMaskFilter is the blur mask filter implementation.
 type blurMaskFilter struct {
 	sigma      float32
 	style      BlurStyle
 	respectCTM bool
 }
 
-// NewBlur creates a blur mask filter; nil unless sigma is finite and positive.
+// NewBlur creates a blur mask filter; nil unless sigma is finite and positive and style is a defined BlurStyle.
 func NewBlur(style BlurStyle, sigma float32, respectCTM bool) MaskFilter {
 	if geom.IsFinite(sigma) && sigma > 0 && style <= BlurInner {
 		return &blurMaskFilter{sigma: sigma, style: style, respectCTM: respectCTM}
@@ -33,12 +32,11 @@ func NewBlur(style BlurStyle, sigma float32, respectCTM bool) MaskFilter {
 	return nil
 }
 
-// AcceptsColorMask reports whether FilterMask on an ARGB32 (color glyph) source would produce a meaningful result for
-// this filter: only the blur filter handles color masks, by extracting the alpha plane (its dst is A8). The table and
-// shader mask filters treat every byte of src.Image as one coverage value, which is wrong for ARGB32 — and, because
-// raster.Mask carries no format, they cannot detect it and reject the mask themselves the way upstream's format check
-// does. This gate is therefore the whole guard, not a fast path in front of one: the color-glyph scaler lanes must
-// consult it before handing any filter an ARGB32 mask.
+// AcceptsColorMask reports whether mf can filter an ARGB32 (color glyph) source: only the blur filter can, blurring the
+// alpha plane into an A8 dst. The table and shader mask filters treat every byte of src.Image as one coverage value,
+// and because raster.Mask carries no format they cannot reject an ARGB32 mask themselves the way upstream's format
+// check does. This gate is therefore the whole guard: the color-glyph scaler lanes must consult it before handing any
+// filter an ARGB32 mask.
 func AcceptsColorMask(mf MaskFilter) bool {
 	_, ok := mf.(*blurMaskFilter)
 	return ok
@@ -53,7 +51,6 @@ func (f *blurMaskFilter) Style() BlurStyle { return f.style }
 // RespectCTM reports whether the sigma is interpreted in local space (true) or device space.
 func (f *blurMaskFilter) RespectCTM() bool { return f.respectCTM }
 
-// ignoreXform reports whether the sigma should be used as-is, ignoring the CTM.
 func (f *blurMaskFilter) ignoreXform() bool { return !f.respectCTM }
 
 // ComputeXformedSigma returns the sigma after accounting for the CTM; the GPU mask-filter draw lane consumes it.
@@ -61,8 +58,7 @@ func (f *blurMaskFilter) ComputeXformedSigma(ctm *geom.Matrix) float32 {
 	return f.computeXformedSigma(ctm)
 }
 
-// computeXformedSigma maps the filter's sigma through ctm (unless ignoreXform), clamped to the maximum supported blur
-// radius.
+// computeXformedSigma maps the filter's sigma through ctm (unless ignoreXform) and clamps it to kMaxBlurSigma.
 func (f *blurMaskFilter) computeXformedSigma(ctm *geom.Matrix) float32 {
 	const kMaxBlurSigma = float32(128)
 	xformedSigma := f.sigma
@@ -212,11 +208,9 @@ func (f *blurMaskFilter) filterRRectToNine(rrect geom.RRect, ctm *geom.Matrix) (
 		return ninePatch{}, false
 	}
 
-	// Now make that scaled down nine patch rrect.
 	smallR := geom.RectLTRB(0, 0, float32(totalSmallWidth), float32(totalSmallHeight))
 	smallRR := geom.MakeRRect(smallR, rrect.RadiusX, rrect.RadiusY)
 
-	// Blit the small rrect into a buffer and blur it (the mask cache is not ported).
 	small, ok := drawRRectIntoMask(smallRR)
 	if !ok {
 		return ninePatch{}, false
@@ -240,14 +234,12 @@ func (f *blurMaskFilter) filterRRectToNine(rrect geom.RRect, ctm *geom.Matrix) (
 // pooled analytic-blur buffers for the single-rect fast path (blurRect); the nested-rect path blurs through boxBlur,
 // which allocates its own image.
 func (f *blurMaskFilter) filterRectsToNine(rects []geom.Rect, ctm *geom.Matrix, scratch *blurScratch) (ninePatch, FilterReturn) {
-	// TODO: report correct metrics for innerstyle, where we do not grow the total bounds, but we do need an inset the
-	// size of our blur-radius
+	// See the inner-style TODO in filterRRectToNine.
 	if f.style == BlurInner || f.style == BlurOuter {
 		return ninePatch{}, FilterUnimplemented
 	}
 
-	// TODO: take clipBounds into account to limit our coordinates up front; for now, just skip too-large src rects (to
-	// take the old code path).
+	// See the clipBounds TODO in filterRRectToNine.
 	if rectExceeds(rects[0], 32767) {
 		return ninePatch{}, FilterUnimplemented
 	}
@@ -256,8 +248,8 @@ func (f *blurMaskFilter) filterRectsToNine(rects []geom.Rect, ctm *geom.Matrix, 
 	var dstM *raster.Mask
 	var ok bool
 	if len(rects) == 1 {
-		// special case for fast rect blur: don't actually do the blur the first time, just compute the correct size.
-		// blurRect fills the reused scratch.boundsMask header (no per-draw alloc).
+		// The fast rect blur only computes the size this first time. blurRect fills the reused scratch.boundsMask
+		// header (no per-draw alloc).
 		if _, ok = f.filterRectMask(rects[0], ctm, justComputeBounds, scratch, &scratch.boundsMask); ok {
 			dstM = &scratch.boundsMask
 		}
@@ -296,13 +288,11 @@ func (f *blurMaskFilter) filterRectsToNine(rects []geom.Rect, ctm *geom.Matrix, 
 	smallW++
 	smallH++
 
-	// we want the inset amounts to be integral, so we don't change any fractional phase on the fRight or fBottom of our
-	// smallR.
+	// The inset amounts must be integral, so they do not change the fractional phase of smallR's Right or Bottom.
 	dx := float32(innerIR.Width() - smallW)
 	dy := float32(innerIR.Height() - smallH)
 	if dx < 0 || dy < 0 {
-		// we're too small, relative to our blur, to break into nine-patch, so we ask to have our normal filterMask() be
-		// called.
+		// Too small, relative to the blur, to break into a nine-patch, so ask for the normal FilterMask path.
 		return ninePatch{}, FilterUnimplemented
 	}
 

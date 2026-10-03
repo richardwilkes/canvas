@@ -36,12 +36,13 @@ import (
 // — locked by TestMaskBlurSIMDMatchesScalar, which fuzzes whole rects (scalar drivers vs. simd drivers) and requires
 // byte-identical output buffers.
 //
-// Two structural rules keep them honest. First, the shift immediates must be compile-time constants for the hardware
-// instruction to be used at all, so both passes are unrolled per radius — the four cases of blurRowSIMD's and
-// blurColumnSIMD's switches — instead of looping over a dynamic offset; the radius is fixed for a whole rect, so the
-// switch costs one predictable branch per row or per column strip. Second, only whole 8-lane groups run in vector
-// registers: every partial group, every unexpected radius, and every edge phase is handed back to the scalar helpers
-// (blurRowTail, blurColumn, blurRow) rather than re-implemented here.
+// Two structural rules keep them honest. First, both passes are unrolled per radius — the four cases of blurRowSIMD's
+// and blurColumnSIMD's switches — instead of looping over a dynamic offset: the horizontal pass's shift immediates must
+// be compile-time constants for the hardware instruction to be used at all, and the vertical pass's pipeline registers
+// stay in vector registers only when their count is fixed. The radius is fixed for a whole rect, so the switch costs
+// one predictable branch per row or per column strip. Second, only whole 8-lane groups run in vector registers: every
+// partial group, every unexpected radius, and every edge phase is handed back to the scalar helpers (blurRowTail,
+// blurColumn, blurRow) rather than re-implemented here.
 
 // init swaps the dispatch variables to the simd kernels. On arm64 everything they need is baseline NEON; on amd64
 // simdKernelsSupported gates on AVX2, falling back to the portable fp88 dispatch when the hardware does not qualify.

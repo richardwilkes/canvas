@@ -94,17 +94,14 @@ func TestAAFillMergedMatchesSeparateInk(t *testing.T) {
 	}
 }
 
-// TestPartialAlphaAccumulatesWithoutDrift pins the property the analytic walker leans on whenever it cuts a pixel row
-// into sub-scanlines. The walker stops at every distinct edge y, accumulating the row's coverage one sub-row at a time
-// through getPartialAlphaMul, so whatever bias that one call carries is multiplied by however many sub-rows the row was
-// cut into — and that count is set by the surrounding geometry, not by the shape being measured. Appending more
-// contours into one path is exactly what drives it up: their edge y values interleave and cut every row finer without
-// changing what any one contour covers.
+// TestPartialAlphaAccumulatesWithoutDrift pins that getPartialAlphaMul carries no bias that the walker multiplies by
+// the number of sub-scanlines a pixel row is cut into (see getPartialAlphaMul). That count is set by the surrounding
+// geometry, not the shape being measured: appending contours into one path interleaves their edge y values and cuts
+// every row finer without changing what any one contour covers.
 //
 // Each iteration models a row cut into subRows equal pieces, down to the 1/(1<<analyticSnapAccuracy) the edge grid
-// allows, and totals what a pixel of constant coverage accumulates over them. Truncating the scale — Skia's
-// `(alpha * fullAlpha) >> 8`, which it can afford because its edges snap to a quarter scanline and cap a row at four
-// pieces — drifts -(subRows-1)/2 levels: -1.5 at four sub-rows, -31.5 at sixty-four, out of the 255 a full pixel holds.
+// allows, and totals what a pixel of constant coverage accumulates over them. Skia's truncation drifts -(subRows-1)/2
+// levels: -1.5 at four sub-rows, -31.5 at sixty-four, out of the 255 a full pixel holds.
 func TestPartialAlphaAccumulatesWithoutDrift(t *testing.T) {
 	for shift := 0; shift <= analyticSnapAccuracy; shift++ {
 		subRows := 1 << shift

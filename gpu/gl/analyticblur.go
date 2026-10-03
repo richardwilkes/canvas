@@ -7,13 +7,12 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// Factories for the analytic rect/circle/rrect blur fragment processors: MakeCircleBlur (circle blur), MakeRectBlur
-// (rect blur), and MakeRRectBlur (simple-circular rrect blur). Each builds the profile/integral/mask A8 table
-// (gpu.Create*), uploads it as a texture effect, and wraps the analytic runtime FP (analyticblurfp.go). The
-// profile/integral/mask textures are memoized in the DirectContext's thread-safe cache (threadsafecache.go), keyed by
-// the sigma-to-radius ratio for the circle profile, table width for the rect integral, and the sigma+per-corner-radii
-// key for the rrect mask, so a repeated blur reuses the upload. The rrect mask is generated on the CPU, designed to be
-// interchangeable with a direct-context GPU fill-in this codebase does not implement.
+// Factories for the analytic blur fragment processors: MakeCircleBlur, MakeRectBlur, and MakeRRectBlur (simple-circular
+// rrects only). Each builds its profile/integral/mask A8 table (gpu.Create*), uploads it as a texture effect, and wraps
+// it in the matching FP from analyticblurfp.go. The textures are memoized in the DirectContext's thread-safe cache
+// (threadsafecache.go), keyed by the sigma-to-radius ratio for the circle profile, the table width for the rect
+// integral, and sigma plus the per-corner radii for the rrect mask, so a repeated blur reuses the upload. The rrect
+// mask is always generated on the CPU; a GPU fill-in lane is not implemented.
 
 package gl
 
@@ -218,7 +217,6 @@ func MakeRectBlur(ctx *DirectContext, caps *gpu.ShaderCaps, srcRect geom.Rect, d
 	isFast := insetRect.IsSorted()
 
 	fp := NewRectBlurFP(insetRect, isFast, integral)
-	// Modulate blur with the input color.
 	fp = BlendFP(fp, nil, raster.BlendModulate)
 	if !invM.IsIdentity() {
 		fp = MatrixEffectFP(invM, fp)
@@ -242,9 +240,8 @@ func makeBlurredRRectKey(key *gpu.UniqueKey, rrectToDraw geom.RRect, xformedSigm
 }
 
 // makeRRectBlurMaskFP looks the blurred-rrect nine-patch mask up in the thread-safe cache, and on a miss builds it on
-// the CPU (gpu.CreateRRectBlurMask), uploads it, and adds the resulting view. Returns a texture effect that samples it,
-// scaled by the mask dimensions so the shader's normalized coords address it, with the mask sampled by nearest
-// filtering. A GPU fill-in lane (as opposed to CPU generation) is not implemented (see threadsafecache.go).
+// the CPU (gpu.CreateRRectBlurMask), uploads it, and adds the resulting view. Returns a nearest-filtered texture effect
+// that samples it, scaled by the mask dimensions so the shader's normalized coords address it.
 func makeRRectBlurMaskFP(ctx *DirectContext, rrectToDraw geom.RRect, dimensions geom.ISize, xformedSigma float32) FragmentProcessor {
 	var key gpu.UniqueKey
 	makeBlurredRRectKey(&key, rrectToDraw, xformedSigma)
@@ -303,6 +300,5 @@ func MakeRRectBlur(ctx *DirectContext, sigma, xformedSigma float32, srcRRect, de
 	proxyRect := devRRect.Rect.Outset(blurRadius, blurRadius)
 
 	rrectBlurFP := NewRRectBlurFP(cornerRadius, proxyRect, blurRadius, maskFP)
-	// Modulate blur with the input color.
 	return BlendFP(rrectBlurFP, nil, raster.BlendModulate)
 }

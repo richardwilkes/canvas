@@ -8,14 +8,14 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // Package gl is the GPU backend's OpenGL binding layer and the module's only foreign-function boundary: GL entry points
-// are resolved to raw proc addresses and invoked without cgo, via purego on macOS/Linux and std syscall on Windows. An
-// Interface is a proc table (Functions) plus the context's standard and extension set, assembled from a GetProc
-// resolver and validated against the version/extension matrix. Per the desktop trim, only desktop core-profile OpenGL
-// is supported: ES and WebGL contexts are recognized but rejected at assembly.
+// are resolved to raw proc addresses and invoked without cgo, through the fixed-arity call lanes in fastcall_*.go or
+// purego. An Interface is a proc table (Functions) plus the context's standard and extension set, assembled from a
+// GetProc resolver and validated against the version/extension matrix. Only desktop core-profile OpenGL is supported:
+// ES and WebGL contexts are recognized but rejected at assembly.
 //
 // The proc table and its wrappers (interface.go) are maintained by hand. Adding or changing an entry point means
-// observing the call-lane routing rules documented on Functions there and in fastcall_sysv.go's ABI notes; the tests in
-// fastcall_test.go are what enforce them.
+// observing the call-lane routing rules documented above glFuncIndex there and in fastcall_sysv.go's ABI notes; the
+// tests in fastcall_test.go are what enforce them.
 
 package gl
 
@@ -94,7 +94,6 @@ type Sync uintptr
 // when unavailable.
 type GetProc func(name string) uintptr
 
-// glBool converts a Go bool to a GLboolean argument word.
 func glBool(b bool) uintptr {
 	if b {
 		return 1

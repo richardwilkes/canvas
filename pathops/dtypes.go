@@ -8,22 +8,18 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // The numeric core of the pathops engine: the ULPs-based "almost equal" family (via the 2s-complement float-bit trick)
-// and the epsilon-tolerance predicates that the double-precision pathops geometry relies on. This is the foundation of
-// the engine that backs Op/Simplify/Builder (op.go/simplify.go/common.go). Pathops computes in double throughout for
-// precision; the ULPs helpers deliberately narrow to float32 first, since they compare values at the granularity the
-// geometry is ultimately stored and rendered at.
+// and the epsilon-tolerance predicates that the double-precision pathops geometry relies on. Pathops computes in double
+// throughout for precision; the ULPs helpers deliberately narrow to float32 first, since they compare values at the
+// granularity the geometry is ultimately stored and rendered at.
 
 package pathops
 
 import "math"
 
-// Epsilon constants. fltEpsilon is the float32 machine epsilon (2^-23), promoted to double for these expressions;
-// dblEpsilon is the float64 machine epsilon (2^-52).
-//
 // The multipliers on the machine epsilons are empirical: they were chosen to make the suite pass, not derived from an
-// error analysis, and there is no metric that says a given value is right. dblEpsilonErr in particular sets the slack
-// of six of the seven precisely* predicates below (preciselyZeroWhenComparedTo is the exception; it scales the plain
-// dblEpsilon by its comparand), so changing it shifts pathops output across the board.
+// error analysis. dblEpsilonErr in particular sets the slack of six of the seven precisely* predicates below
+// (preciselyZeroWhenComparedTo is the exception; it scales the plain dblEpsilon by its comparand), so changing it
+// shifts pathops output across the board.
 const (
 	fltEpsilon             = 1.1920928955078125e-07 // float32 machine epsilon == 2^-23
 	dblEpsilon             = 2.2204460492503131e-16 // float64 machine epsilon == 2^-52
@@ -36,7 +32,6 @@ const (
 	moreRoughEpsilon       = fltEpsilon * 256
 )
 
-// absF32 returns the absolute value of x.
 func absF32(x float32) float32 {
 	if x < 0 {
 		return -x
@@ -44,19 +39,17 @@ func absF32(x float32) float32 {
 	return x
 }
 
-// f32IsFinite reports whether x is neither infinite nor NaN.
 func f32IsFinite(x float32) bool {
 	d := float64(x)
 	return !math.IsInf(d, 0) && !math.IsNaN(d)
 }
 
-// dIsFinite reports whether a and b are both finite.
 func dIsFinite(a, b float64) bool {
 	return !math.IsInf(a, 0) && !math.IsNaN(a) && !math.IsInf(b, 0) && !math.IsNaN(b)
 }
 
-// ieeeDoubleDivide is an ordinary IEEE divide that yields inf/NaN rather than trapping on divide-by-zero. Go's float64
-// division already has these semantics; this wrapper documents the intent at each call site.
+// ieeeDoubleDivide marks call sites that rely on a zero divisor yielding inf/NaN, which Go's float64 division already
+// does.
 func ieeeDoubleDivide(numer, denom float64) float64 {
 	return numer / denom
 }
@@ -157,8 +150,8 @@ func lessUlps(a, b float32, epsilon int) bool {
 	return aBits <= bBits-int32(epsilon)
 }
 
-// The public ULPs comparisons below take doubles because all pathops geometry is double; each narrows its inputs to
-// float32 first, since ULPs comparisons are only meaningful at a fixed bit width.
+// The ULPs comparisons below take doubles because all pathops geometry is double; each narrows its inputs to float32
+// first, as the file comment explains.
 
 func almostEqualUlps(a, b float64) bool { return equalUlps(float32(a), float32(b), 16, 16) }
 
@@ -185,9 +178,9 @@ func notAlmostDequalUlps(a, b float64) bool { return dNotEqualUlps(float32(a), f
 // notAlmostEqualUlps is the negation of almostEqualUlps.
 func notAlmostEqualUlps(a, b float64) bool { return notEqualUlps(float32(a), float32(b), 16) }
 
-// almostDequalUlps reports approximate equality of a and b at 16 ULPs: for in-range values it narrows to float32 and
-// uses the 16-ULP compare; for values at or above the float32 max it falls back to a relative magnitude test (which
-// correctly yields false for a finite-vs-NaN pair via the IEEE divide).
+// almostDequalUlps reports whether a and b are within 16 ULPs. Values below the float32 max are narrowed and compared
+// in ULPs; larger ones (and NaN, which correctly yields false via the IEEE divide) fall back to a relative magnitude
+// test.
 func almostDequalUlps(a, b float64) bool {
 	if math.Abs(a) < math.MaxFloat32 && math.Abs(b) < math.MaxFloat32 {
 		return dEqualUlps(float32(a), float32(b), 16)
@@ -236,8 +229,7 @@ func roughlyBetween(a, b, c float64) bool {
 	return roughlyNegative(b-a) && roughlyNegative(c-b)
 }
 
-// approximatelyBetween reports whether b lies (approximately) between a and c in either order, using
-// approximatelyLessThanZero (x < fltEpsilon) as the per-side negativity test.
+// approximatelyBetween reports whether b lies between a and c in either order, within fltEpsilon.
 func approximatelyBetween(a, b, c float64) bool {
 	if a <= c {
 		return approximatelyLessThanZero(a-b) && approximatelyLessThanZero(b-c)
@@ -259,7 +251,7 @@ func approximatelyZeroOrMore(x float64) bool { return x > -fltEpsilon }
 
 func approximatelyZeroOrMoreDouble(x float64) bool { return x > -fltEpsilonDouble }
 
-// approximatelyZeroInverse reports whether x is large enough that its reciprocal underflows toward zero.
+// approximatelyZeroInverse reports whether 1/x is approximately zero.
 func approximatelyZeroInverse(x float64) bool { return math.Abs(x) > fltEpsilonInverse }
 
 // approximatelyZeroWhenComparedTo reports whether x is negligible relative to the magnitude of y.
@@ -281,10 +273,8 @@ func roughlyZeroWhenComparedTo(x, y float64) bool {
 // used where a coarser epsilon than approximatelyLessThanZero is needed to keep a comparison transitive (orderable).
 func approximatelyNegativeOrderable(x float64) bool { return x < fltEpsilonOrderableErr }
 
-// approximatelyZeroOrderable reports whether x is zero at the orderable tolerance.
 func approximatelyZeroOrderable(x float64) bool { return math.Abs(x) < fltEpsilonOrderableErr }
 
-// approximatelyEqualOrderable reports whether x and y are equal at the orderable tolerance.
 func approximatelyEqualOrderable(x, y float64) bool { return approximatelyZeroOrderable(x - y) }
 
 // approximatelyBetweenOrderable reports whether b lies (approximately, at the orderable tolerance) between a and c in
@@ -302,8 +292,8 @@ func preciselyLessThanZero(x float64) bool { return x < dblEpsilonErr }
 
 func preciselyGreaterThanOne(x float64) bool { return x > 1-dblEpsilonErr }
 
-// between reports whether (a <= b <= c) || (a >= b >= c), computed with a single product: the two differences (a-b) and
-// (c-b) have the same sign (or one is zero) exactly when b lies between a and c.
+// between reports whether (a <= b <= c) || (a >= b >= c): the differences (a-b) and (c-b) have opposite signs (or one
+// is zero) exactly when b lies between a and c.
 func between(a, b, c float64) bool {
 	return (a-b)*(c-b) <= 0
 }
@@ -317,7 +307,7 @@ func preciselyBetween(a, b, c float64) bool {
 	return preciselyNegative(b-a) && preciselyNegative(c-b)
 }
 
-// pinT clamps a T value to [0,1] using the precise epsilon.
+// pinT clamps a T value to [0,1], also snapping a value within dblEpsilonErr of either end to that end.
 func pinT(t float64) float64 {
 	if preciselyLessThanZero(t) {
 		return 0
@@ -328,8 +318,7 @@ func pinT(t float64) float64 {
 	return t
 }
 
-// b2f converts a bool to 0.0/1.0, used throughout the intersection code where a boolean condition needs to participate
-// directly in a T-value expression.
+// b2f converts a bool to 0 or 1 so a condition can participate directly in a T-value expression.
 func b2f(b bool) float64 {
 	if b {
 		return 1
@@ -337,5 +326,4 @@ func b2f(b bool) float64 {
 	return 0
 }
 
-// dInterp linearly interpolates between a and b at parameter t: a + (b-a)*t.
 func dInterp(a, b, t float64) float64 { return a + (b-a)*t }

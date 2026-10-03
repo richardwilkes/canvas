@@ -8,16 +8,14 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // Live-context tests for the GPU image-filter lane (the staging in glfilter.go). Each scene draws through an image
-// filter, once on the CPU rasterizer and once on the live GPU device. Every publicly reachable filter DAG now evaluates
-// natively on the GPU filtercore backend, so these comparisons are true differentials — the GPU's kernel FPs vs the
-// CPU's raster-pipeline stages — under thresholds matched to each kernel's expected drift (AA rasterization of the
-// source layer, GPU pow vs the CPU's approximate power function, bilinear precision; the same drift that made the
-// Skia-era oracle compare GPU output under its looser `gpu` profile). The CPU path is gated bit-exactly by the
-// oracle's raster goldens, so close agreement proves the GPU evaluation is correct. The two visibility counters
-// discriminate which lane ran: FilterReadbackCount advances once per fallback evaluation,
-// filtercore.ResolveToRasterCount once per drawable→CPU image resolution — both must stay flat across a GPU-native
-// evaluation; the fallback lane itself is exercised through a test-local filter wrapper that hides GPUEvaluable. Skips
-// when no GL context is available.
+// filter, once on the CPU rasterizer and once on the live GPU device. Every publicly reachable filter DAG evaluates
+// natively on the GPU filtercore backend, so these comparisons are true differentials (the GPU's kernel FPs vs the
+// CPU's raster-pipeline stages) under thresholds matched to each kernel's expected drift: AA rasterization of the
+// source layer, GPU pow vs the CPU's approximate power function, bilinear precision. The CPU path is gated bit-exactly
+// by the oracle's raster goldens, so close agreement proves the GPU evaluation is correct. Two counters discriminate
+// which lane ran: FilterReadbackCount advances once per fallback evaluation and filtercore.ResolveToRasterCount once
+// per drawable→CPU image resolution, so both must stay flat across a GPU-native evaluation; the fallback lane itself is
+// exercised through a test-local filter wrapper that hides GPUEvaluable. Skips when no GL context is available.
 
 package gl_test
 
@@ -34,9 +32,9 @@ import (
 	"github.com/richardwilkes/canvas/shaders"
 )
 
-// compareFiltered compares two RGBA buffers rendered through the CPU and GPU backends. tol/ maxBadFraction: per-channel
-// tolerance and the fraction of pixels allowed to exceed it — tight (4, 1%) when both sides evaluated the identical CPU
-// DAG, blur-tolerant (16, 5%) when the GPU evaluated natively with its own blur engine.
+// compareFiltered compares two RGBA buffers rendered through the CPU and GPU backends. tol is the per-channel tolerance
+// and maxBadFraction the fraction of pixels allowed to exceed it: tight (4, 1%) when both sides evaluated the identical
+// CPU DAG, blur-tolerant (16, 5%) when the GPU evaluated natively with its own blur engine.
 func compareFiltered(t *testing.T, gpuData, cpuData []byte, w, h, tol int, maxBadFraction float64, tag string) {
 	t.Helper()
 	total := w * h
@@ -314,9 +312,8 @@ func TestLiveImageFilterDisplacement(t *testing.T) {
 // pow directly while the CPU pipeline uses ApproxPowf, and the Sobel normals amplify AA edge differences, so the
 // threshold is the loosest of the kernel set: on the specular case a small fraction of shape-edge pixels differs
 // outright because dot(normal, halfDir) goes negative there and pow of a negative base is undefined in GLSL while
-// ApproxPowf returns a finite value — a GPU-vs-raster-pipeline characteristic inherent to comparing a GLSL pow against
-// an approximation (the oracle's GPU golden lane never sees it: there GLSL output is compared against captured GLSL
-// output).
+// ApproxPowf returns a finite value. The oracle's GPU golden lane never sees this: there GLSL output is compared
+// against captured GLSL output.
 func TestLiveImageFilterLighting(t *testing.T) {
 	const w, h = 96, 96
 	gpuData, _ := runFilterKernelScene(t, w, h, 24, 0.05, "point-lit-diffuse", func(c *canvas.Canvas) {

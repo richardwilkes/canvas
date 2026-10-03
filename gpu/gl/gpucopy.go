@@ -8,8 +8,7 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // The GL surface-copy lanes: copy-as-tex-sub-image, copy-as-blit-framebuffer, and their can_* helpers deciding which
-// lane a given copy can use. The copy-as-draw lane is not implemented: copies that only a draw could satisfy (or that
-// need scaling with neither lane available) fail.
+// lane a given copy can use. The copy-as-draw lane is not implemented: copies that neither lane can satisfy fail.
 
 package gl
 
@@ -93,7 +92,6 @@ func (g *Gpu) CopySurface(dst *Surface, dstRect geom.IRect, src *Surface, srcRec
 	return false
 }
 
-// copySurfaceAsCopyTexSubImage copies srcRect in src to dstPoint in dst via glCopyTexSubImage2D.
 func (g *Gpu) copySurfaceAsCopyTexSubImage(dst, src *Surface, srcRect geom.IRect, dstPoint geom.IPoint) {
 	g.bindSurfaceFBOForPixelOps(src, 0, FRAMEBUFFER, tempFBOSrc)
 	dstTex := dst.AsTexture()
@@ -107,12 +105,9 @@ func (g *Gpu) copySurfaceAsCopyTexSubImage(dst, src *Surface, srcRect geom.IRect
 	g.fns().CopyTexSubImage2D(dstTex.Target(), 0, dstPoint.X, dstPoint.Y, srcRect.Left,
 		srcRect.Top, srcRect.Width(), srcRect.Height())
 	g.unbindSurfaceFBOForPixelOps(src, 0, FRAMEBUFFER)
-	// The rect is already in device space so no flip is done (top-left origin).
 	g.didWriteToSurface(dst, 1)
 }
 
-// copySurfaceAsBlitFramebuffer copies srcRect in src to dstRect in dst via glBlitFramebuffer, scaling if the rects
-// differ in size.
 func (g *Gpu) copySurfaceAsBlitFramebuffer(dst, src *Surface, srcRect, dstRect geom.IRect, filter gpu.FilterMode) bool {
 	if dst == src && dstRect.Intersects(srcRect) {
 		return false
@@ -136,7 +131,6 @@ func (g *Gpu) copySurfaceAsBlitFramebuffer(dst, src *Surface, srcRect, dstRect g
 	g.unbindSurfaceFBOForPixelOps(dst, 0, DRAW_FRAMEBUFFER)
 	g.unbindSurfaceFBOForPixelOps(src, 0, READ_FRAMEBUFFER)
 
-	// The rect is already in device space so no flip is done (top-left origin).
 	g.didWriteToSurface(dst, 1)
 	return true
 }

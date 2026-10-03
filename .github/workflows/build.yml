@@ -6,9 +6,8 @@ on:
   pull_request:
   workflow_dispatch:
 
-# Build and test with cgo disabled everywhere, so every step defaults to CGO_ENABLED=0 rather than repeating it. A step
-# needing cgo must override this explicitly — only "Test (race)" does, and only on the non-darwin legs (see the comment
-# there).
+# Build and test with cgo disabled everywhere. A step needing cgo must override this explicitly; only "Test (race)" does
+# (see the comment there).
 env:
   CGO_ENABLED: '0'
 
@@ -29,30 +28,26 @@ jobs:
         run: go build ./...
       - name: Test
         run: go test ./...
-      # The goexperiment.simd leg: test the module again with the simd kernels wired in (shaders/stage_simd.go and
-      # friends), so the vector dispatch and its bit-exactness gates run on every OS/arch pair. The default-build
-      # steps above stay authoritative for what ships; this leg guards the opt-in build. Formatting and linting
-      # (including go vet, which golangci-lint runs) live in the format and lint jobs, which cover every platform
-      # from one runner each — no need to repeat them per OS here.
+      # Test again with the goexperiment.simd kernels wired in (shaders/stage_simd.go and friends), so the vector
+      # dispatch and its bit-exactness gates run on every OS/arch pair; the default build above remains what ships.
+      # Formatting and linting (including go vet) live in the format and lint jobs, which cover every platform.
       - name: Test (GOEXPERIMENT=simd)
         run: go test ./...
         env:
           GOEXPERIMENT: simd
-      # The one step that needs cgo, overriding the workflow-level CGO_ENABLED=0: outside darwin the race
-      # detector requires it, and `go test -race` hard-fails with "-race requires cgo" on the two Linux legs
-      # (cmd/go/internal/work/init.go: "On macOS, -race does not require cgo").
+      # Outside darwin the race detector requires cgo: `go test -race` hard-fails with "-race requires cgo" on the Linux
+      # legs (cmd/go/internal/work/init.go: "On macOS, -race does not require cgo").
       - name: Test (race)
         if: runner.os != 'Windows'
         run: go test -race ./...
         env:
           CGO_ENABLED: '1'
-      # Render the corpus through the pure-Go GL backend and diff against the self-captured per-platform GPU goldens
+      # Render the corpus through the pure-Go GL backend and diff against this platform's self-captured GPU goldens
       # under the exact1 profile (±1 LSB, zero pixels beyond — the proven driver-wobble envelope; see the oracle soak
-      # doc comment). The gate self-pins CANVAS_GLTEST_RENDERER=software and verifies the context's GL_RENDERER string
-      # against the manifest, so a runner-image driver bump fails with a one-line diagnosis instead of pixel noise.
-      # The test derives its per-platform golden dir from GOOS_GOARCH and skips (before touching GL) where none is
-      # checked in. Restricted to macOS because that is where a GL context comes up on the `test` runners today (both
-      # darwin legs have golden sets); -v surfaces a skip in the log.
+      # doc comment). The gate self-pins CANVAS_GLTEST_RENDERER=software and checks the context's GL_RENDERER against
+      # the manifest, so a runner-image driver bump fails with a one-line diagnosis instead of pixel noise. It skips
+      # (before touching GL) where no golden set is checked in. Restricted to macOS because that is where a GL context
+      # comes up on the `test` runners (both darwin legs have golden sets); -v surfaces a skip in the log.
       - name: Go GPU backend vs self-captured GPU goldens
         if: runner.os == 'macOS'
         working-directory: internal/oracle
@@ -95,17 +90,15 @@ jobs:
           LIBGL_ALWAYS_SOFTWARE: '1'
       - name: Oracle probes and tests
         working-directory: internal/oracle
-        # On Linux, run under a virtual X server (Xvfb) with Mesa's software rasterizer (llvmpipe) forced, so every
-        # GL-touching test renders on the deterministic non-hardware stack. If no GL context comes up, tests skip (not
-        # fail), so a missing GL stack degrades gracefully.
+        # On Linux, run under Xvfb with Mesa's llvmpipe software rasterizer forced, so every GL-touching test renders on
+        # the deterministic non-hardware stack. If no GL context comes up, tests skip rather than fail.
         #
-        # The two GL env vars stay inline on the Linux branch rather than moving to the step's `env:` block: a block
-        # would export them to the macOS branch too, where CANVAS_GLTEST_RENDERER=software is not inert — it pins
-        # kCGLRendererGenericFloatID as a CGLChoosePixelFormat attribute (gpu/gl/gltest/context_darwin.go), changing
-        # which GL stack the darwin leg renders on, and silently skipping every GPU test if no such pixel format is
-        # found. The renderer-sensitive golden gates (TestGoGPU*SelfCapturedGolden) each pin the variable for
-        # themselves via t.Setenv, verify the context's GL_RENDERER against the manifest, and fail (not skip) on
-        # darwin if the pinned context can't be created.
+        # The two GL env vars stay inline on the Linux branch rather than in the step's `env:` block, which would export
+        # them to macOS too. There CANVAS_GLTEST_RENDERER=software is not inert: it pins kCGLRendererGenericFloatID as a
+        # CGLChoosePixelFormat attribute (gpu/gl/gltest/context_darwin.go), changing which GL stack the darwin leg
+        # renders on and silently skipping every GPU test if no such pixel format is found. The renderer-sensitive
+        # golden gates (TestGoGPU*SelfCapturedGolden) pin it themselves via t.Setenv and fail (not skip) on darwin if
+        # the pinned context can't be created.
         run: |
           if [ "$RUNNER_OS" = "Linux" ]; then
             LIBGL_ALWAYS_SOFTWARE=1 CANVAS_GLTEST_RENDERER=software xvfb-run -a -s "-screen 0 1280x1024x24" \

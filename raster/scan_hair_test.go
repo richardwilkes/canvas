@@ -71,7 +71,7 @@ func TestAntiFillRectHalfPixelCoverage(t *testing.T) {
 	clip := fullClip(24, 16)
 	AntiFillRect(geom.RectLTRB(3.5, 4, 17, 12), clip, NewSolidBlitter(dev, 0xFF000000))
 
-	// Column 3 gets coverage 256-128 = 128 through blitV; compare against a direct BlitV at alpha 128 (the legacy
+	// Column 3 gets coverage 256-128 = 128 through BlitV; compare against a direct BlitV at alpha 128 (the legacy
 	// blitter's black fast-path kernel).
 	ref := newWhitePixmap(24, 16)
 	NewSolidBlitter(ref, 0xFF000000).BlitV(3, 6, 1, 128)
@@ -247,7 +247,7 @@ func TestAntiHairSquareCapsExtend(t *testing.T) {
 func TestSpriteSrcOverOpaqueAlpha(t *testing.T) {
 	src := NewPixmap(2, 1)
 	src.Pix[0] = 0x80402010 // translucent premul
-	src.Pix[1] = 0xFF0000FF // opaque red (RGBA word: R=0xFF... actually R in low byte)
+	src.Pix[1] = 0xFF0000FF // opaque red (R is the low byte)
 	dst := newWhitePixmap(4, 2)
 
 	blitter := ChooseSprite(dst, src, 1, 0, 255, BlendSrcOver, SpriteAlphaPremul)
@@ -344,9 +344,9 @@ func TestImageSpriteBlitterMatchesBlendBlitter(t *testing.T) {
 	}
 }
 
-// TestAlignThinStrokeSnapsFirstArgument pins alignThinStroke's real contract: it is always the *first* argument that
-// snaps to the pixel boundary, with the second shifted by the same delta so the pair's separation survives. Its doc
-// used to say it snapped "the outer edge", but AntiFrameRectRegion's right/bottom calls pass the inner edge first.
+// TestAlignThinStrokeSnapsFirstArgument pins alignThinStroke's contract: it is always the *first* argument that snaps
+// to the pixel boundary, with the second shifted by the same delta so the pair's separation survives. It is not "the
+// outer edge": AntiFrameRectRegion's right/bottom calls pass the inner edge first.
 func TestAlignThinStrokeSnapsFirstArgument(t *testing.T) {
 	// Both edges inside pixel 3, at 3.25 and 3.75.
 	const lo = fDot8(3*256 + 64)

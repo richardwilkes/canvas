@@ -23,7 +23,8 @@ import (
 // TestImageDrawScratchReuseByteIdentical locks the pooled imageDrawScratch invariant: reusing a scratch after it built
 // the paint for one image (through every wrap lane) must produce a shader observationally identical to a fresh
 // scratch's for the next image, i.e. SetFromPixels/SetImage fully re-initialize the reused Image/ImageShader with no
-// leftover state. Deterministic: single goroutine, so sync.Pool hands the just-released scratch back on the next Get.
+// leftover state. Single goroutine, so sync.Pool normally hands the just-released scratch back on the next Get (not
+// guaranteed, e.g. under -race).
 func TestImageDrawScratchReuseByteIdentical(t *testing.T) {
 	// imgA (48x48) poisons the scratch through the wrap lanes: cubic sampling plus a non-identity local matrix
 	// (LocalMatrixShader wrap). imgB (40x24) is drawn plainly (base ImageShader only, nil matrix).
@@ -87,11 +88,9 @@ func TestImageDrawScratchReuseByteIdentical(t *testing.T) {
 }
 
 // TestImageRectScratchReleaseClearsPaint locks the pooled imageRectScratch hygiene invariant: releaseImageRectScratch
-// must drop the working paint's shader/color-filter/etc. references so an idle pooled scratch does not pin them.
-// releaseImageRectScratch zeroes the paint in place before returning the scratch to the pool, so the reference we still
-// hold observes the cleared state directly — the test asserts the clearing logic on that instance rather than depending
-// on sync.Pool handing the same scratch back on the next Get, which it does not guarantee (e.g. under -race, where the
-// victim cache can drop pooled items). Has teeth — fails if the release's `s.paint = Paint{}` clear is dropped.
+// must drop the working paint's references so an idle pooled scratch does not pin them. It asserts on the released
+// instance directly rather than depending on sync.Pool handing the same scratch back on the next Get, which it does not
+// guarantee (e.g. under -race, where pooled items can be dropped).
 func TestImageRectScratchReleaseClearsPaint(t *testing.T) {
 	s := acquireImageRectScratch()
 	s.src = geom.RectWH(4, 4)
@@ -101,9 +100,7 @@ func TestImageRectScratchReleaseClearsPaint(t *testing.T) {
 	}
 	releaseImageRectScratch(s)
 
-	// s still points at the just-released scratch; release cleared it in place (before the Put), so its paint must no
-	// longer pin the shader/color-filter references. No Get is issued — the invariant holds regardless of which
-	// instance the pool would hand back next.
+	// s still points at the just-released scratch, which release cleared in place before the Put.
 	if s.paint.Shader != nil || s.paint.ColorFilter != nil {
 		t.Errorf("release left dangling paint references: Shader=%v ColorFilter=%v",
 			s.paint.Shader, s.paint.ColorFilter)

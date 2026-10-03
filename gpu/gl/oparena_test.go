@@ -8,11 +8,11 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // Regression tests for the op-recording allocation reductions: the batchable geometry ops bootstrap their per-instance
-// slice from an inline backing array (rectsArr/rrectsArr/instancesArr/ circlesArr/ellipsesArr), so a freshly
-// constructed single-instance op does not heap-allocate a separate backing array — the single instance lives in the
-// inline array until combining grows it past capacity one. These tests assert the invariant structurally (the slice's
-// first element aliases the inline array) rather than via allocation counts, so they hold under the race detector too.
-// They construct ops directly, needing no GL context. The remaining oval-family ops (ellipseOp, diEllipseOp,
+// slice from an inline backing array (rectsArr/rrectsArr/instancesArr/circlesArr/ellipsesArr), so a freshly constructed
+// single-instance op does not heap-allocate a separate backing array — the single instance lives in the inline array
+// until combining grows it past capacity one. These tests assert the invariant structurally (the slice's first element
+// aliases the inline array) rather than via allocation counts, so they hold under the race detector too. They construct
+// ops directly, needing no GL context. The remaining oval-family ops (circleOp, ellipseOp, diEllipseOp,
 // ellipticalRRectOp) share the identical one-line pattern and are covered functionally by the live render suite.
 
 package gl

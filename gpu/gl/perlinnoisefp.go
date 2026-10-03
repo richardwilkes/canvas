@@ -11,8 +11,7 @@
 // texture-effect child FPs — an A8 256x1 permutations texture and an RGBA8 256x4 noise texture (channel per row, each
 // texel two 16-bit gradient components split high/low across the RGBA bytes) — sampled RepeatX/Nearest; the octave loop
 // and the noise helper function are emitted as desktop GLSL directly. No perlin-noise rounding fix (a workaround for an
-// old mobile-GPU quirk that doesn't apply here). Before this lane a paint carrying a perlin-noise shader failed FP
-// conversion and the GPU device drew nothing.
+// old mobile-GPU quirk that doesn't apply here).
 
 package gl
 
@@ -256,7 +255,6 @@ func (i *perlinNoise2Impl) EmitCode(args *FPEmitArgs) {
 	}
 	fb.CodeAppend("float ratio = 1.0;")
 
-	// Loop over all octaves.
 	fb.CodeAppendf("for (int octave = 0; octave < %d; ++octave) {", pne.numOctaves)
 	fb.CodeAppend("color += ")
 	if pne.noiseType != shaders.PerlinFractalNoise {
@@ -285,9 +283,7 @@ func (i *perlinNoise2Impl) EmitCode(args *FPEmitArgs) {
 		// Fractal noise maps turbulence [-1,1] into [0,1] via (x + 1) / 2.
 		fb.CodeAppend("color = color * vec4(0.5) + vec4(0.5);")
 	}
-	// Clamp to [0,1].
 	fb.CodeAppend("color = clamp(color, 0.0, 1.0);")
-	// Premultiply the result.
 	fb.CodeAppend("return vec4(color.rgb * color.aaa, color.a);")
 }
 

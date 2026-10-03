@@ -7,10 +7,8 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// Fake-driver tests for the proxy/render-task/drawing-manager layer: proxy instantiation and backing-store semantics,
-// the lazy-proxy contract (deferred and fully-lazy callback instantiation), interval overlap/reuse in the resource
-// allocator, the topological sort and clustering of the task DAG, op-chain combining, and the full context→task→flush
-// pipeline over the M4 Max fake driver with per-entry-point call counters.
+// Tests for the proxy/render-task/drawing-manager layer, run over the M4 Max fake driver with per-entry-point call
+// counters.
 
 package gl
 
@@ -115,7 +113,6 @@ func TestLazyProxyInstantiation(t *testing.T) {
 	if !proxy.IsInstantiated() {
 		t.Fatal("lazy proxy not instantiated by allocator")
 	}
-	// The callback was released, so the proxy is no longer lazy.
 	if proxy.IsLazy() {
 		t.Fatal("callback should have been released")
 	}
@@ -203,8 +200,8 @@ func (m *mockTask) OnExecute(*OpFlushState) bool {
 	return true
 }
 
-// TestTopoSortTasks checks the topological-sort behavior of task scheduling: dependencies always precede their
-// dependents, and the assigned indices match the final order.
+// TestTopoSortTasks checks that dependencies always precede their dependents and that the assigned indices match the
+// final order.
 func TestTopoSortTasks(t *testing.T) {
 	var executed []uint32
 	// Build tasks: d depends on c, c depends on a and b. Insert them badly ordered.
@@ -340,7 +337,6 @@ func TestFillContextClearPipeline(t *testing.T) {
 		t.Fatal("flushed task should be closed")
 	}
 
-	// The target proxy was instantiated by the allocator.
 	if !sdc.AsSurfaceProxy().IsInstantiated() {
 		t.Fatal("flush should have instantiated the target")
 	}
@@ -435,8 +431,7 @@ func TestWritePixelsTaskOrdering(t *testing.T) {
 	if !sdc.WritePixels(pix, geom.IPoint{X: 2, Y: 2}) {
 		t.Fatal("WritePixels failed")
 	}
-	// WritePixels on borrowed storage flushes; the DAG must be empty and the upload must have happened after the render
-	// pass (glTexSubImage2D preceded by the clear's pass).
+	// WritePixels on borrowed storage flushes, so the DAG must be empty and the upload must have happened.
 	if len(dc.DrawingManager().dag) != 0 {
 		t.Fatal("WritePixels should have flushed the DAG")
 	}
@@ -445,8 +440,7 @@ func TestWritePixelsTaskOrdering(t *testing.T) {
 	}
 }
 
-// TestAbandonSemantics: after AbandonContext no further GL calls are made — resources are dropped without deletion —
-// while ReleaseResourcesAndAbandonContext deletes backend objects first.
+// TestAbandonSemantics: after AbandonContext no further GL calls are made; resources are dropped without deletion.
 func TestAbandonSemantics(t *testing.T) {
 	dc := newFakeDirectContext(t)
 	dims := geom.ISize{Width: 32, Height: 32}
@@ -531,7 +525,6 @@ func TestBufferAllocPool(t *testing.T) {
 	if buffer.IsCpuBuffer() {
 		t.Fatal("desktop profile should use GPU buffers")
 	}
-	// A second request suballocates from the same block.
 	_, buffer2, startVertex2 := pool.MakeVertexSpace(16, 5)
 	if buffer2 != buffer || startVertex2 != 10 {
 		t.Fatalf("expected suballocation from the same block (start=%d)", startVertex2)
@@ -556,11 +549,10 @@ func TestBufferAllocPool(t *testing.T) {
 	}
 }
 
-// TestBufferAllocPoolMappedWindowSpansBuffer pins the mapped write window to the buffer the provider actually handed
-// back, not to the requested size: CreateBuffer bins dynamic buffers upward (40000 bytes yields 49152), and
-// MakeSpaceAtLeast hands out every free byte of the block, so a window sized to the request would be indexed past its
-// length. The default -1 buffer-map threshold becomes MaxInt32 and never maps, so the threshold is set explicitly here
-// to reach the mapped lane.
+// TestBufferAllocPoolMappedWindowSpansBuffer pins the mapped write window to the buffer the provider handed back, not
+// to the requested size: CreateBuffer bins dynamic buffers upward and MakeSpaceAtLeast hands out every free byte of the
+// block, so a window sized to the request would be indexed past its length. The default -1 buffer-map threshold becomes
+// MaxInt32 and never maps, so the threshold is set explicitly here to reach the mapped lane.
 func TestBufferAllocPoolMappedWindowSpansBuffer(t *testing.T) {
 	options := gpu.DefaultContextOptions()
 	options.BufferMapThreshold = 0
@@ -622,7 +614,6 @@ func TestProxyProviderUniqueKeys(t *testing.T) {
 		t.Fatal("expected one keyed proxy")
 	}
 
-	// Instantiate: the key propagates to the surface.
 	if !proxy.Instantiate(dc.ResourceProvider()) {
 		t.Fatal("Instantiate failed")
 	}

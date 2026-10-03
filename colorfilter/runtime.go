@@ -20,14 +20,9 @@ import (
 	"github.com/richardwilkes/canvas/shaders"
 )
 
-// srgbTF is the parametric sRGB transfer function.
 var srgbTF = colorcore.SRGBTF
 
-// srgbInvTF is the inverse of srgbTF, computed at init.
 var srgbInvTF = colorcore.SRGBInvTF
-
-///////////////////////////////////////////////////////////////////////////////
-// luma
 
 // lumaFilter operates on the premultiplied color, moving its luminance into alpha and zeroing RGB.
 type lumaFilter struct{}
@@ -49,9 +44,6 @@ func (lumaFilter) AppendStages(p *shaders.Pipeline, _ bool) bool {
 	return true
 }
 
-///////////////////////////////////////////////////////////////////////////////
-// high contrast
-
 // HighContrastInvertStyle selects how the high-contrast filter inverts colors.
 type HighContrastInvertStyle int32
 
@@ -69,7 +61,6 @@ type HighContrastConfig struct {
 	Contrast    float32
 }
 
-// isValid reports whether the invert style and contrast are within their legal ranges.
 func (c HighContrastConfig) isValid() bool {
 	return c.InvertStyle >= InvertNone && c.InvertStyle <= InvertLightness &&
 		c.Contrast >= -1 && c.Contrast <= 1
@@ -174,7 +165,6 @@ func highContrastRGBToHSL(r, g, b float32) (h, s, l float32) {
 	return h, s, l
 }
 
-// hslToRGB converts HSL back to RGB.
 func hslToRGB(h, s, l float32) (r, g, b float32) {
 	c := (1 - absf(2*l-1)) * s
 	f := func(offset float32) float32 {

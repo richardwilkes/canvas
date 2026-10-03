@@ -7,11 +7,8 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// Focused tests for the curve-vs-curve dQuad members that the quad/quad curve-pair solver consumes: subDivide (both
-// forms), chopAt, otherPts, dxdyAtT, hullIntersects, quadSetABC, align, collapsed, controlsInside, plus the supporting
-// dPointMid and the line/line intersectRay. These primitives have no dedicated unit test elsewhere (they are exercised
-// through quad/quad intersection, which needs the full curve-pair solver); the checks here cross-validate against the
-// already-oracle-verified ptAtT and against closed-form geometry.
+// Tests for the curve-vs-curve dQuad members the quad/quad curve-pair solver consumes, plus dPointMid and
+// intersectRayLine. The checks cross-validate against the oracle-verified ptAtT and against closed-form geometry.
 
 package pathops
 
@@ -56,7 +53,6 @@ func TestQuadSubDivideMatchesPtAtT(t *testing.T) {
 			for _, s := range []float64{0, 0.25, 0.5, 0.75, 1} {
 				mapped := t1 + s*(t2-t1)
 				requireApproxPt(t, sub.ptAtT(s), q.ptAtT(mapped),
-					// context
 					fmt.Sprintf("subDivide q%d range[%g,%g] s=%g", qi, t1, t2, s))
 			}
 		}
@@ -76,7 +72,6 @@ func TestQuadChopAt(t *testing.T) {
 	if second.pts[2] != q.pts[2] {
 		t.Errorf("chopAt second[2]=%+v want %+v", second.pts[2], q.pts[2])
 	}
-	// The split point is shared.
 	if first.pts[2] != second.pts[0] {
 		t.Errorf("chopAt split point mismatch: first[2]=%+v second[0]=%+v", first.pts[2], second.pts[0])
 	}
@@ -89,7 +84,7 @@ func TestQuadChopAt(t *testing.T) {
 
 func TestQuadOtherPts(t *testing.T) {
 	q := dq(10, 11, 20, 21, 30, 31) // distinct points so the index mapping is unambiguous
-	// From the documented bit-twiddle table: the two points that are NOT oddMan.
+	// The two points that are not oddMan, in the order otherPts returns them.
 	cases := []struct {
 		oddMan int
 		want   [2]dPoint
@@ -153,8 +148,8 @@ func TestQuadHullIntersectsCrossing(t *testing.T) {
 }
 
 func TestQuadHullIntersectsLinear(t *testing.T) {
-	// A collinear "quad" (its hull is a line) against an arch that does not share endpoints: result is true and
-	// isLinear is reported.
+	// A collinear "quad" (its hull is a line) against a quad that does not share endpoints: result is true and isLinear
+	// is reported.
 	q1 := dq(0, 0, 1, 1, 2, 2)
 	q2 := dq(0, 3, 1, 3, 2, 3)
 	result, isLinear := q1.hullIntersects(q2)
@@ -164,8 +159,7 @@ func TestQuadHullIntersectsLinear(t *testing.T) {
 }
 
 func TestQuadSetABC(t *testing.T) {
-	// SetABC converts the (A,B,C) Bernstein-ish control values of one coordinate into plain-polynomial a,b,c so that
-	// a*t*t + b*t + c == A*t*t + 2*B*t*(1-t) + C*(1-t)*(1-t).
+	// quadSetABC must yield a,b,c such that a*t*t + b*t + c == A*t*t + 2*B*t*(1-t) + C*(1-t)*(1-t).
 	A, B, C := 3.0, -1.5, 4.25
 	a, b, c := quadSetABC(A, B, C)
 	for _, tv := range []float64{0, 0.1, 0.5, 0.9, 1} {

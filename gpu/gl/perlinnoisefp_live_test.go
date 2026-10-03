@@ -9,10 +9,9 @@
 
 // Live-context tests for the GPU perlin-noise fragment-processor lane (perlinnoisefp.go): fractal-noise / turbulence
 // shaders converted to a GPU fragment processor and rendered through the fill-rect op, compared against the CPU
-// perlin-noise raster stage (the Go-GPU vs Go-CPU self-consistency lane). Before this lane a paint carrying a
-// perlin-noise shader failed fragment-processor conversion and the draw was a silent no-op. The GPU path recombines
-// ~16-bit gradient components from an 8-bit RGBA texture, so it tracks the full-precision CPU path within a small
-// tolerance rather than byte-exact. Skips when no GL context is available.
+// perlin-noise raster stage (the Go-GPU vs Go-CPU self-consistency lane). The GPU path recombines ~16-bit gradient
+// components from an 8-bit RGBA texture, so it tracks the full-precision CPU path within a small tolerance rather than
+// byte-exact. Skips when no GL context is available.
 
 package gl_test
 
@@ -26,10 +25,9 @@ import (
 	"github.com/richardwilkes/canvas/shaders"
 )
 
-// comparePerlin renders no pixels itself; it compares an already-rendered GPU surface (data, with rowBytes = size*4)
-// against the CPU perlin pipeline over the interior pixels, asserting the two agree within perChannelTol at all but a
-// small outlier fraction, and that the GPU output actually varies (proving the noise rendered rather than a blank
-// no-op).
+// comparePerlin compares an already-rendered GPU surface (data, with rowBytes = size*4) against the CPU perlin pipeline
+// over the interior pixels, asserting the two agree within perChannelTol at all but a small outlier fraction, and that
+// the GPU output actually varies (proving the noise rendered rather than a blank no-op).
 func comparePerlin(t *testing.T, name string, shader shaders.Shader, paint colorcore.Color, data []byte, size int32) {
 	t.Helper()
 	const perChannelTol = 3
@@ -76,8 +74,7 @@ func comparePerlin(t *testing.T, name string, shader shaders.Shader, paint color
 		t.Errorf("%s: %.2f%% of pixels differ from the CPU pipeline by >%d (max %d) — GPU perlin "+
 			"noise does not track the CPU stage", name, outlierFrac*100, perChannelTol, maxDiff)
 	}
-	// Before this lane the draw was a silent no-op (a constant transparent surface); a real noise render varies
-	// substantially across the surface.
+	// A silent no-op draw leaves a constant transparent surface; a real noise render varies substantially across it.
 	if maxR-minR < 16 {
 		t.Errorf("%s: GPU red channel spans only %d..%d — the noise did not render", name, minR, maxR)
 	}

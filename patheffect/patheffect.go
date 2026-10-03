@@ -27,9 +27,6 @@ func (noAsPoints) AsPoints(*stroke.PointData, *path.Path, *stroke.Rec, *geom.Mat
 	return false
 }
 
-///////////////////////////////////////////////////////////////////////////////
-// compose path effect
-
 // composeEffect applies inner first, then outer.
 type composeEffect struct {
 	noAsPoints
@@ -67,9 +64,6 @@ func (c *composeEffect) ComputeFastBounds(bounds *geom.Rect) bool {
 	return c.inner.ComputeFastBounds(bounds) && c.outer.ComputeFastBounds(bounds)
 }
 
-///////////////////////////////////////////////////////////////////////////////
-// sum path effect
-
 // sumEffect applies two effects independently and combines their output paths.
 type sumEffect struct {
 	noAsPoints
@@ -96,6 +90,6 @@ func (s *sumEffect) FilterPath(dst, src *path.Path, rec *stroke.Rec, cullRect *g
 }
 
 func (s *sumEffect) ComputeFastBounds(bounds *geom.Rect) bool {
-	// Unlike Compose(), first modifies the path first for Sum
+	// Unlike composeEffect, the first effect updates bounds first.
 	return s.first.ComputeFastBounds(bounds) && s.second.ComputeFastBounds(bounds)
 }

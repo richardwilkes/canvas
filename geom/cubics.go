@@ -372,7 +372,6 @@ func CubicBinarySearchRootsValidT(a, b, c, d float64, solution *[3]float64) int 
 		return 0
 	}
 	regions := [4]float64{0, 0, 0, 1}
-	// Find local minima and maxima
 	var minMax [2]float64
 	extremaCount := findExtremaValidT(a, b, c, &minMax)
 	startIndex := 2 - extremaCount

@@ -57,7 +57,7 @@ func randRegion(rng *rand.Rand) (region *Region, gridBits []bool) {
 	return rgn, bits
 }
 
-// TestRegionOpsVsBitmap: the boolean op machine against per-pixel boolean reference sets, plus
+// TestRegionOpsVsBitmap checks the boolean op machine against per-pixel boolean reference sets, plus
 // containment/intersection/iteration consistency.
 func TestRegionOpsVsBitmap(t *testing.T) {
 	rng := rand.New(rand.NewSource(99))
@@ -342,8 +342,8 @@ func TestRegionContainsIntersects(t *testing.T) {
 
 // TestRegionSetPathDrivesBlitRect: the non-AA fill really does emit BlitRect on the region builder — from
 // walkSimpleEdges' zero-slope fast path for an axis-aligned rect, and from blitAboveClip/blitBelowClip via
-// blitRectRegion for an inverse fill — so rgnBuilder.BlitRect must keep its forwarding body. A no-op there (as the
-// blanket "never called" comment above it once implied) drops those spans entirely.
+// blitRectRegion for an inverse fill — so rgnBuilder.BlitRect must keep its forwarding body. A no-op there drops those
+// spans entirely.
 func TestRegionSetPathDrivesBlitRect(t *testing.T) {
 	clip := NewRegionRect(geom.IRectLTRB(0, 0, rgnGrid, rgnGrid))
 	inner := geom.IRectLTRB(10, 12, 40, 36)

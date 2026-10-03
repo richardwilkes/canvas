@@ -15,7 +15,7 @@
 package filtercore
 
 // GPUEvaluable is implemented by filters whose OnFilterImage builds only shader forms with GPU fragment-processor
-// conversions (plus the filtercore-internal image/color/color-filter/local-matrix/ filter-decal shaders, which all
+// conversions (plus the filtercore-internal image/color/color-filter/local-matrix/filter-decal shaders, which all
 // convert). A node without the method is treated as CPU-only.
 type GPUEvaluable interface {
 	// GPUEvaluable reports whether this node (ignoring its inputs) evaluates GPU-natively.

@@ -8,8 +8,8 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // Headless CGL context creation via purego (no cgo). CGL is the only macOS GL context API reachable without
-// Objective-C, and it happily creates offscreen core-profile contexts: no drawable is attached, so all rendering goes
-// to framebuffer objects — which is exactly what this package's GPU test suites need.
+// Objective-C. No drawable is attached, so all rendering goes to framebuffer objects, which is all the GPU test suites
+// need.
 
 package gltest
 
@@ -24,7 +24,7 @@ import (
 
 const openGLFrameworkPath = "/System/Library/Frameworks/OpenGL.framework/OpenGL"
 
-// CGLPixelFormatAttribute values (CGLTypes.h).
+// CGL constants (CGLTypes.h).
 const (
 	cglPFAOpenGLProfile  = 99
 	cglPFARendererID     = 70
@@ -32,8 +32,7 @@ const (
 	cglOGLPVersion41Core = 0x4100
 	cglErrorNone         = 0
 
-	// kCGLRendererGenericFloatID (CGLRenderers.h): Apple's software renderer, selectable via
-	// CANVAS_GLTEST_RENDERER=software to approximate non-hardware GL stacks (CI VMs) locally.
+	// kCGLRendererGenericFloatID (CGLRenderers.h): Apple's software renderer.
 	cglRendererGenericFloatID = 0x00020400
 )
 

@@ -43,8 +43,8 @@ func BlurKernelWidth(radius int32) int32 { return 2*radius + 1 }
 func BlurLinearKernelWidth(radius int32) int32 { return radius + 1 }
 
 // Compute2DBlurKernel fills kernel with normalized separable Gaussian weights over the [-radius, radius] box in each
-// axis, row-major (y*width + x), with any trailing slots zeroed. Setting a denominator to 1 when a radius is 0
-// collapses that axis to the 1D distribution (so this also backs Compute1DBlurKernel).
+// axis, row-major (y*width + x), with any trailing slots zeroed. A zero radius collapses that axis to the 1D
+// distribution (so this also backs Compute1DBlurKernel).
 func Compute2DBlurKernel(sigmaW, sigmaH float32, radiusW, radiusH int32, kernel []float32) {
 	width := BlurKernelWidth(radiusW)
 	height := BlurKernelWidth(radiusH)
@@ -86,7 +86,7 @@ func Compute2DBlurKernel(sigmaW, sigmaH float32, radiusW, radiusH int32, kernel 
 }
 
 // Compute1DBlurKernel fills kernel with the 1D Gaussian weights (the 2D kernel with a zero second-axis radius). kernel
-// must hold at least KernelWidth(radius) entries.
+// must hold at least BlurKernelWidth(radius) entries.
 func Compute1DBlurKernel(sigma float32, radius int32, kernel []float32) {
 	Compute2DBlurKernel(sigma, 0, radius, 0, kernel)
 }
@@ -109,7 +109,7 @@ func Compute1DBlurLinearKernel(sigma float32, radius int32) [MaxBlurSamples * 2]
 
 	var kernel [MaxBlurSamples]float32
 	var offsets [MaxBlurSamples]float32
-	// Note that halfSize isn't just size/2 but radius+1: the size of the output array.
+	// halfSize isn't just size/2 but radius+1: the size of the output array.
 	halfSize := BlurLinearKernelWidth(radius)
 	halfRadius := halfSize / 2
 	lowIndex := halfRadius - 1
@@ -137,13 +137,11 @@ func Compute1DBlurLinearKernel(sigma float32, radius int32) [MaxBlurSamples * 2]
 		offsets[lowIndex] = -offsets[i]
 	}
 
-	// Zero the remaining weights, but copy the last valid offset forward for cache-friendly reads.
 	for i := halfSize; i < MaxBlurSamples; i++ {
 		kernel[i] = 0
 		offsets[i] = offsets[halfSize-1]
 	}
 
-	// Interleave into the output as {offset[2i], kernel[2i], offset[2i+1], kernel[2i+1]} quads.
 	var out [MaxBlurSamples * 2]float32
 	for i := 0; i < MaxBlurSamples/2; i++ {
 		out[4*i+0] = offsets[2*i]

@@ -10,7 +10,7 @@
 // TessellationPathRenderer is the tie-in point for path rendering via the fixed-count tessellation ops. This renderer
 // draws paths using a hybrid Red Book "stencil, then cover" method; curves get linearized by the tessellation shaders.
 // It doesn't apply analytic AA, so it requires MSAA if AA is desired. Strokes and hairlines are drawn directly with
-// StrokeTessellateOp.
+// strokeTessellateOp.
 
 package gl
 
@@ -41,7 +41,6 @@ func makeNonConvexFillOp(fillPathFlags FillPathFlags, aaType gpu.AAType, drawBou
 	}
 	numVerbs := p.CountVerbs()
 	if numVerbs > 0 && !p.IsInverseFillType() {
-		// Check if the path is large and/or simple enough that we can triangulate the inner fan on the CPU.
 		clippedDrawBounds := clipBounds.ToRect()
 		if clippedDrawBounds.Intersect(drawBounds) {
 			gpuFragmentWork := clippedDrawBounds.Height() * clippedDrawBounds.Width()
@@ -239,12 +238,11 @@ func (r *TessellationPathRenderer) OnStencilPath(args *StencilPathArgs) {
 
 	p := args.Shape.AsPath()
 
-	// Pre-chop exactly as OnCanDrawPath/OnDrawPath do, via tessChopPathIfNecessary. That helper skips line-only paths
-	// (no curves to chop) and, when the conservative clip viewport is too large for preChopPathCurves to handle, leaves
-	// the path unchopped rather than crashing. A bare preChopPathCurves call here — lacking both guards — would panic
-	// ("preChopPathCurves viewport is too large") on a large straight-line-only non-convex stencil/clip element, which
-	// OnCanDrawPath happily accepts. Since OnStencilPath is always a simple fill, the helper's stroke-outset branch is
-	// inert and its return value (whether chopping was possible) is irrelevant here.
+	// Pre-chop through tessChopPathIfNecessary, as OnCanDrawPath/OnDrawPath do. It skips line-only paths and leaves the
+	// path unchopped when the conservative clip viewport is too large for preChopPathCurves; a bare preChopPathCurves
+	// call would instead panic on a large line-only non-convex stencil/clip element, which OnCanDrawPath accepts.
+	// OnStencilPath is always a simple fill, so the helper's stroke-outset branch is inert and its return value is
+	// irrelevant here.
 	tessChopPathIfNecessary(args.ViewMatrix, args.Shape, args.ClipConservativeBounds,
 		args.Shape.Style().Rec(), &p)
 

@@ -9,17 +9,16 @@
 
 // Typeface's surface (family name, font style, units-per-em, fixed pitch, text→glyph conversion), built over
 // go-text/typesetting's font parser: the sfnt tables are read directly rather than through a platform text-rendering
-// host, following the rules closest to raw table data. The deltas that follow from that are: rendering is always
-// unhinted with linear metrics (hinting and forceAutoHinting are recorded but never honored — there is no hinter here,
-// so neither reaches the scaler rec); embedded bitmap strikes are always used
-// when present and no flag gates them (the embeddedBitmaps request is recorded but never consulted, because the scaler
-// decodes an sbix/CBDT/EBDT PNG strike into an ARGB32 mask whenever the typeface carries one for the size being
-// rendered); font metrics follow the FreeType table recipe (hhea, or OS/2 typo metrics when fsSelection UseTypoMetrics
-// is set, for ascent/descent/leading; the head bbox for top/bottom; post for underline; OS/2 for x-height, cap-height,
-// avgCharWidth, and strikeout; 'x'/'H' control-box synthesis for missing heights), where a platform host such as
-// CoreText sources several of those differently; glyph bounds are the outline control box (or the styled-path bounds
-// when a stroke or path effect applies) mapped through the text matrix and rounded out; text→glyph conversion keeps
-// per-char cmap semantics for every input; and the empty typeface has no glyphs, upem 0, fixed pitch, and normal style.
+// host. The deltas that follow from that: rendering is always unhinted with linear metrics (hinting and
+// forceAutoHinting are recorded but never honored, so neither reaches the scaler rec); embedded bitmap strikes are
+// always used when present (the embeddedBitmaps request is recorded but never consulted: the scaler decodes an
+// sbix/CBDT/EBDT PNG strike into an ARGB32 mask whenever the typeface carries one); font metrics follow the FreeType
+// table recipe (hhea, or OS/2 typo metrics when fsSelection UseTypoMetrics is set, for ascent/descent/leading; the head
+// bbox for top/bottom; post for underline; OS/2 for x-height, cap-height, avgCharWidth, and strikeout; 'x'/'H'
+// control-box synthesis for missing heights), where a platform host such as CoreText sources several of those
+// differently; glyph bounds are the outline control box (or the styled-path bounds when a stroke or path effect
+// applies) mapped through the text matrix and rounded out; text→glyph conversion keeps per-char cmap semantics for
+// every input; and the empty typeface has no glyphs, upem 0, fixed pitch, and normal style.
 
 package font
 
@@ -50,7 +49,7 @@ type Typeface struct {
 	colr0BadGlyphs  map[tables.GlyphID]struct{} // base glyphs whose COLRv0 layer range is out of bounds (nil normally)
 	familyName      string
 	postScriptName  string // name ID 6 (FT_Get_Postscript_Name)
-	data            []byte // the raw font-file bytes (openStream's asset)
+	data            []byte // the raw font-file bytes (what FontData returns)
 	palette         []colorcore.Color
 	head            tables.Head
 	nGlyphs         int
@@ -188,12 +187,11 @@ func (t *Typeface) GlyphMaskNeedsCurrentColor() bool { return t.hasCOLR }
 // COLRv1 paint graph. typesetting's Search prefers a v1 BaseGlyphList record over a v0 baseGlyph record when both
 // exist, as the spec directs ("give preference to the version 1 color glyph").
 //
-// A record that names no artwork at all answers false, so the glyph stays on the outline lane it would otherwise be
-// taken off with nothing to replace it: the caller commits a claimed glyph to an ARGB32 mask with neverRequestPath set,
-// and an empty one then measures as an empty rect and draws as nothing even though the font carries a perfectly good
-// outline. Two records look like that, and typesetting reports both as present color glyphs — a v0 record declaring
-// NumLayers == 0 (an empty layer slice with ok=true, where FT_Get_Color_Glyph_Layer returns 0 on the first call and
-// Skia falls through to the base outline) and a v1 BaseGlyphList record whose paint Offset32 is null (which
+// A record that names no artwork answers false, so the glyph stays on the outline lane: the caller commits a claimed
+// glyph to an ARGB32 mask with neverRequestPath set, and an empty one would measure as an empty rect and draw nothing
+// even though the font carries an outline. typesetting reports two such records as present color glyphs: a v0 record
+// declaring NumLayers == 0 (an empty layer slice with ok=true, where FT_Get_Color_Glyph_Layer returns 0 on the first
+// call and Skia falls through to the base outline) and a v1 BaseGlyphList record whose paint Offset32 is null (which
 // parseBaseGlyphPaintRecord leaves nil while still accepting the record, and which FreeType rejects outright).
 func (t *Typeface) faceColorPaint(gid opentype.GID) (tables.PaintTable, bool) {
 	// hasCOLR is set whenever the COLR table bytes are present, but typesetting leaves face.COLR nil when ParseCOLR
@@ -202,11 +200,10 @@ func (t *Typeface) faceColorPaint(gid opentype.GID) (tables.PaintTable, bool) {
 	if !t.hasCOLR || t.face.COLR == nil {
 		return nil, false
 	}
-	// Search's v0 lane slices layerRecords by the base-glyph record's own FirstLayerIndex/NumLayers with no bounds check
-	// and in wrapping uint16 arithmetic, so a crafted record panics inside the dependency — before any slice this
-	// package could range-check comes back. Glyphs the load-time scan flagged answer "no color glyph" instead, the same
-	// answer the t.face.COLR == nil guard above gives for a table that failed to parse at all. That also drops a v1
-	// record for the same glyph, which no well-formed font pairs with an out-of-range v0 record.
+	// Search's v0 lane slices layerRecords by the base-glyph record's own FirstLayerIndex/NumLayers with no bounds
+	// check and in wrapping uint16 arithmetic, so a crafted record panics inside the dependency. Glyphs the load-time
+	// scan flagged answer "no color glyph" instead, as the nil guard above does for a table that failed to parse. That
+	// also drops a v1 record for the same glyph, which no well-formed font pairs with an out-of-range v0 record.
 	if _, bad := t.colr0BadGlyphs[tables.GlyphID(gid)]; bad {
 		return nil, false
 	}
@@ -303,13 +300,12 @@ func (t *Typeface) PaletteColor(index uint16, foreground colorcore.Color) (color
 //
 // The lane is the only reader that wants a nonzero ppem: go-text's GlyphExtents prefers ppem-scaled bitmap-strike
 // extents, so t.face must rest at ppem 0 or the design-unit readers (GlyphDesignBounds, glyphBounds, letterTop) return
-// stale, cross-strike, ppem-scaled bounds. Borrowing t.face for the lane therefore meant setting the ppem and putting
-// it back around every single glyph, and SetPpem invalidates the Face's whole per-glyph extents cache — so each glyph
-// paid two full nGlyphs-entry cache clears and then looked up into a cache guaranteed to be empty. A second Face over
-// the same Font (read-only, and shared rather than re-parsed) keeps the two ppem regimes apart: this one simply rests
-// at the strike's ppem, so a run of glyphs at one size clears the cache once and hits it thereafter, and t.face never
-// leaves ppem 0. The cost is one extra extents cache, allocated only for a face that actually has bitmap strikes and
-// only once a glyph is drawn from one.
+// stale, cross-strike, ppem-scaled bounds. Borrowing t.face for the lane meant setting the ppem and restoring it around
+// every glyph, and SetPpem invalidates the Face's whole per-glyph extents cache, so each glyph paid two full cache
+// clears and then looked up into an empty cache. A second Face over the same Font (read-only, and shared rather than
+// re-parsed) keeps the two ppem regimes apart: it rests at the strike's ppem, so a run of glyphs at one size clears the
+// cache once and hits it thereafter, and t.face never leaves ppem 0. The cost is one extra extents cache, allocated
+// only once a glyph is drawn from a bitmap strike.
 func (t *Typeface) bitmapLaneFace(ppem uint16) *tsfont.Face {
 	if t.bitmapFace == nil {
 		t.bitmapFace = tsfont.NewFace(t.face.Font)
@@ -384,8 +380,8 @@ func NewTypefaceFromData(data []byte, index int) (*Typeface, error) {
 	if raw, err2 := ld.RawTable(opentype.MustNewTag("CFF ")); err2 == nil && len(raw) > 0 {
 		t.hasCFF = true
 	}
-	// A variable font is one with an 'fvar' table defining at least one axis — FreeType's FT_HAS_MULTIPLE_MASTERS for an
-	// sfnt. The PDF backend draws these as filled paths, since embedding the font program would embed the default
+	// A variable font is one with an 'fvar' table defining at least one axis (FreeType's FT_HAS_MULTIPLE_MASTERS for an
+	// sfnt). The PDF backend draws these as filled paths, since embedding the font program would embed the default
 	// instance's outlines under this face's (possibly instanced) metrics.
 	if raw, err2 := ld.RawTable(opentype.MustNewTag("fvar")); err2 == nil {
 		if fvar, _, err3 := tables.ParseFvar(raw); err3 == nil && len(fvar.Axis) > 0 {
@@ -433,7 +429,7 @@ func NewTypefaceFromData(data []byte, index int) (*Typeface, error) {
 	}
 	if raw, err = ld.RawTable(opentype.MustNewTag("OS/2")); err == nil {
 		// os2.fSType is unexported; fsType lives at byte offset 8 (after version, xAvgCharWidth, usWeightClass,
-		// usWidthClass), read directly for the PDF canEmbed check.
+		// usWidthClass), read directly for the PDF CanEmbed check.
 		if len(raw) >= os2FsTypeOffset+2 {
 			t.fsType = binary.BigEndian.Uint16(raw[os2FsTypeOffset:])
 		}

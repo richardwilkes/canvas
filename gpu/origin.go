@@ -58,8 +58,9 @@ func (s *ScissorState) Intersect(rect geom.IRect) bool {
 	return true
 }
 
-// RelaxTest discards the scissor test when the scissor was configured for the backing store dimensions, it's acceptable
-// to draw outside the logical dimensions of the target, and doing so wouldn't modify the logical dimensions.
+// RelaxTest disables the scissor test, and returns true, if the scissor covers logicalDimensions. Call it only when the
+// scissor was configured for the backing store dimensions and drawing outside the target's logical dimensions is
+// acceptable.
 func (s *ScissorState) RelaxTest(logicalDimensions geom.ISize) bool {
 	if s.rect.Left == 0 && s.rect.Top == 0 && s.rect.Right >= logicalDimensions.Width &&
 		s.rect.Bottom >= logicalDimensions.Height {
@@ -74,8 +75,7 @@ func (s *ScissorState) Equal(other *ScissorState) bool {
 	return s.rtSize == other.rtSize && s.rect == other.rect
 }
 
-// Enabled reports whether the scissor test is enabled: the scissor is enabled when the rectangle does not cover the
-// render target.
+// Enabled reports whether the scissor test is enabled, which it is when the rectangle does not cover the render target.
 func (s *ScissorState) Enabled() bool {
 	return s.rect.Left > 0 || s.rect.Top > 0 ||
 		s.rect.Right < s.rtSize.Width || s.rect.Bottom < s.rtSize.Height

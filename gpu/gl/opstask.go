@@ -9,8 +9,8 @@
 
 // The render task that records op chains against one render target view and replays them into an OpsRenderPass at
 // flush. The op-combining machinery (backward merge in recordOp, forwardCombine, the opChain concat rules) is the
-// perf-critical batching engine; the arena parameters are no-ops, since ops are ordinary allocations. There is no audit
-// trail.
+// perf-critical batching engine. Skia's arena-allocator parameters are dropped, since ops are pooled per type
+// (oppool.go) or left to the GC. There is no audit trail.
 
 package gl
 
@@ -58,7 +58,6 @@ func makeOpList(op Op) opList { return opList{head: op, tail: op} }
 
 func (l *opList) empty() bool { return l.head == nil }
 
-// popHead removes and returns the head op of the list.
 func (l *opList) popHead() Op {
 	if l.head == nil {
 		panic("popHead of empty list")
@@ -158,9 +157,8 @@ func makeOpChain(op Op, processorAnalysis ProcessorAnalysis, appliedClip *Applie
 
 func (c *opChain) head() Op { return c.list.head }
 
-// appliedClipPtr returns a pointer to the chain's inline applied clip, or nil when the chain has no clip. The pointer
-// is only used transiently (op args during flush, tryConcat comparisons) and is never retained past a point where
-// opChains might be reallocated, so pointing into the slice element is safe.
+// appliedClipPtr returns a pointer to the chain's inline applied clip, or nil when the chain has no clip. See opChain
+// for why pointing into the slice element is safe.
 func (c *opChain) appliedClipPtr() *AppliedClip {
 	if c.hasAppliedClip {
 		return &c.appliedClip
@@ -191,9 +189,7 @@ func (c *opChain) visitProxies(fn func(*SurfaceProxy, gpu.Mipmapped)) {
 // applied clip.
 func (c *opChain) deleteOps() {
 	for !c.list.empty() {
-		// The surviving ops of the chain are now dead: recycle each to its free list. deleteOps is the terminal delete
-		// — the drawing manager calls it in EndFlush after OnExecute — so no op recycled here is referenced anywhere
-		// afterward.
+		// The chain's surviving ops are dead here (see oppool.go for the lifetime invariant).
 		c.list.popHead().recycle()
 	}
 	if c.dstProxyView.Proxy() != nil {
@@ -242,8 +238,7 @@ func doConcat(chainA, chainB opList) opList {
 			}
 			if merged {
 				if canBackwardMerge {
-					// The merged op is dropped: its instances were copied into the surviving op by CombineIfPossible,
-					// so it is dead — recycle it to its free list.
+					// b's head was merged into a (CombineIfPossible copied its instances), so it is dead.
 					chainB.popHead().recycle()
 				} else {
 					// We merged the contents of b's head into a. Replace b's head with a in chain b.
@@ -254,8 +249,7 @@ func doConcat(chainA, chainB opList) opList {
 						origATail = a.opBase().PrevInChain()
 					}
 					detachedA := chainA.removeOp(a)
-					// b's head was absorbed into a (which now replaces it at chain b's head), so b's old head is dead —
-					// recycle it to its free list.
+					// b's old head was absorbed into a, which replaces it at chain b's head, so it is dead.
 					chainB.popHead().recycle()
 					chainB.pushHead(detachedA)
 					if chainA.empty() {
@@ -286,8 +280,8 @@ func doConcat(chainA, chainB opList) opList {
 	}
 }
 
-// joinNonEmptyArgAllowingEmpty is joinNonEmptyArg without the non-empty assertion: op bounds may legitimately be empty
-// (zero-area draws), and the join simply proceeds in that case.
+// joinNonEmptyArgAllowingEmpty is SkRect::joinNonEmptyArg without the non-empty assertion: op bounds may legitimately
+// be empty (zero-area draws).
 func joinNonEmptyArgAllowingEmpty(r, other geom.Rect) geom.Rect {
 	if r.Left >= r.Right || r.Top >= r.Bottom {
 		return other
@@ -338,8 +332,7 @@ func (c *opChain) tryConcat(list *opList, processorAnalysis ProcessorAnalysis, d
 				panic("doConcat must consume the list")
 			}
 		case CombineResultMerged:
-			// The incoming op was merged into our tail; its instances were copied out, so it is dead — recycle it to
-			// its free list.
+			// The incoming op was merged into our tail (its instances were copied out), so it is dead.
 			list.popHead().recycle()
 		}
 		first = false
@@ -354,7 +347,6 @@ func (c *opChain) tryConcat(list *opList, processorAnalysis ProcessorAnalysis, d
 // is empty.
 func (c *opChain) prependChain(that *opChain) bool {
 	if !that.tryConcat(&c.list, c.processorAnalysis, &c.dstProxyView, c.appliedClipPtr(), c.bounds) {
-		// Append failed.
 		return false
 	}
 	// 'that' owns the combined chain. Move it into 'this'.
@@ -403,19 +395,18 @@ type OpsTask struct {
 	sampledDepFn func(*SurfaceProxy, gpu.Mipmapped)
 	visitAlloc   *ResourceAllocator
 	arenas       *Arenas
-	// opChainsBox owns the opChains backing array between frames: NewOpsTask borrows it (starting opChains from its
-	// backing) and onDelete returns it to the pool so the next frame's task reuses the grown array instead of
-	// re-growing from nil (see opchainspool.go).
+	// opChainsBox owns the opChains backing array between frames (see opchainspool.go): NewOpsTask borrows it and
+	// onDelete returns it to the pool.
 	opChainsBox *opChainsBox
 	gatherFn    func(*SurfaceProxy, gpu.Mipmapped)
 	visitCaps   *Caps
 	depFn       func(*SurfaceProxy, gpu.Mipmapped)
-	// Cached proxy-dependency visitor closures, created once per task and reused by every AddDrawOp/AddOp call, so
-	// recording a draw allocates no per-call visitor. Because visitProxies is an interface method, a closure literal
-	// passed to it would normally escape to the heap on every call; caching the closure on the task avoids that. The
-	// per-call drawing manager and caps are stashed in the fields below before each visit — safe because recording is
-	// single-threaded per context and visitProxies runs synchronously. sampledDepFn also registers the proxy as a
-	// sampled texture; depFn only adds the task dependency (AddOp's non-draw ops are not sampled).
+	// sampledDepFn and depFn are cached proxy-dependency visitor closures, reused by every AddDrawOp/AddOp call so
+	// recording a draw allocates no per-call visitor: VisitProxies is an interface method, so a closure literal passed
+	// to it would escape to the heap on every call. The per-call drawing manager and caps are stashed in
+	// visitDrawingMgr and visitCaps before each visit — safe because recording is single-threaded per context and
+	// VisitProxies runs synchronously. sampledDepFn also registers the proxy as a sampled texture; depFn only adds the
+	// task dependency (AddOp's non-draw ops are not sampled).
 	visitDrawingMgr *DrawingManager
 	opChains        []opChain
 	sampledProxies  []*SurfaceProxy
@@ -462,8 +453,7 @@ func (t *OpsTask) Name() string { return "Ops" }
 func (t *OpsTask) AsOpsTask() *OpsTask { return t }
 
 // onDelete implements the destructor hook, run by the final Unref (refCnt==0). It recycles the task's ops and then
-// returns the opChains backing to the pool for the next frame's task. The task is provably dead here — disowned, and
-// (after deleteOps) its ops recycled — so the backing is uniquely owned and safe to reuse (see opchainspool.go).
+// returns the opChains backing to the pool (see opchainspool.go for why the backing is safe to reuse).
 func (t *OpsTask) onDelete() {
 	t.deleteOps()
 	if t.opChainsBox != nil {
@@ -583,7 +573,6 @@ func (t *OpsTask) OnPrepare(flushState *OpFlushState) {
 	if !t.IsClosed() {
 		panic("prepare on an open task")
 	}
-	// Loop over the ops that haven't yet been prepared.
 	if t.isColorNoOp() ||
 		(t.clippedContentBounds.IsEmpty() && t.colorLoadOp != gpu.LoadOpDiscard) {
 		return
@@ -701,7 +690,6 @@ func (t *OpsTask) OnExecute(flushState *OpFlushState) bool {
 
 	dstView := MakeSurfaceProxyView(t.Target(0), t.targetOrigin, t.targetSwizzle)
 
-	// Draw all the generated geometry.
 	for i := range t.opChains {
 		chain := &t.opChains[i]
 		if !chain.shouldExecute() {
@@ -930,9 +918,9 @@ func (t *OpsTask) recordOp(op Op, usesMSAA bool, processorAnalysis ProcessorAnal
 	// (GetOpsRenderPass → EnsureDynamicMSAAAttachment).
 
 	if !op.opBase().Bounds().IsFinite() {
-		// The op is dropped, so nothing downstream takes over the reference setupDstProxyView left on the dst proxy (the
-		// merge path releases it, makeOpChain transfers it into the chain); release it here or the backing texture never
-		// returns to the resource cache.
+		// The op is dropped, so nothing downstream takes over the reference setupDstProxyView left on the dst proxy
+		// (the merge path releases it, makeOpChain transfers it into the chain); release it here or the backing texture
+		// never returns to the resource cache.
 		if dstProxyView != nil {
 			releaseDstProxy(dstProxyView)
 		}
@@ -941,8 +929,8 @@ func (t *OpsTask) recordOp(op Op, usesMSAA bool, processorAnalysis ProcessorAnal
 
 	t.usesMSAASurface = t.usesMSAASurface || usesMSAA
 
-	// Account for this op's bounds before we attempt to combine. The caller should have already called
-	// setClippedBounds() by now, if applicable.
+	// Account for this op's bounds before we attempt to combine. The caller should have already called SetClippedBounds
+	// by now, if applicable.
 	t.totalBounds.Join(op.opBase().Bounds())
 
 	// Check if there is an op we can combine with by linearly searching back until we either 1) check every op, 2)
@@ -971,11 +959,8 @@ func (t *OpsTask) recordOp(op Op, usesMSAA bool, processorAnalysis ProcessorAnal
 			}
 		}
 	}
-	// makeOpChain copies the caller's transient clip into the new chain by value — the chain owns its clip for its
-	// whole lifetime, stored inline in the opChains slice — so no separate heap copy is needed here. Passing the clip
-	// parameter straight through stays alloc-free on the common unclipped path: makeOpChain only dereferences the
-	// pointer (never stores it), so escape analysis keeps the caller's AppliedClip and the AddDrawOp clip value
-	// parameter on the stack.
+	// makeOpChain copies the clip into the new chain by value and never stores the pointer, so no heap copy is needed
+	// here (see makeOpChain).
 	t.opChains = append(t.opChains, makeOpChain(op, processorAnalysis, clip, dstProxyView))
 }
 

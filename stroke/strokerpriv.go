@@ -104,9 +104,9 @@ func dot2AngleType(dot float32) angleType {
 
 // handleInnerJoin closes the inner edge of a join at pivot.
 func handleInnerJoin(inner *path.Path, pivot, after geom.Point) {
-	// In the degenerate case that the stroke radius is larger than our segments just connecting the two inner segments
-	// may "show through" as a funny diagonal. To pseudo-fix this, we go through the pivot point. This adds an extra
-	// point/edge, but I can't see a cheap way to know when this is not needed.
+	// When the stroke radius exceeds the segment lengths, connecting the two inner segments directly can show through
+	// as a stray diagonal, so route through the pivot. The extra edge is not always needed, but there is no cheap test
+	// for when.
 	inner.LineTo(pivot.X, pivot.Y)
 	inner.LineTo(pivot.X-after.X, pivot.Y-after.Y)
 }
@@ -156,7 +156,6 @@ func roundJoiner(outer, inner *path.Path, beforeUnitNormal, pivot, afterUnitNorm
 const kOneOverSqrt2 = float32(0.707106781)
 
 func miterJoiner(outer, inner *path.Path, beforeUnitNormal, pivot, afterUnitNormal geom.Point, radius, invMiterLimit float32, prevIsLine, currIsLine bool) {
-	// negate the dot since we're using normals instead of tangents
 	dotProd := beforeUnitNormal.Dot(afterUnitNormal)
 	angle := dot2AngleType(dotProd)
 	before := beforeUnitNormal
@@ -179,21 +178,14 @@ func miterJoiner(outer, inner *path.Path, beforeUnitNormal, pivot, afterUnitNorm
 			after = after.Negated()
 		}
 
-		/* Before we enter the world of square-roots and divides, check if we're trying to join an
-		   upright right angle (common case for stroking rectangles). If so, special case that (for
-		   speed an accuracy). Note: we only need to check one normal if dot==0 */
+		// Special-case an upright right angle (common when stroking rects) for speed and accuracy, avoiding the square
+		// root and divide.
 		if dotProd == 0 && invMiterLimit <= kOneOverSqrt2 {
 			mid = before.Add(after).Scaled(radius)
 			doMiter = true
 		} else {
-			/*  midLength = radius / sinHalfAngle
-			    if (midLength > miterLimit * radius) abort
-			    if (radius / sinHalf > miterLimit * radius) abort
-			    if (1 / sinHalf > miterLimit) abort
-			    if (1 / miterLimit > sinHalf) abort
-			    My dotProd is opposite sign, since it is built from normals and not tangents
-			    hence 1 + dot instead of 1 - dot in the formula
-			*/
+			// The miter length is radius / sinHalfAngle, so it exceeds miterLimit * radius exactly when sinHalfAngle <
+			// 1/miterLimit. dotProd comes from normals rather than tangents, hence 1 + dot instead of 1 - dot.
 			sinHalfAngle := geom.ScalarSqrt((1 + dotProd) / 2)
 			if sinHalfAngle < invMiterLimit {
 				currIsLine = false

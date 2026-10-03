@@ -10,10 +10,9 @@
 // The pathops output assembler. The bridgeOp/bridgeWinding/bridgeXor drivers trace the resolved segment graph and emit
 // one edge at a time through deferredMove/deferredLine/quadTo/conicTo/cubicTo; pathWriter buffers the current contour,
 // closes it when the trace loops back to its start, and stores any partial (open) contours for assemble() to stitch
-// together at the end. finishContour stores the current contour by pointer and init() allocates a fresh *path.Path so a
-// contour already stored in partials keeps its own storage. Sorting uses sort.Slice, which is unstable, so tie-broken
-// orderings are not guaranteed stable across runs (assemble only runs for the rare open-contour case, and its result is
-// area-equivalent regardless).
+// together at the end. assemble sorts with sort.Slice, which is unstable, so equal distances may pair up in a different
+// order than Skia's sort would (assemble only runs for the rare open-contour case, and its result is area-equivalent
+// regardless).
 
 package pathops
 
@@ -57,7 +56,6 @@ func (w *pathWriter) hasMove() bool { return w.firstPtT == nil }
 // isClosed reports whether the last deferred point matches the current contour's first point.
 func (w *pathWriter) isClosed() bool { return w.matchedLast(w.firstPtT) }
 
-// nativePath returns the accumulated output path.
 func (w *pathWriter) nativePath() *path.Path { return w.builder }
 
 // close finalizes the current contour and appends it to the output, then resets for the next contour.
@@ -96,7 +94,6 @@ func (w *pathWriter) deferredLine(pt *opPtT) bool {
 		return true
 	}
 	if pt.containsPtT(w.defers[0]) {
-		// Caller should have preflighted this: adding a degenerate (zero-length) line.
 		return true
 	}
 	if w.matchedLast(pt) {
@@ -262,7 +259,7 @@ func (w *pathWriter) assemble() {
 		if len(partWriter.partials) == 0 {
 			continue
 		}
-		// if pIndex is even, reverse and prepend to fPartials; otherwise, append
+		// if pIndex is even, reverse and prepend to w.partials; otherwise, append
 		partial := w.partials[pIndex>>1]
 		part := partWriter.partials[0]
 		if pIndex&1 != 0 {

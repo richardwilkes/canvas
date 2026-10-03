@@ -193,10 +193,9 @@ func BenchmarkFillPathParallel(b *testing.B)     { benchFill(b, false, 0) }
 func BenchmarkAntiFillPathSerial(b *testing.B)   { benchFill(b, true, 1) }
 func BenchmarkAntiFillPathParallel(b *testing.B) { benchFill(b, true, 0) }
 
-// TestFillPathParallelBandPolicy: FillPathParallel must split with the shared bandCount policy its doc names. A ceiling
-// divide put the band floor in the wrong place — 33 rows split into 17/16, both under minBandRows — and never consulted
-// bandCount at all, so a clip spanning fewer than two full bands still fanned out. Now a short clip is byte-for-byte
-// the serial fill, and a tall one matches bandCount's split exactly.
+// TestFillPathParallelBandPolicy pins that FillPathParallel splits with the shared bandCount policy: a short clip is
+// byte-for-byte the serial fill, and a tall one matches bandCount's split exactly. A ceiling divide once split 33 rows
+// into 17/16, both under minBandRows, and fanned out clips spanning fewer than two full bands.
 func TestFillPathParallelBandPolicy(t *testing.T) {
 	rng := rand.New(rand.NewSource(9))
 	const w, h = 160, 320

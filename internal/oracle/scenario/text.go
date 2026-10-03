@@ -7,11 +7,11 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// Text scenarios: rotated and scaled text is the SDFT demand trigger, so the corpus carries scenes exercising
-// the distance-field window (device text size in [162, glyphsAsPathsFontSize]) under rotation and scaling, plus a
-// rotated direct-mask scene below the window. The scenarios draw with an embedded copy of Roboto-Regular (the same
-// fixture the probe tests use) so every render rasterizes identical outlines through the library's own scaler, making
-// text output deterministic per platform and gated in every lane against the per-platform golden sets.
+// Text scenarios: rotated and scaled text is the SDFT demand trigger, so the corpus carries scenes exercising the
+// distance-field window (device text size in [162, gpu.ContextOptions.GlyphsAsPathsFontSize]) under rotation and
+// scaling, plus a rotated direct-mask scene below the window. The scenarios draw with an embedded copy of
+// Roboto-Regular (the same fixture the GPU text tests use), so every render rasterizes identical outlines through the
+// library's own scaler and text output is deterministic per platform.
 
 package scenario
 

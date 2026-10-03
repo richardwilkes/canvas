@@ -7,8 +7,7 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// The color-filter image filter node: applies a shaders.ColorFilter to its input image, collapsing adjacent
-// color-filter nodes into a single composed filter.
+// The color-filter image filter node: applies a shaders.ColorFilter to its input image.
 
 package imagefilter
 
@@ -28,7 +27,6 @@ type colorFilterFilter struct {
 func ColorFilter(cf shaders.ColorFilter, input filtercore.Filter, cropRect *geom.Rect) filtercore.Filter {
 	if cf != nil && input != nil {
 		if inputCF, ok := input.OnIsColorFilterNode(); ok {
-			// Collapse the hierarchy by combining the two color filters into one.
 			cf = colorfilter.NewCompose(cf, inputCF)
 			input = input.Base().Input(0)
 		}
@@ -89,7 +87,7 @@ func (f *colorFilterFilter) OnOutputLayerBounds(mapping *filtercore.Mapping, con
 }
 
 // OnComputeFastBounds returns an unbounded rect if cf affects transparent black, otherwise defers to the input's fast
-// bounds (or bounds itself, for a leaf).
+// bounds (or bounds itself, for a nil input).
 func (f *colorFilterFilter) OnComputeFastBounds(bounds geom.Rect) geom.Rect {
 	if filtercore.ColorFilterAffectsTransparentBlack(f.cf) {
 		return filtercore.MakeILarge().ToRect()

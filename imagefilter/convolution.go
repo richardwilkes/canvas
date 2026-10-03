@@ -113,8 +113,8 @@ func MatrixConvolution(kernelSize geom.ISize, kernel []float32, gain, bias float
 	return filter
 }
 
-// OnAffectsTransparentBlack always reports true: the kernel applies in layer space with no transform available to
-// compute fast bounds precisely, so this conflates with that limitation; the crop wrappers reset the property when
+// OnAffectsTransparentBlack always reports true because the property doubles as "cannot compute fast bounds": the
+// kernel applies in layer space and OnComputeFastBounds gets no transform. The crop wrappers reset the property when
 // possible.
 func (f *matrixConvolutionFilter) OnAffectsTransparentBlack() bool { return true }
 
@@ -184,8 +184,6 @@ func (f *matrixConvolutionFilter) OnInputLayerBounds(mapping *filtercore.Mapping
 // convolution with a non-zero bias can flood transparent pixels.
 func (f *matrixConvolutionFilter) OnOutputLayerBounds(mapping *filtercore.Mapping, contentBounds *geom.IRect) *geom.IRect {
 	if f.convolveAlpha && f.bias != 0 {
-		// Convolving the alpha channel with a non-zero bias can make transparent black pixels outside any input image
-		// become non-transparent.
 		return nil
 	}
 	outputBounds := f.base.OutputLayerBounds(0, mapping, contentBounds)

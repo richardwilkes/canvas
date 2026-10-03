@@ -93,8 +93,8 @@ func TestMakeRecAndEffectsLCDGates(t *testing.T) {
 		}
 	}
 
-	// too_big_for_lcd: SK_MAX_SIZE_FOR_LCDTEXT is 48. Text size 49 disables LCD; a device scale that pushes the area
-	// over the cap does too (checkPost2x2).
+	// tooBigForLCD: maxSizeForLCDText is 48. Text size 49 disables LCD; a device scale that pushes the area over the
+	// cap does too (checkPost2x2).
 	rgbh := &DeviceProps{PixelGeometry: PixelGeometryRGBH}
 	big := lcdTestFont(t, 49)
 	r, _ := MakeRecAndEffects(big, nil, &identity, rgbh)
@@ -108,7 +108,7 @@ func TestMakeRecAndEffectsLCDGates(t *testing.T) {
 		t.Errorf("scaled past cap: format = %d flags = %#x, want A8 + GenA8FromLCD", r.Format, r.Flags)
 	}
 
-	// kAntiAlias edging is A8 with no LCD flags regardless of geometry.
+	// EdgingAntiAlias is A8 with no LCD flags regardless of geometry.
 	aa := lcdTestFont(t, 24)
 	aa.SetEdging(EdgingAntiAlias)
 	r, _ = MakeRecAndEffects(aa, nil, &identity, rgbh)
@@ -212,13 +212,11 @@ func TestMaskGammaLUT(t *testing.T) {
 	}
 }
 
-// TestScalerContextPreBlendGate pins the applicability gate, which is NewScalerContext's and not getMaskPreBlend's:
-// getMaskPreBlend returns a row of maskGammaTables for all three channels whatever color it is handed, so its result is
-// applicable by construction and asserting that of it can never fail. The gate that can is the one deciding whether a
-// pre-blend is built at all — an LCD16 rec with no mask filter — and only its *false* halves are worth an assertion,
-// since a context that skipped the pre-blend by mistake would blend LCD text in the sRGB-encoded domain and a context
-// that built one where the lane cannot use it (filtered text, or a non-LCD glyph plane) would apply the correction
-// twice or to the wrong plane.
+// TestScalerContextPreBlendGate pins NewScalerContext's gate on building a pre-blend: an LCD16 rec with no mask filter.
+// getMaskPreBlend itself returns table rows for any color, so its result is always applicable and asserting that proves
+// nothing. A context that wrongly skipped the pre-blend would blend LCD text in the sRGB-encoded domain; one that built
+// it where the lane cannot use it (filtered text, or a non-LCD glyph plane) would apply the correction twice or to the
+// wrong plane.
 func TestScalerContextPreBlendGate(t *testing.T) {
 	maskGammaOnce.Do(maskGammaInit)
 	tf := lcdTestFont(t, 24).Typeface()
@@ -231,8 +229,8 @@ func TestScalerContextPreBlendGate(t *testing.T) {
 		want    bool
 	}{
 		{name: "LCD16, no filter", rec: lcd, want: true},
-		// A mask filter: the pre-blend is not applied to filtered text, so the context must not carry one even though
-		// the rec is still LCD16 (the rec's format is what the filtered lane starts from).
+		// The pre-blend is not applied to filtered text, so the context must not carry one even though the rec is still
+		// LCD16.
 		{name: "LCD16, mask filter", rec: lcd, effects: ScalerEffects{MaskFilter: blur}},
 		// A non-LCD rec: LumBits is only meaningful for LCD16, and every other format's plane is linear coverage.
 		{name: "A8", rec: ScalerRec{Format: MaskA8, LumBits: lcd.LumBits}},
@@ -249,8 +247,7 @@ func TestScalerContextPreBlendGate(t *testing.T) {
 			}
 		})
 	}
-	// The applicable one really is the table row the luminance color selects, so the gate lets the whole pre-blend
-	// through rather than a zeroed stand-in that merely answers true.
+	// The applicable pre-blend is the table rows the luminance color selects, not a stand-in that merely answers true.
 	pb := NewScalerContext(tf, lcd, ScalerEffects{}).preBlend
 	if want := getMaskPreBlend(lcd.LumBits); pb != want {
 		t.Errorf("pre-blend = %+v, want the rows getMaskPreBlend picks for the rec's luminance color (%+v)", pb, want)
@@ -327,7 +324,7 @@ func TestA8LaneNeverPreBlends(t *testing.T) {
 	}
 	edgings := []Edging{EdgingAlias, EdgingAntiAlias, EdgingSubpixelAntiAlias}
 	filters := []maskfilter.MaskFilter{nil, maskfilter.NewBlur(maskfilter.BlurNormal, 2, true)}
-	sizes := []float32{24, 49} // 49 is past SK_MAX_SIZE_FOR_LCDTEXT, forcing the A8-from-LCD lane
+	sizes := []float32{24, 49} // 49 is past maxSizeForLCDText, forcing the A8-from-LCD lane
 
 	preBlends := 0
 	for _, edging := range edgings {
@@ -374,12 +371,12 @@ func TestPack4xHToMaskImpulse(t *testing.T) {
 	var noBlend maskPreBlend
 	pack4xHToMask(src, 8, 1, g, &noBlend, false, false)
 
-	// Output pixel p covers samples [4p-8, 4p+4) of the padded stream (sample_x = -4 + 4p... the loop starts at -4),
-	// with coefficient index sample - (sample_x - 4). For sample 0 (value 255):
-	//   p=0: sample_x=-4, coeff_index = 0 - (-8) = 8 → coeffs {r,g,b} = {0x05, 0x16, 0x33}
-	//   p=1: sample_x= 0, coeff_index = 4          → {0x40, 0x2b, 0x10}
-	//   p=2: sample_x= 4, coeff_index = 0          → {0x03, 0x00, 0x00}
-	//   p=3: sample_x= 8, out of reach             → 0
+	// Output pixel p has sampleX = 4p-4 and covers samples [4p-8, 4p+4), with coefficient index sample - (sampleX - 4).
+	// For sample 0 (value 255):
+	//   p=0: sampleX=-4, coeffIndex = 0 - (-8) = 8 → coeffs {r,g,b} = {0x05, 0x16, 0x33}
+	//   p=1: sampleX= 0, coeffIndex = 4            → {0x40, 0x2b, 0x10}
+	//   p=2: sampleX= 4, coeffIndex = 0            → {0x03, 0x00, 0x00}
+	//   p=3: sampleX= 8, out of reach              → 0
 	expect := func(rc, gc, bc uint32) uint16 {
 		r := min(rc*255/0x100, 255)
 		gg := min(gc*255/0x100, 255)
@@ -412,7 +409,7 @@ func TestPack4xHToMaskImpulse(t *testing.T) {
 		t.Errorf("step edge pixel = %#04x, want partial coverage", g2.Image16[0])
 	}
 
-	// doBGR swaps the channel order: red and blue swap.
+	// doBGR swaps red and blue.
 	g3 := &Glyph{Width: 4, Height: 1, Format: MaskLCD16}
 	g3.Image16 = make([]uint16, 4)
 	pack4xHToMask(src, 8, 1, g3, &noBlend, true, false)
@@ -545,8 +542,7 @@ func TestLCDGlyphImageLane(t *testing.T) {
 		t.Fatalf("white LCD glyph action = %d, want accept", whiteAction)
 	}
 	// The two strikes differ only in the luminance color the pre-blend keys on, so their masks must have identical
-	// geometry. Checking that first is what keeps a bounds divergence a report: walking one mask while indexing the
-	// other would turn it into an index-out-of-range panic inside the test instead.
+	// geometry. Check that first: a geometry difference would otherwise satisfy the inequality test below.
 	if whiteGlyph.IRect() != lcdGlyph.IRect() || len(whiteGlyph.Image16) != len(lcdGlyph.Image16) {
 		t.Fatalf("white mask %v (%d words) and black mask %v (%d words) differ in geometry; only the pre-blend "+
 			"separates the two strikes", whiteGlyph.IRect(), len(whiteGlyph.Image16), lcdGlyph.IRect(),
@@ -599,12 +595,11 @@ func TestLCDVerticalGlyph(t *testing.T) {
 	}
 }
 
-// probeDecliningMaskFilter is the shape of an out-of-tree mask filter — the interface is exported, and
-// StrikeSpec.Keyable's doc anticipates third-party implementations — that answers makeGlyph's bounds-only probe (a src
-// with a nil Image) and the real mask differently: it declines the probe, so the glyph keeps its unfiltered format and
-// bounds, then succeeds on the mask itself. Nothing in the contract forbids that, and getImage must not assume the two
-// passes agreed. With declineAll set it declines both passes instead, the in-contract behavior a blur under its no-blur
-// cutoff already has, which is the baseline the divergent case has to match.
+// probeDecliningMaskFilter models an out-of-tree mask filter (the interface is exported) that declines makeGlyph's
+// bounds-only probe (a src with a nil Image), so the glyph keeps its unfiltered format and bounds, then succeeds on the
+// real mask. Nothing in the contract forbids that, so getImage must not assume the two passes agree. With declineAll
+// set it declines both passes, as a blur under its no-blur cutoff does; that is the baseline the divergent case must
+// match.
 type probeDecliningMaskFilter struct{ declineAll bool }
 
 func (f probeDecliningMaskFilter) FilterMask(src *raster.Mask, _ *geom.Matrix) (*raster.Mask, geom.IPoint, bool) {

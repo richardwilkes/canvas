@@ -233,7 +233,7 @@ func alignDown(x, alignment uint64) uint64 { return (x / alignment) * alignment 
 
 // MakeSpace reserves a block of memory to hold size bytes at the given alignment from the start of the buffer. Returns
 // the writable window, the buffer designated to hold the data, and the offset into that buffer. The window stays valid
-// until MakeSpace is called again, Unmap, or Reset.
+// until the next MakeSpace, Unmap, or Reset.
 func (p *BufferAllocPool) MakeSpace(size, alignment uint64) (ptr []byte, buffer AnyBuffer, offset uint64) {
 	if p.bufferPtr != nil {
 		back := &p.blocks[len(p.blocks)-1]
@@ -270,7 +270,6 @@ func (p *BufferAllocPool) MakeSpaceAtLeast(minSize, fallbackSize, alignment uint
 	}
 	pad := alignUpPad(usedBytes, alignment)
 	if p.bufferPtr == nil || len(p.blocks) == 0 || minSize+pad > p.blocks[len(p.blocks)-1].bytesFree {
-		// We either don't have a block yet or the current block doesn't have enough free space.
 		if !p.createBlock(fallbackSize) {
 			return nil, nil, 0, 0
 		}
@@ -285,7 +284,6 @@ func (p *BufferAllocPool) MakeSpaceAtLeast(minSize, fallbackSize, alignment uint
 	back.bytesFree -= pad
 	p.bytesInUse += pad
 
-	// Give caller all remaining space in this block (but aligned correctly).
 	size := alignDown(back.bytesFree, alignment)
 	offset = usedBytes
 	back.bytesFree -= size
@@ -381,7 +379,7 @@ func (p *BufferAllocPool) destroyBlock() {
 	case *CpuBuffer:
 		buffer.Unref()
 	}
-	// Zero the slot before shrinking so the retained backing array — now reused across flushes because the pool is
+	// Zero the slot before shrinking so the retained backing array — reused across flushes because the pool is
 	// persistent (DrawingManager.flushState) — pins no dropped buffer. Reslicing alone would leave the AnyBuffer
 	// reference live beyond len.
 	last := len(p.blocks) - 1

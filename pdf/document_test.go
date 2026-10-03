@@ -234,7 +234,7 @@ func TestDocumentCompressedContent(t *testing.T) {
 }
 
 func TestDocumentMultiPageTree(t *testing.T) {
-	// 20 pages exercises the >8 branching factor of generate_page_tree (multiple internal /Pages nodes).
+	// 20 pages exceed generatePageTree's branching factor of 8, forcing multiple internal /Pages nodes.
 	var out stream.MemoryWStream
 	doc := NewDocument(&out, DefaultMetadata())
 	const nPages = 20

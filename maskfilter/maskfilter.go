@@ -102,9 +102,8 @@ func drawNineClipped(mask *raster.Mask, outerR geom.IRect, center geom.IPoint, f
 	cx := center.X
 	cy := center.Y
 
-	// m is reused across the four corner subsets: its address escapes into BlitMask (an interface call), so a plain
-	// local would heap-allocate. It aliases the reused scratch.cornerMask header (heap-resident via the pool), and each
-	// corner fully overwrites it before the synchronous blit — no per-draw alloc, observationally identical.
+	// m's address escapes into BlitMask (an interface call), so a plain local would heap-allocate. It aliases the
+	// pooled scratch.cornerMask header instead, and each corner fully overwrites it before the synchronous blit.
 	m := &scratch.cornerMask
 
 	// top-left
@@ -153,9 +152,8 @@ func drawNineClipped(mask *raster.Mask, outerR geom.IRect, center geom.IPoint, f
 	}
 
 	innerW := innerR.Width()
-	// The stretched-edge RLE scratch comes from the pooled scratch: only runs[0]/runs[width] and alpha[0] are ever
-	// written and read (BlitAntiH walks runs[0] up to the terminating runs[width]=0), so a reused buffer's untouched
-	// interior is never observed.
+	// The stretched-edge RLE buffers come from the pooled scratch unzeroed: only runs[0]/runs[width] and alpha[0] are
+	// ever written and read (see growScratch).
 	scratch.runs = growScratch(scratch.runs, int(innerW)+1)
 	runs := scratch.runs
 	scratch.alpha = growScratch(scratch.alpha, int(innerW)+1)
@@ -187,8 +185,7 @@ func drawNineClipped(mask *raster.Mask, outerR geom.IRect, center geom.IPoint, f
 			blitter.BlitAntiH(r.Left, outerR.Bottom-y-1, alpha, runs)
 		}
 	}
-	// left. leftMask/rightMask alias the reused scratch.leftMask/scratch.rightMask headers (heap-resident via the
-	// pool); their address escapes into BlitMask, so a plain local would heap-allocate.
+	// left. Like m, leftMask/rightMask alias pooled scratch headers because their address escapes into BlitMask.
 	r = geom.IRect{Left: outerR.Left, Top: innerR.Top, Right: innerR.Left, Bottom: innerR.Bottom}
 	if r.Intersect(clipR) {
 		leftMask := &scratch.leftMask
@@ -269,7 +266,7 @@ func FilterRRect(mf MaskFilter, devRRect geom.RRect, ctm *geom.Matrix, clip *ras
 	return true
 }
 
-// FilterRects attempts the nine-patch fast path for one or more blurred rects.
+// FilterRects attempts the nine-patch fast path for one or two blurred rects.
 func FilterRects(mf MaskFilter, devRects []geom.Rect, ctm *geom.Matrix, clip *raster.Clip, blitter raster.Blitter) FilterReturn {
 	niner, ok := mf.(rectsToNiner)
 	if !ok {

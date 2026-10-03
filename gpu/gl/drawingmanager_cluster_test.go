@@ -7,26 +7,23 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// Regression tests for taskClusterVisit's multi/zero-target barrier handling. A task with anything other than exactly
-// one target is treated as a full barrier for every one of its targets: the clustering pass must forget the last-seen
-// cluster tail for all of them so no later same-target task can be reordered across the barrier. The barrier loop must
-// therefore delete lastTaskMap[base.Target(j)] for each j, not lastTaskMap[base.Target(0)] repeatedly, which would
-// leave the second and subsequent targets' cluster tails stale. These tests build the DAG directly with tiny stub
-// tasks, so they need no GL context.
+// Regression tests for taskClusterVisit's multi/zero-target barrier handling. A task without exactly one target is a
+// full barrier for each of its targets: the clustering pass must forget the cluster tail of every one of them (deleting
+// lastTaskMap[base.Target(j)] for each j, not lastTaskMap[base.Target(0)] repeatedly) so no later same-target task is
+// reordered across the barrier. The tests use stub tasks, so they need no GL context.
 
 package gl
 
 import "testing"
 
-// newStubWithTargets builds a non-blocking stub render task whose targets are exactly the given proxies. It sets the
-// targets field directly (rather than via addTarget) so the test needs no DrawingManager, ref-counting, or GL context.
+// newStubWithTargets builds a non-blocking stub render task with the given targets, setting the field directly (rather
+// than via addTarget) so the test needs no DrawingManager or ref-counting.
 func newStubWithTargets(targets ...*SurfaceProxy) *stubRenderTask {
 	t := newStubRenderTask(false)
 	t.targets = append(t.targets, targets...)
 	return t
 }
 
-// llistOrder returns the tasks in a taskLList in head-to-tail order.
 func llistOrder(l *taskLList) []RenderTask {
 	var out []RenderTask
 	for t := l.head; t != nil; t = t.taskBase().llNext {
@@ -36,9 +33,7 @@ func llistOrder(l *taskLList) []RenderTask {
 }
 
 // TestTaskClusterVisitMultiTargetClearsAllTargets verifies that visiting a task with more than one target clears the
-// cluster tail recorded for every one of its targets, not just the first. Before the fix the barrier loop deleted
-// base.Target(0) on each iteration, so the second target's stale cluster tail survived, which would let a later
-// same-target task cluster across the barrier.
+// cluster tail recorded for every one of its targets, not just the first.
 func TestTaskClusterVisitMultiTargetClearsAllTargets(t *testing.T) {
 	a := &SurfaceProxy{}
 	b := &SurfaceProxy{}
@@ -77,8 +72,7 @@ func TestTaskClusterVisitZeroTargetIsSafe(t *testing.T) {
 }
 
 // TestClusterRenderTasksStillClustersWhenSafe guards against over-correction: a middle task whose target differs from a
-// surrounding same-target pair must still be pulled aside so the pair clusters. This exercises the normal single-target
-// path and must keep working after the barrier-loop fix.
+// surrounding same-target pair must still be pulled aside so the pair clusters.
 func TestClusterRenderTasksStillClustersWhenSafe(t *testing.T) {
 	a := &SurfaceProxy{}
 	c := &SurfaceProxy{}

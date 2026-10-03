@@ -16,10 +16,9 @@ import (
 )
 
 // RenderScenarioRaster renders one scenario through the library's CPU raster backend into RGBA8888-premul pixels
-// (tightly packed, top-left origin) — directly comparable with the self-captured raster goldens in ../goldens/raster,
-// which gate bit-exactly per platform. It needs no GL and is the raster gate's render path, plus a backend-independent
-// check of the sceneCanvas adapter itself (so a Go-GPU mismatch can be localized to the GPU path rather than the
-// replay). `oracle gen` and `oracle bless -lane raster` render through it.
+// (tightly packed, top-left origin). It needs no GL and is the render path of the raster gate, which compares
+// bit-exactly against the per-platform sets in ../goldens/raster; `oracle gen` and `oracle bless -lane raster` render
+// through it.
 func RenderScenarioRaster(sc scenario.Scenario) []byte {
 	pm := raster.NewPixmap(int32(sc.Width), int32(sc.Height))
 	c := gocanvas.NewForPixmap(pm)

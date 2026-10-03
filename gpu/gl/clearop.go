@@ -79,9 +79,8 @@ func (o *ClearOp) OnCombineIfPossible(t Op) CombineResult {
 		panic("class ID matched a non-ClearOp")
 	}
 	if other.buffer == o.buffer {
-		// This could be much more complicated. Currently we look at cases where the new clear contains the old clear,
-		// or when the new clear is a subset of the old clear and they clear to the same value (color or stencil mask
-		// depending on target).
+		// Merge when the new clear contains the old clear, or when the new clear is a subset of the old clear and they
+		// clear to the same value (color or stencil mask depending on target).
 		switch {
 		case containsScissor(&other.scissor, &o.scissor):
 			o.scissor = other.scissor

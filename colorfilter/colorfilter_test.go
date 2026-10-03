@@ -75,14 +75,12 @@ func TestMatrixFilter(t *testing.T) {
 		t.Errorf("clamped scale: got %+v, want %+v", out, want)
 	}
 
-	// The alpha-row detector.
 	alphaRow := identity
 	alphaRow[15] = 0.5
 	if af := NewMatrix(&alphaRow); af.IsAlphaUnchanged() {
 		t.Error("alpha-consuming matrix reported alpha unchanged")
 	}
 
-	// Non-finite input rejected.
 	bad := identity
 	bad[7] = float32(math.Inf(1))
 	if NewMatrix(&bad) != nil {
@@ -91,19 +89,15 @@ func TestMatrixFilter(t *testing.T) {
 }
 
 func TestBlendFilterCollapseRules(t *testing.T) {
-	// kDst is a no-op.
 	if NewBlend(0x80336699, raster.BlendDst) != nil {
 		t.Error("kDst should collapse to nil")
 	}
-	// srcover with alpha 0 → dst → nil.
 	if NewBlend(0x00336699, raster.BlendSrcOver) != nil {
 		t.Error("srcover alpha 0 should collapse to nil")
 	}
-	// dstin with alpha 1 → nil.
 	if NewBlend(0xFF336699, raster.BlendDstIn) != nil {
 		t.Error("dstin alpha 1 should collapse to nil")
 	}
-	// alpha 0 noop set.
 	for _, mode := range []raster.BlendMode{
 		raster.BlendDstOver, raster.BlendDstOut,
 		raster.BlendSrcATop, raster.BlendXor, raster.BlendDarken,
@@ -112,7 +106,6 @@ func TestBlendFilterCollapseRules(t *testing.T) {
 			t.Errorf("mode %d with alpha 0 should collapse to nil", mode)
 		}
 	}
-	// srcover with alpha 1 → src.
 	cf := NewBlend(0xFF336699, raster.BlendSrcOver)
 	bf, ok := cf.(*blendFilter)
 	if !ok {
@@ -121,17 +114,14 @@ func TestBlendFilterCollapseRules(t *testing.T) {
 	if bf.Mode() != raster.BlendSrc {
 		t.Errorf("opaque srcover should reduce to src, got %d", bf.Mode())
 	}
-	// kClear → (src, transparent).
 	cf = NewBlend(0x80336699, raster.BlendClear)
 	bf = cf.(*blendFilter)
 	if bf.Mode() != raster.BlendSrc || bf.Color() != (colorcore.Color4f{}) {
 		t.Errorf("clear should become src with transparent black, got %d %+v", bf.Mode(), bf.Color())
 	}
-	// Out-of-range mode rejected.
 	if NewBlend(0x80336699, raster.BlendLuminosity+1) != nil {
 		t.Error("invalid mode accepted")
 	}
-	// IsAlphaUnchanged for srcatop.
 	if !NewBlend(0x80336699, raster.BlendSrcATop).IsAlphaUnchanged() {
 		t.Error("srcatop should leave alpha unchanged")
 	}
@@ -189,7 +179,6 @@ func TestComposeFilter(t *testing.T) {
 }
 
 func TestLightingFilter(t *testing.T) {
-	// Black add collapses to a modulate blend filter.
 	cf := NewLighting(0xFF804020, 0xFF000000)
 	bf, ok := cf.(*blendFilter)
 	if !ok {
@@ -223,7 +212,6 @@ func TestLumaFilter(t *testing.T) {
 }
 
 func TestHighContrastFilter(t *testing.T) {
-	// Invalid configs rejected.
 	if NewHighContrast(HighContrastConfig{Contrast: 2}) != nil {
 		t.Error("contrast > 1 accepted")
 	}
@@ -250,8 +238,7 @@ func TestHighContrastFilter(t *testing.T) {
 		t.Errorf("invert white: got %+v, want black", out)
 	}
 
-	// Grayscale maps pure green to the luma constant (in linear space; g=1 is a fixed point of the transfer function so
-	// the result encodes back to the same value).
+	// Grayscale maps pure green to a gray (the luma constant, in linear space).
 	cf = NewHighContrast(HighContrastConfig{Grayscale: true})
 	out = filter(t, cf, colorcore.PMColor4f{G: 1, A: 1})
 	if !near(out.R, out.G, 1e-6) || !near(out.G, out.B, 1e-6) {
@@ -270,7 +257,6 @@ func TestSRGBTransferFunctionInverse(t *testing.T) {
 	if !near(srgbInvTF.D, float32(0.04045/12.92), 1e-6) {
 		t.Errorf("inv D = %v", srgbInvTF.D)
 	}
-	// The invariant the inversion preserves: inv(srgb(1)) == 1.
 	if got := colorcore.EvalSkcmsTF(&srgbInvTF, colorcore.EvalSkcmsTF(&srgbTF, 1)); got != 1 {
 		t.Errorf("inv(srgb(1)) = %v, want exactly 1", got)
 	}

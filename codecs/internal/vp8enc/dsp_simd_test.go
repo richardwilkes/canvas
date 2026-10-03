@@ -20,7 +20,7 @@ import (
 	"testing"
 )
 
-// The kernels are gated on simdKernelsSupported, not on the per-kernel preference constants: an arch that declines a
+// These tests are gated on simdKernelsSupported, not on the per-kernel preference constants: an arch that declines a
 // kernel for speed still has to prove it computes the same values, since the constant can be flipped back.
 
 func simdTestSkip(t *testing.T) {

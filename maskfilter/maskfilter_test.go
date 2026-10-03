@@ -78,8 +78,8 @@ func TestBoxBlurNoBlurLanes(t *testing.T) {
 	}
 }
 
-// referenceTripleBox computes the three-pass box blur PlanGauss implements directly from its definition: each pass
-// averages a sliding window, chained three times in exact integer math via the same 32.32 rounding.
+// referenceTripleBox computes the three-pass box blur planGauss implements directly from its definition: each pass sums
+// a sliding window, chained three times, and the result is scaled once with the same 32.32 rounding.
 func referenceTripleBox(src []uint8, p *planGauss) []uint8 {
 	window0 := p.pass0Size + 1
 	window1 := p.pass1Size + 1

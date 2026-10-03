@@ -529,7 +529,7 @@ func TestFakeDrawPipelineGLSL(t *testing.T) {
 
 	// Draw 1: plain src-over. Draw 2: src-in — a different XP, so FillRectOp cannot merge the ops, but GL keys no
 	// fixed-function blend state so the program is a cache hit. Draw 3: a coords-sampling FP under a matrix effect (new
-	// program; exercises the varying lift). (Identical paints now merge into a single op through the FillRectOp combine
+	// program; exercises the varying lift). (Identical paints merge into a single op through the FillRectOp combine
 	// rules; that batching is asserted separately in fillrectop_test.go.)
 	draw(raster.BlendSrcOver, nil)
 	draw(raster.BlendSrcIn, nil)

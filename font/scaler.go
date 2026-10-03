@@ -20,10 +20,9 @@
 //     those come from the drawing scaler itself (scalerContext), the same source SkFont::measureText routes through.
 //   - Styled bounds (stroke and/or path effect) come from the styled outline path's bounds: for the no-device strike
 //     the post 2x2 is identity, so the style applies directly in text-matrix space.
-//   - Glyphs whose rounded bounds have a zero dimension are zeroed.
+//   - Glyphs whose bounds are empty in either dimension are zeroed.
 //
-// Font-wide metrics follow a standard sfnt table recipe for scalable outline fonts; other platform text engines differ
-// in documented ways.
+// Font-wide metrics follow FreeType's sfnt table recipe for scalable outline fonts (see fontMetrics).
 
 package font
 
@@ -68,7 +67,6 @@ func makeCanonicalized(f *Font, paint *stroke.PaintSpec) (st strike, strikeToSou
 		st.size = canonicalTextSizeForPaths
 		return st, strikeToSourceScale
 	}
-	// The stroke style enters the strike only for non-fill styles with a non-negative width.
 	if paint != nil && paint.Style != stroke.PaintStyleFill && paint.Width >= 0 {
 		st.frameWidth = paint.Width
 		st.miterLimit = paint.MiterLimit
@@ -218,8 +216,7 @@ func (st *strike) styledGlyphBounds(gid uint16) geom.Rect {
 	return saturateBounds(devPath.Bounds())
 }
 
-// glyphPath converts the glyph outline to a path in strike (text-matrix) space. Contours are explicitly closed, as
-// FT_Outline_Decompose's consumers do.
+// glyphPath returns the glyph outline as a path in strike (text-matrix) space.
 func (st *strike) glyphPath(gid uint16) *path.Path {
 	return glyphOutlinePath(st.t, gid, st.mapDesign)
 }
@@ -229,13 +226,12 @@ func (st *strike) glyphPath(gid uint16) *path.Path {
 // outline data.
 //
 // The raw accessor is deliberate: go-text's GlyphData prefers a glyph's COLR/bitmap/SVG entry over its outline, and
-// every caller here wants the outline specifically. The color lanes need it because a COLRv0 layer (or a COLRv1
-// PaintGlyph) outline is frequently a glyph that itself carries a color entry — often the base glyph's own gid — which
-// GlyphData would answer with instead, silently dropping the layer. The outline lane needs it because the lanes that
-// set neverRequestPath cover only COLR and PNG strikes: an SVG glyph, an sbix 'jpg '/'tif ' graphic, or a B&W strike
-// reaches the outline lane, and through GlyphData it would resolve no outline at all and render blank (go-text hands
-// the spec-required fallback outline back in GlyphSVG.Outline/GlyphBitmap.Outline, so it is only the preference order
-// that loses it).
+// every caller here wants the outline. A COLRv0 layer (or COLRv1 PaintGlyph) outline is frequently a glyph that itself
+// carries a color entry — often the base glyph's own gid — which GlyphData would answer with instead, silently dropping
+// the layer. And the lanes that set neverRequestPath cover only COLR and PNG strikes: an SVG glyph, a B&W strike, or an
+// sbix 'jpg '/'tif ' graphic reaches the outline lane, where GlyphData would resolve no outline and render blank
+// (go-text returns the spec-required fallback outline in GlyphSVG.Outline/GlyphBitmap.Outline, so only the preference
+// order loses it).
 func glyphOutlinePath(t *Typeface, gid uint16, mapPt func(x, y float32) geom.Point) *path.Path {
 	outline, ok := t.faceGlyphOutline(opentype.GID(gid))
 	if !ok {
@@ -271,9 +267,8 @@ func outlineToPath(outline tsfont.GlyphOutline, mapPt func(x, y float32) geom.Po
 	return p
 }
 
-// saturateBounds rounds r out to integer bounds, zeroing it if either dimension is empty. Rounding out cannot undo the
-// emptiness check: IsEmpty is written with negated comparisons, so it also catches NaN edges, and floor/ceil only widen
-// a rect that survives it (Floor(Left) <= Left < Right <= Ceil(Right)). No post-rounding re-check is needed.
+// saturateBounds rounds r out to integer bounds, zeroing it if either dimension is empty. No re-check is needed after
+// rounding: IsEmpty's negated comparisons also catch NaN edges, and floor/ceil only widen a rect that survives it.
 func saturateBounds(r geom.Rect) geom.Rect {
 	if r.IsEmpty() {
 		return geom.Rect{}
@@ -288,9 +283,8 @@ func (st *strike) fontMetrics() Metrics {
 	var m Metrics
 	t := st.t
 	if t == nil || t.face == nil || t.upem <= 0 || t.hhea == nil {
-		// Nothing below runs, so Top/Bottom/XMin/XMax never see the head bbox: they stay zero, which is not a bounding
-		// box the font reported. Say so rather than letting a consumer reserve no room for the empty typeface's (or an
-		// hhea-less font's) glyphs.
+		// Top/Bottom/XMin/XMax stay zero here, which is not a bounding box the font reported. Flag that rather than
+		// letting a consumer reserve no room for the empty typeface's (or an hhea-less font's) glyphs.
 		m.Flags |= MetricsFlagBoundsInvalid
 		return m
 	}
@@ -331,10 +325,10 @@ func (st *strike) fontMetrics() Metrics {
 	if t.post != nil {
 		underlineThickness = float32(t.post.UnderlineThickness) / upem
 		// Per the OpenType spec the post table's underlinePosition is the distance from the baseline to the *top* of
-		// the underline stroke, y-up — exactly what Metrics.UnderlinePosition documents once flipped to y-down, so the
-		// device-space value is simply its negation with no half-thickness adjustment. (FreeType's derived
-		// underline_position is the stroke *center*, so it is not the value used here; CoreText's
-		// CTFontGetUnderlinePosition reports the post value directly, as this does.)
+		// the underline stroke, y-up, which is what Metrics.UnderlinePosition documents once flipped to y-down, so the
+		// device-space value is its negation with no half-thickness adjustment. (FreeType's derived underline_position
+		// is the stroke *center*, so it is not used here; CoreText's CTFontGetUnderlinePosition reports the post value
+		// directly, as this does.)
 		underlinePosition = -float32(t.post.UnderlinePosition) / upem
 		// The flags belong to the values read here: with no post table (absent, or a failed parse) both fields stay
 		// zero, and a consumer honoring Metrics.Flags must not be told a zero-thickness underline sitting on the
@@ -363,7 +357,6 @@ func (st *strike) fontMetrics() Metrics {
 	if capHeight == 0 {
 		capHeight = -ascent * scaleY
 	}
-	// Disallow negative line spacing.
 	if leading < 0 {
 		leading = 0
 	}

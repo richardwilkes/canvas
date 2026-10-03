@@ -67,9 +67,8 @@ func TestProgramCacheHitReuseByteIdentical(t *testing.T) {
 	}
 }
 
-// TestProgramCacheHitIsAllocFree pins that a program-cache hit — the steady-state per-draw case — allocates
-// nothing (the reused descriptor storage plus the m[string(keyScratch)] no-allocation map lookup). This is what takes
-// the GPU-frame benchmark's per-draw program lookup to zero allocs.
+// TestProgramCacheHitIsAllocFree pins that a program-cache hit — the steady-state per-draw case — allocates nothing,
+// thanks to the m[string(keyScratch)] no-allocation map lookup over reused scratch.
 func TestProgramCacheHitIsAllocFree(t *testing.T) {
 	if raceEnabled {
 		t.Skip("the race detector instruments allocations, so AllocsPerRun over-reports")

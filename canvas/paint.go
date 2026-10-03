@@ -53,11 +53,10 @@ const (
 	JoinBevel
 )
 
-// Paint carries the drawing state that is publicly reachable: color, blend mode, style, stroke geometry, the AA/dither
-// flags, the attached path effect (concrete effects live in the patheffect package), the attached shader (shaders
-// package), the attached color filter (colorfilter package), the attached mask filter (maskfilter package), and the
-// attached image filter (imagefilter package, by filtercore.Filter interface). When a shader is set, the paint color's
-// alpha still modulates the shader's output.
+// Paint carries the drawing state: color, blend mode, style, stroke geometry, the AA/dither flags, and the attached
+// path effect, shader, color filter, mask filter, and image filter (concrete implementations live in the patheffect,
+// shaders, colorfilter, maskfilter, and imagefilter packages). When a shader is set, the paint color's alpha still
+// modulates the shader's output.
 type Paint struct {
 	PathEffect  stroke.PathEffect
 	Shader      shaders.Shader
@@ -89,7 +88,6 @@ func NewPaint() *Paint {
 	}
 }
 
-// affectsAlpha reports whether the color filter can change alpha.
 func affectsAlpha(cf shaders.ColorFilter) bool {
 	return cf != nil && !cf.IsAlphaUnchanged()
 }

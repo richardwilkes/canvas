@@ -45,8 +45,8 @@ func TestGrowScratch(t *testing.T) {
 
 // TestBlurScratchReuse is the pooling correctness gate: a scratch whose buffers were grown by a prior (larger) draw and
 // then filled with garbage must produce byte-identical blurRect output to a fresh scratch. growScratch reslices without
-// zeroing, so this proves every buffer element that is read is written first (progress §14.1) — a future partial-write
-// regression that relied on the old make()'s zeroing would fail here.
+// zeroing, so this proves every buffer element that is read is written first — a partial-write regression that relied
+// on zeroed buffers would fail here.
 func TestBlurScratchReuse(t *testing.T) {
 	rect := geom.RectLTRB(12, 8, 96, 60)
 	const sigma = 4
@@ -57,7 +57,7 @@ func TestBlurScratchReuse(t *testing.T) {
 	if !ok {
 		t.Fatal("fresh blurRect failed")
 	}
-	// blurRect's filled image aliases scratch.image; copy it before the reuse run clobbers it.
+	// blurRect's filled image aliases fresh.image, so compare against a copy.
 	wantImage := bytes.Clone(want.Image)
 	wantBounds := want.Bounds
 	wantRowBytes := want.RowBytes

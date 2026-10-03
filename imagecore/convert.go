@@ -104,14 +104,11 @@ func toUnorm(v, scale float32) uint32 {
 
 // alpha8FromHalf reproduces convert_to_alpha8's F16 lane, (uint8_t)(255 * half): faithful to Skia, it truncates toward
 // zero (no round-to-nearest) and does not clamp, so out-of-range extended F16 alphas wrap mod 256. The int32
-// intermediate reproduces that truncate-then-low-8-bits semantics deterministically instead of relying on Go's
-// implementation-defined out-of-range float→uint8 conversion. Every finite half satisfies |255*half| <= 255*65504, so
-// only the em >= 0x7C00 encodings can leave int32 range — halfToFloat maps those to ±Inf and NaN, and they are
-// caller-supplied because RGBA_F16 is a Supported() source type, so int32(+Inf) would be exactly the
-// implementation-defined conversion the truncation was written to avoid (255 on darwin/arm64, 0 on amd64). They are
-// therefore saturated first, the way ARMv8's FCVTZS does: NaN and -Inf take the low byte of INT32_MIN (0) and +Inf the
-// low byte of INT32_MAX (0xFF), on every target. The sibling toUnorm guards NaN for the same reason; the two F16 lanes
-// must not disagree about determinism.
+// intermediate makes that truncate-then-low-8-bits deterministic rather than relying on Go's implementation-defined
+// out-of-range float→uint8 conversion. Every finite half fits int32 (|255*half| <= 255*65504), but the caller-supplied
+// ±Inf and NaN encodings do not, and int32(+Inf) is itself implementation-defined (255 on darwin/arm64, 0 on amd64).
+// They are therefore saturated first, the way ARMv8's FCVTZS does: NaN and -Inf take the low byte of INT32_MIN (0) and
+// +Inf the low byte of INT32_MAX (0xFF), on every target, as toUnorm does for NaN.
 func alpha8FromHalf(bits uint16) byte {
 	f := 255.0 * halfToFloat(bits)
 	switch {
@@ -126,7 +123,7 @@ func alpha8FromHalf(bits uint16) byte {
 ///////////////////////////////////////////////////////////////////////////////
 // lowp integer pixel forms
 
-// lowpPixel is one pixel in the lowp register file: 8-bit values in u16 lanes.
+// lowpPixel is one pixel in the lowp register file: 8-bit values, which Skia holds in u16 lanes.
 type lowpPixel struct{ r, g, b, a uint32 }
 
 // loadLowp loads one pixel of p at (x, y) into the lowp register form.
@@ -360,8 +357,7 @@ func grayToWordsRowGeneric(dst, src []byte) {
 ///////////////////////////////////////////////////////////////////////////////
 
 // ConvertPixels converts src into dst (rows dstRowBytes apart, little-endian bytes) with dstInfo's color/alpha types.
-// Dimensions must match. Returns false for unsupported color types (outside the supported color-type matrix, which is
-// this package's support contract).
+// Returns false if the dimensions differ or either color type is unsupported (see ColorType.Supported).
 func ConvertPixels(dstInfo ImageInfo, dst []byte, dstRowBytes int, src *Pixels) bool {
 	if dstInfo.Width != src.Info.Width || dstInfo.Height != src.Info.Height {
 		return false
@@ -381,8 +377,7 @@ func ConvertPixels(dstInfo ImageInfo, dst []byte, dstRowBytes int, src *Pixels) 
 	}
 
 	// 8888↔8888 with at most an R/B swap and one alpha op, on the NEON kernels. The alpha step and the swap are
-	// loop-invariant, so the lane is chosen once here and the rows run a specialized kernel rather than re-testing the
-	// flags per pixel.
+	// loop-invariant, so the row kernel is chosen once here.
 	is8888 := func(ct ColorType) bool { return ct == ColorTypeRGBA8888 || ct == ColorTypeBGRA8888 }
 	if is8888(dstInfo.ColorType) && is8888(src.Info.ColorType) {
 		swap := dstInfo.ColorType != src.Info.ColorType
@@ -411,8 +406,6 @@ func ConvertPixels(dstInfo ImageInfo, dst []byte, dstRowBytes int, src *Pixels) 
 			case ColorTypeRGBAF16:
 				s := src.U16s[y*int(src.RowElems):]
 				for x := range w {
-					// See alpha8FromHalf for the truncate-then-low-8-bits semantics and the saturation
-					// that keeps the non-finite halves off Go's implementation-defined cast.
 					row[x] = alpha8FromHalf(s[4*x+3])
 				}
 			}

@@ -9,8 +9,7 @@
 
 // Metadata and DateTime types for PDF document metadata: the document information dictionary (/Info), the document /ID,
 // and the PDF/A XMP metadata packet. The oracle's public metadata API has no PDF/A toggle, so the UUID/XMP path can't
-// be differentially verified (kept for completeness). CreateUUID hashes the current time, so it is non-reproducible by
-// design — it is only meaningful in PDF/A mode, where per-run uniqueness is what's wanted.
+// be differentially verified (kept for completeness).
 
 package pdf
 
@@ -26,7 +25,6 @@ import (
 // milestone is the version number embedded in the default Producer string.
 const milestone = 142
 
-// defaultProducer is the default value for the /Producer document metadata entry.
 var defaultProducer = fmt.Sprintf("Skia/PDF m%d", milestone)
 
 // defaultRasterDPI is the default resolution, in dots per inch, used to rasterize content that has no vector
@@ -95,8 +93,7 @@ func absInt(v int) int {
 }
 
 // Metadata holds the document metadata and encoding options for a PDF document. The zero value does not carry the
-// intended defaults (Go has no field initializers); use DefaultMetadata to get a Metadata with its Producer, RasterDPI,
-// EncodingQuality, and CompressionLevel fields already set.
+// intended defaults; DefaultMetadata returns one with Producer, RasterDPI, EncodingQuality, and CompressionLevel set.
 type Metadata struct {
 	Title            string
 	Author           string
@@ -160,8 +157,8 @@ type UUID [16]byte
 
 func (u UUID) isZero() bool { return u == UUID{} }
 
-// CreateUUID derives a UUID from the current time and the document's metadata fields. The hash mixes the current time,
-// so the result is non-reproducible by design (used only in PDF/A mode).
+// CreateUUID derives a UUID from the current time and the document's metadata fields, so the result is non-reproducible
+// by design. It is used only in PDF/A mode, where per-run uniqueness is what's wanted.
 func CreateUUID(metadata *Metadata) UUID {
 	h := md5.New() //nolint:gosec // not used for security: PDF document IDs are conventionally MD5 (mirrors Skia)
 	h.Write([]byte("org.skia.pdf\n"))
@@ -181,8 +178,8 @@ func CreateUUID(metadata *Metadata) UUID {
 	}
 	var digest [16]byte
 	copy(digest[:], h.Sum(nil))
-	// See RFC 4122, page 6-7. (This deliberately derives digest[8] from digest[6] rather than digest[8] itself — a
-	// long-standing quirk that output-compatibility requires preserving.)
+	// See RFC 4122, pages 6-7. Deriving digest[8] from digest[6] rather than from digest[8] is a long-standing Skia
+	// quirk that output compatibility requires preserving.
 	digest[6] = (digest[6] & 0x0F) | 0x30
 	digest[8] = (digest[6] & 0x3F) | 0x80
 	return UUID(digest)
@@ -217,7 +214,6 @@ func MakePdfID(doc, instance UUID) *Array {
 	return array
 }
 
-// hexLower holds the lowercase hexadecimal digit characters.
 const hexLower = "0123456789abcdef"
 
 // uuidToString formats uuid in the standard 8-4-4-4-12 hyphenated hex form.

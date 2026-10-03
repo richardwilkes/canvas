@@ -119,7 +119,6 @@ func TestMeasureTextWithSpace(t *testing.T) {
 	if withSpace.IsEmpty() {
 		t.Error("bounds of a visible run must not be empty")
 	}
-	// A space-only run has a positive advance but no ink.
 	var spaceBounds geom.Rect
 	spaceAdv := f.MeasureText([]byte(" "), TextEncodingUTF8, &spaceBounds, nil)
 	if spaceAdv <= 0 {

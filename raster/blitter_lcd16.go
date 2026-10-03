@@ -11,14 +11,13 @@
 // SolidBlitter.BlitMask routes solid src-over color through (portable scalar lanes here; the simd kernels in
 // blit_simd.go reproduce the same results), the legacy shader-blitter's blendRowLCD16 / blendRowLCD16OpaqueFn procs for
 // shader spans, and the float per-channel scale_565/lerp_565 raster-pipeline stages the pipeline blitters lower LCD16
-// masks through. LCD blitting assumes an opaque destination throughout.
+// masks through. The shader-span rows assume an opaque destination.
 
 package raster
 
 import "github.com/richardwilkes/canvas/geom"
 
-// lcd16MaskChannels extracts a 565 mask's channels as 5-bit coverages (the green channel drops its low bit: "We're
-// ignoring the least significant bit of the green coverage channel here").
+// lcd16MaskChannels extracts a 565 mask's channels as 5-bit coverages, dropping green's low bit as Skia does.
 func lcd16MaskChannels(m uint16) (r, g, b uint32) {
 	return uint32(m>>11) & 0x1F, uint32(m>>6) & 0x1F, uint32(m) & 0x1F
 }
@@ -112,7 +111,7 @@ func blitRowLCD16OpaqueGeneric(dst []uint32, mask []uint16, srcR, srcG, srcB, op
 	}
 }
 
-// blitMaskLCD16 is the LCD16 mask lane over the row procs above: the SolidBlitter dispatches here.
+// blitMaskLCD16 is BlitMask's LCD16 lane, over the row procs above.
 func (s *SolidBlitter) blitMaskLCD16(mask *Mask, clip geom.IRect) {
 	if s.srcA == 0 {
 		return
@@ -142,11 +141,10 @@ func (s *SolidBlitter) blitMaskLCD16(mask *Mask, clip geom.IRect) {
 // m) with 8-bit coverages; only works on an opaque destination.
 //
 // This is the one LCD16 row with no vector lane. Its coverages are 8-bit rather than the 5-bit ones the other three
-// rows scale by, so the (s - alphaMul(sa, d)) * m product needs 17 signed bits and cannot ride in the 16-bit lanes
-// blend32v uses; and unlike blend32, srcAlphaBlend has no bound proving its result lands inside a byte, so a kernel
-// could only be exact over the opaque-destination domain the portable form already restricts itself to. A vector form
-// would therefore be a separate 32-bit-lane kernel with a weaker guarantee, for the rarest of these paths (subpixel
-// text under a translucent shader paint).
+// rows scale by, so the (s - alphaMul(sa, d)) * m product needs 17 signed bits and cannot ride in blend32v's 16-bit
+// lanes; and unlike blend32, srcAlphaBlend has no bound proving its result fits a byte, so a kernel could only be exact
+// over the opaque-destination domain. A vector form would be a separate 32-bit-lane kernel with a weaker guarantee, for
+// the rarest of these paths (subpixel text under a translucent shader paint).
 func blendRowLCD16(dst []uint32, mask []uint16, src []uint32) {
 	srcAlphaBlend := func(s, d, sa, m int32) int32 {
 		return d + (s-sa*d>>8)*m>>8

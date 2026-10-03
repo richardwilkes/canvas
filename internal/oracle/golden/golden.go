@@ -44,10 +44,10 @@ type Entry struct {
 // output is a scratch comparison set rather than a blessed one.
 type Manifest struct {
 	Platform   string  `json:"platform"`              // GOOS_GOARCH that generated the goldens
-	Lane       string  `json:"lane,omitempty"`        // "raster", "gpu", or "gpudmsaa" (schema 2)
-	GLRenderer string  `json:"gl_renderer,omitempty"` // GL_RENDERER of the capturing context; "" for raster (schema 2)
-	GLVersion  string  `json:"gl_version,omitempty"`  // GL_VERSION of the capturing context; "" for raster (schema 2)
-	CapturedAt string  `json:"captured_at,omitempty"` // UTC date (YYYY-MM-DD) the set was captured (schema 2)
+	Lane       string  `json:"lane,omitempty"`        // "raster", "gpu", or "gpudmsaa"
+	GLRenderer string  `json:"gl_renderer,omitempty"` // GL_RENDERER of the capturing context; "" for raster
+	GLVersion  string  `json:"gl_version,omitempty"`  // GL_VERSION of the capturing context; "" for raster
+	CapturedAt string  `json:"captured_at,omitempty"` // UTC date (YYYY-MM-DD) the set was captured
 	Entries    []Entry `json:"entries"`               // sorted by name
 	Schema     int     `json:"schema"`
 }

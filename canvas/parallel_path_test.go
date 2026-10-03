@@ -24,8 +24,8 @@ import (
 	"github.com/richardwilkes/canvas/raster"
 )
 
-// bandTestPaths builds the shapes the C.1 lane is characterized against: unison's rounded rect, an off-integer oval,
-// and a self-intersecting mixed-curve torture path.
+// bandTestPaths builds the shapes the banded path lane is characterized against: unison's rounded rect, an off-integer
+// oval, and a self-intersecting mixed-curve torture path.
 func bandTestPaths(w, h float32) map[string]*path.Path {
 	shapes := map[string]*path.Path{}
 
@@ -139,11 +139,10 @@ func TestFillPathShadedParallelDeterministic(t *testing.T) {
 	}
 }
 
-// TestFillPathShadedParallelDivergenceEnvelope characterizes the banded-vs-serial divergence the C.1 lane accepts (and
-// that the re-profiled oracle budgets rest on): the diff fraction stays under 5% even on the self-intersecting curve
-// torture path (measured 4.4% there — every differing pixel is a partial-coverage edge pixel whose band-clipped curve
-// subdivision landed differently; simple shapes measure 0-0.4%), and unison's rrect must reproduce the serial fill
-// byte-exactly.
+// TestFillPathShadedParallelDivergenceEnvelope characterizes the banded-vs-serial divergence this lane accepts (and
+// that the oracle budgets rest on): the diff fraction stays under 5% even on the self-intersecting curve torture path
+// (measured 4.4% there — every differing pixel is a partial-coverage edge pixel whose band-clipped curve subdivision
+// landed differently; simple shapes measure 0-0.4%), and unison's rrect must reproduce the serial fill byte-exactly.
 func TestFillPathShadedParallelDivergenceEnvelope(t *testing.T) {
 	const w, h = 256, 256
 	for name, p := range bandTestPaths(w, h) {

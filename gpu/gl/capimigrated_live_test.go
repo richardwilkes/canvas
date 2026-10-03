@@ -85,7 +85,7 @@ func assertBytesClose(t *testing.T, got, want []byte, tol int, tag string) {
 //     and the texture op's bottom-left normalization);
 //   - a snapshot of that surface (a bottom-left-origin texture image) used as an image shader reproduces it again (the
 //     texture effect's origin-correcting coord matrix);
-//   - a compatible surface (makeSurface) derives from the wrapped target;
+//   - a compatible surface (MakeSurface) derives from the wrapped target;
 //   - after ResetContext and ResetGLTextureBindings the context stays usable for another draw.
 func TestLiveWrappedFBOBottomLeftDrawLanes(t *testing.T) {
 	env, dc := newLiveDirectContext(t)

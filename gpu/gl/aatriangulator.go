@@ -426,8 +426,9 @@ func aaInversion(prev, next *triVertex, origEdge *triEdge, c triComparator) bool
 	return winding != origEdge.winding
 }
 
-// strokeBoundary (stage 5d) displaces edges by half a pixel inward and outward along their normals, intersect to find
-// new vertices (alpha 0 on the exterior, 255 on the interior), and build a new antialiased mesh from those vertices.
+// strokeBoundary (stage 5d) displaces edges by half a pixel inward and outward along their normals, intersects them to
+// find new vertices (alpha 0 on the exterior, 255 on the interior), and builds a new antialiased mesh from those
+// vertices.
 func (aa *aaTriangulator) strokeBoundary(boundary *triEdgeList, innerMesh *triVertexList, c triComparator) {
 	// A boundary with fewer than 3 edges is degenerate.
 	if boundary.head == nil || boundary.head.right == nil || boundary.head.right.right == nil {
@@ -662,7 +663,7 @@ func (aa *aaTriangulator) extractBoundary(boundary *triEdgeList, e *triEdge) {
 	}
 }
 
-// extractBoundaries (stage 5b) extracts boundaries from the mesh, simplify and stroke them into a new mesh.
+// extractBoundaries (stage 5b) extracts boundaries from the mesh, then simplifies and strokes them into a new mesh.
 func (aa *aaTriangulator) extractBoundaries(inMesh, innerVertices *triVertexList, c triComparator) {
 	aa.removeNonBoundaryEdges(inMesh)
 	for v := inMesh.head; v != nil; v = v.next {

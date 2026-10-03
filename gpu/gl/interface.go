@@ -870,13 +870,11 @@ const (
 	CLIENT_ARRAYS_ANGLE                          = 0x93AA
 )
 
-// Functions that pass floats by value cannot go through purego.SyscallN when the signature mixes integer and float
-// registers (SyscallN copies the first eight arguments into both register banks), so any function with a float-by-value
-// parameter is bound through purego.RegisterFunc instead. The same goes for functions whose stack arguments (beyond the
-// eight register slots) include a sub-8-byte value followed by further arguments: Apple's arm64 ABI packs stack
-// arguments at natural size/alignment while SyscallN spills 8-byte slots, so glBlitFramebuffer's (mask, filter) tail —
-// and anything shaped like it — would be mis-marshaled (the callee reads filter from the high half of mask's slot).
-// Everything else goes through the fixed-arity glCall lane (fastcall_*.go).
+// Entry points dispatch through the fixed-arity glCall lane (fastcall_*.go), which passes integer-class arguments only
+// and spills stack arguments to 8-byte slots. Two shapes it would mis-marshal are bound through purego.RegisterFunc
+// instead: a float-by-value parameter, and a sub-8-byte stack argument (beyond the eight register slots) followed by
+// further arguments. Apple's arm64 ABI packs stack arguments at natural size and alignment, so the callee would read
+// glBlitFramebuffer's filter from the high half of mask's slot.
 
 // glFuncIndex indexes the per-entry-point call counters (Functions.callCounts) and the glFuncNames table. See
 // callcounts.go for the reporting API.
@@ -1090,7 +1088,6 @@ const (
 	glFuncCount
 )
 
-// glFuncNames maps glFuncIndex to the GL entry-point name.
 var glFuncNames = [glFuncCount]string{
 	idxActiveTexture:                   "glActiveTexture",
 	idxAttachShader:                    "glAttachShader",
@@ -1299,13 +1296,11 @@ var glFuncNames = [glFuncCount]string{
 }
 
 // Functions holds one proc address per GL entry point this package can call. A zero proc means the function was not
-// resolved for the context's version and extension set. All-integer entry points dispatch through the fixed-arity
-// glCall lane (fastcall_*.go; zero-allocation trampolines on the supported platforms, purego.SyscallN elsewhere).
-// Float-by-value entry points additionally carry a purego.RegisterFunc-bound typed func created by initRegistered,
-// because the integer call lanes cannot pass mixed integer/float arguments. Every wrapper increments its callCounts
-// slot before dispatching, so per-entry-point GL call counts are always available (callcounts.go); a plain array
-// increment costs nothing measurable next to the FFI transition, and counts are only meaningful on the GL context
-// thread, which is the only place calls originate.
+// resolved for the context's version and extension set. Entry points the glCall lane cannot carry (see the comment
+// above glFuncIndex) also have a purego.RegisterFunc-bound typed func, created by initRegistered. Every wrapper
+// increments its callCounts slot before dispatching, so per-entry-point GL call counts are always available
+// (callcounts.go); a plain array increment costs nothing measurable next to the FFI transition, and counts are only
+// meaningful on the GL context thread, which is the only place calls originate.
 type Functions struct {
 	fnVertexAttrib1f                                 func(uint32, float32)
 	fnBlitFramebuffer                                func(int32, int32, int32, int32, int32, int32, int32, int32, uint32, uint32)
@@ -1319,7 +1314,7 @@ type Functions struct {
 	fnUniform1f                                      func(int32, float32)
 	fnTexParameterf                                  func(uint32, uint32, float32)
 	fnSamplerParameterf                              func(uint32, uint32, float32)
-	callState                                        glCallState //nolint:unused // empty on the Windows lane (fastcall_windows.go); the SysV lane's glcall trampolines work through it
+	callState                                        glCallState //nolint:unused // used only by fastcall_sysv.go
 	callCounts                                       [glFuncCount]uint64
 	getRenderbufferParameteriv                       uintptr
 	drawArrays                                       uintptr
@@ -1527,7 +1522,7 @@ type Functions struct {
 	windowRectangles                                 uintptr
 }
 
-// initRegistered creates the typed bindings for the float-by-value entry points that were resolved.
+// initRegistered binds the typed funcs for the resolved entry points that the glCall lane cannot carry.
 func (f *Functions) initRegistered() {
 	if f.blendColor != 0 {
 		purego.RegisterFunc(&f.fnBlendColor, f.blendColor)

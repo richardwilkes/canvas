@@ -7,7 +7,7 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// Tests for the generated GL entry-point wrappers' argument marshaling.
+// Tests for the GL entry-point wrappers' argument marshaling.
 
 package gl
 

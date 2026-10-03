@@ -17,8 +17,8 @@ import (
 	"github.com/richardwilkes/canvas/path"
 )
 
-// The clip-torture family — deep clip stacks, AA/non-AA mixes, difference stacking, path/rect
-// interactions, and clips under rotated/perspective CTMs.
+// The clip-torture family: deep clip stacks, AA/non-AA mixes, difference stacking, path/rect interactions, and clips
+// under rotated/perspective CTMs.
 
 func init() {
 	reg("clip-nested-shrink", func(c Canvas) {

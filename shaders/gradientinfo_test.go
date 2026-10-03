@@ -68,8 +68,8 @@ func TestAsGradientSweep(t *testing.T) {
 	if typ != GradientSweep {
 		t.Errorf("type = %v, want GradientSweep", typ)
 	}
-	// fPoint[0] is the center; fPoint[1] carries {tScale, tBias}. For 0..180deg: t0=0, t1=0.5, so tScale = 1/(t1-t0) =
-	// 2 and tBias = -t0 = 0.
+	// Point[0] is the center; Point[1] carries {tScale, tBias}. For 0..180deg: t0=0, t1=0.5, so tScale = 1/(t1-t0) = 2
+	// and tBias = -t0 = 0.
 	if info.Point[0] != (geom.Point{X: 8, Y: 9}) {
 		t.Errorf("center = %v", info.Point[0])
 	}

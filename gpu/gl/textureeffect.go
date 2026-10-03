@@ -8,7 +8,7 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // TextureEffect is the fragment processor that samples a texture, implementing whatever part of the requested
-// wrap/filter behavior the hardware sampler cannot: shader-based clamp/repeat/mirror/ border, subset restriction, and
+// wrap/filter behavior the hardware sampler cannot: shader-based clamp/repeat/mirror/border, subset restriction, and
 // the extra reads that emulate filtered repeat. The emitted code is GLSL. Only 2D and rectangle texture types are
 // supported (no external/array textures).
 
@@ -82,7 +82,6 @@ func getTextureEffectShaderMode(wrap gpu.WrapMode, filter gpu.FilterMode, mm gpu
 	panic("unknown wrap mode")
 }
 
-// shaderModeIsClampToBorder reports whether m implements clamp-to-border in the shader.
 func shaderModeIsClampToBorder(m TextureEffectShaderMode) bool {
 	return m == ShaderModeClampToBorderNearest || m == ShaderModeClampToBorderFilter
 }
@@ -387,7 +386,7 @@ func (t *TextureEffect) View() *SurfaceProxyView { return &t.view }
 func (t *TextureEffect) Texture() *Texture { return t.view.Proxy().PeekTexture() }
 
 // coordAdjustmentMatrix returns the matrix concatenated by the wrapping matrix effect to handle y-flip and coord
-// normalization. It is computed at setData time because the texture size is not always known when the effect is made
+// normalization. It is computed at onSetData time because the texture size is not always known when the effect is made
 // (fully-lazy proxies).
 func (t *TextureEffect) coordAdjustmentMatrix() geom.Matrix {
 	m := geom.IdentityMatrix()
@@ -652,8 +651,7 @@ func (i *textureEffectImpl) EmitCode(args *FPEmitArgs) {
 	}
 
 	// Do the 2 or 4 texture reads for the repeat-with-mipmap modes and then apply the weight(s) to blend between them.
-	// If neither
-	// direction is repeat or not using mip maps do a single read at clampedCoord.
+	// If neither direction is repeat or not using mip maps do a single read at clampedCoord.
 	switch {
 	case mipmapRepeatX && mipmapRepeatY:
 		fb.CodeAppendf(
@@ -733,8 +731,7 @@ func (i *textureEffectImpl) EmitCode(args *FPEmitArgs) {
 	}
 
 	// Do soft edge shader filtering against border color for ShaderModeClampToBorderFilter using the err values
-	// calculated
-	// above.
+	// calculated above.
 	if m[0] == ShaderModeClampToBorderFilter {
 		fb.CodeAppendf("textureColor = mix(textureColor, %s, min(abs(errX), 1.0));", borderName)
 	}
@@ -743,9 +740,8 @@ func (i *textureEffectImpl) EmitCode(args *FPEmitArgs) {
 	}
 
 	// Do hard-edge shader transition to border color for ShaderModeClampToBorderNearest at the subset boundaries. Snap
-	// the input
-	// coordinates to nearest neighbor (with an epsilon) before comparing to the subset rect, to avoid GPU interpolation
-	// errors.
+	// the input coordinates to nearest neighbor (with an epsilon) before comparing to the subset rect, to avoid GPU
+	// interpolation errors.
 	if m[0] == ShaderModeClampToBorderNearest {
 		fb.CodeAppendf(
 			"float snappedX = floor(inCoord.x + 0.001) + 0.5;"+

@@ -7,10 +7,10 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// The legacy fixed-point bitmap-processing shader: the fixed-point sampling machine that routes src-over, non-dithered
-// N32 image-shader draws — the dominant CPU image-draw lane, so its 16.16/32.32 fixed-point math and 4-bit bilerp
-// weights are exact (the float pipeline would differ visibly at sharp edges). The sample kernels match both the
-// portable and SIMD forms, which compute identical integer results.
+// The legacy fixed-point bitmap-processing shader, which samples src-over, non-dithered N32 image-shader draws — the
+// dominant CPU image-draw lane. Its 16.16/32.32 fixed-point math and 4-bit bilerp weights match Skia's exactly (the
+// float pipeline would differ visibly at sharp edges). The sample kernels match both of Skia's portable and SIMD forms,
+// which compute identical integer results.
 
 package shaders
 
@@ -49,7 +49,6 @@ func floatSaturate2Int64(x float32) int64 {
 	}
 }
 
-// scalarToFixed3232 converts a float32 to the 32.32 fixed-point representation.
 func scalarToFixed3232(x float32) int64 {
 	return floatSaturate2Int64(x * (65536.0 * 65536.0))
 }
@@ -109,16 +108,15 @@ func (a *autoMapper) fixedY() int32 { return fixed3232ToFixed(a.fy) }
 func (a *autoMapper) intX() int32   { return fixed3232ToInt(a.fx) }
 func (a *autoMapper) intY() int32   { return fixed3232ToInt(a.fy) }
 
-// row returns the pixel row y of the pixmap.
 func (s *bitmapProcState) row(y int32) []uint32 {
 	off := int(y) * int(s.pixmap.RowPixels)
 	return s.pixmap.Pix[off:]
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// init + chooseProcs
+// setup (Skia's init + chooseProcs)
 
-// matrixOnlyScaleTranslate reports whether m is at most a scale plus translate.
+// matrixOnlyScaleTranslate reports whether m is a scale, optionally with a translate, and nothing else.
 func matrixOnlyScaleTranslate(m *geom.Matrix) bool {
 	return m.Type()&^uint8(geom.TypeTranslate) == geom.TypeScale
 }
@@ -156,8 +154,8 @@ func postIDiv(m *geom.Matrix, divx, divy int32) {
 	)
 }
 
-// setup initializes the sampling state and chooses the matrix/sample/shader procs for a draw, with the accessor reduced
-// to the base level (there is no mipmap support in the CPU sampler).
+// setup initializes the sampling state and chooses the matrix/sample/shader procs for a draw. It always samples the
+// base level (the CPU sampler has no mipmap support).
 func (s *bitmapProcState) setup(pm raster.Pixmap, inv *geom.Matrix, paintAlpha uint8, sampling SamplingOptions, tmx, tmy TileMode) bool {
 	s.pixmap = pm
 	s.tileModeX = tmx
@@ -391,14 +389,12 @@ func filterScale(s *bitmapProcState, tile tileProc, extract func(fx, maxV int32)
 	}
 }
 
-// filterScaleClamp is filterScale's clamp-clamp instantiation (the dominant tile-mode combination in practice),
-// specialized so the tile/extract helpers are direct — and thus inlinable — calls instead of the two per-pixel indirect
-// calls the general proc pays. Pixels whose (bias-adjusted) source coordinate lands strictly inside [0, maxX) take the
-// same branch-free pack the whole-span decal lane writes; the edge pixels fall back to packFilter with the clamp
-// helpers, so every output word is bit-identical to the general proc's. Byte-exactness of the in-range pack: for 0 <= f
-// with f>>16 < maxX, tileClampProc(f) = f>>16, the weight is (f>>12)&0xF, and tileClampProc(f+fixed1) = (f>>16)+1, so
-// packFilter's three fields collapse to (f>>12)<<14 | ((f>>16)+1) exactly as decal writes them (filterOneX is fixed1 in
-// clamp mode).
+// filterScaleClamp is filterScale specialized for clamp-clamp (the dominant tile-mode combination) so the tile/extract
+// helpers are direct, inlinable calls rather than two indirect calls per pixel. Pixels whose bias-adjusted source
+// coordinate lies in [0, maxX) take the branch-free pack the whole-span decal lane writes; edge pixels fall back to
+// packFilter with the clamp helpers. Every output word is bit-identical to the general proc's: for 0 <= f with f>>16 <
+// maxX, tileClampProc(f) = f>>16, the weight is (f>>12)&0xF, and tileClampProc(f+fixed1) = (f>>16)+1 (filterOneX is
+// fixed1 in clamp mode), so packFilter's three fields collapse to (f>>12)<<14 | ((f>>16)+1).
 func filterScaleClamp(s *bitmapProcState, xy []uint32, count int, x, y int32) {
 	maxX := s.pixmap.Width - 1
 	dx := s.invSx
@@ -682,8 +678,8 @@ func (s *bitmapProcState) chooseMatrixProc(translateOnly bool) bool {
 	return true
 }
 
-// The general matrixProcs, static top-level funcs sourcing tile/extract/tryDecal from the state (set in
-// chooseMatrixProc) rather than a closure capture — so assigning them allocates nothing.
+// The general matrixProcs, which read tile/extract/tryDecal from the state rather than capturing them (see
+// bitmapProcState).
 func nofilterScaleProc(s *bitmapProcState, xy []uint32, count int, x, y int32) {
 	nofilterScale(s, s.tile, s.tryDecal, xy, count, x, y)
 }
@@ -751,11 +747,10 @@ func pack64(v uint64) uint32 {
 	return uint32(v) | uint32(v>>24)
 }
 
-// filterAndScaleByAlpha computes a four-tap bilerp with paint alpha applied, bit-identical between the portable and
-// SIMD forms. A prior kernel ran the four bilerp taps twice over uint32 lane pairs (bytes 0/2, then 1/3); this form
-// runs all four channels per tap in one spread64 word — the per-lane products and sums are the same 16-bit values, so
-// the result is bit-identical (the four tap scales sum to 256, bounding every lane by 0xFF00; the alpha step's lanes by
-// 255*256).
+// filterAndScaleByAlpha computes a four-tap bilerp with paint alpha applied, bit-identical to Skia's portable and SIMD
+// forms. It runs all four channels per tap in one spread64 word rather than Skia's two uint32 lane pairs (bytes 0/2,
+// then 1/3); the per-lane products and sums are the same 16-bit values (the four tap scales sum to 256, bounding every
+// lane by 0xFF00; the alpha step's lanes by 255*256).
 func filterAndScaleByAlpha(x, y, a00, a01, a10, a11, alphaScale uint32) uint32 {
 	xy := x * y
 	acc := spread64(a00)*uint64(256-16*y-16*x+xy) +
@@ -886,7 +881,6 @@ func clampS32D32NofilterTransShaderproc(s *bitmapProcState, x, y int32, dst []ui
 	count := len(dst)
 	i := 0
 
-	// clamp to the left
 	if ix < 0 {
 		n := min(int(-ix), count)
 		for range n {
@@ -899,7 +893,6 @@ func clampS32D32NofilterTransShaderproc(s *bitmapProcState, x, y int32, dst []ui
 		}
 		ix = 0
 	}
-	// copy the middle
 	if ix <= maxX {
 		n := min(int(maxX-ix+1), count)
 		copy(dst[i:i+n], row[ix:])
@@ -909,7 +902,6 @@ func clampS32D32NofilterTransShaderproc(s *bitmapProcState, x, y int32, dst []ui
 			return
 		}
 	}
-	// clamp to the right
 	for range count {
 		dst[i] = row[maxX]
 		i++
@@ -1000,7 +992,7 @@ func s32D32ConstXShaderproc(s *bitmapProcState, x, y int32, dst []uint32) {
 	}
 }
 
-// doNothingShaderproc shades a span as fully transparent (used when setup fails after selection).
+// doNothingShaderproc shades a span as fully transparent (used when setupForTranslate fails).
 func doNothingShaderproc(_ *bitmapProcState, _, _ int32, dst []uint32) {
 	for i := range dst {
 		dst[i] = 0
@@ -1043,7 +1035,7 @@ func (s *bitmapProcState) chooseShaderProc() {
 // bitmapProcBufMax is the size of the fixed sampling scratch buffer.
 const bitmapProcBufMax = 128
 
-// BitmapProcContext is the legacy fixed-point shading context paired with the N32 opaque blitter.
+// BitmapProcContext is the legacy fixed-point shading context paired with raster.LegacyShaderBlitter.
 type BitmapProcContext struct {
 	state  bitmapProcState
 	opaque bool

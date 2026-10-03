@@ -8,10 +8,10 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // Hermetic tests for the fixed-count tessellation support layer: Wang's formula (bit-level nextlog2 plus the
-// mathematical flatness guarantee it exists to provide), the convex-180 cubic chopper, PreChopPathCurves' segment bound
+// mathematical flatness guarantee it exists to provide), the convex-180 cubic chopper, preChopPathCurves' segment bound
 // and offscreen flattening, the middle-out polygon triangulator's exact topology and area equivalence, the midpoint
-// contour parser, the fixed-count static buffer contents, the PatchWriter's patch encodings and chopping, the
-// non-convex fill-op selection heuristic, and PathTessellateOp's record-time batching on the fake-driver context.
+// contour parser, the fixed-count static buffer contents, the patchWriter's patch encodings and chopping, the
+// non-convex fill-op selection heuristic, and pathTessellateOp's record-time batching on the fake-driver context.
 
 package gl
 
@@ -201,7 +201,7 @@ func TestWangsFormulaFlatnessGuarantee(t *testing.T) {
 		}
 	}
 
-	// worst_case_cubic bounds any cubic whose control points live in the given box.
+	// wangsWorstCaseCubic bounds any cubic whose control points live in the given box.
 	for i, c := range cubics {
 		minX, minY, maxX, maxY := c[0].X, c[0].Y, c[0].X, c[0].Y
 		for _, p := range c[1:] {
@@ -685,7 +685,7 @@ func TestPatchWriterEncodings(t *testing.T) {
 		t.Fatalf("triangle curve type = %v", curveType)
 	}
 
-	// Lines: written as the standard linear cubic, or discarded with DiscardFlatCurves.
+	// Lines: written as the standard linear cubic, or discarded with discardFlatCurves.
 	w, alloc = newWriter(PatchAttribsNone, false, false)
 	w.writeLine(p0, p2)
 	if len(alloc.patches) != 1 {
@@ -737,7 +737,7 @@ func TestPatchWriterEncodings(t *testing.T) {
 
 func TestPatchWriterChopping(t *testing.T) {
 	// A quad requiring more than tessMaxParametricSegments but at most 2x chops into 2 quads (plus the connecting
-	// triangles when AddTrianglesWhenChopping is on).
+	// triangles when addTrianglesWhenChopping is on).
 	p0 := geom.Point{X: 0, Y: 0}
 	p1 := geom.Point{X: 3000, Y: 6000}
 	p2 := geom.Point{X: 6000, Y: 0}
@@ -769,7 +769,7 @@ func TestPatchWriterChopping(t *testing.T) {
 		t.Fatalf("last chop end = %v", got)
 	}
 
-	// With AddTrianglesWhenChopping, the space between the new closing edges is filled: for numPatches == 2 that is
+	// With addTrianglesWhenChopping, the space between the new closing edges is filled: for numPatches == 2 that is
 	// exactly one triangle patch {p0, abc, p2}.
 	if numPatches == 2 {
 		alloc = &testPatchAllocator{stride: patchStride(PatchAttribsNone)}
@@ -889,7 +889,7 @@ func TestPathTessellateOpBatching(t *testing.T) {
 	}
 
 	// Two convex volatile draws with different translucent colors and identical trivial paints:
-	// TessellationPathRenderer's PathTessellateOp merges them, moving color into patch attribs.
+	// TessellationPathRenderer's pathTessellateOp merges them, moving color into patch attribs.
 	shape1 := MakeStyledShapePath(blob, SimpleFillStyle(), DoSimplifyNo)
 	sdc.DrawShape(nil, solidPaint(1, 0, 0, 0.5), gpu.AANo, &identity, &shape1)
 	shape2 := MakeStyledShapePath(tessConvexBlob(60, 40), SimpleFillStyle(), DoSimplifyNo)

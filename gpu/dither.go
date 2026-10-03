@@ -34,7 +34,7 @@ func DitherRangeForColorType(ct ColorType) float32 {
 	case ColorTypeAlpha16, ColorTypeR16, ColorTypeRG1616, ColorTypeRGBA16161616:
 		return 1 / 32767.0
 	default:
-		return 0 // no dithering
+		return 0
 	}
 }
 

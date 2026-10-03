@@ -16,7 +16,6 @@ import (
 	"github.com/richardwilkes/canvas/internal/oracle/scenario"
 )
 
-// findScenario returns the named scenario from the corpus, failing the test if it is absent.
 func findScenario(t *testing.T, name string) scenario.Scenario {
 	t.Helper()
 	for _, sc := range scenario.All() {
@@ -28,10 +27,9 @@ func findScenario(t *testing.T, name string) scenario.Scenario {
 	return scenario.Scenario{}
 }
 
-// TestClipRotatedRectPersists guards the fix for the clip-rotated-rect scenario: the rotated clip must be baked into
-// device space and persist while the axis-aligned blue bars draw. Before the fix, the clip was wrapped in a
-// Save/Restore pair, so Restore popped the clip together with the CTM and the bars rendered fully unclipped — the
-// scenario silently tested no clipping at all.
+// TestClipRotatedRectPersists guards the clip-rotated-rect scenario's setup: the rotated clip must be baked into device
+// space and persist while the axis-aligned blue bars draw. Wrapping the clip in a Save/Restore pair pops it together
+// with the CTM, so the bars render unclipped and the scenario tests no clipping at all.
 //
 // The check renders through the raster backend (the raster gate's own path, no GL needed) and samples pixels chosen so
 // the buggy and fixed outputs disagree:
@@ -60,14 +58,11 @@ func TestClipRotatedRectPersists(t *testing.T) {
 		return r == 0xFF && g == 0xFF && b == 0xFF && a == 0xFF
 	}
 
-	// A bar pixel outside the rotated clip must be clipped away (white). If it were blue, the clip did not persist —
-	// exactly the bug this scenario is meant to exercise.
 	if !isWhite(5, 5) {
 		r, g, b, a := at(5, 5)
 		t.Errorf("pixel (5,5) is on bar 0 but outside the rotated clip: want white background, got RGBA %#02x %#02x "+
 			"%#02x %#02x — the rotated clip did not persist", r, g, b, a)
 	}
-	// A bar pixel inside the rotated clip must still paint blue: the clip persisting must not clip the whole scene.
 	if !isBlue(136, 128) {
 		r, g, b, a := at(136, 128)
 		t.Errorf("pixel (136,128) is on a bar inside the rotated clip: want blue, got RGBA %#02x %#02x %#02x %#02x",

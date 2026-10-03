@@ -9,8 +9,8 @@
 
 // Direct unit tests for the span/segment/coincidence collapse surface (opSpan.release,
 // opSegment.markAllDone/markDone/release, opCoincidence.release/fixUp). These are reachable from addIntersectTs via
-// mergeMatches/checkForCollapsedCoincidence but only fire on pathological concurrent geometry that the op-driver test
-// corpus exercises; the tests here drive them directly at the unit level.
+// mergeMatches/checkForCollapsedCoincidence but only fire on pathological geometry, so the tests here drive them
+// directly.
 
 package pathops
 
@@ -144,9 +144,8 @@ func TestOpCoincidenceReleaseAndFixUp(t *testing.T) {
 	})
 }
 
-// TestOpSpanBaseAddOpp exercises the span-level addOpp: two crossing segments' coincident-point spans are linked into a
-// shared pt-t loop. (AddIntersectTs uses the pt-t-level addOpp; this covers the span form its moveNearby consumer will
-// use.)
+// TestOpSpanBaseAddOpp exercises the span-level addOpp (used by the coincidence and move phases, where addIntersectTs
+// uses the pt-t-level form): two crossing segments' coincident-point spans are linked into a shared pt-t loop.
 func TestOpSpanBaseAddOpp(t *testing.T) {
 	head, state := newTestContourHead()
 	segA := head.addLine([]geom.Point{pt(0, 0), pt(10, 0)})

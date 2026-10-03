@@ -30,7 +30,7 @@ type opContour struct {
 	ccw     int            // ray-cast winding orientation: -1 unset, else 0/1
 	count   int            // number of segments appended
 	bounds  pathOpsBounds  // the union of all segment bounds
-	done    bool           // set by findSortableTop once every segment is done
+	done    bool           // set by findSortableTop or undoneSpan once every segment is done
 	operand bool           // true for the second argument to a binary operator
 	reverse bool           // true when the contour must be written back reversed (fix-winding only)
 	xor     bool           // true when the source path had even-odd fill
@@ -65,26 +65,20 @@ func (c *opContour) appendSegment() *opSegment {
 	return result
 }
 
-// addLine appends a new line segment built from pts to the contour.
 func (c *opContour) addLine(pts []geom.Point) *opSegment {
 	return c.appendSegment().addLine(pts, c)
 }
 
-// addQuad appends a new quadratic-curve segment built from pts to the contour.
 func (c *opContour) addQuad(pts []geom.Point) { c.appendSegment().addQuad(pts, c) }
 
-// addConic appends a new conic segment built from pts and weight to the contour.
 func (c *opContour) addConic(pts []geom.Point, weight float32) {
 	c.appendSegment().addConic(pts, weight, c)
 }
 
-// addCubic appends a new cubic-curve segment built from pts to the contour.
 func (c *opContour) addCubic(pts []geom.Point) { c.appendSegment().addCubic(pts, c) }
 
-// complete finalizes the contour once all its segments have been added.
 func (c *opContour) complete() { c.setBounds() }
 
-// setBounds recomputes the contour's bounds as the union of all its segments' bounds.
 func (c *opContour) setBounds() {
 	segment := &c.head
 	c.bounds = segment.bounds
@@ -93,7 +87,6 @@ func (c *opContour) setBounds() {
 	}
 }
 
-// first returns the contour's first segment.
 func (c *opContour) first() *opSegment { return &c.head }
 
 // missingCoincidence runs the per-segment check across the contour, returning whether any segment found a missing
@@ -128,7 +121,6 @@ func (c *opContour) moveNearby() bool {
 	return true
 }
 
-// calcAngles builds the angle loops for every segment in the contour.
 func (c *opContour) calcAngles() {
 	for segment := c.first(); segment != nil; segment = segment.next {
 		segment.calcAngles()
@@ -165,26 +157,20 @@ func (c *opContour) less(rh *opContour) bool {
 	return c.bounds.top < rh.bounds.top
 }
 
-// setNext links contour as the next contour after c in the list.
 func (c *opContour) setNext(contour *opContour) { c.next = contour }
 
-// setXor marks whether this contour's source path used even-odd fill.
 func (c *opContour) setXor(isXor bool) { c.xor = isXor }
 
-// setOppXor marks whether the opposite operand's path used even-odd fill.
 func (c *opContour) setOppXor(isOppXor bool) { c.oppXor = isOppXor }
 
-// setCcw records the ray-cast winding orientation (used by the fix-winding phase).
 func (c *opContour) setCcw(ccw int) { c.ccw = ccw }
 
 // isCcw returns the ray-cast winding orientation findSortableTop recorded during the fix-winding phase (-1 until set,
 // then 0/1).
 func (c *opContour) isCcw() int { return c.ccw }
 
-// setReverse flags the contour to be reverse-written (fix-winding only).
 func (c *opContour) setReverse() { c.reverse = true }
 
-// reversed reports whether the contour is flagged to be reverse-written.
 func (c *opContour) reversed() bool { return c.reverse }
 
 // resetReverse clears the ccw/reverse state on this contour and every non-empty contour after it (fixWinding calls this
@@ -199,7 +185,6 @@ func (c *opContour) resetReverse() {
 	}
 }
 
-// markAllDone flags every span of every segment in the contour done.
 func (c *opContour) markAllDone() {
 	for segment := &c.head; segment != nil; segment = segment.next {
 		segment.markAllDone()
@@ -243,11 +228,9 @@ func (c *opContour) toReversePath(writer *pathWriter) {
 	writer.assemble()
 }
 
-// opContourHead is the head of the contour list. sortContourList wants to re-seat the walk's starting point at
-// whichever contour has the smallest bounds, but a Go type embedding opContour by value cannot be re-seated to an
-// arbitrary heap contour. So this type keeps the first-built contour as physical storage (the embedded opContour) and
-// redirects the walk head through sortedHead, which sortContourList points at the bounds-smallest contour. Before
-// sorting, sortedHead is nil and the walk starts at the embedded contour.
+// opContourHead is the head of the contour list. sortContourList re-seats the walk's start at the bounds-smallest
+// contour, but the embedded first-built opContour cannot be re-seated, so the walk starts from sortedHead instead (nil
+// before sorting, when the walk starts at the embedded contour).
 type opContourHead struct {
 	sortedHead *opContour // sortContourList's bounds-smallest head (nil before sorting)
 	opContour
@@ -305,7 +288,6 @@ type opContourBuilder struct {
 	lastIsLine bool          // true when lastLine holds a pending line not yet appended
 }
 
-// newOpContourBuilder returns a builder that appends coalesced segments to contour.
 func newOpContourBuilder(contour *opContour) *opContourBuilder {
 	return &opContourBuilder{contour: contour}
 }
@@ -358,7 +340,6 @@ func (b *opContourBuilder) addQuad(pts []geom.Point) {
 	b.contour.addQuad(pts)
 }
 
-// flush appends the pending line to the contour, if any is buffered.
 func (b *opContourBuilder) flush() {
 	if !b.lastIsLine {
 		return

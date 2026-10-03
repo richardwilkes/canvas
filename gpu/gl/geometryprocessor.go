@@ -240,7 +240,6 @@ type GPBase struct {
 	processorBase
 }
 
-// initGP initializes the base with the processor's class ID.
 func (b *GPBase) initGP(classID ClassID) { b.classID = classID }
 
 func (b *GPBase) gpBase() *GPBase { return b }
@@ -251,7 +250,6 @@ func (b *GPBase) NumTextureSamplers() int { return len(b.textureSamplers) }
 // TextureSampler returns the i'th texture sampler.
 func (b *GPBase) TextureSampler(i int) *TextureSampler { return &b.textureSamplers[i] }
 
-// setTextureSamplers records the processor's texture samplers.
 func (b *GPBase) setTextureSamplers(samplers []TextureSampler) { b.textureSamplers = samplers }
 
 // NumVertexAttributes returns the number of initialized vertex attributes.
@@ -278,17 +276,14 @@ func (b *GPBase) VertexStride() int { return b.vertexAttributes.Stride() }
 // InstanceStride returns the byte stride between instances.
 func (b *GPBase) InstanceStride() int { return b.instanceAttributes.Stride() }
 
-// setVertexAttributesWithImplicitOffsets sets the vertex attributes, assigning offsets from ordering.
 func (b *GPBase) setVertexAttributesWithImplicitOffsets(attrs []Attribute) {
 	b.vertexAttributes.InitImplicit(attrs)
 }
 
-// setInstanceAttributesWithImplicitOffsets sets the instance attributes, assigning offsets from ordering.
 func (b *GPBase) setInstanceAttributesWithImplicitOffsets(attrs []Attribute) {
 	b.instanceAttributes.InitImplicit(attrs)
 }
 
-// gpAttributeKey appends a geometry processor's vertex and instance attribute layouts to the shader program cache key.
 func gpAttributeKey(gp GeometryProcessor, b *gpu.KeyBuilder) {
 	b.AppendComment("vertex attributes")
 	gp.gpBase().vertexAttributes.AddToKey(b)
@@ -402,7 +397,7 @@ const (
 )
 
 // collectTransforms performs a pre-order traversal of the fragment-processor trees that identifies FPs sampled with a
-// series of matrices applied to local coords and lifts those coords into varyings.
+// series of matrices applied to local or device coords and lifts those coords into varyings.
 func (b *GPImplBase) collectTransforms(vb *VertexShaderBuilder, varyingHandler *VaryingHandler, gpArgs *GPArgs, pipeline *Pipeline) FPCoordsMap {
 	localCoordsVar := gpArgs.LocalCoordVar
 	positionVar := gpArgs.PositionVar
@@ -432,7 +427,6 @@ func (b *GPImplBase) collectTransforms(vb *VertexShaderBuilder, varyingHandler *
 			panic("vertex-shader local coords must be a float type")
 		}
 		if baseLocalCoordVarying.Type() == GLSLTypeVoid {
-			// Initialize to the GP-provided coordinate.
 			baseLocalCoordVarying = NewVarying(localCoordsVar.Type())
 			varyingHandler.AddVarying("LocalCoord", &baseLocalCoordVarying)
 			vb.CodeAppendf("%s = %s;\n", baseLocalCoordVarying.VsOut(), localCoordsVar.Name())
@@ -453,13 +447,11 @@ func (b *GPImplBase) collectTransforms(vb *VertexShaderBuilder, varyingHandler *
 		if !localCoordsInFragment {
 			switch fp.fpBase().SampleUsage().Kind() {
 			case SampleUsageNone:
-				// This should only happen at the root.
 				if fp.fpBase().Parent() != nil {
 					panic("unsampled non-root FP")
 				}
 			case SampleUsagePassThrough:
 			case SampleUsageUniformMatrix:
-				// Update tracking of the last matrix and matrix props.
 				hasPerspective = hasPerspective || fp.fpBase().SampleUsage().HasPerspective()
 				lastMatrixFP = fp
 				lastMatrixTraversalIndex = traversalIndex
@@ -511,7 +503,6 @@ func (b *GPImplBase) collectTransforms(vb *VertexShaderBuilder, varyingHandler *
 				if info.traversalOrder != lastMatrixTraversalIndex {
 					panic("varying traversal order mismatch")
 				}
-				// The FP will use the varying in the fragment shader as its coords.
 				entry.CoordsVarying = info.varying.FsInVar()
 			}
 			entry.HasCoordsParam = false
@@ -624,7 +615,6 @@ func (b *GPImplBase) emitTransformCode(vb *VertexShaderBuilder, uniformHandler *
 		vb.CodeAppend(";\n")
 		vb.CodeAppend("}\n")
 	}
-	// We don't need this map anymore.
 	b.transformVaryingsMap = nil
 }
 
@@ -666,18 +656,16 @@ func ComputeMatrixKeys(caps *gpu.ShaderCaps, viewMatrix, localMatrix *geom.Matri
 
 // AddMatrixKeys shifts flags left to make room for, and appends, the view and local matrix keys.
 func AddMatrixKeys(caps *gpu.ShaderCaps, flags uint32, viewMatrix, localMatrix *geom.Matrix) uint32 {
-	// Shifting to make room for the matrix keys must not lose bits.
 	if flags<<(2*matrixKeyBits)>>(2*matrixKeyBits) != flags {
 		panic("flags overflow matrix key shift")
 	}
 	return flags<<(2*matrixKeyBits) | ComputeMatrixKeys(caps, viewMatrix, localMatrix)
 }
 
-// SetTransform uploads a matrix uniform created by WriteOutputPosition/WriteLocalCoord, skipping unused uniforms and
-// unchanged state.
+// SetTransform uploads a matrix uniform created by WriteOutputPositionWithMatrix/WriteLocalCoord, skipping unused
+// uniforms and unchanged state.
 func SetTransform(pdman *ProgramDataManager, caps *gpu.ShaderCaps, uniform UniformHandle, matrix, state *geom.Matrix, stateValid *bool) {
 	if !uniform.IsValid() || (state != nil && *stateValid && *state == *matrix) {
-		// No update needed.
 		return
 	}
 	if state != nil {
@@ -685,7 +673,7 @@ func SetTransform(pdman *ProgramDataManager, caps *gpu.ShaderCaps, uniform Unifo
 		*stateValid = true
 	}
 	if matrix.IsScaleTranslate() && !caps.ReducedShaderMode {
-		// The uniform is a float4 in this mode (ComputeMatrixKey chose the compact form).
+		// The uniform is a float4 here: writeVertexPosition chose the compact form.
 		pdman.Set4f(uniform, matrix.Get(0), matrix.Get(2), matrix.Get(4), matrix.Get(5))
 	} else {
 		pdman.SetMatrix(uniform, matrix)

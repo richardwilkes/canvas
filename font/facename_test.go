@@ -9,8 +9,8 @@
 
 // Typeface and FaceInfo must name a face identically: the font manager lists a face under FaceInfo.Family and keys
 // MatchFamily by the normalization of that name, so a typeface reporting a different FamilyName would be unreachable
-// under the name it is listed with. Every font in testdata carries only name ID 1, which cannot tell the precedence
-// rules apart, so these cases are synthesized.
+// under the name it is listed with. Every font in testdata carries only the legacy family and style names (IDs 1 and
+// 2), which cannot tell the precedence rules apart, so these cases are synthesized.
 
 package font
 

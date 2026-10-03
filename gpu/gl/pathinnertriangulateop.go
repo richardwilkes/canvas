@@ -32,8 +32,7 @@ import (
 // innerFanTriangulator
 
 // innerFanTriangulator triangulates the inner polygon(s) of a path (i.e., the triangle fan for a Redbook rendering
-// method). When combined with the outer curves and breadcrumb triangles, these produce a complete path. If a breadcrumb
-// collector is not provided, pathToPolys fails upon self intersection.
+// method). When combined with the outer curves and breadcrumb triangles, these produce a complete path.
 type innerFanTriangulator struct {
 	tri *triangulator
 }
@@ -139,7 +138,7 @@ func hullShaderEmitVertexCode(args *GPEmitArgs, _ *pathTessShaderImpl, gpArgs *G
 			"float w = p3.x;" +
 			"p3 = p2;" + // Duplicate the endpoint for shared code that also runs on cubics.
 			"if (is_non_triangular_conic_curve()) {" +
-			// Convert the points to a trapeziodal hull that circumscribes the conic.
+			// Convert the points to a trapezoidal hull that circumscribes the conic.
 			"vec2 p1w = p1 * w;" +
 			"float T_ = .51;" + // Bias outward a bit to ensure we cover the outermost samples.
 			"vec2 c1 = mix(p0, p1w, T_);" +
@@ -220,7 +219,7 @@ var pathInnerTriangulateOpClassID = GenOpClassID()
 // file.
 type pathInnerTriangulateOp struct {
 	drawOpNoClipToShape
-	// This buffer gets created by the fan triangulator during onPrepare.
+	// This buffer gets created by the fan triangulator during OnPrepare.
 	fanBuffer AnyBuffer
 	// Triangulates the inner fan.
 	fanTriangulator *innerFanTriangulator
@@ -388,7 +387,6 @@ func (o *pathInnerTriangulateOp) prePreparePrograms(args *tessProgramArgs, appli
 	o.fanTriangulator = newInnerFanTriangulator(o.path)
 	o.fanPolys = o.fanTriangulator.pathToPolys(&o.fanBreadcrumbs, &isLinear)
 
-	// Create a pipeline for stencil passes if needed.
 	var pipelineForStencils *Pipeline
 	if forceRedbookStencilPass || !isLinear { // Curves always get stenciled.
 		pipelineFlags := PipelineInputFlagNone
@@ -398,7 +396,6 @@ func (o *pathInnerTriangulateOp) prePreparePrograms(args *tessProgramArgs, appli
 		pipelineForStencils = tessMakeStencilOnlyPipeline(args, appliedClip, pipelineFlags)
 	}
 
-	// Create a pipeline for fill passes if needed.
 	if doFill {
 		o.pipelineForFills = tessMakePipeline(args, o.processors, appliedClip)
 	}
@@ -417,8 +414,6 @@ func (o *pathInnerTriangulateOp) prePreparePrograms(args *tessProgramArgs, appli
 	if o.fanPolys != nil {
 		switch {
 		case forceRedbookStencilPass:
-			// Use a standard Redbook "stencil then cover" algorithm instead of bypassing the stencil buffer to fill the
-			// fan directly.
 			o.pushFanStencilProgram(args, pipelineForStencils,
 				tessStencilPathSettings(o.path.FillType()))
 			if doFill {

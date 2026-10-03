@@ -51,7 +51,6 @@ func visitRegionSpans(rgn *Region, visitor func(geom.IRect)) {
 			visitor(geom.IRectLTRB(p[i], top, p[i+1], bot))
 			i += 2
 		} else if pairCount > 1 {
-			// we have to loop repeated in Y, sending each interval in Y -> X order
 			for y := top; y < bot; y++ {
 				for k := 0; k < int(pairCount); k++ {
 					visitor(geom.IRectLTRB(p[i+2*k], y, p[i+2*k+1], y+1))

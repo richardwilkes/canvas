@@ -34,8 +34,7 @@ func Encode(img image.Image, quality float32) ([]byte, error) {
 
 // EncodeFrame compresses img into a raw VP8 keyframe bitstream — the payload of a WebP "VP8 " chunk, without the RIFF
 // container — for callers that assemble an extended (VP8X) container around it, e.g. to add an ALPH alpha chunk.
-// quality follows the standard WebP 0..100 scale (values outside the range are clamped). Alpha is ignored (a lossy
-// alpha plane is coded separately by the caller).
+// quality and alpha are treated as in Encode.
 func EncodeFrame(img image.Image, quality float32) ([]byte, error) {
 	e, err := encode(img, quality)
 	if err != nil {

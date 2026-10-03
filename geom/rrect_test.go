@@ -14,7 +14,6 @@ import "testing"
 func TestRRectTransform(t *testing.T) {
 	rr := MakeRRect(RectLTRB(10, 20, 110, 80), 12, 8)
 
-	// Identity returns the rrect unchanged.
 	ident := IdentityMatrix()
 	got, ok := rr.Transform(&ident)
 	if !ok || got != rr {

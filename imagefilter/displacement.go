@@ -130,11 +130,8 @@ func (f *displacementFilter) OnFilterImage(ctx filtercore.Context) filtercore.Fi
 // OnInputLayerBounds requires the color input outset by the maximum displacement (since pixels that far away can move
 // into the desired output), joined with the displacement input's own requirement.
 func (f *displacementFilter) OnInputLayerBounds(mapping *filtercore.Mapping, desiredOutput geom.IRect, contentBounds *geom.IRect) geom.IRect {
-	// Pixels up to the maximum displacement away from desiredOutput can be moved into those bounds, so require that
-	// outset buffer from the color map.
 	requiredInput := f.outsetByMaxDisplacement(mapping, desiredOutput)
 	requiredInput = f.base.InputLayerBounds(displacementColor, mapping, requiredInput, contentBounds)
-	// Accumulate the required input for the displacement filter to cover the original desired out.
 	requiredInput.Join(f.base.InputLayerBounds(displacementInput, mapping, desiredOutput,
 		contentBounds))
 	return requiredInput

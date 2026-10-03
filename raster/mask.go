@@ -16,8 +16,7 @@ package raster
 
 import "github.com/richardwilkes/canvas/geom"
 
-// MaskFormat identifies a Mask's pixel format. The zero value is A8, keeping every existing Mask construction site an
-// A8 mask.
+// MaskFormat identifies a Mask's pixel format. The zero value is A8.
 type MaskFormat uint8
 
 // MaskFormat values.

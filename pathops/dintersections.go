@@ -7,11 +7,10 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// The sorted set of intersection results (t on each curve plus the point) with the coincidence bookkeeping. This file
-// carries the storage, the sorted insert/remove machinery, and the coincidence accessors; the actual line/line,
-// horizontal, and vertical intersection algorithms live in dlineintersect.go. The curve-specific entry points
-// (quad/conic/cubic) arrive with their geometry elsewhere. The result arrays hold up to 13 entries, the maximum
-// required across all curve/curve intersection cases this package handles.
+// The sorted set of intersection results (t on each curve plus the point) with the coincidence bookkeeping: storage,
+// sorted insert/remove, and coincidence accessors. The line/line, horizontal, and vertical intersection algorithms live
+// in dlineintersect.go, and the quad/conic/cubic entry points live with their geometry. The result arrays hold up to 13
+// entries, the maximum required across all curve/curve intersection cases this package handles.
 
 package pathops
 
@@ -32,7 +31,7 @@ type intersections struct {
 func newIntersections() *intersections {
 	in := &intersections{}
 	in.reset()
-	in.max = 0 // require that the caller set the max
+	in.max = 0
 	return in
 }
 
@@ -105,7 +104,7 @@ func (in *intersections) setCoincident(index int) {
 // the coincidence bitfields. Returns the insertion index, or -1 if the entry was dropped.
 func (in *intersections) insert(one, two float64, pt dPoint) int {
 	if in.isCoin[0] == 3 && between(in.ts[0][0], one, in.ts[0][1]) {
-		// For now, don't allow a mix of coincident and non-coincident intersections.
+		// A mix of coincident and non-coincident intersections is not allowed.
 		return -1
 	}
 	var index int

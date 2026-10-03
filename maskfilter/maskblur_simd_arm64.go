@@ -13,9 +13,9 @@ package maskfilter
 
 import "simd/archsimd"
 
-// simdKernelsSupported reports whether the CPU can run the simd kernels. Everything the mask blur kernels compile to
-// on arm64 — VUMULL, VUZP1, VUZP2, VEXT, VADD, VDUP and the 64-bit lane moves — is baseline NEON, present on every
-// arm64 CPU Go supports.
+// simdKernelsSupported reports whether the CPU can run the simd kernels. Everything the mask blur kernels compile to on
+// arm64 — VUMULL, VZIP1, VUZP2, VEXT, VADD, VDUP and the 64-bit lane moves — is baseline NEON, present on every arm64
+// CPU Go supports.
 func simdKernelsSupported() bool { return true }
 
 // a8Narrow is whatever loop-invariant state storeA8 needs on this arch. arm64 gathers the high bytes with a single

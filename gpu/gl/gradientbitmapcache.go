@@ -7,13 +7,13 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// gradientBitmapCache implements the 256×1 LUT fallback for gradients whose fixed stops exceed the looping colorizer's
-// 128-color limit. The ramp is baked by evaluating the existing CPU gradient stages (shaders.EvalGradientRamp), so the
-// GPU LUT and a CPU render of the same gradient agree by construction. Design notes: the cache hangs off each
-// DirectContext (one per context, freed with it) instead of being a single cache shared across contexts, and the cache
-// key reduces to colors + interior positions + color type (no interpolation/dst-color-space plumbing — sRGB only — and
-// alphaType reduces to the end-premul convention: the LUT bakes the final premultiplication directly whenever any stop
-// is translucent, which is derivable from the colors already in the key).
+// gradientBitmapCache implements the 256×1 LUT fallback for gradients past the looping colorizer's limits (128 colors,
+// 64 intervals). The ramp is baked by evaluating the CPU gradient stages (shaders.EvalGradientRamp), so the GPU LUT and
+// a CPU render of the same gradient agree by construction. Design notes: the cache hangs off each DirectContext (one
+// per context, freed with it) instead of being a single cache shared across contexts, and the cache key reduces to
+// colors + interior positions + color type (no interpolation/dst-color-space plumbing — sRGB only — and alphaType
+// reduces to the end-premul convention: the LUT bakes the final premultiplication directly whenever any stop is
+// translucent, which is derivable from the colors already in the key).
 
 package gl
 
@@ -37,7 +37,7 @@ const (
 )
 
 // gradientRampKeyDomain keys the baked ramp textures in the per-context proxy cache; the counter gives each baked ramp
-// a fresh id (a re-baked ramp gets a fresh id, so an evicted entry's texture is never aliased).
+// a fresh id, so a re-baked ramp never aliases an evicted entry's texture.
 var (
 	gradientRampKeyDomain = gpu.GenerateUniqueKeyDomain()
 	gradientRampNextID    atomic.Uint32
@@ -66,9 +66,9 @@ func newGradientBitmapCache(maxEntries, resolution int) *gradientBitmapCache {
 }
 
 // buildGradientRampKey builds getGradient's key layout — count + colors + interior positions (pos[0] == 0 and
-// pos[count-1] == 1 are guaranteed by the stop fixing) — with the sRGB-only reduction: alphaType, interpolation, and
-// dstColorSpace have no equivalents here (alphaType is implied by the colors' opacity under the end-premul convention,
-// since colorsAreOpaque is redundant with the colors).
+// pos[count-1] == 1 are guaranteed by the stop fixing) + color type — with the sRGB-only reduction: alphaType,
+// interpolation, and dstColorSpace have no equivalents here (alphaType is implied by the colors' opacity under the
+// end-premul convention).
 func buildGradientRampKey(colors []colorcore.Color4f, positions []float32, colorType gpu.ColorType) []uint32 {
 	count := len(colors)
 	key := make([]uint32, 0, 1+4*count+(count-2)+1)

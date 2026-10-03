@@ -7,7 +7,7 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// Blur math for A8 masks — the only format this package's mask pipeline produces: BoxBlur (the mask blur filter engine
+// Blur math for A8 masks — the only format this package's mask pipeline produces: boxBlur (the mask blur filter engine
 // plus the four blur styles' post-passes) and the analytic rect blur (blurRect with its profile machinery), which the
 // nine-patch fast paths consume.
 
@@ -57,7 +57,7 @@ func clampSolidWithOrig(dst []uint8, dstRB int, src []uint8, srcRB, sw, sh int) 
 	}
 }
 
-// clampOuterWithOrig computes, for A8 masks: dst *= (255 - src)/255 where src != 0.
+// clampOuterWithOrig computes, for A8 masks: dst = dst * (256 - src)/256 where src != 0.
 func clampOuterWithOrig(dst []uint8, dstRB int, src []uint8, srcRB, sw, sh int) {
 	di, si := 0, 0
 	for y := 0; y < sh; y++ {
@@ -200,11 +200,11 @@ const (
 	computeBoundsAndRenderImage
 )
 
-// blurRect computes the analytic blur of an axis-aligned rectangle, used by the nine-patch rect fast path. scratch
-// supplies the pooled profile/scanline/output buffers (progress §14.1); the returned dst.Image aliases scratch.image
-// and is valid until the scratch is recycled (which the FilterRects caller does after drawNine). blurRect fills the
-// caller-provided dst; dst is a reused header on the pooled blurScratch, so the analytic rect blur allocates no mask
-// header per draw. Every field is (re)set here, so a recycled header's stale contents are never observed.
+// blurRect computes the analytic blur of an axis-aligned rectangle for the nine-patch rect fast path. scratch supplies
+// the pooled profile/scanline/output buffers; the returned dst.Image aliases scratch.image and is valid until the
+// scratch is recycled (which the FilterRects and FilterPath callers do after drawNine). dst is a reused header on the
+// pooled blurScratch, so no mask header is allocated per draw; every field is reset here, so a recycled header's stale
+// contents are never observed.
 func blurRect(sigma float32, src geom.Rect, style BlurStyle, createMode maskCreateMode, scratch *blurScratch, dst *raster.Mask) (margin geom.IPoint, ok bool) {
 	profileSize := int(geom.CeilToInt(6 * sigma))
 	if profileSize <= 0 {

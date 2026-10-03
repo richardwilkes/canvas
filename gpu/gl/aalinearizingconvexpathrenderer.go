@@ -23,9 +23,8 @@ import (
 	"github.com/richardwilkes/canvas/stroke"
 )
 
-// aaLinearizingMaxStrokeWidth is the stroke-width limit above which this renderer bails: the thicker the stroke, the
-// harder it is to produce high-quality results using tessellation. For the time being, we simply drop back to software
-// rendering above this stroke width.
+// aaLinearizingMaxStrokeWidth is the device-space stroke width above which this renderer declines non-rect shapes: the
+// thicker the stroke, the harder it is to produce high-quality results using tessellation.
 const aaLinearizingMaxStrokeWidth = float32(20.0)
 
 // aaFlatteningMaxVertices is the most vertices one draw can address: the indices are uint16 and recordDraw hands
@@ -152,9 +151,6 @@ func createLinesOnlyGP(tweakAlphaForCoverage, usesLocalCoords, wideColor bool) G
 		localCoordsType, nil, &identity)
 }
 
-//////////////////////////////////////////////////////////////////////////////
-// AAFlatteningConvexPathOp
-
 var aaFlatteningConvexPathOpClassID = GenOpClassID()
 
 // aaFlatteningConvexPathData holds one path's per-draw state within a batched aaFlatteningConvexPathOp.
@@ -202,7 +198,6 @@ func newAAFlatteningConvexPathOp(paint *Paint, viewMatrix *geom.Matrix, p *path.
 		join:        join,
 	})
 
-	// Compute bounds.
 	bounds := p.Bounds()
 	w := strokeWidth
 	if w > 0 {
@@ -246,7 +241,6 @@ func (o *aaFlatteningConvexPathOp) Finalize(caps *gpu.Caps, clip *AppliedClip, c
 		AnalysisCoverageSingleChannel, &o.paths[len(o.paths)-1].color, &o.wideColor)
 }
 
-// createProgramInfo builds the program info for this op's draw, if not already built.
 func (o *aaFlatteningConvexPathOp) createProgramInfo(state *OpFlushState) {
 	gp := createLinesOnlyGP(o.helper.CompatibleWithCoverageAsAlpha(),
 		o.helper.UsesLocalCoords(), o.wideColor)
@@ -337,8 +331,7 @@ func (o *aaFlatteningConvexPathOp) OnPrepare(state *OpFlushState) {
 			continue
 		}
 		if batch.vertexCount+currentVertices > aaFlatteningMaxVertices {
-			// If we added the current instance, we would overflow the indices we can store in a uint16. Draw what we've
-			// got so far and reset.
+			// Adding the current instance would overflow the uint16 indices, so draw what we have so far and reset.
 			o.recordBatch(state, &batch)
 		}
 		currentIndices := tess.numIndices()
@@ -384,9 +377,6 @@ func (o *aaFlatteningConvexPathOp) OnCombineIfPossible(t Op) CombineResult {
 	return CombineResultMerged
 }
 
-//////////////////////////////////////////////////////////////////////////////
-// AALinearizingConvexPathRenderer
-
 // AALinearizingConvexPathRenderer is a PathRenderer for coverage-AA convex fills and miter/bevel strokes, rendered via
 // flattening/tessellation.
 type AALinearizingConvexPathRenderer struct{}
@@ -399,7 +389,7 @@ func NewAALinearizingConvexPathRenderer() *AALinearizingConvexPathRenderer {
 // Name implements PathRenderer.
 func (r *AALinearizingConvexPathRenderer) Name() string { return "AALinear" }
 
-// OnGetStencilSupport implements PathRenderer (the base-class kNoSupport default).
+// OnGetStencilSupport implements PathRenderer, reporting StencilSupportNone.
 func (r *AALinearizingConvexPathRenderer) OnGetStencilSupport(*StyledShape) StencilSupport {
 	return StencilSupportNone
 }
@@ -419,7 +409,7 @@ func (r *AALinearizingConvexPathRenderer) OnCanDrawPath(args *CanDrawPathArgs) C
 		return CanDrawPathNo
 	}
 	if args.Shape.Bounds().Width() <= 0 && args.Shape.Bounds().Height() <= 0 {
-		// Stroked zero length lines should draw, but this PR doesn't handle that case.
+		// Stroked zero length lines should draw, but this path renderer doesn't handle that case.
 		return CanDrawPathNo
 	}
 	strokeRec := args.Shape.Style().Rec()
@@ -480,7 +470,7 @@ func (r *AALinearizingConvexPathRenderer) OnDrawPath(args *DrawPathArgs) bool {
 	return true
 }
 
-// OnStencilPath implements PathRenderer (never reached: kNoSupport).
+// OnStencilPath implements PathRenderer (never reached: StencilSupportNone).
 func (r *AALinearizingConvexPathRenderer) OnStencilPath(*StencilPathArgs) {
 	panic("AALinearizingConvexPathRenderer cannot stencil paths")
 }

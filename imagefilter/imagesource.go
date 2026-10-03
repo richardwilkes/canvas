@@ -30,10 +30,9 @@ type imageSourceFilter struct {
 	dstRect geom.Rect // parameter space
 }
 
-// Image builds an image-source filter drawing image from srcRect to dstRect with the given sampling. A texture-backed
-// image is resolved to CPU pixels lazily at evaluation rather than eagerly at construction: the CPU filter DAG still
-// needs pixels, so a drawn filter takes the readback once (cpuImage), but a filter built and never drawn costs no
-// readback, and the source is carried in its native form so a future GPU-native filter backend can sample it directly.
+// Image builds an image-source filter drawing image from srcRect to dstRect with the given sampling. The source is
+// carried in its native form and resolved by the backend at evaluation, so a texture-backed image costs a readback only
+// when the raster backend draws the filter.
 func Image(image imagecore.DrawableImage, srcRect, dstRect geom.Rect, sampling shaders.SamplingOptions) filtercore.Filter {
 	if srcRect.IsEmpty() || dstRect.IsEmpty() || isNilImage(image) {
 		// There is no content to draw, so the filter produces transparent black.
@@ -90,9 +89,8 @@ func (f *imageSourceFilter) OnCTMCapability() filtercore.MatrixCapability {
 	return filtercore.MatrixCapabilityComplex
 }
 
-// OnFilterImage draws the source image. The image passes to MakeFromImage in its native form: the raster backend's
-// MakeImage resolves a texture backing to CPU pixels (the fallback's single readback, deferred off the construction
-// path); the GPU backend wraps it directly.
+// OnFilterImage draws the source image, passing it to MakeFromImage in its native form: the raster backend's MakeImage
+// resolves a texture backing to CPU pixels (a single readback); the GPU backend wraps it directly.
 //
 //nolint:gocritic // hugeParam: ctx is by value per the interface; see filtercore.Filter.OnFilterImage
 func (f *imageSourceFilter) OnFilterImage(ctx filtercore.Context) filtercore.FilterResult {

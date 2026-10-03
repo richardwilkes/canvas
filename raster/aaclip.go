@@ -10,7 +10,7 @@
 // AAClip: a run-length-encoded 8-bit-coverage clip — the antialiased counterpart of Region. Rows are packed [count,
 // alpha] byte pairs spanning exactly the bounds width; identical adjacent rows are collapsed through per-row YOffset
 // entries whose y is the last row covered. The head is an immutable-once-built struct shared by pointer; only freshly
-// constructed heads (inside Builder.finish and setRegion) are ever mutated.
+// constructed heads (inside aaClipBuilder.finish and SetRegion) are ever mutated.
 
 package raster
 
@@ -167,7 +167,6 @@ func (c *AAClip) SetRegion(rgn *Region) bool {
 				yArray = append(yArray, aaYOffset{y: top - 1, offset: uint32(len(xArray))})
 				appendXRun(0, bounds.Width())
 			}
-			// create a new record for this Y value
 			yArray = append(yArray, aaYOffset{y: bot - 1, offset: uint32(len(xArray))})
 			haveCurrY = true
 			prevRight = 0
@@ -365,9 +364,9 @@ func (c *AAClip) quickContains(left, top, right, bottom int32) bool {
 		return false
 	}
 
-	// Note: this compares the row band's last scanline against the exclusive bottom, so a band must extend one row past
-	// the query rect for the quick answer to be "yes" — a conservative quirk that callers' fallback paths rely on; keep
-	// it exact.
+	// This compares the row band's last scanline against the exclusive bottom, so a band must extend one row past the
+	// query rect for the quick answer to be "yes": a conservative quirk that callers' fallback paths rely on; keep it
+	// exact.
 	row, lastY := c.findRow(top)
 	if lastY < bottom {
 		return false
@@ -466,8 +465,8 @@ func countLeftRightZeros(row []uint8, width int32) (leftZ, riteZ int32) {
 	return leftZ, zeros
 }
 
-// trimLeftRight shrinks the clip bounds to remove uniform all-zero columns on the left and right edges, expressed as
-// offset adjustment plus boundary-run rewrites since the head is freshly built and unshared.
+// trimLeftRight shrinks the clip bounds to remove all-zero columns on the left and right edges, rewriting the freshly
+// built, unshared head in place.
 func (c *AAClip) trimLeftRight() bool {
 	if c.IsEmpty() {
 		return false
@@ -501,8 +500,8 @@ func (c *AAClip) trimLeftRight() bool {
 	c.bounds.Left += leftZeros
 	c.bounds.Right -= riteZeros
 
-	// For now we don't realloc the storage (for time), we just shrink in place: play tricks with the per-row offset for
-	// each row (and rewrite boundary run counts in place).
+	// Rather than reallocating the storage, shrink in place: advance each row's offset and rewrite its boundary run
+	// counts.
 	for i := range head.yOffsets {
 		yoff := &head.yOffsets[i]
 		row := head.data[yoff.offset:]
@@ -578,7 +577,7 @@ func (c *AAClip) trimTopBottom() bool {
 		return c.SetEmpty()
 	}
 	if skip > 0 {
-		// adjust the y values and fBounds.Top as we remove the skipped rows
+		// adjust the y values and bounds.Top as we remove the skipped rows
 		dy := head.yOffsets[skip-1].y + 1
 		head.yOffsets = head.yOffsets[skip:]
 		for i := range head.yOffsets {
@@ -1153,7 +1152,7 @@ func (bl *aaClipBuilderBlitter) BlitAntiRect(x, y, width, height int32, leftAlph
 	bl.lastY = y + height - 1
 }
 
-// BlitMask implements Blitter. The builder's forceRLE dispatch means the mask route is never taken.
+// BlitMask implements Blitter. blitPath scan-converts with forceRLE set, so the mask route is never taken.
 func (bl *aaClipBuilderBlitter) BlitMask(_ *Mask, _ geom.IRect) {
 	panic("aaClipBuilderBlitter: did not expect to get called here")
 }
@@ -1193,7 +1192,6 @@ func (bl *aaClipBuilderBlitter) BlitAntiH(x, y int32, alpha []Alpha, runs []int1
 		if localCount > 0 {
 			bl.builder.addRun(localX, y, alpha[off], localCount)
 		}
-		// Next run
 		off += int(count)
 		x += count
 	}

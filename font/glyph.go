@@ -12,10 +12,9 @@
 // or LCD16), and the device-space outline path, all filled lazily by the strike.
 //
 // Reachable-set trims: outline glyphs are A8 by default; ARGB32 arrives from the color-glyph scaler lanes (sbix/CBDT
-// PNG bitmaps and COLR layers — color emoji); LCD16 arrives when the Go API selects EdgingSubpixelAntiAlias on a
-// surface with known pixel geometry (the public surface still has no edging setter, so text drawn through it stays A8).
-// A BW format remains unreachable: EdgingAlias renders into an A8 plane too, just with hard (0 or 255) coverage.
-// Drawable glyphs are not produced by any reachable scaler and are omitted.
+// PNG bitmaps and COLR layers — color emoji); LCD16 arrives when the font selects EdgingSubpixelAntiAlias on a surface
+// with known pixel geometry. A BW format remains unreachable: EdgingAlias renders into an A8 plane too, just with hard
+// (0 or 255) coverage. Drawable glyphs are not produced by any reachable scaler and are omitted.
 
 package font
 
@@ -161,7 +160,6 @@ const (
 	MaskSDF                      // 8-bit signed distance field
 )
 
-// bytesPerPixel returns the per-pixel byte width for the format.
 func (f MaskFormat) bytesPerPixel() int32 {
 	switch f {
 	case MaskARGB32:
@@ -176,14 +174,14 @@ func (f MaskFormat) bytesPerPixel() int32 {
 // Glyph holds metrics plus the lazily-filled mask image and outline path. All fields are managed by the owning Strike
 // under its lock.
 type Glyph struct {
-	// Outline path in device (strike) space. nil until PrepareForPath, and nil forever when the glyph has no outline.
+	// Outline path in device (strike) space. nil until prepareForPath, and nil forever when the glyph has no outline.
 	// pathIsHairline records that the path should be drawn as a hairline stroke rather than filled.
 	pathVal *path.Path
 	// Cached intercept computations.
 	intercepts []*glyphIntercept
 	// Mask image. A8 glyphs fill Image (Width*Height bytes, row-major, rowBytes == Width); ARGB32 glyphs fill Image32
 	// (Width*Height premultiplied device words, row-major, matching raster.Pixmap's layout); LCD16 glyphs fill Image16
-	// (Width*Height 565 words, row-major). All are nil until PrepareForImage, and nil forever for empty or too-large
+	// (Width*Height 565 words, row-major). All are nil until prepareForImage, and nil forever for empty or too-large
 	// glyphs.
 	Image   []uint8
 	Image32 []uint32
@@ -234,7 +232,7 @@ func (g *Glyph) ImageSize() int {
 	return int(g.RowBytes()) * int(g.Height)
 }
 
-// HasImage reports whether PrepareForImage produced a mask (whichever plane the format uses).
+// HasImage reports whether the strike's prepareForImage produced a mask (whichever plane the format uses).
 func (g *Glyph) HasImage() bool {
 	switch g.Format {
 	case MaskARGB32:
@@ -281,10 +279,10 @@ func (g *Glyph) Mask(pos geom.Point) raster.Mask {
 	}
 }
 
-// Path returns the glyph's device-space outline, or nil (valid only after PrepareForPath).
+// Path returns the glyph's device-space outline, or nil (valid only after the strike's prepareForPath).
 func (g *Glyph) Path() *path.Path { return g.pathVal }
 
-// PathIsHairline reports whether the path should be drawn as a hairline (valid only after PrepareForPath).
+// PathIsHairline reports whether the path should be drawn as a hairline (valid only after the strike's prepareForPath).
 func (g *Glyph) PathIsHairline() bool { return g.pathIsHairline }
 
 // zeroBounds clears the bounds only (advance survives).

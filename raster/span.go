@@ -14,17 +14,17 @@ import "github.com/richardwilkes/canvas/colorcore"
 // The hot per-span kernels dispatch through package-level function variables (clampSpan01Fn, storeSpanSrcFn,
 // pmSrcOverRowFn, blitMaskOpaqueRowFn), so a build can substitute a vector form for the portable one: arm64 wires the
 // NEON kernels in span_arm64.go/span_arm64.s, and a goexperiment.simd build's init (span_simd.go) repoints the
-// variables at the archsimd kernels on qualifying hardware. Every substitute is bit-identical to the portable form
+// variables at the archsimd kernels on preferred hardware. Every substitute is bit-identical to the portable form
 // (locked by TestSpanNEONMatchesScalar and TestSpanSIMDMatchesScalar), so the choice of lane changes throughput only,
 // never rendered bytes.
 //
-// The portable forms live here, under Generic names and with no build tag, so every build compiles them: they are both
-// the default dispatch on platforms without a vector lane and the sub-chunk tail of every vector kernel, which calls
-// them rather than duplicating their arithmetic. (pmSrcOverRowGeneric and blitMaskOpaqueRowGeneric live next to their
-// blitters, in blitter_sprite.go and blitter_solid.go, for the same reason.)
+// The portable forms carry Generic names and no build tag, so every build compiles them: they are both the default
+// dispatch and the sub-chunk tail of every vector kernel, which calls them rather than duplicating their arithmetic.
+// pmSrcOverRowGeneric and blitMaskOpaqueRowGeneric live next to their blitters, in blitter_sprite.go and
+// blitter_solid.go.
 
-// The dispatch signatures. Each build's span_*.go declares one variable of each type (see span_generic.go and
-// span_arm64.go), and the goexperiment.simd init assigns over them.
+// The dispatch signatures. blit.go declares one variable of each type with the portable default, and the arm64 init
+// (span_arm64.go) and the goexperiment.simd init assign over them.
 type (
 	spanClampFn func(buf []colorcore.PMColor4f)
 	spanStoreFn func(buf []colorcore.PMColor4f, span []uint32)

@@ -7,11 +7,9 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// The cubic/line intersection solver (the general intersect plus the axis-aligned horizontal/vertical lanes and the ray
-// form), implemented by the lineCubicIntersections struct. The ray solve rotates the cubic into the line's frame,
-// solves the resulting cubic, and — when a solved root does not land on the axis — re-solves via the extrema/inflection
-// partition (searchRoots/binarySearch). Also implements the cubic case of near-endpoint handling (nearPointForCubic):
-// it drops a perpendicular from a point and ray-intersects the cubic.
+// The cubic/line intersection solver (general, horizontal, vertical, and ray forms) and nearPointForCubic, the cubic
+// case of near-endpoint handling. When a solved root does not land on the line, the solver re-solves via the
+// extrema/inflection partition (searchRoots/binarySearch).
 
 package pathops
 
@@ -164,7 +162,6 @@ func (lc *lineCubicIntersections) uniqueAnswer(cubicT float64, pt dPoint) bool {
 		if cubicT == existingCubicT {
 			return false
 		}
-		// check if midway on cubic is also same point. If so, discard this
 		cubicMidT := (existingCubicT + cubicT) / 2
 		cubicMidPt := lc.cubic.ptAtT(cubicMidT)
 		if cubicMidPt.approximatelyEqual(pt) {
@@ -350,9 +347,9 @@ func (lc *lineCubicIntersections) pinTs(cubicT, lineT float64, pt dPoint, ptSet 
 	if !lPt.roughlyEqual(cPt) {
 		return false, cubicT, lineT, pt
 	}
-	// The t values are accepted at roughlyEqual granularity: the check above only established that the two points are
-	// roughly equal, so a pair that is roughly but not approximately equal keeps whichever t the solver produced. The
-	// quad/quad lane refines such a pair with a binary search; this lane does not, and so reports a coarser t.
+	// The t values are accepted at roughlyEqual granularity: a pair that is roughly but not approximately equal keeps
+	// whichever t the solver produced. The quad/quad lane refines such a pair with a binary search; this lane does not,
+	// and so reports a coarser t.
 	if lT == 0 || lT == 1 || (ptSet == pointUninitialized && cT != 0 && cT != 1) {
 		pt = lPt
 	} else if ptSet == pointUninitialized {

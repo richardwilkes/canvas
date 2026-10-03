@@ -7,13 +7,13 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// Unit tests for the geometry-processor free lists (gppool.go). Like the op-pool and ProgramInfo/Pipeline pool tests
-// these need no GL context: they drive the borrow/recycle protocol directly and assert its safety invariant —
-// recycleGeomProc routes each pooled concrete type to its pool and fully zeroes it (so a reused shell carries no stale
-// attributes or config), and borrow hands back clean shells. The render-level cross-frame guard (that a reused GP shell
-// never leaks state into a later frame) is TestOpPoolCrossFrameStability in oppool_live_test.go, which exercises the
-// default/circle/ellipse GPs automatically because its churn scene draws stroked rects, rounded rects, circles, and
-// ovals through the batchable ops that recycle their programInfo (and hence GP).
+// Unit tests for the geometry-processor free lists (gppool.go). They need no GL context: they drive the borrow/recycle
+// protocol directly and assert its safety invariant — recycleGeomProc routes each pooled concrete type to its pool and
+// fully zeroes it (so a reused shell carries no stale attributes or config), and borrow hands back clean shells. The
+// render-level cross-frame guard (that a reused GP shell never leaks state into a later frame) is
+// TestOpPoolCrossFrameStability in oppool_live_test.go, which exercises the default/circle/ellipse GPs because its
+// churn scene draws stroked rects, rounded rects, circles, and ovals through the batchable ops that recycle their
+// programInfo (and hence GP).
 
 package gl
 
@@ -252,7 +252,6 @@ func pointsIntoAttrs(a *Attribute, attrs []Attribute) bool {
 func TestBorrowGeomProcReusesCleanShell(t *testing.T) {
 	m := geom.Matrix{}
 	m.SetIdentity()
-	// Prime and recycle a fully-optioned circle GP so a recycled shell is waiting in the pool.
 	recycleGeomProc(makeCircleGeometryProcessor(true, true, true, true, true, false, &m))
 
 	// A plain fill circle: only inPosition, inColor, inCircleEdge (attrs 0..2) are set.
@@ -273,8 +272,8 @@ func TestBorrowGeomProcReusesCleanShell(t *testing.T) {
 // TestBorrowQuadPerEdgeAAReusesCleanShell primes the quad-per-edge pool with a fully-optioned *textured* GP (sampler,
 // texture subset, geometry subset, vertex colors, local coords, saturate) and then builds the minimal plain GP through
 // the non-textured factory, which sets neither the textured/saturate flags nor the samplers and populates only the
-// position attribute. Everything else must come back zero — this is the reuse half of the full-zero-safety argument for
-// the newest pooled type: nothing the factory does not rewrite may survive from the prior use.
+// position attribute. Everything else must come back zero: nothing the factory does not rewrite may survive from the
+// prior use.
 func TestBorrowQuadPerEdgeAAReusesCleanShell(t *testing.T) {
 	recycleGeomProc(MakeTexturedQuadProcessor(&texturedQuadSpec, gpu.TextureType2D,
 		gpu.MakeSamplerState(gpu.WrapModeClamp, gpu.WrapModeClamp, gpu.FilterModeNearest,

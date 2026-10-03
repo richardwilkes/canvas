@@ -14,9 +14,8 @@ import (
 	"github.com/richardwilkes/canvas/geom"
 )
 
-// The stroking / dash / path-effect family. Dashing is the highest-value path-effect coverage (the
-// one real apps use constantly); the rest exercises each sk_path_effect_create_* constructor once through both
-// backends.
+// The stroking / dash / path-effect family. Dashing is the highest-value path-effect coverage (the one real apps use
+// constantly); the rest exercises each PathEffectSpec kind once.
 
 func dash(intervals []float32, phase float32) *PathEffectSpec {
 	return &PathEffectSpec{Kind: PathEffectDash, Intervals: intervals, Phase: phase}
@@ -119,8 +118,8 @@ func init() {
 	})
 
 	reg("patheffect-discrete", func(c Canvas) {
-		// The discrete effect is seeded (the ported LCGRandom over seedAssist), so every render produces the identical
-		// jitter — this is a determinism check as much as a rendering one.
+		// The discrete effect is seeded (patheffect's lcgRandom over seedAssist), so every render produces the same
+		// jitter: this is a determinism check as much as a rendering one.
 		c.Clear(white)
 		for i := range 5 {
 			p := Stroke(green, 3)

@@ -9,10 +9,9 @@
 
 // The vertex configuration (VertexSpec), CPU tessellation (inset/outset via TessellationHelper with per-vertex
 // coverage), specialized geometry processor, and draw issuing for ops that render per-edge anti-aliased quads. Trims:
-// the textured GP form (sampler + texture subset + saturate + color-space xform) belongs to TextureOp and arrives with
-// the image work — the attribute/key layout here already reserves its slots so keys stay stable across that addition;
-// specialized branch-elimination fast-path writers that would produce bytes identical to the generic writer are skipped
-// in favor of only the generic writer (worth revisiting if per-frame recording cost becomes a concern).
+// the texture color-space xform is always identity in an sRGB-only pipeline and is dropped (its key slot stays
+// reserved); the specialized fast-path vertex writers, which would produce bytes identical to the generic writer, are
+// skipped in favor of the generic writer (worth revisiting if per-frame recording cost becomes a concern).
 
 package gl
 
@@ -58,7 +57,7 @@ const (
 	IndexBufferOptionTriStrips
 )
 
-// CalcIndexBufferOption picks the index-buffer option for a batch of aa quads.
+// CalcIndexBufferOption picks the index-buffer option for a batch of numQuads quads with AA type aa.
 func CalcIndexBufferOption(aa gpu.AAType, numQuads int) IndexBufferOption {
 	switch {
 	case aa == gpu.AATypeCoverage:
@@ -76,7 +75,6 @@ func pmFitsInBytes(c colorcore.PMColor4f) bool {
 	return c.R >= 0 && c.R <= 1 && c.G >= 0 && c.G <= 1 && c.B >= 0 && c.B <= 1
 }
 
-// pmColorWhite is opaque white in premultiplied float form.
 var pmColorWhite = colorcore.PMColor4f{R: 1, G: 1, B: 1, A: 1}
 
 // MinQuadColorType picks the narrowest color encoding for color: "no color" for white, byte for other in-range colors,
@@ -92,8 +90,8 @@ func MinQuadColorType(color colorcore.PMColor4f) QuadColorType {
 	}
 }
 
-// VertexSpec is the vertex configuration for an op that renders per-edge AA quads. The vertex order (when enabled) is
-// device position, color, local position, subset, aa edge equations.
+// VertexSpec is the vertex configuration for an op that renders per-edge AA quads. The vertex order (each when enabled)
+// is device position, coverage, color, local position, geometry subset, texture subset.
 type VertexSpec struct {
 	deviceQuadType                QuadType
 	localQuadType                 QuadType
@@ -339,7 +337,6 @@ func (t *QuadTessellator) writeQuad(deviceQuad, localQuad *Quad, coverage [4]flo
 			t.writer.putF32(coverage[i])
 		}
 
-		// Save color.
 		if t.spec.HasVertexColors() {
 			wide := t.spec.ColorType() == QuadColorTypeFloat
 			c := color
@@ -352,7 +349,6 @@ func (t *QuadTessellator) writeQuad(deviceQuad, localQuad *Quad, coverage [4]flo
 			t.writer.putColor(c, wide)
 		}
 
-		// Save local position.
 		if t.spec.HasLocalCoords() {
 			t.writer.putF32(localQuad.X(i))
 			t.writer.putF32(localQuad.Y(i))
@@ -361,12 +357,10 @@ func (t *QuadTessellator) writeQuad(deviceQuad, localQuad *Quad, coverage [4]flo
 			}
 		}
 
-		// Save the geometry subset.
 		if t.spec.RequiresGeometrySubset() {
 			t.writer.putRect(geomSubset)
 		}
 
-		// Save the texture subset.
 		if t.spec.HasSubset() {
 			t.writer.putRect(texSubset)
 		}
@@ -417,7 +411,6 @@ func (t *QuadTessellator) Append(deviceQuad, localQuad *Quad, color colorcore.PM
 			return
 		}
 
-		// Reset the tessellation helper to match the current geometry.
 		t.aaHelper.Reset(deviceQuad, localQuad)
 
 		// Edge inset/outset distance ordered LBTR, set to 0.5 for a half pixel if the AA flag is turned on, or 0.0 if
@@ -509,7 +502,7 @@ func IssueQuadDraw(caps *Caps, renderPass *OpsRenderPass, spec *VertexSpec, runn
 
 	var maxNumQuads, numIndicesPerQuad, numVertsPerQuad int
 	if spec.IndexBufferOption() == IndexBufferOptionPictureFramed {
-		// AA uses 8 vertices and 30 indices per quad, basically nested rectangles.
+		// AA uses 8 vertices and 30 indices per quad (nested rectangles).
 		maxNumQuads = MaxNumAAQuads
 		numIndicesPerQuad = NumIndicesPerAAQuad
 		numVertsPerQuad = NumVertsPerAAQuad
@@ -582,8 +575,7 @@ func MakeQuadPerEdgeAAProcessor(spec *VertexSpec) GeometryProcessor {
 	return gp
 }
 
-// MakeTexturedQuadProcessor builds the textured geometry processor for spec (the color-space xform is identity in an
-// sRGB-only pipeline and dropped).
+// MakeTexturedQuadProcessor builds the textured geometry processor for spec.
 func MakeTexturedQuadProcessor(spec *VertexSpec, textureType gpu.TextureType, samplerState gpu.SamplerState, swizzle gpu.Swizzle, saturate bool) GeometryProcessor {
 	if !spec.HasLocalCoords() {
 		panic("the textured GP requires local coords")
@@ -659,7 +651,6 @@ func (g *quadPerEdgeAAGeometryProcessor) Name() string {
 
 // AddToKey packs the GP's shape/mode/format bits into the program key.
 func (g *quadPerEdgeAAGeometryProcessor) AddToKey(_ *gpu.ShaderCaps, b *gpu.KeyBuilder) {
-	// Texturing and device dimensionality are single-bit flags.
 	b.AddBool(g.attrs[qpaaAttrTexSubset].IsInitialized(), "subset")
 	b.AddBool(g.textured, "textured")
 	b.AddBool(g.needsPerspective, "perspective")
@@ -701,7 +692,7 @@ func (g *quadPerEdgeAAGeometryProcessor) AddToKey(_ *gpu.ShaderCaps, b *gpu.KeyB
 	}
 	b.AddBits(2, coverageKey, "coverageMode")
 
-	// The texture color-space xform is a textured-GP concern (always identity here); keep the key slot reserved.
+	// Reserved key slot for the dropped texture color-space xform.
 	b.Add32(0, "colorSpaceXform")
 }
 
@@ -709,13 +700,11 @@ func (g *quadPerEdgeAAGeometryProcessor) MakeProgramImpl(*gpu.ShaderCaps) GPProg
 	return &quadPerEdgeAAGPImpl{}
 }
 
-// quadPerEdgeAAGPImpl is the shader-emitting counterpart of quadPerEdgeAAGeometryProcessor.
 type quadPerEdgeAAGPImpl struct {
 	GPImplBase
 }
 
-// SetData is a no-op: the only uniform state would be the texture color-space xform helper, which belongs to the
-// textured form and is dropped.
+// SetData is a no-op: the only uniform state would be the dropped texture color-space xform.
 func (i *quadPerEdgeAAGPImpl) SetData(*ProgramDataManager, *gpu.ShaderCaps, GeometryProcessor) {}
 
 func (i *quadPerEdgeAAGPImpl) onEmitCode(args *GPEmitArgs, gpArgs *GPArgs) {
@@ -791,8 +780,7 @@ func (i *quadPerEdgeAAGPImpl) onEmitCode(args *GPEmitArgs, gpArgs *GPArgs) {
 			fragBuilder.CodeAppend("texCoord = clamp(texCoord, subset.xy, subset.zw);")
 		}
 
-		// Now modulate the starting output color by the texture lookup (modulate blend; the color-space xform is
-		// identity).
+		// Modulate the starting output color by the texture lookup.
 		lookup := fragBuilder.AppendTextureLookup(args.UniformHandler, args.TexSamplers[0],
 			"texCoord")
 		expr := lookup
@@ -804,8 +792,6 @@ func (i *quadPerEdgeAAGPImpl) onEmitCode(args *GPEmitArgs, gpArgs *GPArgs) {
 		}
 		fragBuilder.CodeAppendf("%s = %s;", args.OutputColor, expr)
 	} else if gp.saturate {
-		// Saturate is only intended for use with a texture, to account for the fact that TextureOp skips paint
-		// conversion, which normally handles this.
 		panic("saturate requires the textured form")
 	}
 
@@ -832,7 +818,6 @@ func (i *quadPerEdgeAAGPImpl) onEmitCode(args *GPEmitArgs, gpArgs *GPArgs) {
 			fragBuilder.CodeAppend("vec4 geoSubset;")
 			varyingHandler.AddPassThroughAttribute(gp.attrs[qpaaAttrGeomSubset].AsShaderVar(),
 				"geoSubset", InterpolationCanBeFlat)
-			// saturate here means clamp to [0,1].
 			fragBuilder.CodeAppendf(
 				"vec4 dists4 = clamp(vec4(1.0, 1.0, -1.0, -1.0) * ((%s).xyxy - geoSubset), "+
 					"0.0, 1.0);", fragBuilder.FragmentPosition(),

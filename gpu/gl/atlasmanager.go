@@ -9,10 +9,8 @@
 
 // Manages the lifetime of and access to the per-mask-format DrawOpAtlases. It is only available at flush time via the
 // OpFlushState, which implies that adding glyphs to the atlas is a flush-time operation. The manager doubles as the
-// atlas generation counter and registers itself as the drawing manager's on-flush callback: preFlush validates page
-// instantiation, postFlush compacts. getPackedGlyphImage covers the lanes this codebase's scaler can produce: A8 masks
-// (tight rows), ARGB32 color glyphs, LCD16 masks into the A565 atlas with the 565→8888 expansion for drivers
-// without a 565 format; the BW bit-expansion lane is unreachable.
+// atlas generation counter and is registered as a drawing manager on-flush callback: PreFlush validates page
+// instantiation, PostFlush compacts.
 
 package gl
 
@@ -48,8 +46,8 @@ func NewAtlasManager(proxyProvider *ProxyProvider, maxTextureBytes uint64, allow
 }
 
 // GetViews returns the atlas texture views for format; if it returns nil views, the client must not try to use other
-// functions on the atlas. This function *must* be called first, before other functions that use the atlas. Note that
-// proxies can be available with none active (i.e. none instantiated).
+// functions on the atlas. This function *must* be called first, before other functions that use the atlas. Proxies can
+// be available with none active (i.e. none instantiated).
 func (m *AtlasManager) GetViews(format gpu.MaskFormat) (views *[gpu.MaxMultitexturePages]SurfaceProxyView, numActiveProxies uint32) {
 	format = m.resolveMaskFormat(format)
 	if m.initAtlas(format) {
@@ -221,7 +219,7 @@ func (m *AtlasManager) AtlasGeneration(format gpu.MaskFormat) uint64 {
 	return m.getAtlas(format).AtlasGeneration()
 }
 
-// PreFlush implements OnFlushCallbackObject: it instantiates every active atlas page.
+// PreFlush implements OnFlushCallbackObject: it checks that every active atlas page is instantiated.
 func (m *AtlasManager) PreFlush() bool {
 	for i := range gpu.MaskFormatCount {
 		if m.atlases[i] != nil {

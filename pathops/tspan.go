@@ -9,16 +9,14 @@
 
 // The span layer the tSect curve/curve solver sits on: tCoincident (a point's perpendicular-projection match onto the
 // opposite curve) and tSpan (one [startT,endT] sub-range of a curve during binary subdivision, carrying the subdivided
-// curve part, its bounds, and its doubly-linked list of "bounded" opposite spans it may still intersect). These consume
-// the tCurve wrapper (tcurve.go) and are consumed in turn by the tSect solver body (tsect.go). Allocation is plain Go
-// allocation with no debug validate()/dump machinery. Pathops computes in double precision throughout.
+// curve part, its bounds, and its list of "bounded" opposite spans it may still intersect).
 
 package pathops
 
 import "math"
 
-// tCoincident is the perpendicular dropped from a point on one curve onto the opposite curve, recording whether it
-// lands back on the originating point (a coincidence) and, if so, the opposite curve's T and point there.
+// tCoincident is the perpendicular dropped from a point on one curve onto the opposite curve, recording the opposite
+// curve's T and point where it lands and whether that point matches the originating one (a coincidence).
 type tCoincident struct {
 	perpPt   dPoint
 	perpTVal float64 // perpendicular intersection T on the opposite curve
@@ -122,7 +120,6 @@ func (s *tSpan) pointFirst() dPoint { return s.part.pointAt(0) }
 // pointLast returns the span's last control point.
 func (s *tSpan) pointLast() dPoint { return s.part.pointAt(s.part.pointLast()) }
 
-// isBounded reports whether this span has any bounded (cross-linked) opposite spans.
 func (s *tSpan) isBounded() bool { return s.bounded != nil }
 
 // contains reports whether t lands in this span or any span after it.
@@ -181,10 +178,8 @@ func (s *tSpan) oppT(t float64) *tSpan {
 	return nil
 }
 
-// hasOppT reports whether some bounded span contains t.
 func (s *tSpan) hasOppT(t float64) bool { return s.oppT(t) != nil }
 
-// findOppT returns the bounded span containing t, if any.
 func (s *tSpan) findOppT(t float64) *tSpan { return s.oppT(t) }
 
 // markCoincident flags both of this span's coincidence records as matched.
@@ -193,7 +188,6 @@ func (s *tSpan) markCoincident() {
 	s.coinEnd.markCoincident()
 }
 
-// reset clears the span's bounded list.
 func (s *tSpan) reset() { s.bounded = nil }
 
 // resetBounds clears the linear/line flags and recomputes the span's bounds from curve.
@@ -255,7 +249,7 @@ func (s *tSpan) linearIntersects(q2 tCurve) int {
 	adj := s.part.pointAt(end).x - origX
 	opp := s.part.pointAt(end).y - origY
 	maxPart := math.Max(math.Abs(adj), math.Abs(opp))
-	sign := 0.0 // initialization to shut up warning in release build
+	sign := 0.0
 	for n := 0; n < q2.pointCount(); n++ {
 		qn := q2.pointAt(n)
 		dx := qn.y - origY
@@ -427,8 +421,9 @@ func (s *tSpan) split(work *tSpan) bool {
 	return s.splitAt(work, (work.startT+work.endT)*0.5)
 }
 
-// splitAt makes this span the [t, work.endT] half and shrinks work to [work.startT, t], relinking the list and copying
-// work's bounded list to both halves. Returns false if either half collapsed to a point.
+// splitAt makes this span the [t, work.endT] half and shrinks work to [work.startT, t], relinking the list, copying
+// work's bounded list to this span, and linking each of those bounded spans back to it. Returns false if either half
+// collapsed to a point.
 func (s *tSpan) splitAt(work *tSpan, t float64) bool {
 	s.startT = t
 	s.endT = work.endT

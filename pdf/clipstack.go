@@ -8,13 +8,11 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // This file implements a clip element deque with incremental finite-bound and gen-ID tracking, covering the subset of
-// clip operations the PDF device needs. The canvas Device interface only ever clips with rects and paths
-// (ClipRect/ClipPath/ClipRegion→path/ReplaceClip), so this only carries empty/rect/path elements and the
-// intersect/difference/replace ops; rounded-rect and clip-shader element kinds are unreachable here and are not
-// represented, and an oval clip stays a path element rather than being special-cased — observably identical for PDF,
-// whose emitter lowers every non-rect element to a device-space path anyway. Path-element conservative containment
-// (used only by quickContains's under-reporting fast path) returns false, the safe conservative answer the API contract
-// explicitly permits.
+// clip operations the PDF device needs. The canvas Device interface only clips with rects and paths (ClipRegion is
+// lowered to a path), so this only carries empty/rect/path elements and the intersect/difference/replace ops; Skia's
+// rounded-rect and clip-shader element kinds are not represented. An oval clip stays a path element rather than being
+// special-cased, which is observably identical for PDF: its emitter lowers every non-rect element to a device-space
+// path anyway. Path elements answer containment with false, the conservative under-report quickContains permits.
 
 package pdf
 
@@ -58,8 +56,7 @@ const (
 	insideOutBounds
 )
 
-// clipDeviceType is the shape kind stored by a clipElement (rounded-rect and shader clip kinds are not represented
-// here; see the file comment above).
+// clipDeviceType is the shape kind stored by a clipElement.
 type clipDeviceType uint8
 
 const (
@@ -84,22 +81,20 @@ type clipElement struct {
 	isIntersectionOfRects bool
 }
 
-// newRectElement creates a clip element for a rectangle clip at the given save level.
 func newRectElement(saveCount int, rect geom.Rect, m *geom.Matrix, op raster.ClipOp, doAA bool) *clipElement {
 	e := &clipElement{}
 	e.initRect(saveCount, rect, m, op, doAA)
 	return e
 }
 
-// newPathElement creates a clip element for a path clip at the given save level.
 func newPathElement(saveCount int, p *path.Path, m *geom.Matrix, op raster.ClipOp, doAA bool) *clipElement {
 	e := &clipElement{}
 	e.initPath(saveCount, p, m, op, doAA)
 	return e
 }
 
-// newReplaceRectElement creates a clip element that replaces the entire clip stack with a single rectangle, rather than
-// combining with what came before.
+// newReplaceRectElement creates a clip element that replaces the clip with a single rectangle, rather than combining
+// with what came before.
 func newReplaceRectElement(saveCount int, rect geom.Rect, doAA bool) *clipElement {
 	e := &clipElement{}
 	e.deviceSpaceRect = rect
@@ -151,7 +146,6 @@ func (e *clipElement) initAsPath(saveCount int, p *path.Path, m *geom.Matrix, op
 	e.initCommon(saveCount, op, doAA)
 }
 
-// setEmpty turns the element into an empty (nothing-visible) clip.
 func (e *clipElement) setEmpty() {
 	e.deviceSpaceType = clipEmpty
 	e.finiteBound = geom.Rect{}
@@ -162,13 +156,10 @@ func (e *clipElement) setEmpty() {
 	e.genID = emptyGenID
 }
 
-// isInverseFilled reports whether the element is a path clip with inverse fill (it excludes its interior rather than
-// including it).
 func (e *clipElement) isInverseFilled() bool {
 	return e.deviceSpaceType == clipPath && e.deviceSpacePath.IsInverseFillType()
 }
 
-// bounds returns the element's device-space bounding rect.
 func (e *clipElement) bounds() geom.Rect {
 	switch e.deviceSpaceType {
 	case clipRect:
@@ -191,8 +182,6 @@ func (e *clipElement) contains(rect geom.Rect) bool {
 	}
 }
 
-// asDeviceSpacePath returns the element's shape as a device-space path, converting a rect element to an equivalent
-// rectangular path.
 func (e *clipElement) asDeviceSpacePath() *path.Path {
 	switch e.deviceSpaceType {
 	case clipRect:
@@ -380,7 +369,8 @@ func (cs *ClipStack) ClipPath(p *path.Path, matrix *geom.Matrix, op raster.ClipO
 	cs.pushElement(newPathElement(cs.saveCount, p, matrix, op, doAA))
 }
 
-// ReplaceClip discards the current clip stack and replaces it with a single rectangle clip.
+// ReplaceClip replaces the clip with the single rectangle devRect: elements pushed at the current save level are
+// discarded and earlier ones are ignored until the replacement is restored away.
 func (cs *ClipStack) ReplaceClip(devRect geom.Rect, doAA bool) {
 	cs.pushElement(newReplaceRectElement(cs.saveCount, devRect, doAA))
 }
@@ -432,7 +422,7 @@ func (cs *ClipStack) pushElement(element *clipElement) {
 	element.updateBoundAndGenID(prior)
 }
 
-// priorOf returns the element below index idx (deque back's predecessor), or nil.
+// priorOf returns the element below index idx, or nil.
 func (cs *ClipStack) priorOf(idx int) *clipElement {
 	if idx-1 < 0 {
 		return nil
@@ -508,7 +498,6 @@ func (cs *ClipStack) internalQuickContains(rect geom.Rect) bool {
 	return true
 }
 
-// isAnyAA reports whether any element in the stack requests antialiasing.
 func (cs *ClipStack) isAnyAA() bool {
 	for _, e := range cs.deque {
 		if e.doAA {

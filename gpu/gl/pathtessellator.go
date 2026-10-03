@@ -40,7 +40,6 @@ type pathTessellator interface {
 	draw(flushState *OpFlushState)
 }
 
-// pathTessellatorBase carries state shared by both tessellator implementations.
 type pathTessellatorBase struct {
 	fixedVertexBuffer *Buffer
 	fixedIndexBuffer  *Buffer
@@ -87,7 +86,6 @@ type pathCurveTessellator struct {
 	pathTessellatorBase
 }
 
-// newPathCurveTessellator returns a curve tessellator ready for prepare/draw.
 func newPathCurveTessellator(infinitySupport bool, attribs PatchAttribs) *pathCurveTessellator {
 	t := &pathCurveTessellator{}
 	t.initPathTessellator(infinitySupport, attribs)
@@ -203,7 +201,6 @@ type pathWedgeTessellator struct {
 	pathTessellatorBase
 }
 
-// newPathWedgeTessellator returns a wedge tessellator ready for prepare/draw.
 func newPathWedgeTessellator(infinitySupport bool, attribs PatchAttribs) *pathWedgeTessellator {
 	t := &pathWedgeTessellator{}
 	t.initPathTessellator(infinitySupport, attribs|PatchAttribFanPoint)

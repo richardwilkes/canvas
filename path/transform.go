@@ -76,7 +76,6 @@ func (p *Path) transform(matrix *geom.Matrix, dst *Path) {
 			case VerbLine:
 				tmp.LineToPt(pts[1])
 			case VerbQuad:
-				// promote the quad to a conic
 				tmp.ConicToPt(pts[1], pts[2], geom.TransformW(pts[:3], 1, matrix))
 			case VerbConic:
 				tmp.ConicToPt(pts[1], pts[2], geom.TransformW(pts[:3], iter.ConicWeight(), matrix))
@@ -86,7 +85,6 @@ func (p *Path) transform(matrix *geom.Matrix, dst *Path) {
 				tmp.Close()
 			}
 		}
-		// Map the accumulated points through the matrix (with perspective division) as the final step.
 		matrix.MapPointsInPlace(tmp.points)
 		tmp.boundsValid = false
 		*dst = *tmp
@@ -114,11 +112,8 @@ func (p *Path) transform(matrix *geom.Matrix, dst *Path) {
 
 	canXformBounds := srcBoundsValid && matrix.RectStaysRect() && len(p.points) > 1
 
-	// Here we optimize the bounds computation, by noting if the bounds are already known, and if so, we just transform
-	// those as well and mark them as "known", rather than force the transformed path to have to recompute them.
-	//
-	// Special gotchas if the path is effectively empty (<= 1 point) or if it is non-finite. In those cases bounds need
-	// to stay empty, regardless of the matrix.
+	// If the bounds are already known, transform them too rather than make the transformed path recompute them. The
+	// bounds of a path that is effectively empty (<= 1 point) or non-finite must stay empty, regardless of the matrix.
 	if canXformBounds {
 		if srcFinite {
 			mapped, _ := matrix.MapRect(srcBounds)
@@ -152,12 +147,10 @@ func (p *Path) transform(matrix *geom.Matrix, dst *Path) {
 	// The transformed geometry gets a fresh identity: a new generation ID, assigned lazily.
 	dst.genID = 0
 
-	// Due to finite/fragile float numerics, we can't assume that a convex path remains convex after a transformation,
-	// so mark it as unknown here. However, some transformations are thought to be safe: axis-aligned values under
-	// scale/translate.
+	// Float numerics are fragile, so a convex path cannot be assumed to stay convex after a transformation and is
+	// marked unknown, except for the one case thought to be safe: axis-aligned points under scale/translate.
 	if convexity.IsConvex() {
 		if !matrix.IsScaleTranslate() || !isAxisAligned(dst.points) {
-			// Not safe to still assume we're convex...
 			convexity = ConvexityUnknown
 		} else {
 			det2x2 := matrix.Get(geom.MScaleX)*matrix.Get(geom.MScaleY) -
@@ -184,9 +177,6 @@ func isAxisAligned(pts []geom.Point) bool {
 	}
 	return true
 }
-
-//////////////////////////////////////////////////////////////////////////////
-// Perspective clip
 
 // halfPlane represents the line a*x + b*y + c = 0, used to clip a path against the w=0 plane under perspective.
 type halfPlane struct {
@@ -264,11 +254,10 @@ func (h *halfPlane) test(bounds geom.Rect) halfPlaneResult {
 	return halfPlaneMixed
 }
 
-// MapRect maps src through matrix, correctly for all matrix types. For non-perspective matrices it is
-// geom.Matrix.MapRect; for perspective matrices it routes the rect through a path transform (build a rect path,
-// transform it, take its bounds), which clips against the w = 1/16384 half-plane — behavior geom.Matrix.MapRect cannot
-// reproduce on its own, since the clip machinery lives above the geom layer. The boolean reports whether the result is
-// exactly the image of src.
+// MapRect maps src through matrix. Non-perspective matrices use geom.Matrix.MapRect; perspective matrices take the
+// bounds of a transformed rect path, which clips against the w = 1/16384 half-plane, something geom.Matrix.MapRect
+// cannot do because the clip machinery lives above the geom layer. The boolean reports whether the result is exactly
+// the image of src.
 func MapRect(matrix *geom.Matrix, src geom.Rect) (geom.Rect, bool) {
 	if !matrix.HasPerspective() {
 		return matrix.MapRect(src)

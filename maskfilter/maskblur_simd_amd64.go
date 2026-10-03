@@ -18,8 +18,8 @@ import "simd/archsimd"
 // VPSHUFB, VPMOVZXBW, VPSLLW, VPINSRQ, VPEXTRQ) except the broadcasts, which archsimd emulates at AVX2. AVX2 (Haswell,
 // 2013) is therefore the gate; unqualified CPUs keep the portable fp88 dispatch.
 //
-// Note what is deliberately *not* used here: Uint16x8.TruncToUint8 and Uint16x8.SaturateToUint8 are both AVX-512
-// (VPMOVWB / VPMOVUSWB) in archsimd, so the u16 -> u8 narrowing goes through VPSHUFB instead (see narrowHiBytes).
+// Uint16x8.TruncToUint8 and Uint16x8.SaturateToUint8 are deliberately not used: both are AVX-512 (VPMOVWB / VPMOVUSWB)
+// in archsimd, so the u16 -> u8 narrowing goes through VPSHUFB instead (see narrowHiBytes).
 func simdKernelsSupported() bool { return archsimd.X86.AVX2() }
 
 // a8Narrow is whatever loop-invariant state storeA8 needs on this arch. amd64's byte gather is VPSHUFB, which takes its

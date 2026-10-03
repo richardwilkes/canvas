@@ -8,11 +8,9 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // Unit tests for the ProgramInfo/Pipeline free lists (programinfopool.go). Like the op pool tests (oppool_test.go)
-// these need no GL context: they drive the borrow/recycle protocol directly and assert its safety invariants —
-// recycleProgramInfo fully zeroes the programInfo and resets its owned pipeline, and recyclePipeline drops every
-// retained fragment-processor reference while preserving a grown backing. The render-level cross-frame guard (that a
-// reused ProgramInfo/ Pipeline shell never leaks state into a later frame) is TestOpPoolCrossFrameStability in
-// oppool_live_test.go, which now exercises the pair automatically because the batchable ops recycle their programInfo.
+// these need no GL context: they drive the borrow/recycle protocol directly. The render-level cross-frame guard (that a
+// reused ProgramInfo/Pipeline shell never leaks state into a later frame) is TestOpPoolCrossFrameStability in
+// oppool_live_test.go, which exercises the pair because the batchable ops recycle their programInfo.
 
 package gl
 
@@ -25,8 +23,7 @@ import (
 )
 
 // TestRecycleProgramInfoNilSafe verifies recycleProgramInfo tolerates a nil programInfo — the merged-away-op case,
-// where createProgramInfo never ran (it runs at flush, strictly after all recording-time merging), so o.programInfo is
-// nil when the op is recycled at a merge pop.
+// where createProgramInfo never ran.
 func TestRecycleProgramInfoNilSafe(_ *testing.T) {
 	recycleProgramInfo(nil) // must not panic
 }
@@ -34,12 +31,11 @@ func TestRecycleProgramInfoNilSafe(_ *testing.T) {
 // TestRecyclePipelineClearsFPsAndPreservesBacking verifies recyclePipeline (a) drops every retained fragment-processor
 // reference so the pool pins no FPs — load-bearing because the element type is the pointer-carrying FragmentProcessor
 // interface, not the POD the op instance slices hold — while (b) preserving the grown backing (same array, capacity
-// kept, length 0) for reuse, and (c) zeroing every other field. This is the pipeline's use of the capacity-preserving
-// reset that programinfopool.go depends on.
+// kept, length 0) for reuse, and (c) zeroing every other field.
 func TestRecyclePipelineClearsFPsAndPreservesBacking(t *testing.T) {
 	p := borrowPipeline()
-	// Grow the FP backing past one element so it lives on the heap (as NewPipeline does for a paint with color +
-	// coverage FPs).
+	// Grow the FP backing past one element so recyclePipeline preserves it (as NewPipeline does for a paint with color
+	// + coverage FPs).
 	p.fragmentProcessors = append(p.fragmentProcessors,
 		MakeColorFP(colorcore.PMColor4f{R: 1, A: 1}),
 		MakeColorFP(colorcore.PMColor4f{G: 1, A: 1}))

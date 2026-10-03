@@ -355,10 +355,9 @@ func TestAAClipBlitterBlitMask(t *testing.T) {
 }
 
 // TestAAClipBlitterBlitMaskSkipsRunScratch: BlitMask merges each row into rowScratch/rowScratch16 and forwards a
-// one-row mask; it never reads or writes the runs/aa scanline scratch, so calling ensureRunsAndAA there was a leftover
-// from upstream (where the row mask points into the single shared scanline buffer) and only forced an otherwise
-// unneeded allocation on the first AA-clipped mask blit. The lazy allocation must still happen for the blits that do
-// use it.
+// one-row mask, never touching the runs/aa scanline scratch, so it must not call ensureRunsAndAA (upstream needs it
+// because its row mask points into that shared buffer). The lazy allocation must still happen for the blits that do use
+// it.
 func TestAAClipBlitterBlitMaskSkipsRunScratch(t *testing.T) {
 	var c AAClip
 	c.SetPath(path.New().AddCircle(48, 48, 30, geom.DirectionCW), geom.IRectLTRB(0, 0, aaGrid, aaGrid), true)

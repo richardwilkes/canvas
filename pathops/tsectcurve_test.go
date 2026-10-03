@@ -10,8 +10,8 @@
 // The end-to-end drivers for the tSect conic/cubic curve-vs-curve solver, covering conic/quad, conic/conic, cubic/quad,
 // cubic/conic, and cubic/cubic pairs. Every reported intersection must be a valid touch point (the two curves' points
 // at the reported T pair coincide within approximatelyEqual, and equal the recorded intersection point); coincident
-// corpora must report at least two intersections. Points are doubles; literals that were originally float32 are widened
-// through float32 via f32d to reproduce that precision exactly. cu4/cp3/dq/f32d live in the sibling _test.go files.
+// corpora must report at least two intersections. Points are doubles; f32d reproduces upstream's float32 literals
+// exactly. cu4/cp3/dq/f32d live in the sibling _test.go files.
 
 package pathops
 
@@ -23,8 +23,8 @@ import (
 func sprintfIdx(name string, i int) string     { return fmt.Sprintf("%s[%d]", name, i) }
 func sprintfPair(name string, a, b int) string { return fmt.Sprintf("%s[%d,%d]", name, a, b) }
 
-// assertValidTouch is the per-intersection validity check shared by all the drivers above: xy1≈xy2, and (when checkPt)
-// both ≈ the recorded intersection point.
+// assertValidTouch is the per-intersection validity check shared by the drivers below: xy1≈xy2, and (when checkPt) both
+// ≈ the recorded intersection point.
 func assertValidTouch(t *testing.T, in *intersections, c1, c2 interface{ ptAtT(float64) dPoint }, checkPt bool, ctx string) {
 	t.Helper()
 	for pt := 0; pt < in.usedCount(); pt++ {

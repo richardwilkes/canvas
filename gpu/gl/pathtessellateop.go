@@ -7,8 +7,8 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// pathTessellateOp tessellates a path directly to the color buffer, using a single render pass. This currently only
-// works for convex paths.
+// pathTessellateOp tessellates a path directly to the color buffer, using a single render pass. This only works for
+// convex paths.
 
 package gl
 
@@ -20,7 +20,6 @@ import (
 
 var pathTessellateOpClassID = GenOpClassID()
 
-// pathTessellateOp tessellates a convex path directly to the color buffer in a single render pass.
 type pathTessellateOp struct {
 	drawOpNoClipToShape
 	stencil      *UserStencilSettings
@@ -82,8 +81,7 @@ func (o *pathTessellateOp) UsesMSAA() bool { return o.aaType == gpu.AATypeMSAA }
 // UsesStencil implements DrawOp.
 func (o *pathTessellateOp) UsesStencil() bool { return !o.stencil.IsUnused() }
 
-// Finalize implements DrawOp: runs the processor set's finalization pass to compute the op's coverage/color analysis,
-// moving the transform to the CPU when local coords aren't needed.
+// Finalize implements DrawOp, moving the transform to the CPU when local coords aren't needed.
 func (o *pathTessellateOp) Finalize(caps *gpu.Caps, clip *AppliedClip, clampType gpu.ClampType) ProcessorAnalysis {
 	color := AnalysisColorConstant(o.headDraw().color)
 	analysis, overrideColor := o.processors.Finalize(color, AnalysisCoverageNone, clip, nil,

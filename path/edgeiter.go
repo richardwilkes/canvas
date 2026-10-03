@@ -43,9 +43,8 @@ func NewEdgeIter(p *Path) *EdgeIter {
 	return it
 }
 
-// Reset reinitializes the iterator to iterate p from the beginning, reusing the receiver's storage. A hot caller (the
-// scan converter's edge builder) holds one EdgeIter and Resets it per build instead of allocating a fresh *EdgeIter
-// each time.
+// Reset reinitializes the iterator to iterate p from the beginning, so a hot caller (the scan converter's edge builder)
+// can reuse one EdgeIter instead of allocating one per build.
 func (it *EdgeIter) Reset(p *Path) {
 	*it = EdgeIter{path: p, conicIdx: -1}
 }
@@ -96,7 +95,6 @@ func (it *EdgeIter) Next() (result EdgeIterResult, ok bool) {
 				return it.closeLine(), true
 			}
 		default:
-			// Actual edge.
 			v := int(verb)
 			ptsCount := (v + 2) / 2
 			cwsCount := (v & (v - 1)) / 2
@@ -134,9 +132,9 @@ func ConicToQuadsInto(pts []geom.Point, weight, tol float32, dst []geom.Point) (
 // kConicTol is the conic-to-quad tolerance the scan converter and edge clipper use.
 const kConicTol = 0.25
 
-// EdgeClipScratch bundles ClipPath's reusable temporaries — the edge iterator, the edge clipper, and the conic->quad
-// approximation buffer — so a hot caller (the scan converter's edge builder) can clip many paths without the per-call
-// *EdgeIter / *EdgeClipper allocations and the per-conic ConicToQuads allocation. The zero value is ready to use.
+// EdgeClipScratch bundles ClipPath's reusable temporaries (the edge iterator, the edge clipper, and the conic-to-quad
+// buffer) so a hot caller (the scan converter's edge builder) can clip many paths without per-call or per-conic
+// allocations. The zero value is ready to use.
 type EdgeClipScratch struct {
 	iter    EdgeIter
 	clipper geom.EdgeClipper

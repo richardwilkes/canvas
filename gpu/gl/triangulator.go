@@ -80,9 +80,9 @@ type triVertex struct {
 	leftEnclosingEdge  *triEdge   // Nearest edge in the AEL left of this vertex.
 	rightEnclosingEdge *triEdge   // Nearest edge in the AEL right of this vertex.
 	partner            *triVertex // Corresponding inner or outer vertex (for AA).
-	point              geom.Point // Vertex position
+	point              geom.Point
 	alpha              uint8
-	synthetic          bool // Is this a synthetic vertex?
+	synthetic          bool
 }
 
 func (v *triVertex) isConnected() bool { return v.firstEdgeAbove != nil || v.firstEdgeBelow != nil }
@@ -397,7 +397,6 @@ func (e *triEdge) intersect(other *triEdge, p *geom.Point, alpha *uint8) bool {
 	return true
 }
 
-// insertAbove inserts this edge into v's edges-above list.
 func (e *triEdge) insertAbove(v *triVertex, c triComparator) {
 	if e.top.point == e.bottom.point || c.sweepLt(e.bottom.point, e.top.point) {
 		return
@@ -425,7 +424,6 @@ func (e *triEdge) insertAbove(v *triVertex, c triComparator) {
 	}
 }
 
-// insertBelow inserts this edge into v's edges-below list.
 func (e *triEdge) insertBelow(v *triVertex, c triComparator) {
 	if e.top.point == e.bottom.point || c.sweepLt(e.bottom.point, e.top.point) {
 		return
@@ -561,7 +559,6 @@ type triMonotonePoly struct {
 	side      triSide
 }
 
-// addEdge appends edge to this monotone poly's chain on its configured side.
 func (m *triMonotonePoly) addEdge(edge *triEdge) {
 	if m.side == triSideRight {
 		edge.rightPolyPrev = m.lastEdge
@@ -658,7 +655,6 @@ func (w *triVertexWriter) emitVertex(v *triVertex) {
 	binary.LittleEndian.PutUint32(w.data[w.off+4:], math.Float32bits(v.point.Y))
 	w.off += 8
 	if w.emitCoverage {
-		// Normalize the byte alpha to [0,1].
 		binary.LittleEndian.PutUint32(w.data[w.off:], math.Float32bits(float32(v.alpha)*(1.0/255)))
 		w.off += 4
 	}
@@ -851,7 +847,6 @@ func (tri *triangulator) emitTriangle(prev, curr, next *triVertex, winding int, 
 	w.emitTriangle(prev, curr, next)
 }
 
-// emitPoly ear-clips every monotone section of poly.
 func (tri *triangulator) emitPoly(poly *triPoly, w *triVertexWriter) {
 	if poly.count < 3 {
 		return
@@ -863,7 +858,6 @@ func (tri *triangulator) emitPoly(poly *triPoly, w *triVertexWriter) {
 
 func triCoincident(a, b geom.Point) bool { return a == b }
 
-// makePoly allocates a new poly starting at v and prepends it to the *head list.
 func (tri *triangulator) makePoly(head **triPoly, v *triVertex, winding int) *triPoly {
 	poly := &triPoly{firstVertex: v, winding: winding}
 	poly.next = *head
@@ -871,7 +865,6 @@ func (tri *triangulator) makePoly(head **triPoly, v *triVertex, winding int) *tr
 	return poly
 }
 
-// appendPointToContour appends p as a new fully-opaque vertex onto contour.
 func (tri *triangulator) appendPointToContour(p geom.Point, contour *triVertexList) {
 	contour.append(&triVertex{point: p, alpha: 255})
 }
@@ -890,7 +883,6 @@ func makeTriQuadCoeff(pts *[3]geom.Point) triQuadCoeff {
 }
 
 func (q triQuadCoeff) eval(t float32) geom.Point {
-	// (A*t + B)*t + C
 	return geom.Point{
 		X: (q.a.X*t+q.b.X)*t + q.c.X,
 		Y: (q.a.Y*t+q.b.Y)*t + q.c.Y,
@@ -912,7 +904,7 @@ func triQuadErrorAt(pts *[3]geom.Point, t, u float32) float32 {
 // appendQuadraticToContour linearizes a quadratic Bezier into contour to within toleranceSqd.
 func (tri *triangulator) appendQuadraticToContour(pts *[3]geom.Point, toleranceSqd float32, contour *triVertexList) {
 	quad := makeTriQuadCoeff(pts)
-	aa := quad.a.X*quad.a.X + quad.a.Y*quad.a.Y // fA * fA, lanes summed below
+	aa := quad.a.X*quad.a.X + quad.a.Y*quad.a.Y
 	denom := 2.0 * aa
 	ab := quad.a.X*quad.b.X + quad.a.Y*quad.b.Y
 	t := float32(0)
@@ -1069,7 +1061,7 @@ func triFindEnclosingEdges(v *triVertex, edges *triEdgeList) (left, right *triEd
 }
 
 // triRewind removes and re-inserts active edges from the current vertex back to dst, restoring active-edge-list order
-// after topology repairs. A broken walk (nil prev) is treated as the same failure lane used for other inconsistencies.
+// after topology repairs. A broken walk (nil prev) fails like any other inconsistency.
 func triRewind(activeEdges *triEdgeList, current **triVertex, dst *triVertex, c triComparator) bool {
 	if current == nil || *current == dst || c.sweepLt((*current).point, dst.point) {
 		return true
@@ -1495,8 +1487,8 @@ func triPin(x, lo, hi float32) float32 {
 	return m
 }
 
-// triClamp pins x and y independently to the bounding box formed by the corners of min and max (min/max per the
-// ordering imposed by c).
+// triClamp pins p's x and y independently to the bounding box with corners minPt and maxPt (min/max per the ordering
+// imposed by c).
 func triClamp(p, minPt, maxPt geom.Point, c triComparator) geom.Point {
 	if c.direction == triDirectionHorizontal {
 		// With horizontal sorting min.x <= max.x, but there is no relation between the Y components unless min.x ==
@@ -1739,7 +1731,6 @@ func triMergeSort(vertices *triVertexList, c triComparator) {
 	triSortedMerge(&front, &back, vertices, c)
 }
 
-// triSortMesh sorts the mesh's vertices in sweep order.
 func triSortMesh(vertices *triVertexList, c triComparator) {
 	if vertices == nil || vertices.head == nil {
 		return
@@ -1928,7 +1919,6 @@ func (tri *triangulator) tessellate(vertices *triVertexList) (*triPoly, bool) {
 	return polys, true
 }
 
-// callTessellate dispatches to tessellateOverride if set, else the base tessellate().
 func (tri *triangulator) callTessellate(vertices *triVertexList, c triComparator) (*triPoly, bool) {
 	if tri.tessellateOverride != nil {
 		return tri.tessellateOverride(vertices, c)
@@ -1936,7 +1926,6 @@ func (tri *triangulator) callTessellate(vertices *triVertexList, c triComparator
 	return tri.tessellate(vertices)
 }
 
-// contoursToMesh drives stage 2: sanitize the contours, then build a mesh of edges.
 func (tri *triangulator) contoursToMesh(contours []triVertexList, mesh *triVertexList, c triComparator) {
 	tri.sanitizeContours(contours)
 	tri.buildEdges(contours, mesh, c)
@@ -2054,5 +2043,4 @@ func (tri *triangulator) polysToTriangles(polys *triPoly, vertexAllocator eagerV
 	return actualCount
 }
 
-// scalarAve returns the average of a and b.
 func scalarAve(a, b float32) float32 { return (a + b) / 2 }

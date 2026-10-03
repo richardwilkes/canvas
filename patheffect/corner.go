@@ -28,7 +28,6 @@ func computeStep(a, b geom.Point, radius float32) (geom.Point, bool) {
 	return step.Scaled(radius / dist), true
 }
 
-// cornerEffect is the corner path effect implementation.
 type cornerEffect struct {
 	noAsPoints
 	radius float32
@@ -90,7 +89,7 @@ func (c *cornerEffect) FilterPath(dst, src *path.Path, _ *stroke.Rec, _ *geom.Re
 			lastCorner = pts[1]
 			prevIsValid = true
 		case path.VerbQuad:
-			// TBD - just replicate the curve for now
+			// Quads, conics, and cubics are replicated unchanged, as in Skia.
 			if !prevIsValid {
 				dst.MoveToPt(pts[0])
 				prevIsValid = true
@@ -99,7 +98,6 @@ func (c *cornerEffect) FilterPath(dst, src *path.Path, _ *stroke.Rec, _ *geom.Re
 			lastCorner = pts[2]
 			firstStep = geom.Point{}
 		case path.VerbConic:
-			// TBD - just replicate the curve for now
 			if !prevIsValid {
 				dst.MoveToPt(pts[0])
 				prevIsValid = true
@@ -112,7 +110,6 @@ func (c *cornerEffect) FilterPath(dst, src *path.Path, _ *stroke.Rec, _ *geom.Re
 				dst.MoveToPt(pts[0])
 				prevIsValid = true
 			}
-			// TBD - just replicate the curve for now
 			dst.CubicToPt(pts[1], pts[2], pts[3])
 			lastCorner = pts[3]
 			firstStep = geom.Point{}

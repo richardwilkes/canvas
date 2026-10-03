@@ -464,7 +464,7 @@ func blurXRadius(radius int, s fp88, g *[5]fp88, d0, d8 *fp88) {
 	}
 }
 
-// blurRow runs the direct-convolution box blur across one row.
+// blurRow runs the direct-convolution blur across one row.
 func blurRow(radius int, g *[5]fp88, src []uint8, srcW int, dst []uint8, dstW int) {
 	// Clear the buffer to handle summing wider than source.
 	d0 := fp88Splat(fpHalf)
@@ -490,8 +490,8 @@ func blurRow(radius int, g *[5]fp88, src []uint8, srcW int, dst []uint8, dstW in
 // written and dstRemaining of them are still owed; d0 and d8 are the accumulator pair the main loop left behind, d0
 // covering the next 8 destination positions and d8 the 8 after those.
 //
-// This is a straight lift of what used to be blurRow's tail, kept separate because the simd kernel runs the same main
-// loop in vector registers and then hands its accumulator pair back here rather than duplicating the edge phases.
+// It is separate from blurRow because the simd kernel runs the same main loop in vector registers and then hands its
+// accumulator pair back here rather than duplicating the edge phases.
 func blurRowTail(radius int, g *[5]fp88, src []uint8, srcTail int, dst []uint8, dstRemaining int, d0, d8 fp88) {
 	di := 0
 
@@ -524,7 +524,7 @@ var (
 	directBlurYFn = directBlurY
 )
 
-// directBlurX runs the direct-convolution box blur horizontally over a rect.
+// directBlurX runs the direct-convolution blur horizontally over a rect.
 func directBlurX(radius int, gauss *[5]uint16, src []uint8, srcStride, srcW int, dst []uint8, dstStride, dstW, dstH int) {
 	var g [5]fp88
 	for i := range g {
@@ -558,7 +558,7 @@ func blurYRadius(radius int, s fp88, g *[5]fp88, regs *[8]fp88) fp88 {
 	return answer
 }
 
-// blurColumn runs the direct-convolution box blur down one column, for A8.
+// blurColumn runs the direct-convolution blur down one strip of width (at most 8) A8 columns.
 func blurColumn(radius, width int, g *[5]fp88, src []uint8, srcRB, srcH int, dst []uint8, dstRB int) {
 	var regs [8]fp88
 	for i := range regs {
@@ -583,7 +583,7 @@ func blurColumn(radius, width int, g *[5]fp88, src []uint8, srcRB, srcH int, dst
 	}
 }
 
-// directBlurY runs the direct-convolution box blur vertically over a rect, for A8 (strideOf8 = 8).
+// directBlurY runs the direct-convolution blur vertically over a rect, for A8 (strideOf8 = 8).
 func directBlurY(radius int, gauss *[5]uint16, src []uint8, srcRB, srcW, srcH int, dst []uint8, dstRB int) {
 	var g [5]fp88
 	for i := range g {

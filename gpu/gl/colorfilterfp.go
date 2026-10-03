@@ -8,9 +8,9 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // The color-filter FP conversions over the colorfilter descriptors. The reachable set: matrix (RGBA domain, clamped),
-// blend-mode, compose, luma, and high contrast (whose lighting collapses to blend/matrix in the descriptor
-// constructors). With no shader compiler, the runtime effects are hand-written GLSL-emitting FPs with the same uniforms
-// and specializations; the working-format sandwich is the colorXformFP pair.
+// blend-mode, compose, luma, and high contrast (lighting collapses to blend/matrix in the descriptor constructors).
+// With no shader compiler, the runtime effects are hand-written GLSL-emitting FPs with the same uniforms and
+// specializations; the working-format sandwich is the colorXformFP pair.
 
 package gl
 
@@ -23,9 +23,6 @@ import (
 	"github.com/richardwilkes/canvas/raster"
 	"github.com/richardwilkes/canvas/shaders"
 )
-
-//////////////////////////////////////////////////////////////////////////////
-// ColorMatrix.
 
 type colorMatrixFP struct {
 	FPBase
@@ -50,7 +47,6 @@ func ColorMatrixFP(child FragmentProcessor, matrix *[20]float32, unpremulInput, 
 		clampRGBOutput: clampRGBOutput,
 		premulOutput:   premulOutput,
 	}
-	// The effect supports constant output.
 	fp.initFP(GLSLFPClassID, FPConstantOutputForConstantInput)
 	fp.mergeOptimizationFlags(fpProcessorOptimizationFlags(child))
 	registerChildOf(fp, child, PassThroughSampleUsage())
@@ -101,8 +97,8 @@ func (f *colorMatrixFP) constantOutputForConstantInput(input colorcore.PMColor4f
 	v := [4]float32{c.R, c.G, c.B, c.A}
 	if f.unpremulInput {
 		// This must reproduce what EmitCode emits (rgb / max(a, 0.0001)) exactly, since the FP declares
-		// FPConstantOutputForConstantInput and a folded draw must render the same as the unfolded one. A plain 1/a with a
-		// zero-alpha special case diverges for a premul input with 0 < a < 1e-4.
+		// FPConstantOutputForConstantInput and a folded draw must render the same as the unfolded one. A plain 1/a with
+		// a zero-alpha special case diverges for a premul input with 0 < a < 1e-4.
 		a := max32(v[3], 1e-4)
 		v[0] /= a
 		v[1] /= a
@@ -171,9 +167,6 @@ func (i *colorMatrixImpl) onSetData(pdman *ProgramDataManager, fp FragmentProces
 	pdman.Set4fv(i.vUni, 1, f.v[:])
 }
 
-//////////////////////////////////////////////////////////////////////////////
-// Luma.
-
 type lumaFP struct {
 	FPBase
 }
@@ -221,9 +214,6 @@ func (i *lumaFPImpl) EmitCode(args *FPEmitArgs) {
 	args.FragBuilder.CodeAppend("return vec4(0.0, 0.0, 0.0, " +
 		"clamp(dot(vec3(0.2126, 0.7152, 0.0722), color.rgb), 0.0, 1.0));")
 }
-
-//////////////////////////////////////////////////////////////////////////////
-// High contrast, inside its working-format sandwich.
 
 type highContrastFP struct {
 	FPBase
@@ -305,7 +295,6 @@ func (i *highContrastImpl) EmitCode(args *FPEmitArgs) {
 	fb.CodeAppend("return vec4(color, inColor.a);")
 }
 
-// emitHighContrastRGBToHSL emits the RGB-to-HSL helper function used by the high-contrast filter.
 func (i *highContrastImpl) emitHighContrastRGBToHSL(fb *FragmentShaderBuilder) string {
 	name := fb.GetMangledFunctionName("high_contrast_rgb_to_hsl")
 	fb.EmitFunction(GLSLTypeHalf3, name, []ShaderVar{NewShaderVar("c", GLSLTypeHalf3)},
@@ -327,7 +316,6 @@ func (i *highContrastImpl) emitHighContrastRGBToHSL(fb *FragmentShaderBuilder) s
 	return name
 }
 
-// emitHslToRgb emits the HSL-to-RGB helper function used by the high-contrast filter.
 func (i *highContrastImpl) emitHslToRgb(fb *FragmentShaderBuilder) string {
 	name := fb.GetMangledFunctionName("hsl_to_rgb")
 	fb.EmitFunction(GLSLTypeHalf3, name, []ShaderVar{NewShaderVar("hsl", GLSLTypeHalf3)},
@@ -342,11 +330,8 @@ func (i *highContrastImpl) onSetData(pdman *ProgramDataManager, fp FragmentProce
 	pdman.Set1f(i.contrastUni, fp.(*highContrastFP).contrast)
 }
 
-//////////////////////////////////////////////////////////////////////////////
-// Dispatcher.
-
-// MakeColorFilterFP converts a color-filter descriptor to an FP chain over inputFP. On failure (nil filter or an
-// unreachable configuration) it returns (nil, false) and the caller must treat inputFP as consumed.
+// MakeColorFilterFP converts a color-filter descriptor to an FP chain over inputFP. A nil filter returns (nil, false),
+// and the caller must treat inputFP as consumed; a compose with a failing child returns (a clone of inputFP, false).
 func MakeColorFilterFP(args *FPArgs, cf shaders.ColorFilter, inputFP FragmentProcessor) (FragmentProcessor, bool) {
 	if cf == nil {
 		return nil, false
@@ -388,7 +373,6 @@ func MakeColorFilterFP(args *FPArgs, cf shaders.ColorFilter, inputFP FragmentPro
 	panic(fmt.Sprintf("unknown color filter type %T", cf))
 }
 
-// makeBlendColorFilterFP builds the FP chain for a blend-mode color filter.
 func makeBlendColorFilterFP(color colorcore.Color4f, mode raster.BlendMode, inputFP FragmentProcessor) (FragmentProcessor, bool) {
 	if mode == raster.BlendDst {
 		// If the blend mode is "dest," the blend color won't factor into it at all; return the input FP as-is.

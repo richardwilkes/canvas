@@ -10,15 +10,11 @@
 // The tSect curve/curve intersection solver: the iterative binary-subdivision engine that finds the intersections of
 // two curves by repeatedly splitting whichever curve's remaining span has the largest bounding box, trimming the halves
 // that cannot intersect the opposite curve, detecting coincident runs, and finally gathering the surviving
-// near-touching span ends. It sits on the span layer (tspan.go: tSpan/ tCoincident) and the tCurve wrapper (tcurve.go),
-// and is the first end-to-end consumer of the curve/line intersection lanes.
+// near-touching span ends. It sits on the span layer (tspan.go: tSpan/tCoincident) and the tCurve wrapper (tcurve.go).
+// Its entry points (intersectQuadQuad and the conic/cubic variants at the end of this file) feed addIntersections.
 //
-// Allocation is plain Go allocation, with a per-sect free list of deleted spans kept deliberately (rather than left
-// entirely to the GC) because the algorithm relies on deterministic span reuse. There is no debug validate()/dump
-// machinery. Pathops computes in double precision throughout.
-//
-// intersect(quad, quad) (intersectQuadQuad) and the conic/cubic entry points (via the tConic/tCubic wrappers) all feed
-// addIntersections, part of the engine backing Op/Simplify/Builder.
+// The per-sect free list of deleted spans is kept deliberately (rather than left to the GC) because the algorithm
+// relies on deterministic span reuse. Skia's debug validate()/dump machinery is omitted.
 
 package pathops
 
@@ -64,7 +60,6 @@ func newTSect(c tCurve) *tSect {
 // pointLast returns the curve's final control point.
 func (s *tSect) pointLast() dPoint { return s.curve.pointAt(s.curve.pointLast()) }
 
-// resetRemovedEnds clears the removed-start/removed-end tracking flags.
 func (s *tSect) resetRemovedEnds() {
 	s.removedStartT = false
 	s.removedEndT = false
@@ -133,7 +128,7 @@ func (s *tSect) addForPerp(span *tSpan, t float64) {
 	}
 }
 
-// addSplitAt splits span at t into a new span, re-bounding both halves.
+// addSplitAt splits span at t, returning the new second half; both halves are re-bounded.
 func (s *tSect) addSplitAt(span *tSpan, t float64) *tSpan {
 	result := s.addOne()
 	result.splitAt(span, t)
@@ -305,7 +300,6 @@ func (s *tSect) coincidentForce(sect2 *tSect, start1s, start1e float64) {
 	}
 }
 
-// coincidentHasT reports whether t falls within any already-recorded coincident span.
 func (s *tSect) coincidentHasT(t float64) bool {
 	for test := s.coincident; test != nil; test = test.next {
 		if between(test.startT, t, test.endT) {
@@ -315,7 +309,6 @@ func (s *tSect) coincidentHasT(t float64) bool {
 	return false
 }
 
-// collapsed returns the number of active spans that have collapsed to a point.
 func (s *tSect) collapsed() int {
 	result := 0
 	for test := s.head; test != nil; test = test.next {
@@ -404,7 +397,6 @@ func (s *tSect) hasBounded(span *tSpan) bool {
 	return false
 }
 
-// deleteEmptySpans drops every span whose bounded list is empty.
 func (s *tSect) deleteEmptySpans() bool {
 	next := s.head
 	safetyHatch := 1000
@@ -464,18 +456,16 @@ func (s *tSect) extractCoincident(sect2 *tSect, first, last *tSpan, result **tSp
 	} else if oppFirst == nil {
 		return false
 	}
-	// The end of the coincident run is not searched for the way its start is just above: if the run continues past
-	// last.endT into last.next, this simply takes the perpendicular at last.endT, so the run is truncated to the span
-	// boundary. That asymmetry is real and fires on every coincident pair probed -- intersecting a cubic with an exact
-	// subdivision of itself over [0.4, 0.8] reports the run ending at t=0.78125 (a subdivision boundary) rather than at
-	// 0.8 -- but the truncation is benign: the leftover tail is resolved as an ordinary intersection, so the output
-	// geometry is correct and the only cost is a redundant chop of the result at that boundary.
+	// The end of the run is not searched for the way its start is above: if the run continues past last.endT, this
+	// takes the perpendicular at last.endT, truncating the run to the span boundary. That asymmetry fires on every
+	// coincident pair probed (a cubic against its own [0.4, 0.8] subdivision reports the run ending at t=0.78125, a
+	// subdivision boundary), but it is benign: the leftover tail resolves as an ordinary intersection, so the output is
+	// correct and the only cost is a redundant chop at that boundary.
 	//
-	// The mirror of the prev/cutFirst branch above is not a drop-in fix. coincidentCheck captures next = last.next
-	// before calling and uses it as its loop cursor, so splitting or consuming that span leaves the caller pointing at
-	// deleted state; implementing the obvious symmetric search regressed pairs that are correct today, including ones
-	// whose runs this truncates. Extending the run here needs the caller's cursor contract sorted out first, and a
-	// failing case to justify it -- the truncation alone is not one.
+	// Mirroring the prev/cutFirst branch is not a drop-in fix. coincidentCheck captures next = last.next as its loop
+	// cursor before calling, so splitting or consuming that span leaves it pointing at deleted state; the obvious
+	// symmetric search regressed pairs that are correct today. Extending the run needs the caller's cursor contract
+	// sorted out first, and a failing case to justify it; the truncation alone is not one.
 	oppLast := last.findOppT(last.coinEnd.perpT())
 	if !oppMatched {
 		// oppStartT/oppEndT are not swapped alongside: both are recomputed from the merged run's perpendiculars below
@@ -631,14 +621,12 @@ func (s *tSect) intersects(span *tSpan, opp *tSect, oppSpan *tSpan, oppResult *i
 // isParallel reports whether thisLine runs parallel to a conic opp (the perpendiculars from both endpoints re-hit the
 // endpoints). Non-conic curves are never parallel here.
 func isParallel(thisLine dLine, opp tCurve) bool {
-	// The non-conic early-out is a deliberate upstream decision, not an unfinished edit: the parallel test below is
-	// only trusted for conics, and running it on quads/cubics was disabled because it broke too much to keep.
+	// The non-conic early-out is upstream's (a Skia FIXME: running the test on quads/cubics "breaks a lot of stuff").
 	//
-	// Do not treat a green suite as license to remove it. Deleting this guard was measured here: the test then runs on
-	// 3191 non-conic calls and answers true on 2382 of them, each one flipping linesIntersect from its closest-pair
-	// search to an outright "coincident" (return 2) -- and the whole suite plus the oracle gates still pass. That says
-	// the corpus does not discriminate the two behaviors, not that enabling it is safe. The oracle is frozen and cannot
-	// adjudicate the change, so the guard stays until a failing case argues otherwise.
+	// A green suite is not license to remove it. Without the guard the test runs on 3191 non-conic calls and answers
+	// true on 2382, each flipping linesIntersect from its closest-pair search to "coincident" (return 2), and the suite
+	// and oracle gates still pass: the corpus does not discriminate the two behaviors, which is not the same as safe.
+	// The oracle is frozen and cannot adjudicate the change, so the guard stays until a failing case argues otherwise.
 	if !opp.isConic() {
 		return false
 	}
@@ -954,8 +942,8 @@ func (s *tSect) removeByPerpendicular(opp *tSect) bool {
 	return true
 }
 
-// removeCoincident unlinks span from the active list and moves it to the coincident list (if it starts a coincident
-// run) or the deleted list.
+// removeCoincident unlinks span from the active list and moves it to the coincident list (when isBetween, or when its
+// start perpendicular lands within the opposite curve), else to the deleted list.
 func (s *tSect) removeCoincident(span *tSpan, isBetween bool) bool {
 	if !s.unlinkSpan(span) {
 		return false
@@ -989,7 +977,7 @@ func (s *tSect) removeSpan(span *tSpan) bool {
 	return s.markSpanGone(span)
 }
 
-// removeSpanRange deletes every span strictly between first and last.
+// removeSpanRange deletes every span after first, through last inclusive.
 func (s *tSect) removeSpanRange(first, last *tSpan) {
 	if first == last {
 		return
@@ -1230,7 +1218,6 @@ func (r *closestRecord) matesWith(mate *closestRecord) bool {
 		r.c2Span.startT == mate.c2Span.endT
 }
 
-// merge overwrites r's fields with mate's.
 func (r *closestRecord) merge(mate *closestRecord) {
 	r.c1Span = mate.c1Span
 	r.c2Span = mate.c2Span
@@ -1321,7 +1308,6 @@ func tSectBinarySearch(sect1, sect2 *tSect, in *intersections) {
 	coinLoopCount := maxCoinLoopCount
 	var start1s, start1e float64
 	for {
-		// find the largest bounds
 		largest1 := sect1.boundsMax()
 		if largest1 == nil {
 			if sect1.hung {
@@ -1330,7 +1316,6 @@ func tSectBinarySearch(sect1, sect2 *tSect, in *intersections) {
 			break
 		}
 		largest2 := sect2.boundsMax()
-		// split it
 		if largest2 == nil || (largest1.boundsMax > largest2.boundsMax ||
 			(!largest1.collapsed && largest2.collapsed)) {
 			if sect2.hung {

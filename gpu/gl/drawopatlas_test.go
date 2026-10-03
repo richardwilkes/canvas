@@ -198,9 +198,9 @@ func TestDrawOpAtlasConfigBasic(t *testing.T) {
 	testConfig(65536, 0, a8, sz(512, 512), sz(256, 256))
 }
 
-// TestDrawOpAtlasInlineUpload exercises the kTryAgain → inline-upload protocol: when every plot is used by the draw
-// being prepared, addToAtlas fails with kTryAgain; once the draw token advances, the LRU plot is evicted, cloned, and
-// its upload scheduled inline.
+// TestDrawOpAtlasInlineUpload exercises the try-again → inline-upload protocol: when every plot is used by the draw
+// being prepared, AddToAtlas returns AtlasErrorCodeTryAgain; once the draw token advances, the LRU plot is evicted,
+// cloned, and its upload scheduled inline.
 func TestDrawOpAtlasInlineUpload(t *testing.T) {
 	dc := newFakeDirectContext(t)
 	var counter gpu.AtlasGenerationCounter
@@ -226,7 +226,7 @@ func TestDrawOpAtlasInlineUpload(t *testing.T) {
 			len(uploadTarget.inlineUploads))
 	}
 
-	// Full atlas, every plot used by the pending draw: kTryAgain.
+	// Full atlas, every plot used by the pending draw: AtlasErrorCodeTryAgain.
 	var loc gpu.AtlasLocator
 	if code := atlas.AddToAtlas(rp, uploadTarget, testPlotSize, testPlotSize,
 		make([]byte, testPlotSize*testPlotSize), &loc); code != AtlasErrorCodeTryAgain {
@@ -301,7 +301,7 @@ func TestAtlasManagerInit(t *testing.T) {
 		t.Fatal("565 should resolve to the ARGB atlas when unsupported")
 	}
 
-	// The atlas manager survives FreeGpuResources (retainOnFreeGpuResources) but drops its atlases.
+	// The atlas manager survives FreeGpuResources (RetainOnFreeGpuResources) but drops its atlases.
 	dc.FreeGpuResources()
 	if am.AtlasForTest(gpu.MaskFormatA8) == a8 {
 		t.Fatal("FreeGpuResources should drop the atlases")
@@ -326,7 +326,7 @@ func TestAtlasManagerAddGlyph(t *testing.T) {
 	uploadTarget := &testingUploadTarget{t: t}
 	rp := dc.ResourceProvider()
 
-	// Per the getViews contract, it must be called before any atlas-using function.
+	// Per the GetViews contract, it must be called before any atlas-using function.
 	if views, _ := am.GetViews(gpu.MaskFormatA8); views == nil {
 		t.Fatal("GetViews(A8) failed")
 	}
@@ -433,14 +433,14 @@ func TestAtlasManagerAddGlyph(t *testing.T) {
 
 // TestAtlasFlushIntegration drives the atlas through a real DrawingManager.Flush on the fake driver: flush 1 adds one
 // subimage (ASAP lane, page activation); flush 2 adds two subimages to the now-full single-plot atlas (eviction/ASAP
-// lane + inline lane), checking the exact glTexSubImage2D counts attributable to atlas uploads and the postFlush
+// lane + inline lane), checking the exact glTexSubImage2D counts attributable to atlas uploads and the PostFlush
 // compaction bookkeeping.
 func TestAtlasFlushIntegration(t *testing.T) {
 	dc := newFakeDirectContext(t)
 	am := dc.AtlasManager()
 	am.SetAtlasDimensionsToMinimumForTest()
-	// The minimum ARGB atlas is a single 256x256 plot; capped to one page (as atlas manager test-only page cap) it is
-	// the easiest way to force the inline lane.
+	// The minimum ARGB atlas is a single 256x256 plot; capping it to one page is the easiest way to force the inline
+	// lane.
 	const format = gpu.MaskFormatARGB
 	const size = 256
 	if am.AtlasForTest(format) == nil {
@@ -471,7 +471,7 @@ func TestAtlasFlushIntegration(t *testing.T) {
 	if atlas.NumActivePages() != 1 {
 		t.Fatalf("active pages = %d, want 1", atlas.NumActivePages())
 	}
-	// postFlush ran: the atlas's compaction watermark advanced to the next flush token.
+	// PostFlush ran: the atlas's compaction watermark advanced to the next flush token.
 	if atlas.prevFlushToken != dc.DrawingManager().TokenTracker().NextFlushToken() {
 		t.Fatal("postFlush should have compacted the atlas")
 	}

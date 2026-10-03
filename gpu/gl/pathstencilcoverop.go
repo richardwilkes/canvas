@@ -79,7 +79,6 @@ func (i *boundingBoxShaderImpl) SetData(pdman *ProgramDataManager, _ *gpu.Shader
 func (i *boundingBoxShaderImpl) onEmitCode(args *GPEmitArgs, gpArgs *GPArgs) {
 	args.VaryingHandler.EmitAttributes(args.GeomProc)
 
-	// Vertex shader (gl_VertexID is always available on desktop core profiles).
 	args.VertBuilder.CodeAppend("vec2 unitCoord = vec2(gl_VertexID & 1, gl_VertexID >> 1);")
 	args.VertBuilder.CodeAppend(
 		// Bloat the bounding box by 1/4px to be certain we will reset every stencil value.
@@ -93,7 +92,6 @@ func (i *boundingBoxShaderImpl) onEmitCode(args *GPEmitArgs, gpArgs *GPArgs) {
 	gpArgs.LocalCoordVar.Set(GLSLTypeFloat2, "localcoord")
 	gpArgs.PositionVar.Set(GLSLTypeFloat2, "vertexpos")
 
-	// Fragment shader.
 	var color string
 	i.colorUniform, color = args.UniformHandler.AddUniform(nil, ShaderFlagFragment, GLSLTypeHalf4, "color")
 	args.FragBuilder.CodeAppendf("vec4 %s = %s;", args.OutputColor, color)
@@ -112,7 +110,7 @@ type pathStencilCoverOp struct {
 	// Decided during prePreparePrograms.
 	tessellator pathTessellator
 	bboxBuffer  AnyBuffer
-	// Filled during onPrepare.
+	// Filled during OnPrepare.
 	fanBuffer          AnyBuffer
 	stencilPathProgram *ProgramInfo
 	stencilFanProgram  *ProgramInfo
@@ -174,7 +172,7 @@ func (o *pathStencilCoverOp) UsesMSAA() bool { return o.aaType != gpu.AATypeNone
 // UsesStencil implements DrawOp (fixedFunctionFlags always sets kUsesStencil).
 func (o *pathStencilCoverOp) UsesStencil() bool { return true }
 
-// Finalize implements DrawOp: runs the processor set's finalization pass to compute the op's coverage/color analysis.
+// Finalize implements DrawOp.
 func (o *pathStencilCoverOp) Finalize(caps *gpu.Caps, clip *AppliedClip, clampType gpu.ClampType) ProcessorAnalysis {
 	color := AnalysisColorConstant(o.color)
 	analysis, overrideColor := o.processors.Finalize(color, AnalysisCoverageNone, clip, nil,
@@ -318,7 +316,6 @@ func (o *pathStencilCoverOp) OnPrepare(state *OpFlushState) {
 					// Fill the entire backing store to make sure we clear every stencil value back to 0. If there is a
 					// scissor it will have already clipped the stencil draw.
 					rtBounds := state.OpArgs().RTProxy().Proxy().BackingStoreBoundsIRect().ToRect()
-					// Map the render target bounds through the inverse matrix.
 					if inv, ok := draw.pathMatrix.Invert(); ok {
 						bounds, _ = inv.MapRect(rtBounds)
 					} else {
@@ -353,7 +350,6 @@ func (o *pathStencilCoverOp) OnExecute(state *OpFlushState, _chainBounds geom.Re
 		}
 	}
 
-	// Stencil the inner fan, if any.
 	if o.fanVertexCount > 0 {
 		if o.stencilFanProgram == nil || o.fanBuffer == nil {
 			panic("fan vertices without a fan program or buffer")
@@ -365,7 +361,6 @@ func (o *pathStencilCoverOp) OnExecute(state *OpFlushState, _chainBounds geom.Re
 		}
 	}
 
-	// Stencil the rest of the path.
 	if o.stencilPathProgram == nil {
 		panic("missing stencil path program")
 	}
@@ -374,7 +369,6 @@ func (o *pathStencilCoverOp) OnExecute(state *OpFlushState, _chainBounds geom.Re
 		o.tessellator.draw(state)
 	}
 
-	// Fill in the bounding box (if not in stencil-only mode).
 	if o.coverBBoxProgram != nil {
 		if renderPass.BindPipeline(o.coverBBoxProgram, o.Bounds()) {
 			scissor(o.coverBBoxProgram)

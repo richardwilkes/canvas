@@ -7,12 +7,11 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// Tests for the opSegment walking phase (opsegment_walk.go) and pathWriter (pathwriter.go). The small helpers (the
-// active-edge tables, undoneSpan, joinEnds) are exercised directly; findNextWinding/findNextXor, addCurveTo, and the
-// whole pathWriter contour assembler are exercised end-to-end through a test-local bridgeWinding/bridgeXor (a
-// transcription of the simplify.go drivers, minus the sortContourList re-heading and the findChase multi-piece chase).
-// That restricts these end-to-end tests to single, non-self-intersecting contours, whose trace never populates the
-// chase; the resulting output is checked for area equivalence to the input.
+// Tests for the opSegment walking phase (opsegment_walk.go) and pathWriter (pathwriter.go). The small helpers are
+// exercised directly; findNextWinding/findNextXor, addCurveTo, and the pathWriter contour assembler are exercised
+// end-to-end through traceSimplify, a transcription of the simplify.go drivers without sortContourList and findChase.
+// That restricts the end-to-end tests to single, non-self-intersecting contours, whose trace never populates the chase;
+// the output is checked for area equivalence to the input.
 
 package pathops
 
@@ -41,7 +40,7 @@ func traceSimplify(t *testing.T, head *opContourHead, ft path.FillType, xor bool
 		for {
 			active := false
 			if xor {
-				active = true // bridgeXor has no activeWinding gate; FindUndone already picked a live span
+				active = true // bridgeXor has no activeWinding gate
 			} else {
 				active = current.activeWinding(start, end)
 			}
@@ -96,7 +95,7 @@ func traceSimplify(t *testing.T, head *opContourHead, ft path.FillType, xor bool
 			if len(chase) != 0 {
 				t.Fatal("trace needs FindChase (junction present); use the full driver slice")
 			}
-			break // FindChase(empty) == nil
+			break // findChase(empty) == nil
 		}
 	}
 	writer.assemble()
@@ -104,7 +103,7 @@ func traceSimplify(t *testing.T, head *opContourHead, ft path.FillType, xor bool
 }
 
 // prepModel builds a single-path op model and runs intersections + coincidence handling (calc/sort angles), mirroring
-// the pipeline the bridge drivers run after SortContourList.
+// runSimplify's pipeline minus sortContourList.
 func prepModel(t *testing.T, p *path.Path) *opContourHead {
 	t.Helper()
 	head, state := buildOpModel(t, p)
@@ -116,21 +115,17 @@ func prepModel(t *testing.T, p *path.Path) *opContourHead {
 
 // TestActiveEdgeTables spot-checks the kUnaryActiveEdge / kActiveEdge decision tables against hand values.
 func TestActiveEdgeTables(t *testing.T) {
-	// kUnaryActiveEdge = {{F, T}, {T, F}}
 	want := [2][2]bool{{false, true}, {true, false}}
 	if kUnaryActiveEdge != want {
 		t.Fatalf("kUnaryActiveEdge = %v, want %v", kUnaryActiveEdge, want)
 	}
-	// kActiveEdge[union][miFrom=1][miTo=0][suFrom=0][suTo=0] == T (union row: {{{{F,T},{T,F}},{{T,T},{F,F}}},
-	// {{{T,F},{T,F}},{{F,F},{F,F}}}} -> [1][0][0][0] = T).
+	// The indices are [op][miFrom][miTo][suFrom][suTo].
 	if !kActiveEdge[Union][1][0][0][0] {
 		t.Fatal("kActiveEdge[union][1][0][0][0] should be true")
 	}
-	// kActiveEdge[intersect][0][0][0][0] == F.
 	if kActiveEdge[Intersect][0][0][0][0] {
 		t.Fatal("kActiveEdge[intersect][0][0][0][0] should be false")
 	}
-	// kActiveEdge[difference][0][1][0][0] == T (difference: [0][1] = {{T,F},{T,F}} -> [0][0]=T).
 	if !kActiveEdge[Difference][0][1][0][0] {
 		t.Fatal("kActiveEdge[difference][0][1][0][0] should be true")
 	}

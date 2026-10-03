@@ -8,13 +8,10 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // Package gorender renders the scenario corpus through the canvas library (the canvas package over a raster or GL
-// device), so the harness can compare its output against the checked-in goldens — the library's own output,
-// self-captured per platform by `oracle bless` (see ../goldens/README.md). It materializes each scenario into the
-// library's own canvas/paint/path/shader types. This package is cgo-free — it imports only the shipped Go module — so
-// the golden gates drive the library exactly as unison does.
-//
-// It is the harness's only renderer; every gate in this package reads its reference side from ../goldens rather than
-// rendering it.
+// device), materializing each scenario into the library's own canvas/paint/path/shader types, so the harness can
+// compare the output against the checked-in goldens: the library's own output, self-captured per platform by `oracle
+// bless` (see ../goldens/README.md). It imports only the shipped Go module (no cgo), so the golden gates drive the
+// library exactly as unison does.
 package gorender
 
 import (
@@ -44,8 +41,6 @@ type sceneCanvas struct {
 	c *gocanvas.Canvas
 }
 
-// buildPaint materializes a scenario.Paint into a *canvas.Paint (plus its effects/filters, if any). Nothing needs
-// freeing; the result is GC-managed.
 func buildPaint(sp scenario.Paint) *gocanvas.Paint {
 	p := gocanvas.NewPaint()
 	p.Color = sp.Color
@@ -76,7 +71,6 @@ func buildPaint(sp scenario.Paint) *gocanvas.Paint {
 	return p
 }
 
-// buildShader materializes a scenario.ShaderSpec into a canvas shader (recursively for blend shaders).
 func buildShader(s *scenario.ShaderSpec) shaders.Shader {
 	switch s.Kind {
 	case scenario.ShaderLinearGradient:
@@ -100,7 +94,6 @@ func buildShader(s *scenario.ShaderSpec) shaders.Shader {
 	return nil
 }
 
-// buildPathEffect materializes a scenario.PathEffectSpec into a canvas path effect (recursively for sum/compose).
 func buildPathEffect(s *scenario.PathEffectSpec) stroke.PathEffect {
 	switch s.Kind {
 	case scenario.PathEffectDash:
@@ -125,7 +118,6 @@ func buildPathEffect(s *scenario.PathEffectSpec) stroke.PathEffect {
 	return nil
 }
 
-// buildColorFilter materializes a scenario.ColorFilterSpec into a canvas color filter (recursively for compose).
 func buildColorFilter(s *scenario.ColorFilterSpec) shaders.ColorFilter {
 	switch s.Kind {
 	case scenario.ColorFilterMatrix:
@@ -150,8 +142,8 @@ func buildColorFilter(s *scenario.ColorFilterSpec) shaders.ColorFilter {
 
 func specPoint3(p scenario.Point3) geom.Point3 { return geom.Point3{X: p.X, Y: p.Y, Z: p.Z} }
 
-// buildImageFilter materializes a scenario.ImageFilterSpec DAG into a canvas image filter. A nil spec yields nil (the
-// filtered source), matching the public surface's NULL-input convention.
+// buildImageFilter materializes a scenario.ImageFilterSpec DAG. A nil spec yields nil, which the library reads as the
+// filtered source.
 func buildImageFilter(s *scenario.ImageFilterSpec) filtercore.Filter {
 	if s == nil {
 		return nil
@@ -335,7 +327,7 @@ func (s sceneCanvas) ClipPath(spec *scenario.PathSpec, op scenario.ClipOp, aa bo
 func (s sceneCanvas) Translate(dx, dy float32) { s.c.Translate(dx, dy) }
 func (s sceneCanvas) Scale(sx, sy float32)     { s.c.Scale(sx, sy) }
 
-// RotateRadians maps to the library's degree-based Rotate, converting with radians * 180/pi.
+// RotateRadians maps to the library's degree-based Rotate.
 func (s sceneCanvas) RotateRadians(rad float32) {
 	s.c.Rotate(float32(float64(rad) * (180.0 / math.Pi)))
 }

@@ -10,7 +10,7 @@
 // Live-context tests for the atlas stack: the ASAP and inline upload lanes run through a real DrawingManager.Flush
 // against a real GL context, and the atlas page contents are read back and verified after each flush — proving the
 // deferred uploads reach the texture through OpFlushState.DoUpload → Gpu.WritePixels in flush order (ASAP at
-// preExecuteDraws, inline between the recorded draws). Skips when no GL context is available.
+// PreExecuteDraws, inline between the recorded draws). Skips when no GL context is available.
 
 package gl_test
 
@@ -104,8 +104,8 @@ func TestLiveAtlasFlushUploads(t *testing.T) {
 	_ = env
 }
 
-// TestLiveAtlasGlyphUpload pushes an A8 glyph-shaped subimage through the manager's glyph lane on a live context and
-// reads back the exact texel placement, including the transformed-mask padding ring.
+// TestLiveAtlasGlyphUpload pushes an 8x8 A8 subimage through the atlas manager on a live context and reads back the
+// texels at its locator.
 func TestLiveAtlasGlyphUpload(t *testing.T) {
 	env, dc := newLiveDirectContext(t)
 	am := dc.AtlasManager()
@@ -133,7 +133,7 @@ func TestLiveAtlasGlyphUpload(t *testing.T) {
 	if views == nil || numActive != 1 {
 		t.Fatal("A8 atlas page not active")
 	}
-	// Read the page as A8 and verify the 8x8 block of 1s at the locator, zero elsewhere on its row band.
+	// Read the page as A8 and verify the 8x8 block of 1s at the locator.
 	sc := gl.NewSurfaceContextForTesting(dc, views[0].Proxy(), gpu.OriginTopLeft,
 		gpu.ColorTypeAlpha8)
 	defer sc.Release()

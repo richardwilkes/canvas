@@ -9,8 +9,8 @@
 
 // Synthetic font builders for the table-level tests: the corpus in testdata carries none of the tables whose absence is
 // indistinguishable from a table the loader never reads (name IDs 16/21, fvar, PCLT), and none of the container formats
-// the sfnt reader accepts but a PDF cannot embed (WOFF). Each helper patches a real font rather than assembling one from
-// nothing, so everything the parser needs is still there and only the table under test differs.
+// the sfnt reader accepts but a PDF cannot embed (WOFF). Each helper patches a real font rather than assembling one
+// from nothing, so everything the parser needs is still there and only the table under test differs.
 
 package font
 
@@ -41,11 +41,11 @@ func rawSfntTable(t *testing.T, data []byte, tag string) []byte {
 	return nil
 }
 
-// sfntWithTables returns a copy of the single-face sfnt in data with each of the given tables added, replacing any table
-// already present under the same tag; a nil replacement drops the tag instead (sfntWithoutTables). The whole file is
-// reassembled — a fresh tag-ordered directory plus 4-byte-aligned table data — so the result is a font the sfnt reader
-// accepts. The per-table checksums and head.checkSumAdjustment are carried over unchanged (a replaced table gets zero):
-// nothing in the parse path verifies either.
+// sfntWithTables returns a copy of the single-face sfnt in data with each of the given tables added, replacing any
+// table already present under the same tag; a nil replacement drops the tag instead (sfntWithoutTables). The whole file
+// is reassembled — a fresh tag-ordered directory plus 4-byte-aligned table data — so the result is a font the sfnt
+// reader accepts. The per-table checksums and head.checkSumAdjustment are carried over unchanged (a replaced table gets
+// zero): nothing in the parse path verifies either.
 func sfntWithTables(t *testing.T, data []byte, extra map[string][]byte) []byte {
 	t.Helper()
 	type table struct {
@@ -153,10 +153,10 @@ func synthNameTable(names map[tables.NameID]string) []byte {
 	return out
 }
 
-// synthCmapFormat13 builds a 'cmap' table holding one format-13 subtable under platform 3 / encoding 10 (Windows UCS-4),
-// the first 32-bit encoding ProcessCmap prefers and therefore the subtable a face carrying it resolves through. Each
-// group is {startCharCode, endCharCode, glyphID}; nothing on the parse path checks that the codes are ordered or in
-// range, which is what lets the malformed-group cases exist at all.
+// synthCmapFormat13 builds a 'cmap' table holding one format-13 subtable under platform 3 / encoding 10 (Windows
+// UCS-4), the first 32-bit encoding ProcessCmap prefers and therefore the subtable a face carrying it resolves through.
+// Each group is {startCharCode, endCharCode, glyphID}; nothing on the parse path checks that the codes are ordered or
+// in range, which is what lets the malformed-group cases exist at all.
 func synthCmapFormat13(groups ...[3]uint32) []byte {
 	const subtableOffset = 12
 	out := make([]byte, subtableOffset, subtableOffset+16+12*len(groups))
@@ -218,8 +218,8 @@ func os2WithVersion(t *testing.T, data []byte, version uint16) []byte {
 	})
 }
 
-// synthFvarTable builds an 'fvar' table declaring axisCount weight axes and no named instances — enough for a parse that
-// reports the font as variable, which is all the advanced metrics ask of it.
+// synthFvarTable builds an 'fvar' table declaring axisCount weight axes and no named instances — enough for a parse
+// that reports the font as variable, which is all the advanced metrics ask of it.
 func synthFvarTable(axisCount int) []byte {
 	const axisSize = 20
 	out := make([]byte, 16+axisSize*axisCount)
@@ -305,7 +305,7 @@ func woffWrap(t *testing.T, data []byte) []byte {
 		entry := out[headerSize+entrySize*i:]
 		copy(entry, record[:4])                                                     // tag
 		binary.BigEndian.PutUint32(entry[4:], uint32(tableOffset))                  // offset
-		binary.BigEndian.PutUint32(entry[8:], uint32(length))                       // compLength, == origLength: stored raw
+		binary.BigEndian.PutUint32(entry[8:], uint32(length))                       // compLength: stored raw
 		binary.BigEndian.PutUint32(entry[12:], uint32(length))                      // origLength
 		binary.BigEndian.PutUint32(entry[16:], binary.BigEndian.Uint32(record[4:])) // origChecksum
 	}

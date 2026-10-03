@@ -2,16 +2,14 @@
 //
 // Use of this source code is governed by a BSD-style license that can be found in the LICENSE file.
 //
-// glcall9: the B.2 fixed-arity GL trampoline for arm64 SysV-style platforms (darwin/linux share
-// the AAPCS64 integer-argument convention). Structurally a trimmed port of purego's syscall15X
-// (sys_arm64.s, Apache-2.0): integer registers only (float-carrying GL entry points ride
-// purego.RegisterFunc), one 8-byte stack slot for the 9th argument (the only stack argument any
-// SyscallN-routed GL entry point has — see fastcall_sysv.go), and no errno read-back. It must run
-// on the system stack with the C calling convention: it is only ever reached through
-// runtime.cgocall(glcall9ABI0, &glcall9Args{...}), which enters via asmcgocall on g0. On entry
-// R0 holds the *glcall9Args block; the result is stored back into its r1 field. The struct field
-// offsets come from the compiler-generated go_asm.h, so a layout change in fastcall_sysv.go
-// breaks this file's build instead of miscalling.
+// glcall9: the fixed-arity GL trampoline for arm64 SysV-style platforms (darwin/linux share the AAPCS64
+// integer-argument convention). Structurally a trimmed port of purego's syscallX (sys_arm64.s, Apache-2.0): integer
+// registers only (float-carrying GL entry points ride purego.RegisterFunc), one 8-byte stack slot for the 9th argument
+// (the only stack argument any SyscallN-routed GL entry point has; see fastcall_sysv.go), and no errno read-back. It
+// must run on the system stack with the C calling convention: it is only reached through runtime.cgocall(glcall9ABI0,
+// args) in glCall, which enters via asmcgocall on g0. On entry R0 holds the *glcall9Args block; the result is stored
+// back into its r1 field. The field offsets come from the compiler-generated go_asm.h, so a layout change in
+// fastcall_sysv.go breaks this file's build instead of miscalling.
 
 //go:build darwin || linux
 
@@ -19,8 +17,8 @@
 #include "go_asm.h"
 #include "funcdata.h"
 
-// One 8-byte slot for the 9th argument at 0(RSP), an 8-byte margin beyond the callee's incoming
-// argument area, then the saved block pointer; 32 keeps the required 16-byte SP alignment.
+// One 8-byte slot for the 9th argument at 0(RSP), a 16-byte margin beyond the callee's incoming argument area, then the
+// saved block pointer at 24(RSP); 32 keeps the required 16-byte SP alignment.
 #define STACK_SIZE 32
 #define PTR_ADDRESS (STACK_SIZE - 8)
 

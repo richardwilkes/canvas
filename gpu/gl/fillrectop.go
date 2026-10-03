@@ -9,9 +9,8 @@
 
 // The batched per-edge-AA quad fill op — unison's most common draw. Each op accumulates (device quad, local quad,
 // color, edge flags) entries in a QuadBuffer; the OpsTask combine machinery merges compatible ops (including
-// none↔coverage AA upgrades), and prepare tessellates every quad into one vertex buffer drawn with a single indexed
-// draw. This replaces the earlier interim fill-rect op. The DDL prePrepare lane is dropped; the arena parameters wait
-// on the pooling work.
+// none↔coverage AA upgrades), and prepare tessellates every quad into one vertex buffer drawn with a single draw. The
+// DDL prePrepare lane and the arena parameters are dropped.
 
 package gl
 
@@ -39,7 +38,6 @@ type colorAndAA struct {
 
 // fillRectOp draws one or more batched per-edge-AA quad fills.
 type fillRectOp struct {
-	// Prepared state.
 	vertexBuffer AnyBuffer
 	quads        *QuadBuffer[colorAndAA]
 	programInfo  *ProgramInfo
@@ -158,7 +156,7 @@ func (o *fillRectOp) Finalize(caps *gpu.Caps, clip *AppliedClip, clampType gpu.C
 	}
 
 	// If the AA type is coverage, it will be a single value per pixel; if it's not coverage AA then the coverage is
-	// always 1.0, so specify kNone for more optimal blending.
+	// always 1.0, so specify AnalysisCoverageNone for more optimal blending.
 	coverage := AnalysisCoverageNone
 	if o.helper.AAType() == gpu.AATypeCoverage {
 		coverage = AnalysisCoverageSingleChannel
@@ -197,7 +195,6 @@ func (o *fillRectOp) vertexSpec() VertexSpec {
 		o.helper.CompatibleWithCoverageAsAlpha(), indexBufferOption)
 }
 
-// createProgramInfo builds the program info for this op's draw.
 func (o *fillRectOp) createProgramInfo(state *OpFlushState) {
 	spec := o.vertexSpec()
 	gp := MakeQuadPerEdgeAAProcessor(&spec)
@@ -210,13 +207,12 @@ func (o *fillRectOp) createProgramInfo(state *OpFlushState) {
 		spec.PrimitiveType(), args.RenderPassBarriers(), args.ColorLoadOp())
 }
 
-// tessellate writes every quad's vertex data into dst per spec.
 func (o *fillRectOp) tessellate(spec *VertexSpec, dst []byte) {
 	tess := NewQuadTessellator(*spec, dst)
 	iter := o.quads.Iterator()
 	for iter.Next() {
-		// All entries should have local coords, or no entries should have local coords, matching !helper.isTrivial()
-		// (which is more conservative than helper.usesLocalCoords).
+		// All entries should have local coords, or no entries should have local coords, matching !helper.IsTrivial()
+		// (which is more conservative than helper.UsesLocalCoords).
 		if iter.IsLocalValid() == o.helper.IsTrivial() {
 			panic("local coords out of sync with the helper's triviality")
 		}
@@ -236,11 +232,9 @@ func (o *fillRectOp) OnPrepare(state *OpFlushState) {
 
 	totalNumVertices := o.quads.Count() * spec.VerticesPerQuad()
 
-	// Fill the allocated vertex data.
 	vdata, vertexBuffer, baseVertex := state.MakeVertexSpace(uint64(spec.VertexSize()),
 		totalNumVertices)
 	if vdata == nil {
-		// Could not allocate vertices.
 		return
 	}
 	o.vertexBuffer = vertexBuffer
@@ -267,7 +261,6 @@ func (o *fillRectOp) OnExecute(state *OpFlushState, chainBounds geom.Rect) {
 		o.createProgramInfo(state)
 	}
 
-	// Bind the pipeline and any scissor clip.
 	renderPass := state.OpsRenderPass()
 	if !renderPass.BindPipeline(o.programInfo, chainBounds) {
 		return
@@ -315,7 +308,7 @@ func (o *fillRectOp) OnCombineIfPossible(t Op) CombineResult {
 	// op to be the more general quad and aa types of the two ops and then concatenate the per-quad data.
 	o.colorType = max(o.colorType, that.colorType)
 
-	// The helper stores the aa type, but isCompatible(with true arg) allows the two ops' aa types to be none and
+	// The helper stores the aa type, but IsCompatible(with true arg) allows the two ops' aa types to be none and
 	// coverage, in which case this op's aa type must be lifted to coverage so that quads with no aa edges can be
 	// batched with quads that have some/all edges aa'ed.
 	if upgradeToCoverageAAOnMerge {
@@ -382,7 +375,6 @@ func (o *fillRectOp) addQuad(quad *DrawQuad, color colorcore.PMColor4f, aaType g
 			o.quads.Append(&extra.Device, colorAndAA{color: color, aaFlags: extra.EdgeFlags},
 				local)
 		}
-		// Update the bounds.
 		o.SetBounds(newBounds, HasAABloat(o.helper.AAType() == gpu.AATypeCoverage),
 			IsHairline(false))
 		return true
@@ -407,7 +399,7 @@ type QuadSetEntry struct {
 }
 
 // makeFillRectOpSet creates an op for the first quad in the set and accumulates as many of the remaining quads as fit
-// (similar to onCombineIfPossible without creating extra ops). Returns the op and the number of consumed entries.
+// (similar to OnCombineIfPossible without creating extra ops). Returns the op and the number of consumed entries.
 func makeFillRectOpSet(paint *Paint, aaType gpu.AAType, viewMatrix *geom.Matrix, quads []QuadSetEntry, stencilSettings *UserStencilSettings) (drawOp DrawOp, consumed int) {
 	if len(quads) == 0 {
 		panic("quad set must not be empty")

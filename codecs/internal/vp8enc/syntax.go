@@ -96,7 +96,6 @@ func (e *encoder) putSegmentHeader(bw *bitWriter) {
 	bw.putBitUniform(false) // no segmentation
 }
 
-// putFilterHeader writes the loop filter parameters.
 func (e *encoder) putFilterHeader(bw *bitWriter) {
 	bw.putBitUniform(e.filterSimple)
 	bw.putBits(uint32(e.filterLevel), 6)
@@ -104,7 +103,6 @@ func (e *encoder) putFilterHeader(bw *bitWriter) {
 	bw.putBitUniform(false) // no LF delta
 }
 
-// putQuant writes the nominal quantization parameters.
 func (e *encoder) putQuant(bw *bitWriter) {
 	bw.putBits(uint32(e.baseQuant), 7)
 	bw.putSignedBits(e.dqY1DC, 4)

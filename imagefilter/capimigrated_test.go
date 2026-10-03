@@ -38,8 +38,8 @@ func TestBlurConstructorGuards(t *testing.T) {
 	}
 }
 
-// TestImageDefaultSourceBounds verifies ImageDefault's behavior: the src and dst rects default to the image bounds, and
-// a nil image still yields a non-nil (transparent-black) filter.
+// TestImageDefaultSourceBounds verifies ImageDefault yields a non-nil filter for a valid image and for a nil one (the
+// transparent-black Empty filter).
 func TestImageDefaultSourceBounds(t *testing.T) {
 	info, _ := imagecore.MakeInfo(8, 8, imagecore.ColorTypeRGBA8888, imagecore.AlphaTypePremul)
 	img := imagecore.FromPixels(imagecore.NewPixels(info))
@@ -51,7 +51,6 @@ func TestImageDefaultSourceBounds(t *testing.T) {
 	}
 }
 
-// TestPointLitSpecularConstructor verifies the point-light specular lighting constructor accepts valid arguments.
 func TestPointLitSpecularConstructor(t *testing.T) {
 	f := imagefilter.PointLitSpecular(geom.Point3{X: 5, Y: 5, Z: 10}, 0xFFFFFFFF, 1, 1, 8, nil, nil)
 	if f == nil {

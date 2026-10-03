@@ -20,9 +20,8 @@
 // writing, conics store {w, inf} in their last control point, triangles store {inf, inf} — followed by the enabled
 // attrib values in PatchAttribs order. TrackJoinControlPoints defers each contour's first patch to CPU-side storage
 // until writeDeferredStrokePatch() supplies the now-known join control point; the stroke iterator this library uses
-// manages caps itself, so only the no-cap deferral lane below is reachable (a cap-producing deferral lane exists in
-// other tessellators this library doesn't implement). All point math is plain element-wise float32 arithmetic (mix(a,b,T)
-// == (b-a)*T + a throughout).
+// manages caps and closes itself, so upstream's cap-producing deferral lane is not ported. All point math is plain
+// element-wise float32 arithmetic (mix(a,b,T) == (b-a)*T + a throughout).
 
 package gl
 
@@ -69,11 +68,11 @@ func (a *vertexChunkPatchAllocator) close() { a.builder.close() }
 //   - If both are negative, then nothing has been written that needs to be deferred.
 //   - If nP4 == 0, the caller has explicitly managed the join and nothing is deferred.
 //   - If nP4 < 0 and curveType >= 0, then a degenerate verb has been recorded so caps should be written when the
-//     deferred patch is ended (a lane this library's stroke iterator never takes, since it produces caps itself).
+//     deferred patch is ended (never acted on here; see the file comment).
 //   - If nP4 > 0 and curveType >= 0, then this is a full deferred patch.
 //
-// Upstream also tracks the contour's first and last control points here, to synthesize caps and closes. This library's
-// stroke iterator produces its own caps and closes, so neither is tracked.
+// Upstream also tracks the contour's first and last control points here, to synthesize caps and closes; neither is
+// tracked here.
 type deferredPatchStorage struct {
 	data      []byte  // an entire patch, except with an undefined join control point
 	curveType float32 // the explicit curve type passed to writePatch
@@ -100,7 +99,6 @@ func (d *deferredPatchStorage) reset() {
 	d.nP4 = -1
 }
 
-// patchWriter emits tessellation patches for the fill and stroke configurations.
 type patchWriter struct {
 	alloc         patchAllocator
 	deferredPatch deferredPatchStorage // only used if trackJoinControlPoints
@@ -144,8 +142,7 @@ func newPatchWriter(attribs PatchAttribs, alloc patchAllocator, addTrianglesWhen
 	}
 }
 
-// newStrokePatchWriter builds a patchWriter for the stroke configuration: required join control point + optional
-// stroke-params/color/wide-color-if-enabled/explicit-curve-type + ReplicateLineEndPoints + TrackJoinControlPoints.
+// newStrokePatchWriter builds a patchWriter for the stroke configuration (StrokeWriter in the file comment).
 func newStrokePatchWriter(attribs PatchAttribs, alloc patchAllocator) *patchWriter {
 	if attribs&PatchAttribJoinControlPoint == 0 {
 		panic("the stroke patch writer requires the join control point attrib")
@@ -185,8 +182,7 @@ func (w *patchWriter) updateFanPointAttrib(fanPoint geom.Point) {
 }
 
 // writeDeferredStrokePatch completes a contour of a stroke by rewriting the deferred patch with now-available join
-// control point information, then resets the deferral state. This library's stroke iterator manages caps on its own, so
-// only joins are ever produced here (a cap-producing variant exists in other tessellators this library doesn't implement).
+// control point information, then resets the deferral state.
 func (w *patchWriter) writeDeferredStrokePatch() {
 	if !w.trackJoinControlPoints {
 		panic("writeDeferredStrokePatch requires join tracking")
@@ -195,9 +191,9 @@ func (w *patchWriter) writeDeferredStrokePatch() {
 		if !w.deferredPatch.hasVerb() {
 			panic("a pending deferred patch must have recorded its verb")
 		}
-		// When the contour is closed, there are no caps. We just have to update the join attribute to reflect the last
-		// patch and write the deferred patch. Overwrite the join control point with the updated value, which is the
-		// first attribute after the 4 control points.
+		// There are no caps here, so we just have to update the join attribute to reflect the last patch and write the
+		// deferred patch. Overwrite the join control point with the updated value, which is the first attribute after
+		// the 4 control points.
 		patchPutPoint(w.deferredPatch.data, 4*8, w.join)
 		// Assuming that the stroke parameters aren't changing within a contour, we only have to set the parametric
 		// segments in order to recover the linearTolerances state at the time the deferred patch was recorded.
@@ -230,8 +226,8 @@ func (w *patchWriter) updateStrokeParamsAttrib(params strokeParams) {
 }
 
 // updateUniformStrokeParams updates tolerances to account for stroke params that are stored as uniforms instead of
-// dynamic instance attributes. join is the stroke's join enum, which the static shader lane compiles its join-edge count
-// from (see linearTolerances.setStroke).
+// dynamic instance attributes. join is the stroke's join enum, which the static shader lane compiles its join-edge
+// count from (see linearTolerances.setStroke).
 func (w *patchWriter) updateUniformStrokeParams(params strokeParams, join stroke.Join) {
 	if w.attribs&PatchAttribStrokeParams != 0 {
 		panic("uniform stroke params require the attrib to be disabled")
@@ -247,7 +243,6 @@ func (w *patchWriter) updateColorAttrib(color colorcore.PMColor4f) {
 	}
 	w.colorWide = [4]float32{color.R, color.G, color.B, color.A}
 	toByte := func(v float32) byte {
-		// Round to nearest by adding 0.5 before truncating, clamping to the byte range first.
 		f := v*255 + 0.5
 		if f < 0 {
 			f = 0
@@ -272,7 +267,7 @@ func patchPutPoint(buf []byte, off int, p geom.Point) int {
 	return patchPutF32(buf, off, p.Y)
 }
 
-// emitPatchAttribs writes the enabled attribs after a patch's 4 control points (the paint-depth/ ssbo-index attribs are
+// emitPatchAttribs writes the enabled attribs after a patch's 4 control points (the paint-depth/ssbo-index attribs are
 // never enabled in this library). The join is a parameter because writeCircle supplies its own location instead of the
 // tracked join.
 func (w *patchWriter) emitPatchAttribs(buf []byte, off int, join geom.Point, explicitCurveType float32) {
@@ -324,8 +319,8 @@ func (w *patchWriter) appendPatch(explicitCurveType float32) []byte {
 // for the next patch when join tracking is enabled.
 func (w *patchWriter) writePatch(p0, p1, p2, p3 geom.Point, explicitCurveType float32) {
 	if w.trackJoinControlPoints {
-		// Store this even if we don't write a patch, to remember we should add caps (a lane this library's stroke
-		// iterator never takes, but kept for structural fidelity with the deferral state machine).
+		// Store this even if we don't write a patch, to remember we should add caps (never acted on here, but kept for
+		// structural fidelity with the deferral state machine).
 		w.deferredPatch.curveType = explicitCurveType
 	}
 
@@ -333,8 +328,7 @@ func (w *patchWriter) writePatch(p0, p1, p2, p3 geom.Point, explicitCurveType fl
 	if explicitCurveType != tessCubicCurveType {
 		last = p2
 	}
-	// all(p0 == p1 & p1 == p2 & p2 == last): degenerate patch, so skip writing. In a regular fill or stroke this won't
-	// affect rendering.
+	// Skip a degenerate patch; in a regular fill or stroke this won't affect rendering.
 	if p0.X == p1.X && p1.X == p2.X && p2.X == last.X &&
 		p0.Y == p1.Y && p1.Y == p2.Y && p2.Y == last.Y {
 		return
@@ -349,7 +343,6 @@ func (w *patchWriter) writePatch(p0, p1, p2, p3 geom.Point, explicitCurveType fl
 		off = patchPutPoint(buf, off, p3)
 		w.emitPatchAttribs(buf, off, w.join, explicitCurveType)
 
-		// Automatically update the join control point for the next patch.
 		if w.trackJoinControlPoints {
 			// Points are ordered in reverse order to get the outgoing tangent control point.
 			w.join = patchTangentPoint(last, p2, p1, p0)
@@ -384,7 +377,6 @@ func (w *patchWriter) writeCircle(p geom.Point) {
 	}
 }
 
-// writeCubicPatch writes a single cubic patch with the explicit cubic curve type.
 func (w *patchWriter) writeCubicPatch(p0, p1, p2, p3 geom.Point) {
 	w.writePatch(p0, p1, p2, p3, tessCubicCurveType)
 }
@@ -517,7 +509,7 @@ func (w *patchWriter) chopAndWriteQuads(p0, p1, p2 geom.Point, numPatches int) {
 		triangulator = newMiddleOutPolygonTriangulator(numPatches, p0)
 	}
 	for ; numPatches >= 3; numPatches -= 2 {
-		// Chop into 3 quads at T = {1/numPatches, 2/numPatches} (the float4 lanes hold {T1, T1, T2, T2}).
+		// Chop into 3 quads at T = {1/numPatches, 2/numPatches}.
 		t1 := 1 / float32(numPatches)
 		t2 := 2 / float32(numPatches)
 		ab1, ab2 := patchMix(p0, p1, t1), patchMix(p0, p1, t2)
@@ -570,7 +562,7 @@ func (w *patchWriter) chopAndWriteConics(p0, p1, p2 geom.Point, weight float32, 
 	if w.addTrianglesWhenChopping {
 		triangulator = newMiddleOutPolygonTriangulator(numPatches, p0)
 	}
-	// Load the conic in 3d homogeneous (unprojected) space (the fourth float4 lane is unused).
+	// Load the conic in 3d homogeneous (unprojected) space.
 	h0 := [3]float32{p0.X, p0.Y, 1}
 	h1 := [3]float32{p1.X * weight, p1.Y * weight, weight}
 	h2 := [3]float32{p2.X, p2.Y, 1}

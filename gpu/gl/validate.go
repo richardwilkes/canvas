@@ -7,9 +7,9 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// Interface validation for desktop GL only: since this package targets only StandardGL, requirement groups that would
-// apply solely to ES/WebGL (discard-framebuffer, mapping sub-images, multisampled- render-to-texture, multisample
-// resolve variants, bind-uniform-location, and multi-draw extensions specific to those backends) are omitted entirely.
+// Interface validation for desktop GL only: this package targets only StandardGL, so requirement groups that apply
+// solely to ES/WebGL (discard-framebuffer, mapping sub-images, multisampled-render-to-texture, multisample resolve
+// variants, bind-uniform-location, and multi-draw extensions specific to those backends) are omitted.
 
 package gl
 

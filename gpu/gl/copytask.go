@@ -8,7 +8,7 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // The non-ops tasks of the render task DAG. Copy tasks copy pixels between proxies at flush; resolve tasks batch MSAA
-// resolves and mipmap regenerations so they run back-to-back.
+// resolves and mipmap regenerations so they run back-to-back; write-pixels tasks keep uploads ordered against draws.
 
 package gl
 
@@ -78,8 +78,7 @@ func (t *CopyRenderTask) GatherProxyIntervals(alloc *ResourceAllocator) {
 		alloc.IncOps()
 		return
 	}
-	// This renderTask doesn't have "normal" ops; create a fake op# to capture the fact that we read the src and copy to
-	// the target.
+	// This task has no "normal" ops; a fake op# captures that we read the src and copy to the target.
 	alloc.AddInterval(t.src, alloc.CurOp(), alloc.CurOp(), ActualUseYes, AllowRecyclingYes)
 	alloc.AddInterval(t.Target(0), alloc.CurOp(), alloc.CurOp(), ActualUseYes, AllowRecyclingYes)
 	alloc.IncOps()
@@ -123,7 +122,6 @@ type TextureResolveRenderTask struct {
 	RenderTaskBase
 }
 
-// newTextureResolveRenderTask creates an empty resolve task.
 func newTextureResolveRenderTask() *TextureResolveRenderTask {
 	t := &TextureResolveRenderTask{}
 	t.initRenderTask(t)
@@ -220,7 +218,7 @@ func (t *TextureResolveRenderTask) OnExecute(flushState *OpFlushState) bool {
 	// Resolve all msaa back-to-back, before regenerating mipmaps.
 	for i, resolve := range t.resolves {
 		if resolve.flags&ResolveFlagMSAA != 0 {
-			// peekRenderTarget may be nil if there was an instantiation error.
+			// PeekRenderTarget returns nil if there was an instantiation error.
 			if renderTarget := t.Target(i).PeekRenderTarget(); renderTarget != nil {
 				flushState.Gpu().ResolveRenderTarget(renderTarget, resolve.msaaResolveRect)
 			}
@@ -229,7 +227,7 @@ func (t *TextureResolveRenderTask) OnExecute(flushState *OpFlushState) bool {
 	// Regenerate all mipmaps back-to-back.
 	for i, resolve := range t.resolves {
 		if resolve.flags&ResolveFlagMipMaps != 0 {
-			// peekTexture may be nil if there was an instantiation error.
+			// PeekTexture returns nil if there was an instantiation error.
 			texture := t.Target(i).PeekTexture()
 			if texture != nil && texture.MipmapsAreDirty() {
 				flushState.Gpu().RegenerateMipmapLevels(texture)

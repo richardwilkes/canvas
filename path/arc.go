@@ -41,16 +41,13 @@ func anglesToUnitVectors(startAngle, sweepAngle float32) (startV, stopV geom.Poi
 	stopV.Y = geom.ScalarSinSnapToZero(stopRad)
 	stopV.X = geom.ScalarCosSnapToZero(stopRad)
 
-	// If the sweep angle is nearly (but less than) 360, then due to precision loss in radians-conversion and/or
-	// sin/cos, we may end up with coincident vectors, which will fool BuildUnitArc into doing nothing (bad) instead of
-	// drawing a nearly complete circle (good). e.g. canvas.drawArc(0, 359.99, ...) -vs- canvas.drawArc(0, 359.9, ...).
-	// We try to detect this edge case, and tweak the stop vector.
+	// A sweep just under 360 can yield coincident vectors after precision loss in the radian conversion or sin/cos,
+	// which would make BuildUnitArc draw nothing instead of a nearly complete circle (e.g. drawArc(0, 359.99) versus
+	// drawArc(0, 359.9)). Nudge the stop vector back until the vectors differ.
 	if startV == stopV {
 		sw := geom.ScalarAbs(sweepAngle)
 		if sw < 360 && sw > 359 {
-			// make a guess at a tiny angle (in radians) to tweak by
 			deltaRad := float32(math.Copysign(1.0/512, float64(sweepAngle)))
-			// not sure how much will be enough, so we use a loop
 			for {
 				stopRad -= deltaRad
 				stopV.Y = geom.ScalarSinSnapToZero(stopRad)
@@ -118,8 +115,7 @@ func (p *Path) ArcToOval(oval geom.Rect, startAngle, sweepAngle float32, forceMo
 		}
 	}
 
-	// At this point, we know that the arc is not a lone point, but startV == stopV indicates that the sweepAngle is too
-	// small such that anglesToUnitVectors cannot handle it.
+	// The arc is not a lone point, so startV == stopV means the sweep is too small for anglesToUnitVectors to resolve.
 	if startV == stopV {
 		endAngle := geom.DegreesToRadians(startAngle + sweepAngle)
 		radiusX := oval.Width() / 2
@@ -182,7 +178,6 @@ func (p *Path) ArcToTangent(x1, y1, x2, y2, radius float32) *Path {
 		return p.LineTo(x1, y1)
 	}
 
-	// need to know our prev pt so we can construct tangent vectors
 	start, _ := p.LastPt()
 
 	// need double precision for these calcs.
@@ -191,14 +186,12 @@ func (p *Path) ArcToTangent(x1, y1, x2, y2, radius float32) *Path {
 	cosh := beforeX*afterX + beforeY*afterY
 	sinh := beforeX*afterY - beforeY*afterX
 
-	// If the previous point equals the first point, before will be denormalized. If the two points equal, after will be
-	// denormalized. If the second point equals the first point, sinh will be zero. In all these cases, we cannot
-	// construct an arc, so we construct a line to the first point.
+	// If the last point equals (x1, y1), before cannot be normalized; if (x2, y2) equals (x1, y1), after cannot be; if
+	// the tangents are collinear, sinh is zero. No arc exists in any of these cases, so line to (x1, y1).
 	if !beforeOK || !afterOK || geom.ScalarNearlyZero(geom.DoubleToScalar(sinh)) {
 		return p.LineTo(x1, y1)
 	}
 
-	// safe to convert back to floats now
 	dist := geom.ScalarAbs(geom.DoubleToScalar(float64(radius) * (1 - cosh) / sinh))
 	xx := x1 - dist*float32(beforeX)
 	yy := y1 - dist*float32(beforeY)
@@ -220,8 +213,8 @@ func normalizeDouble(x, y float64) (nx, ny float64, ok bool) {
 }
 
 // ArcToRotated appends an SVG-style elliptical arc from the last point to (x, y), on an oval with radii (rx, ry)
-// rotated by xAxisRotate degrees, choosing one of four possible routes via largeArc and sweep. Note that SVG's
-// sweep-flag is opposite the integer value of sweep (SVG uses 1 for clockwise; geom.DirectionCW is zero).
+// rotated by angle degrees, choosing one of four possible routes via arcLarge and arcSweep. SVG's sweep-flag is
+// opposite the integer value of arcSweep (SVG uses 1 for clockwise; geom.DirectionCW is zero).
 func (p *Path) ArcToRotated(rx, ry, angle float32, arcLarge ArcSize, arcSweep geom.PathDirection, x, y float32) *Path {
 	p.injectMoveToIfNeeded()
 	var srcPts [2]geom.Point
@@ -231,8 +224,7 @@ func (p *Path) ArcToRotated(rx, ry, angle float32, arcLarge ArcSize, arcSweep ge
 	if rx == 0 || ry == 0 {
 		return p.LineTo(x, y)
 	}
-	// If the current point and target point for the arc are identical, it should be treated as a zero length path. This
-	// ensures continuity in animations.
+	// Identical endpoints are treated as a zero-length path, which keeps animations continuous.
 	srcPts[1] = geom.Pt(x, y)
 	if srcPts[0] == srcPts[1] {
 		return p.LineTo(x, y)
@@ -288,9 +280,8 @@ func (p *Path) ArcToRotated(rx, ry, angle float32, arcLarge ArcSize, arcSweep ge
 		thetaArc -= float32(math.Pi) * 2
 	}
 
-	// Very tiny angles cause our subsequent math to go wonky (skbug.com/40040578) so we do a quick check here. The
-	// precise tolerance amount is just made up. PI/million happens to fix the bug in 9272, but a larger value is
-	// probably ok too.
+	// Tiny angles break the math below (skbug.com/40040578). The pi/1e6 tolerance is arbitrary; it fixes that bug, and
+	// a larger value would probably work too.
 	if geom.ScalarAbs(thetaArc) < float32(math.Pi)/(1000*1000) {
 		return p.LineTo(x, y)
 	}
@@ -337,8 +328,7 @@ func (p *Path) ArcToRotated(rx, ry, angle float32, arcLarge ArcSize, arcSweep ge
 		startTheta = endTheta
 	}
 
-	// The final point should match the input point (by definition); replace it to ensure that rounding errors in the
-	// above math don't cause any problems.
+	// The final point must be exactly (x, y); overwrite it to discard rounding error.
 	p.SetLastPt(x, y)
 	return p
 }

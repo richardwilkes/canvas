@@ -36,9 +36,8 @@ func NewSoftwarePathRenderer(proxyProvider *ProxyProvider, allowCaching bool) *S
 // Name implements PathRenderer.
 func (r *SoftwarePathRenderer) Name() string { return "SW" }
 
-// OnGetStencilSupport implements PathRenderer (the base-class default, matching OnStencilPath's panic and upstream's own
-// override: this renderer cannot stencil, and reporting anything else would make PathRendererStencilPath — which only
-// rejects StencilSupportNone — reach that panic).
+// OnGetStencilSupport implements PathRenderer. As upstream, this renderer cannot stencil; reporting anything else would
+// make PathRendererStencilPath, which only rejects StencilSupportNone, reach OnStencilPath's panic.
 func (r *SoftwarePathRenderer) OnGetStencilSupport(*StyledShape) StencilSupport {
 	return StencilSupportNone
 }
@@ -85,7 +84,6 @@ func getUnclippedShapeDevBounds(shape *StyledShape, matrix *geom.Matrix) (geom.I
 // GetShapeAndClipBounds computes the shape bounds, the clip bounds, and their intersection (returns false when there is
 // no intersection).
 func GetShapeAndClipBounds(sdc *SurfaceDrawContext, clip Clip, shape *StyledShape, matrix *geom.Matrix) (unclippedDevShapeBounds, clippedDevShapeBounds, devClipBounds geom.IRect, ok bool) {
-	// Compute the bounds as the intersection of rt size, clip, and path.
 	devClipBounds = sdc.clipConservativeBounds(clip)
 
 	unclippedDevShapeBounds, boundsOK := getUnclippedShapeDevBounds(shape, matrix)
@@ -162,7 +160,6 @@ func swDrawToTargetWithShapeMask(view SurfaceProxyView, sdc *SurfaceDrawContext,
 	swDrawNonAARect(sdc, paint, userStencilSettings, clip, &identity, dstRect, &invert)
 }
 
-// swPathMaskKeyDomain is the unique-key domain for "SW Path Mask" cache keys.
 var swPathMaskKeyDomain = gpu.GenerateUniqueKeyDomain()
 
 // OnDrawPath implements PathRenderer. Returns true on success (which includes "nothing visible to draw").
@@ -173,7 +170,7 @@ func (r *SoftwarePathRenderer) OnDrawPath(args *DrawPathArgs) bool {
 	if args.Shape.Style().Applies() {
 		panic("the SW renderer requires styles to have been applied")
 	}
-	// We really need to know if the shape will be inverse filled or not; if the path is hairline, ignore inverse fill.
+	// If the path is hairline, ignore inverse fill.
 	_, isHairline := isStrokeHairlineOrEquivalent(args.Shape.Style(), args.ViewMatrix)
 	inverseFilled := args.Shape.InverseFilled() && !isHairline
 
@@ -231,8 +228,8 @@ func (r *SoftwarePathRenderer) OnDrawPath(args *DrawPathArgs) bool {
 		data[4] = math.Float32bits(kx)
 		data[5] = math.Float32bits(ky)
 		// Distinguish between hairline and filled paths. For hairlines, we also need to include the cap (SW grows
-		// hairlines by 0.5 pixel with round and square caps). Note that stroke-and-fill of hairlines is turned into
-		// pure fill upstream, so this covers all cases we might see.
+		// hairlines by 0.5 pixel with round and square caps). stroke.Rec turns stroke-and-fill of hairlines into pure
+		// fill, so this covers all cases we might see.
 		var styleBits uint32
 		if args.Shape.Style().IsSimpleHairline() {
 			styleBits = uint32(args.Shape.Style().Rec().Cap())<<1 | 1

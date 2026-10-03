@@ -29,11 +29,9 @@ type SolidBlitter struct {
 	isBlack bool
 }
 
-// A SolidBlitter is built fresh for every solid-color draw, so pooling it keeps steady-state fills from allocating one
-// at the blitter layer. It holds only scalar state plus the destination Pixmap pointer, so init fully overwrites a
-// reused instance. A sync.Pool keeps concurrent FillPathParallel bands independent; each is fully consumed by the
-// synchronous fill before RecycleSolidBlitter returns it. Callers that do not recycle (e.g. one-off glyph fills) simply
-// get a fresh instance next time — missing a recycle is safe.
+// solidBlitterPool keeps steady-state solid-color draws from allocating a SolidBlitter each. NewSolidBlitter overwrites
+// every field, so a reused instance carries no stale state, and concurrent band workers each draw their own from the
+// pool. Missing a recycle (e.g. one-off glyph fills) is safe: the caller just gets a fresh instance next time.
 var solidBlitterPool = sync.Pool{New: func() any { return new(SolidBlitter) }}
 
 // NewSolidBlitter returns a SolidBlitter for the given unpremultiplied color, choosing the black / opaque / general
@@ -217,8 +215,8 @@ func alphaMul(value, alpha256 uint32) uint32 {
 // alphaMulInv256 returns the 256-based inverse-coverage multiplier blendARGB32 scales the destination by: it computes
 // 0xFFFF - value*alpha256 (in [255, 0xFFFF] for value in [0, 255] and alpha256 in [0, 256]) and divides by 255 with the
 // usual (x + (x>>8)) >> 8 approximation, giving 256 - value*alpha256/255 in [0, 256] — 256 when the source contributes
-// nothing, 0 for a fully opaque source at full coverage. Note the numerator is 0xFFFF = 257*255, not 255*255; the
-// approximation falls one short of an exact divide only at that top end, which is what keeps the result within 256.
+// nothing, 0 for a fully opaque source at full coverage. The numerator is 0xFFFF = 257*255, not 255*255; the
+// approximation falls one short of the exact quotient at multiples of 255, which keeps the top end at 256, not 257.
 func alphaMulInv256(value, alpha256 uint32) uint32 {
 	prod := 0xFFFF - value*alpha256
 	return (prod + (prod >> 8)) >> 8
@@ -324,7 +322,7 @@ func blitMaskTranslucentRowGeneric(dev []uint32, aa []uint8, pm, srcA uint32) {
 
 // BlitMask implements Blitter. The per-pixel math below matches both the NEON and the SSE lanes of the equivalent SIMD
 // kernels (their scalar tails and vector lanes compute the same integer expressions), so this is byte-exact against
-// both oracle unix legs. The general (translucent) case returns early when srcA == 0.
+// both oracle unix legs.
 func (s *SolidBlitter) BlitMask(mask *Mask, clip geom.IRect) {
 	if mask.Format == MaskLCD16 {
 		s.blitMaskLCD16(mask, clip)

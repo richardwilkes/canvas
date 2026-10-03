@@ -54,8 +54,7 @@ func (p Point) IsFinite() bool {
 
 // Dot returns the dot product p . q. The explicit float32 conversions force both products to round, forbidding the
 // compiler from fusing a multiply into the add (Go fuses on arm64): callers branch on the sign of near-zero dot
-// products, and fusion would move results across zero unpredictably per platform. The unfused evaluation is used
-// everywhere so output is identical on every platform.
+// products, and fusion would move results across zero unpredictably per platform.
 func (p Point) Dot(q Point) float32 {
 	return float32(p.X*q.X) + float32(p.Y*q.Y)
 }
@@ -91,8 +90,8 @@ func (p Point) DistanceTo(q Point) float32 {
 	return q.Sub(p).Length()
 }
 
-// setPointLength scales (x, y) to the requested length, using the double-precision path. Returns the zero point and
-// false if the vector cannot be normalized (zero or non-finite input). When orig is non-nil, it receives the original
+// setPointLength sets pt to (x, y) scaled to the requested length, computed in double precision. If the result is zero
+// or non-finite, it sets pt to the zero point and returns false. On success, a non-nil orig receives the original
 // length.
 func setPointLength(pt *Point, x, y, length float32, orig *float32) bool {
 	xx := float64(x)
@@ -177,8 +176,7 @@ func (p Point) DistanceToLineBetweenSqd(a, b Point) float32 {
 	det := u.Cross(v)
 	temp := IEEEFloatDivide(det, uLengthSqd)
 	temp *= det
-	// It's possible we have a degenerate line vector, or we're so far away it looks degenerate. In this case, return
-	// squared distance to point a.
+	// The line vector is degenerate, or p is so far away it looks degenerate.
 	if !IsFinite(temp) {
 		return v.LengthSqd()
 	}

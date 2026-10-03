@@ -258,7 +258,7 @@ func TestThreadSafeCacheDropAllRefs(t *testing.T) {
 		r, _ := c.AddVertsWithData(&key, vd, func(_, _ []byte) bool { return false })
 		r.Unref()
 		if i%2 == 0 {
-			vd.Unref() // half uniquely held, half pinned — dropAllRefs takes everything
+			vd.Unref() // half uniquely held, half pinned — DropAllRefs takes everything
 		}
 	}
 	c.DropAllRefs()
@@ -351,8 +351,8 @@ func TestThreadSafeCacheViewFindAdd(t *testing.T) {
 	}
 }
 
-// TestThreadSafeCacheViewWithData exercises the custom-data lanes (the general filter_mask cache lane stores the mask
-// draw rect as custom data): add/find round-trip the stored key's data.
+// TestThreadSafeCacheViewWithData exercises the custom-data lanes (the filtered-mask cache lanes store the mask draw
+// rect as custom data): add/find round-trip the stored key's data.
 func TestThreadSafeCacheViewWithData(t *testing.T) {
 	c := NewThreadSafeCache()
 	key := tscTestKey(3, []byte{7, 8})

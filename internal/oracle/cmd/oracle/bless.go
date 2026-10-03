@@ -42,39 +42,35 @@ type blessConfig struct {
 	platform  string    // GOOS_GOARCH
 	artifacts string    // optional directory for old-vs-new change artifacts
 	out       io.Writer // progress + change-summary output
-	// newSession opens a fresh rendering session for one full corpus pass (see laneSession for why passes get fresh
-	// sessions rather than re-rendering on a warm context). bless opens exactly two: the capture pass and the verify
-	// pass.
+	// newSession opens a fresh rendering session for one full corpus pass (see laneSession for why). bless opens
+	// exactly two: the capture pass and the verify pass.
 	newSession func() (*laneSession, error)
 	scenarios  []scenario.Scenario // the corpus to capture, in gate order
 }
 
 // bless captures a lane's self-captured golden set: it renders the corpus once in a fresh session (the capture pass,
 // mirroring how the gates render), renders it again in a second fresh session and refuses to write anything on any
-// cross-pass divergence (the permanent capture-time determinism guard — this is the fresh-context corpus-pass
-// invariant the gates rely on; see laneSession), stages the PNGs + schema-2 manifest beside the target directory,
-// prints a per-scenario old-vs-new change summary when a prior set exists (the reviewable diff is generated at
-// capture time), and only then swaps the staged set into place — renaming the prior set aside rather than removing it,
-// so a failed swap puts it back. On any error the target directory keeps the prior set, with one exception the swap
-// itself cannot rule out: when the staged set cannot be moved into place *and* the prior set cannot be moved back, the
-// target is left missing and both sets survive beside it (`.prior` and `.staging`). That is precisely the state
-// recoverInterruptedSwap repairs on the next run, and the error names both directories.
+// cross-pass divergence (the capture-time guard for the fresh-context determinism the gates rely on; see laneSession),
+// stages the PNGs + schema-2 manifest beside the target directory, prints a per-scenario old-vs-new change summary when
+// a prior set exists, and only then swaps the staged set into place, renaming the prior set aside rather than removing
+// it so a failed swap puts it back. On any error the target directory keeps the prior set, with one exception: when the
+// staged set cannot be moved into place *and* the prior set cannot be moved back, the target is left missing and both
+// sets survive beside it (`.prior` and `.staging`). recoverInterruptedSwap repairs that state on the next run, and the
+// error names both directories.
 //
-// The guard is per-lane, mirroring soak: raster is strictly bit-exact (any hash difference refuses), while the gpu
-// and gpudmsaa lanes compare the verify pass per-pixel against the retained capture-pass buffers under the ±1 LSB
-// envelope (imgdiff.Exact1) — software GL rasterizers wobble ±1 intermittently between GL sessions, proven
-// driver-internal (see the soak doc comment for the evidence). Any delta > 1 still hard-refuses, except for the
-// scenarios gorender.DriverBimodal names for the live GL stack, where a beyond-envelope difference is the driver
-// picking its other bit-exact flavor for the verify session; those are logged as `bimodal` and accepted for the same
-// reason soak excuses them and the gates do not pixel-gate them. Within-envelope wobble is logged but accepted. What
-// gets written is always the capture pass — the first context in a fresh process, the most reproducible render
-// available (cold renders of separate processes agree within the same envelope).
+// The guard is per-lane, mirroring soak: raster is strictly bit-exact (any hash difference refuses), while the gpu and
+// gpudmsaa lanes compare the verify pass per-pixel against the retained capture-pass buffers under the ±1 LSB envelope
+// (imgdiff.Exact1), because software GL rasterizers wobble ±1 intermittently between GL sessions, proven
+// driver-internal (see the soak doc comment). Any delta > 1 still refuses, except for the scenarios
+// gorender.DriverBimodal names for the live GL stack, where the driver picked its other bit-exact flavor for the verify
+// session; those are logged as `bimodal` and accepted, as soak excuses them and the gates do not pixel-gate them.
+// Within-envelope wobble is logged and accepted. What gets written is always the capture pass: the first context in a
+// fresh process, the most reproducible render available (cold renders of separate processes agree within the same
+// envelope).
 //
-// It refuses to replace a manifest whose schema it does not write: a set it cannot read as its own is not a set it may
-// silently capture over.
-//
-// It also repairs the disk state a previously interrupted commit swap can leave behind before doing anything else (see
-// recoverInterruptedSwap), so re-running bless after that failure cannot destroy the preserved prior set.
+// It refuses to replace a manifest whose schema it does not write (see priorManifest), and before anything else it
+// repairs what an interrupted commit swap left behind (see recoverInterruptedSwap), so re-running bless after that
+// failure cannot destroy the preserved prior set.
 func bless(cfg *blessConfig) error {
 	if err := recoverInterruptedSwap(cfg); err != nil {
 		return err
@@ -90,10 +86,9 @@ func bless(cfg *blessConfig) error {
 	if err = os.MkdirAll(staging, 0o755); err != nil {
 		return err
 	}
-	// The staging directory is scratch space until the commit swap moves it into place, so it is removed on every error
-	// path. keepStaging turns that off for the two cases where staging is not scratch: the swap succeeded (staging no
-	// longer exists), or the swap failed *and* the prior set could not be restored, leaving the staged capture as the
-	// only copy of a verified render — deleting it there would throw away exactly what the operation produced.
+	// The staging directory is scratch space removed on every error path, except when keepStaging is set: after a
+	// successful swap (staging no longer exists), or when the swap failed *and* the prior set could not be restored,
+	// leaving the staged capture as the only copy of a verified render.
 	keepStaging := false
 	defer func() {
 		if !keepStaging {
@@ -138,16 +133,14 @@ func bless(cfg *blessConfig) error {
 	}
 	capture.dispose()
 
-	// Verify pass: a second fresh session must reproduce the capture pass, every time, forever — bit-exactly on
-	// raster, within the ±1 LSB envelope on the GPU lanes (the verify session is a warm 2nd context, which the Apple
-	// software renderer wobbles ±1 on; see the bless doc comment). A divergence beyond the lane's tolerance means the
-	// premise of self-captured goldens does not hold on this stack and nothing may be written.
+	// Verify pass: a second fresh session must reproduce the capture pass bit-exactly on raster and within the ±1 LSB
+	// envelope on the GPU lanes (the verify session is a warm second context, which the Apple software renderer wobbles
+	// ±1 on). A divergence beyond the lane's tolerance means self-captured goldens do not hold on this stack.
 	verify, err := cfg.newSession()
 	if err != nil {
-		// A context that came up for the capture pass and not for the verify pass is its own kind of broken, so this
-		// must not reach main as the loud-skip case: err.Error() rather than %w strips errNoGLContext, exactly as soak
-		// does for the same situation. Wrapping it would exit 3 and make capture-goldens.yml report a mid-run GL loss
-		// as "this leg has no GL stack" instead of a failure.
+		// A context that came up for the capture pass but not the verify pass is a failure, not the loud-skip case:
+		// err.Error() rather than %w strips errNoGLContext, as soak does. Wrapping it would exit 3 and make
+		// capture-goldens.yml report a mid-run GL loss as "this leg has no GL stack".
 		return fmt.Errorf("bless: the verify-pass session failed after the capture pass succeeded: %s", err.Error())
 	}
 	if verify.glRenderer != m.GLRenderer || verify.glVersion != m.GLVersion {
@@ -178,9 +171,8 @@ func bless(cfg *blessConfig) error {
 		}
 		switch {
 		case res.DiffPixels > 0 && gorender.DriverBimodal(verify.glRenderer, s.Name):
-			// The verify session drew the driver's other flavor of this scenario. Not a refusal: the flip is
-			// driver-internal (gorender.DriverBimodal) and the golden gates do not pixel-gate this scenario on this
-			// stack, so the capture pass stays canonical exactly as it does for within-envelope wobble.
+			// The verify session drew the driver's other flavor of this scenario. The flip is driver-internal and the
+			// gates do not pixel-gate this scenario on this stack, so the capture pass stays canonical, as for wobble.
 			fmt.Fprintf(cfg.out, "bimodal  %-32s verify pass: max channel delta %d on %d px (driver-internal flavor flip; capture pass is canonical)\n",
 				s.Name, res.MaxDelta, res.AnyDiffPixels)
 			bimodals++
@@ -218,17 +210,16 @@ func bless(cfg *blessConfig) error {
 		fmt.Fprintf(cfg.out, "no prior manifest in %s — capturing a new set (%d scenarios)\n", cfg.dir, len(m.Entries))
 	}
 
-	// Commit swap. The prior set is renamed aside rather than removed, so a failed swap can put it back: there is no
-	// window in which both it and the freshly captured set are gone from the disk. Removing it first would mean a
-	// rename failure (an open handle on Windows, the target directory recreated concurrently) left the target gone and
-	// the deferred cleanup deleting the only remaining copy of the verified capture.
+	// Commit swap. The prior set is renamed aside rather than removed, so a failed swap can put it back and there is no
+	// window in which both sets are gone. Removing it first would let a rename failure (an open handle on Windows, the
+	// target recreated concurrently) leave the target gone while the deferred cleanup deletes the verified capture.
 	backup := cfg.dir + ".prior"
 	hasBackup := false
 	if _, err = os.Stat(cfg.dir); err == nil {
 		// Any backup still on disk here is stale: recoverInterruptedSwap has already moved a preserved prior set back,
-		// so a backup sitting beside an existing target can only be the residue of a successful swap whose backup
-		// removal failed below. Clearing it is gated on the target existing precisely so that a preserved prior set —
-		// which is only ever the last copy when the target is *missing* — can never be the thing removed here.
+		// so a backup beside an existing target is residue of a successful swap whose backup removal failed. Clearing
+		// it only when the target exists guarantees a preserved prior set (the last copy only when the target is
+		// missing) is never removed here.
 		if err = os.RemoveAll(backup); err != nil {
 			return err
 		}
@@ -264,10 +255,9 @@ func bless(cfg *blessConfig) error {
 
 // recoverInterruptedSwap repairs the disk state left by the commit swap's worst case: the staged set could not be
 // renamed into cfg.dir and the prior set could not be moved back either, so cfg.dir is gone and cfg.dir+".prior" holds
-// the only copy of the prior set. Moving it back turns that into an ordinary re-bless — the prior set is read for the
-// change summary and renamed aside again under the swap's normal protections — where leaving it would mean the next
-// run captured with no prior set to compare against and, worse, with no target directory to move aside, so a second
-// swap failure would find nothing to restore.
+// the only copy of the prior set. Moving it back turns that into an ordinary re-bless under the swap's normal
+// protections; leaving it would mean capturing with no prior set to compare against and no target to move aside, so a
+// second swap failure would find nothing to restore.
 //
 // A backup sitting beside a target directory that does exist is the harmless residue of a successful swap whose backup
 // removal failed; it is left alone here and cleared by the commit swap.
@@ -316,11 +306,9 @@ func priorManifest(dir string) (m golden.Manifest, hasPrior bool, err error) {
 // for every changed image and optional side-by-side + heatmap artifacts. This runs before the staged set replaces the
 // prior one, while the old PNGs are still in place.
 //
-// Nothing about the optional -artifacts output may abort the capture, for exactly the reason the damaged-prior-golden
-// paths below give: this summary is informational and runs after both render passes have already verified the new set,
-// so returning an error here would trip bless's keepStaging defer and delete a two-full-corpus-pass verified capture
-// because a cosmetic side-by-side or heatmap PNG could not be written (a bad -artifacts path, a full disk). Artifact
-// failures are reported on cfg.out and the capture continues.
+// The summary is informational and runs after both render passes have verified the new set, so neither a damaged prior
+// golden nor a failed -artifacts write (a bad path, a full disk) may abort the capture: returning an error would make
+// bless's deferred cleanup delete the verified staged capture. Such failures are reported on cfg.out instead.
 func blessSummary(cfg *blessConfig, prior, next *golden.Manifest, staging string) error {
 	priorByName := make(map[string]golden.Entry, len(prior.Entries))
 	for _, e := range prior.Entries {
@@ -355,9 +343,7 @@ func blessSummary(cfg *blessConfig, prior, next *golden.Manifest, staging string
 		}
 		oldPix, oldW, oldH, err := golden.ReadPNG(filepath.Join(cfg.dir, ne.Name+".png"))
 		if err != nil {
-			// A damaged prior golden may not abort the capture. This summary is informational and runs after both
-			// render passes have already verified the new set, and a damaged golden set is the one situation where
-			// re-blessing is most needed — refusing here would instead delete the staged capture on the way out.
+			// A damaged golden set is where re-blessing is most needed, so this must not abort (see the doc comment).
 			fmt.Fprintf(cfg.out, "CHANGED   %-32s prior golden unreadable (%v); capturing over it\n", ne.Name, err)
 			continue
 		}
@@ -406,16 +392,14 @@ func priorCaptureLabel(m *golden.Manifest) string {
 	return m.CapturedAt
 }
 
-// writeChangeArtifact writes one optional old-vs-new change artifact. A failure is reported on out and swallowed
-// rather than returned: the artifacts are cosmetic review aids, and propagating the error would delete the verified
-// capture staged beside the target directory (see blessSummary).
+// writeChangeArtifact writes one optional old-vs-new change artifact, reporting a failure on out rather than returning
+// it (see blessSummary).
 func writeChangeArtifact(out io.Writer, path string, img image.Image) {
 	if err := writeImagePNG(path, img); err != nil {
 		fmt.Fprintf(out, "note: could not write the change artifact %s (%v); the capture continues\n", path, err)
 	}
 }
 
-// writeImagePNG encodes img to path.
 func writeImagePNG(path string, img image.Image) error {
 	f, err := os.Create(path)
 	if err != nil {

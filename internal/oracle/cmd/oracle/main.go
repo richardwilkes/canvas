@@ -14,8 +14,8 @@
 //	oracle gen -out DIR [-gpu]                  render all scenarios into DIR (+ manifest); -gpu renders
 //	                                            through the GL backend instead of raster
 //	oracle diff -a DIR -b DIR [-profile P] [-artifacts DIR]
-//	                                            compare two golden directories; artifacts get side-by-side +
-//	                                            heatmap PNGs for failures; exit 1 on any failure
+//	                                            compare two golden directories; artifacts get side-by-side
+//	                                            PNGs for failures; exit 1 on any failure
 //	oracle soak -n N [-gpu|-dmsaa]              render the full corpus N times — each pass in a fresh session
 //	                                            (new GL context for the GPU lanes) — and fail on any
 //	                                            pass-to-pass divergence: the determinism proof behind
@@ -37,7 +37,7 @@
 //
 // gen renders through the canvas library (internal/oracle/gorender). The checked-in goldens under ../../goldens are
 // the library's own output, captured per platform by `bless`, so `gen` + `diff` against a raster set is a pure change
-// detector: a failure means rendering changed on this platform, full stop.
+// detector: a failure means rendering changed on this platform.
 package main
 
 import (
@@ -204,9 +204,9 @@ func gen(dir string, useGPU bool) error {
 
 // writeGoldens renders scenarios through render and writes the golden PNGs + manifest to dir.
 //
-// The manifest is schema 2, the same schema `bless` writes: bless refuses to overwrite a set carrying any other
-// schema, so stamping gen's freshly rendered output with one would poison the directory against every later capture.
-// The lane and GL-stack fields stay empty — gen's output is a scratch comparison set, not a blessed one.
+// The manifest uses the schema `bless` writes, because bless refuses to overwrite any other schema and a different one
+// would block every later capture into the directory. The lane and GL-stack fields stay empty: gen's output is a
+// scratch comparison set, not a blessed one.
 func writeGoldens(dir string, scenarios []scenario.Scenario, render func(scenario.Scenario) []byte) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
@@ -230,11 +230,9 @@ func writeGoldens(dir string, scenarios []scenario.Scenario, render func(scenari
 }
 
 // checkDiffManifest rejects a manifest that cannot describe a golden set. golden.ReadManifest accepts any well-formed
-// JSON — `{}`, `null`, and a truncated-then-repaired file all unmarshal into a zero Manifest without error — so a
-// manifest carrying no schema or no entries reaches diff looking exactly like a set with nothing to compare. Both of
-// diff's loops are then no-ops, failures stays 0, and the run reports "all 0 scenarios pass": a green gate over a
-// corrupt manifest. Since `oracle gen` + `oracle diff` is the raster lane's only gate, that has to be a hard error
-// rather than a pass.
+// JSON (`{}`, `null`, and a truncated-then-repaired file all unmarshal into a zero Manifest), and diff would report
+// "all 0 scenarios pass" for one with no entries: a green gate over a corrupt manifest. Since `oracle gen` + `oracle
+// diff` is the raster lane's only gate, that must be a hard error.
 func checkDiffManifest(dir string, m *golden.Manifest) error {
 	if m.Schema == 0 {
 		return fmt.Errorf("the manifest in %s carries no schema version — %s is corrupt, truncated, or not a golden "+
@@ -284,11 +282,9 @@ func diff(aDir, bDir string, profile imgdiff.Profile, artifacts string) (failure
 			failures++
 			continue
 		}
-		// Both PNGs are read even when the manifests agree. The manifest hashes describe the pixels a golden was
-		// captured from, not the bytes now on disk, so short-circuiting on hash equality would leave every passing
-		// golden PNG unopened — and the raster lane's only gate is `oracle gen` + `oracle diff`, which would then never
-		// notice a corrupted or truncated checked-in golden. Reading them is what makes the files comparison data
-		// first (see package golden).
+		// Both PNGs are read even when the manifests agree: the manifest hashes describe the pixels a golden was
+		// captured from, not the bytes now on disk, so short-circuiting on hash equality would leave the raster lane's
+		// only gate unable to notice a corrupted or truncated checked-in golden (see package golden).
 		apx, aw, ah, pngErr := golden.ReadPNG(filepath.Join(aDir, ae.Name+".png"))
 		if pngErr != nil {
 			return failures, pngErr
@@ -302,11 +298,10 @@ func diff(aDir, bDir string, profile imgdiff.Profile, artifacts string) (failure
 			failures++
 			continue
 		}
-		// Each PNG has to be the pixels its own manifest entry describes, on both paths. Doing this only where the two
-		// manifests happen to agree would mean the entry's integrity hash is written but never verified on the path
-		// that actually compares pixels: a golden PNG replaced by hand or by a partial merge without updating
-		// manifest.json leaves that side's hash permanently stale, the two manifest hashes then never match, and the
-		// desynchronization would go unreported forever while the comparison keeps saying ok.
+		// Each PNG must be the pixels its own manifest entry describes, whether or not the two manifests agree.
+		// Otherwise a golden PNG replaced by hand or by a partial merge without updating manifest.json would leave that
+		// side's hash stale, the manifest hashes would never match again, and the desynchronization would go unreported
+		// while the pixel comparison keeps saying ok.
 		aHash, bHash := golden.HashPixels(apx), golden.HashPixels(bpx)
 		if aHash != ae.SHA256 || bHash != be.SHA256 {
 			fmt.Printf("FAIL %-32s png content disagrees with its manifest entry (%s: png %s vs manifest %s, "+

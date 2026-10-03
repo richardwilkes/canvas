@@ -20,9 +20,8 @@ import (
 	"github.com/richardwilkes/canvas/internal/oracle/scenario"
 )
 
-// gpuGoldenDir is the per-platform self-captured GPU golden directory (relative to this package, since `go test` runs
-// with the package directory as the working directory). The goldens are the library's own output, captured by `oracle
-// bless` on the platform's software GL stack.
+// gpuGoldenDir is the per-platform GPU golden directory, relative to this package (`go test` runs with the package
+// directory as the working directory).
 func gpuGoldenDir() string {
 	return filepath.Join("..", "goldens", "gpu", runtime.GOOS+"_"+runtime.GOARCH)
 }
@@ -46,7 +45,7 @@ var wrappedFBOKnifeEdge = map[string]map[string]bool{
 }
 
 // checkGPUGoldens renders the whole corpus through render and diffs each scenario against the self-captured GPU golden
-// under the exact1 profile, gating every scenario. label names the Go-side surface path in the log.
+// under the exact1 profile. label names the surface path in the log.
 //
 // The comparison is exact modulo ±1 LSB (imgdiff.Exact1), not bit-exact: software GL rasterizers wobble ±1
 // intermittently between GL sessions, proven driver-internal (see the oracle soak command's doc comment), and the
@@ -64,8 +63,7 @@ var wrappedFBOKnifeEdge = map[string]map[string]bool{
 // wall of pixel differences.
 //
 // It renders inline on the caller's goroutine: NewGPUContext locks the OS thread and the GL context is current only on
-// the goroutine that created it, so there are no t.Run subtests (a subtest runs on a different goroutine where the
-// context would not be current).
+// the goroutine that created it, so there are no t.Run subtests.
 func checkGPUGoldens(t *testing.T, label string, render func(*gorender.GPUContext, scenario.Scenario) []byte) {
 	t.Helper()
 	dir := gpuGoldenDir()
@@ -156,17 +154,14 @@ func TestGoGPUvsSelfCapturedGolden(t *testing.T) {
 	checkGPUGoldens(t, labelOwnedRT, gorender.RenderScenarioGPU)
 }
 
-// TestGoGPUWrappedFBOvsSelfCapturedGolden is the same gate over the *caller-owned wrapped FBO* —
-// gl.NewRenderTargetSurfaceFromBackendRenderTarget, the production surface path unison drives when it hands the library
-// its window FBO — rather than the library-owned offscreen target the test above uses. The two lanes are separate gates
-// because the surface-creation path differs even though the drawing does not; keeping both is what verifies the
-// wrapped-FBO path end-to-end on the whole corpus rather than only on gpu/gl's CPU-checked live tests.
+// TestGoGPUWrappedFBOvsSelfCapturedGolden is the same gate over the caller-owned wrapped FBO
+// (gl.NewRenderTargetSurfaceFromBackendRenderTarget, the production surface path unison drives when it hands the
+// library its window FBO) rather than the library-owned offscreen target. The lanes are separate gates because the
+// surface-creation path differs even though the drawing does not.
 //
-// Both lanes gate against the same goldens, which bless captures through the owned-RT path:
-// RenderScenarioGPUWrappedFBO wraps at top-left origin, so its output matches the owned-RT path scenario for scenario
-// (verified within the same ±1 envelope the gate applies, except the per-stack knife-edge scenarios in
-// wrappedFBOKnifeEdge; the live cgo differential historically measured the two lanes within one bit-exact scenario of
-// each other on every platform and driver tested).
+// Both lanes gate against the same goldens, which bless captures through the owned-RT path: RenderScenarioGPUWrappedFBO
+// wraps at top-left origin, so its output matches the owned-RT path scenario for scenario, within the ±1 envelope the
+// gate applies, except the per-stack knife-edge scenarios in wrappedFBOKnifeEdge.
 func TestGoGPUWrappedFBOvsSelfCapturedGolden(t *testing.T) {
 	checkGPUGoldens(t, labelWrappedFBO, gorender.RenderScenarioGPUWrappedFBO)
 }

@@ -9,7 +9,7 @@
 
 // The program key: a uint32 word array built from the geometry processor (class id, subclass key, attribute key,
 // sampler keys), the dst-texture key, the FP tree keys, the transfer-processor key, write swizzle, and the
-// primitive-type bit. The GL backend appends nothing extra, so the initial key length is the whole key.
+// snap-vertices and primitive-type bits. The GL backend appends nothing extra.
 
 package gl
 
@@ -35,9 +35,8 @@ func (d *ProgramDesc) IsValid() bool { return len(d.key) > 0 }
 // Key returns the raw key words.
 func (d *ProgramDesc) Key() []uint32 { return d.key }
 
-// AppendKeyBytes appends the key's little-endian byte image to dst and returns the extended slice. The byte image is
-// the program cache's map key; appending into reused scratch (rather than a fresh buffer) lets the per-draw cache
-// lookup avoid allocating on a hit, paired with the compiler's m[string(bytes)] no-allocation map access (see
+// AppendKeyBytes appends the key's little-endian byte image (the program cache's map key) to dst and returns the
+// extended slice. Appending into reused scratch lets the per-draw cache lookup avoid allocating on a hit (see
 // ProgramCache.findOrCreateProgramImpl).
 func (d *ProgramDesc) AppendKeyBytes(dst []byte) []byte {
 	for _, w := range d.key {
@@ -70,15 +69,13 @@ func samplerKey(textureType gpu.TextureType, swizzle gpu.Swizzle) uint32 {
 	return samplerTypeKey | uint32(swizzle)<<samplerOrImageTypeKeyBits
 }
 
-// addGeomProcSamplerKeys appends the geometry processor's texture-sampler keys.
 func addGeomProcSamplerKeys(b *gpu.KeyBuilder, geomProc GeometryProcessor, caps *Caps) {
 	numTextureSamplers := geomProc.gpBase().NumTextureSamplers()
 	b.Add32(uint32(numTextureSamplers), "ppNumSamplers")
 	for i := 0; i < numTextureSamplers; i++ {
 		sampler := geomProc.gpBase().TextureSampler(i)
 		b.Add32(samplerKey(sampler.TextureType(), sampler.Swizzle()), "samplerKey")
-		// caps.addExtraSamplerKey is only non-empty for external textures/decal-emulation workarounds that are
-		// unreachable with the desktop trim.
+		// Upstream's caps.addExtraSamplerKey is a no-op on the GL backend.
 		_ = caps
 	}
 }
@@ -95,7 +92,6 @@ func genGeomProcKey(geomProc GeometryProcessor, caps *Caps, b *gpu.KeyBuilder) {
 	addGeomProcSamplerKeys(b, geomProc, caps)
 }
 
-// genXPKey appends the transfer processor's contribution to the program key.
 func genXPKey(xp XferProcessor, caps *Caps, b *gpu.KeyBuilder) {
 	b.AppendComment(xp.Name())
 	b.AddBits(classIDBits, uint32(xp.ClassID()), "xpClassID")
@@ -111,8 +107,7 @@ func genFPKey(fp FragmentProcessor, caps *Caps, b *gpu.KeyBuilder) {
 
 	if te, ok := fp.(*TextureEffect); ok {
 		b.Add32(samplerKey(te.view.Proxy().TextureType(), te.view.Swizzle()), "fpSamplerKey")
-		// caps.addExtraSamplerKey is only non-empty for external textures/decal emulation, both outside the desktop
-		// trim.
+		// Upstream's caps.addExtraSamplerKey is a no-op on the GL backend.
 	}
 
 	fp.onAddToKey(caps.ShaderCaps, b)
@@ -122,7 +117,6 @@ func genFPKey(fp FragmentProcessor, caps *Caps, b *gpu.KeyBuilder) {
 		if child := fp.fpBase().ChildProcessor(i); child != nil {
 			genFPKey(child, caps, b)
 		} else {
-			// Fold in a sentinel value as the "class ID" for any null children.
 			b.AppendComment("Null")
 			b.AddBits(classIDBits, uint32(NullClassID), "fpClassID")
 		}
@@ -162,7 +156,7 @@ func genProgramKey(b *gpu.KeyBuilder, programInfo *ProgramInfo, caps *Caps) {
 	// The base descriptor only stores whether or not the primitiveType is PrimitiveTypePoints.
 	b.AddBool(programInfo.PrimitiveType() == gpu.PrimitiveTypePoints, "isPoints")
 
-	// Put a clean break between the "common" data and any backend data appended later.
+	// The key must end on a word boundary before any cache uses it.
 	b.Flush()
 }
 
@@ -172,10 +166,8 @@ func BuildProgramDesc(desc *ProgramDesc, programInfo *ProgramInfo, caps *Caps) {
 	buildProgramDescReusing(desc, &b, programInfo, caps)
 }
 
-// buildProgramDescReusing is BuildProgramDesc over a caller-owned builder. The per-draw cache path
-// (ProgramCache.FindOrCreateProgram) passes a builder it keeps across draws, so building a key allocates nothing (the
-// builder is heap-resident as a cache field, sidestepping the escape the add methods' interface calls force on a fresh
-// builder).
+// buildProgramDescReusing is BuildProgramDesc over a caller-owned builder. ProgramCache.FindOrCreateProgram passes one
+// it keeps across draws so that building a key allocates nothing (see the comment on ProgramCache.desc).
 func buildProgramDescReusing(desc *ProgramDesc, b *gpu.KeyBuilder, programInfo *ProgramInfo, caps *Caps) {
 	desc.key = desc.key[:0]
 	b.Reset(&desc.key)

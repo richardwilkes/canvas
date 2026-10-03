@@ -7,12 +7,12 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// GLSL shader implementations of the analytic rect/circle blur runtime effects that MakeRectBlur and MakeCircleBlur
-// build. Each is a FragmentProcessor whose single child is a profile/integral texture effect sampled explicitly, and
-// whose own math reads the fragment coordinate (device space) — so an axis-aligned rect or a circle is blurred by one
-// textured draw instead of a mask render + separable convolution. Both share the runtime FP's ClassID and are separated
-// in the key by a runtimeFPKind tag; the rect effect's isFast flag is a compile-time specialization baked into both the
-// emitted source and the key.
+// GLSL shader implementations of the analytic circle/rect/rrect blur effects that MakeCircleBlur, MakeRectBlur, and
+// MakeRRectBlur build. Each is a FragmentProcessor whose single child is a profile/integral/mask texture effect sampled
+// explicitly, so the shape is blurred by one textured draw instead of a mask render + separable convolution. The circle
+// and rrect effects read the fragment coordinate (device space); the rect effect evaluates in its sample coordinate
+// (see NewRectBlurFP). All share GLSLFPClassID and are separated in the key by a runtimeFPKind tag; the rect effect's
+// isFast flag is a compile-time specialization baked into both the emitted source and the key.
 
 package gl
 
@@ -20,9 +20,6 @@ import (
 	"github.com/richardwilkes/canvas/geom"
 	"github.com/richardwilkes/canvas/gpu"
 )
-
-//////////////////////////////////////////////////////////////////////////////
-// Circle blur.
 
 type circleBlurFP struct {
 	FPBase
@@ -83,9 +80,6 @@ func (i *circleBlurFPImpl) onSetData(pdman *ProgramDataManager, fp FragmentProce
 	pdman.Set4f(i.circleDataUni, d[0], d[1], d[2], d[3])
 }
 
-//////////////////////////////////////////////////////////////////////////////
-// Rect blur.
-
 type rectBlurFP struct {
 	FPBase
 	insetRect geom.Rect
@@ -95,9 +89,9 @@ type rectBlurFP struct {
 
 // NewRectBlurFP builds the "RectBlur" fragment processor: integral is the normal-distribution integral texture effect
 // (linear-sampled, explicit coords). insetRect is the blurred rect inset by 3*sigma so its edge corresponds to t=0 in
-// the integral texture. Unlike the circle effect, the rect shader evaluates in its own sample coordinate (MakeRectBlur
-// wraps it in an optional matrix effect + a DeviceSpace FP), so callers feed it device space that way rather than
-// reading the fragment coordinate here.
+// the integral texture. Unlike the circle effect, the rect shader evaluates in its sample coordinate rather than
+// reading the fragment coordinate; MakeRectBlur feeds it device space by wrapping it in an optional matrix effect + a
+// DeviceSpace FP.
 func NewRectBlurFP(insetRect geom.Rect, isFast bool, integral FragmentProcessor) FragmentProcessor {
 	fp := &rectBlurFP{insetRect: insetRect, isFast: isFast}
 	fp.initFP(GLSLFPClassID, FPCompatibleWithCoverageAsAlpha)
@@ -137,7 +131,7 @@ func (i *rectBlurFPImpl) EmitCode(args *FPEmitArgs) {
 	pos := args.SampleCoord
 	fb := args.FragBuilder
 	// The integral texture goes "backwards" (from 3*sigma to -3*sigma) and 'rect' was pre-inset by 3*sigma, both
-	// accounted for below. The sample-child helper reads the integral's alpha at t.
+	// accounted for below. xEval samples the integral at t.
 	xEval := func(t string) string {
 		return i.InvokeChildWithCoords(0, "", args, "vec2("+t+", 0.5)")
 	}
@@ -167,9 +161,6 @@ func (i *rectBlurFPImpl) onSetData(pdman *ProgramDataManager, fp FragmentProcess
 	pdman.Set4f(i.rectUni, r.Left, r.Top, r.Right, r.Bottom)
 }
 
-//////////////////////////////////////////////////////////////////////////////
-// RRect blur.
-
 type rrectBlurFP struct {
 	FPBase
 	cornerRadius float32
@@ -179,8 +170,7 @@ type rrectBlurFP struct {
 
 // NewRRectBlurFP builds the "RRectBlur" fragment processor: ninePatch is the blurred-rrect nine-patch mask texture
 // effect (sampled explicitly at the warped coords). Like the circle effect it reads the fragment coordinate (device
-// space) directly; its math warps the fragment into the nine-patch mask by snipping out the rrect's (uniform) middle
-// section so a corner-radius-sized border tiles across the whole rrect.
+// space) directly.
 func NewRRectBlurFP(cornerRadius float32, proxyRect geom.Rect, blurRadius float32, ninePatch FragmentProcessor) FragmentProcessor {
 	fp := &rrectBlurFP{cornerRadius: cornerRadius, proxyRect: proxyRect, blurRadius: blurRadius}
 	fp.initFP(GLSLFPClassID, FPCompatibleWithCoverageAsAlpha)

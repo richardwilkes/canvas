@@ -23,16 +23,15 @@ import "simd/archsimd"
 // VROUNDPS, VCVTDQ2PS, VCVTTPS2DQ) except the broadcasts, which archsimd emulates at AVX2. Unqualified CPUs keep the
 // portable dispatch.
 //
-// Note what is deliberately *not* used here: Uint32x4.ConvertToFloat32 (VCVTUDQ2PS), Uint32x4.TruncToUint8/
-// TruncToUint16 and Uint16x8.TruncToUint8/SaturateToUint8 are all AVX-512 in archsimd, so the byte values go through
-// the signed convert (identical over 0..255) and the word→byte gather goes through VPSHUFB (see narrowWordAlphas).
+// Deliberately *not* used here: Uint32x4.ConvertToFloat32 (VCVTUDQ2PS), Uint32x4.TruncToUint8/TruncToUint16 and
+// Uint16x8.TruncToUint8/SaturateToUint8 are all AVX-512 in archsimd, so the byte values go through the signed convert
+// (identical over 0..255) and the word→byte gather goes through VPSHUFB (see narrowWordAlphas).
 func simdConvertSupported() bool { return archsimd.X86.AVX2() }
 
 // Per-kernel dispatch preference: whether the simd conversion row is at least as fast as this build's default lane. On
 // amd64 the only alternative is the portable scalar code in convert.go, which every one of these kernels beats.
 // Measured on real amd64 hardware (Xeon W-2191B, darwin/amd64, benchstat n=10, 2026-08-20, via simd-bench.sh): -42%
-// (alphaFromWords) to -83% (unpremul) on 256-pixel rows, geomean -73% — confirming and mostly widening the Rosetta 2
-// estimates this landed with.
+// (alphaFromWords) to -83% (unpremul) on 256-pixel rows, geomean -73%.
 const (
 	preferSIMDSwizzleWordRow    = true
 	preferSIMDPremulWordRow     = true

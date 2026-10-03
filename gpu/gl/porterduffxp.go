@@ -137,7 +137,6 @@ func (i *shaderPDXPImpl) emitBlendCodeForDstRead(fragBuilder *FragmentShaderBuil
 		srcColor, dstColor, pdxp.mode)
 	fragBuilder.CodeAppendf("%s = %s;", outColor, blendExpr)
 
-	// Apply coverage.
 	defaultCoverageModulation(fragBuilder, srcCoverage, dstColor, outColor, outColorSecondary, xp)
 }
 
@@ -230,7 +229,6 @@ func (i *pdLCDXPImpl) onSetData(pdman *ProgramDataManager, xp XferProcessor) {
 }
 
 //////////////////////////////////////////////////////////////////////////////
-// PorterDuffXPFactory.
 
 type porterDuffXPFactory struct {
 	mode raster.BlendMode
@@ -255,7 +253,7 @@ func PorterDuffXPFactory(mode raster.BlendMode) XPFactory {
 
 func (f *porterDuffXPFactory) makeXferProcessor(color ProcessorAnalysisColor, coverage AnalysisCoverage, caps *gpu.Caps, clampType gpu.ClampType) XferProcessor {
 	isLCD := coverage == AnalysisCoverageLCD
-	// See the comment in makeSrcOverXferProcessor about color.isOpaque here.
+	// See the comment in makeSrcOverXferProcessor about color.IsOpaque here.
 	if isLCD && f.mode == raster.BlendSrcOver && analysisColorIsConstant(color) &&
 		!caps.ShaderCaps.DualSourceBlendingSupport && !caps.ShaderCaps.DstReadInShaderSupport {
 		// Without dual-source blending or in-shader dst reads we use the blend-constant trick for SrcOver LCD text
@@ -288,7 +286,6 @@ func (f *porterDuffXPFactory) analysisProperties(color ProcessorAnalysisColor, c
 	return pdAnalysisProperties(color, coverage, caps, clampType, f.mode)
 }
 
-// analysisColorIsConstant is a small readability helper for the two-value IsConstant form.
 func analysisColorIsConstant(color ProcessorAnalysisColor) bool {
 	_, ok := color.IsConstant()
 	return ok
@@ -311,7 +308,7 @@ func pdAnalysisProperties(color ProcessorAnalysisColor, coverage AnalysisCoverag
 	}
 
 	if isLCD {
-		// See the comment in makeSrcOverXferProcessor about color.isOpaque here.
+		// See the comment in makeSrcOverXferProcessor about color.IsOpaque here.
 		if mode == raster.BlendSrcOver && analysisColorIsConstant(color) &&
 			!caps.ShaderCaps.DualSourceBlendingSupport &&
 			!caps.ShaderCaps.DstReadInShaderSupport {
@@ -362,7 +359,6 @@ func makeSrcOverXferProcessor(color ProcessorAnalysisColor, coverage AnalysisCov
 			caps.ShouldCollapseSrcOverToSrcWhenAble {
 			return newPorterDuffXP(gpu.GetBlendFormula(true, false, raster.BlendSrc), coverage)
 		}
-		// nil means "use the shared simple src-over XP".
 		return nil
 	}
 
@@ -385,7 +381,6 @@ func MakeNoCoverageXP(mode raster.BlendMode) XferProcessor {
 	return newPorterDuffXP(gpu.GetBlendFormula(false, false, mode), AnalysisCoverageNone)
 }
 
-// srcOverAnalysisProperties computes the analysis property bits for the src-over blend mode.
 func srcOverAnalysisProperties(color ProcessorAnalysisColor, coverage AnalysisCoverage, caps *gpu.Caps, clampType gpu.ClampType) uint32 {
 	return pdAnalysisProperties(color, coverage, caps, clampType, raster.BlendSrcOver)
 }

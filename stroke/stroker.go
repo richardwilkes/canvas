@@ -273,9 +273,7 @@ func (s *pathStroker) preJoinTo(currPt geom.Point, currIsLine bool) (normal, uni
 		if s.capType == CapButt {
 			return normal, unitNormal, false
 		}
-		/* Square caps and round caps draw even if the segment length is zero.
-		   Since the zero length segment has no direction, set the orientation
-		   to upright as the default orientation */
+		// Square and round caps draw even for a zero-length segment, which has no direction, so orient it upright.
 		normal = geom.Point{X: s.radius, Y: 0}
 		unitNormal = geom.Point{X: 1, Y: 0}
 	}
@@ -287,7 +285,7 @@ func (s *pathStroker) preJoinTo(currPt geom.Point, currIsLine bool) (normal, uni
 
 		s.outer.MoveToPt(s.firstOuterPt)
 		s.inner.MoveToPt(s.prevPt.Sub(normal))
-	} else { // we have a previous segment
+	} else {
 		s.joiner(s.outer, s.inner, s.prevUnitNormal, s.prevPt, unitNormal, s.radius,
 			s.invMiterLimit, s.prevIsLine, currIsLine)
 	}
@@ -319,14 +317,14 @@ func (s *pathStroker) finishContour(closeContour, currIsLine bool) {
 					s.outer, s.inner = s.inner, s.outer
 				}
 			} else {
-				// now add fInner as its own contour
+				// Add inner, reversed, as its own contour.
 				if pt, ok := s.inner.LastPt(); ok {
 					s.outer.MoveToPt(pt)
 					s.outer.ReversePathTo(s.inner)
 					s.outer.Close()
 				}
 			}
-		} else { // add caps to start and end
+		} else {
 			// cap the end
 			if pt, ok := s.inner.LastPt(); ok {
 				s.capper(s.outer, s.prevPt, s.prevNormal, pt, currIsLine)
@@ -338,7 +336,7 @@ func (s *pathStroker) finishContour(closeContour, currIsLine bool) {
 		}
 		if !s.cusper.IsEmpty() {
 			s.outer.AddPath(s.cusper, path.AddPathAppend)
-			s.cusper.Rewind() // Rewind (not Reset) to keep the scratch storage for pooled reuse
+			s.cusper.Rewind()
 		}
 	}
 	s.inner.Rewind() // Rewind (not Reset) to keep the scratch storage for pooled reuse
@@ -575,7 +573,7 @@ func checkCubicLinear(cubic, reduction []geom.Point) (reductionType, *geom.Point
 	var tValues [3]float32
 	count := geom.FindCubicMaxCurvature(cubic, &tValues)
 	rCount := 0
-	// Now loop over the t-values, and reject any that evaluate to either end-point
+	// Reject t-values that evaluate to either end point.
 	for index := 0; index < count; index++ {
 		t := tValues[index]
 		if t <= 0 || t >= 1 {
@@ -606,8 +604,7 @@ func checkConicLinear(conic *geom.Conic, reduction *geom.Point) reductionType {
 	if !conicInLine(conic) {
 		return reductionQuad
 	}
-	// An exact conic-curvature solver would be a better fit here, once one is available. Quad curvature is a reasonable
-	// substitute.
+	// Quad curvature stands in for the conic's; an exact conic-curvature solver would fit better.
 	t := geom.FindQuadMaxCurvature(conic.Pts[:])
 	if t == 0 || geom.ScalarIsNaN(t) {
 		return reductionLine
@@ -647,9 +644,7 @@ func (s *pathStroker) conicTo(pt1, pt2 geom.Point, weight float32) {
 	var reduction geom.Point
 	rtype := checkConicLinear(&conic, &reduction)
 	if rtype == reductionPoint {
-		/* If the stroke consists of a moveTo followed by a degenerate curve, treat it
-		   as if it were followed by a zero-length line. Lines without length
-		   can have square and round end caps. */
+		// A moveTo followed by a degenerate curve strokes as a zero-length line, which can have square and round caps.
 		s.lineTo(pt2, nil)
 		return
 	}
@@ -686,9 +681,7 @@ func (s *pathStroker) quadTo(pt1, pt2 geom.Point) {
 	var reduction geom.Point
 	rtype := checkQuadLinear(quad[:], &reduction)
 	if rtype == reductionPoint {
-		/* If the stroke consists of a moveTo followed by a degenerate curve, treat it
-		   as if it were followed by a zero-length line. Lines without length
-		   can have square and round end caps. */
+		// See conicTo.
 		s.lineTo(pt2, nil)
 		return
 	}
@@ -824,12 +817,7 @@ func (s *pathStroker) intersectRay(quadPts *quadConstruct, rayType intersectRayT
 	end := quadPts.quad[2]
 	aLen := quadPts.tangentStart
 	bLen := quadPts.tangentEnd
-	/* Slopes match when denom goes to zero:
-	                  axLen / ayLen ==                   bxLen / byLen
-	(ayLen * byLen) * axLen / ayLen == (ayLen * byLen) * bxLen / byLen
-	         byLen  * axLen         ==  ayLen          * bxLen
-	         byLen  * axLen         -   ayLen          * bxLen         ( == denom )
-	*/
+	// The slopes match when denom (aLen x bLen) is zero.
 	denom := aLen.Cross(bLen)
 	if denom == 0 || !geom.IsFinite(denom) {
 		quadPts.oppositeTangents = aLen.Dot(bLen) < 0
@@ -849,11 +837,9 @@ func (s *pathStroker) intersectRay(quadPts *quadConstruct, rayType intersectRayT
 		}
 		return resultSplit
 	}
-	// check to see if the denominator is teeny relative to the numerator; if the offset by one will be lost, the ratio
-	// is too large
 	numerA /= denom
-	// A deliberate floating-point precision probe, not a tautology: when numerA is so large that subtracting one is
-	// lost to rounding (or numerA is NaN), numerA > numerA-1 is false and the divide is rejected.
+	// A deliberate precision probe, not a tautology: when denom is so small relative to the numerator that subtracting
+	// one from numerA is lost to rounding (or numerA is NaN), numerA > numerA-1 is false and the divide is rejected.
 	validDivide := numerA > numerA-1 //nolint:gocritic // see above
 	if validDivide {
 		if rayType == ctrlPtRayType {
@@ -892,7 +878,7 @@ func intersectQuadRay(line, quad []geom.Point, roots *[2]float32) int {
 	return geom.FindUnitQuadRoots(a, 2*b, c, roots)
 }
 
-// ptInQuadBounds returns true if the point is close to the bounds of the quad. This is used as a quick reject.
+// ptInQuadBounds reports whether pt is within invResScale of the quad's bounds, as a quick reject.
 func (s *pathStroker) ptInQuadBounds(quad []geom.Point, pt geom.Point) bool {
 	xMin := min(quad[0].X, quad[1].X, quad[2].X)
 	if pt.X+s.invResScale < xMin {
@@ -932,8 +918,8 @@ func sharpAngle(quad []geom.Point) bool {
 	return dot > 0
 }
 
-// strokeCloseEnough reports whether the quad-approximation stroke is an acceptable approximation of the true curve
-// offset, or whether it must be split or accepted as-is.
+// strokeCloseEnough reports whether the quad stroke is close enough to the true curve offset to accept (resultQuad) or
+// must be split (resultSplit).
 func (s *pathStroker) strokeCloseEnough(stroke, ray []geom.Point, quadPts *quadConstruct) resultType {
 	strokeMid := geom.EvalQuadAt(stroke, 0.5)
 	// measure the distance from the curve to the quad-stroke midpoint, compare to radius
@@ -1177,9 +1163,7 @@ func (s *pathStroker) cubicTo(pt1, pt2, pt3 geom.Point) {
 	var reduction [3]geom.Point
 	rtype, tangentPt := checkCubicLinear(cubic[:], reduction[:])
 	if rtype == reductionPoint {
-		/* If the stroke consists of a moveTo followed by a degenerate curve, treat it
-		   as if it were followed by a zero-length line. Lines without length
-		   can have square and round end caps. */
+		// See conicTo.
 		s.lineTo(pt3, nil)
 		return
 	}
@@ -1287,7 +1271,7 @@ func (st *Stroke) StrokePath(src, dst *path.Path) {
 		return
 	}
 
-	// If src is really a rect, call our specialty strokeRect() method
+	// A closed rect takes the StrokeRect fast path.
 	if rect, isClosed, dir, isRect := src.IsRectWithDirection(); isRect && isClosed {
 		st.StrokeRect(rect, dst, dir)
 		// our answer should preserve the inverseness of the src
@@ -1297,7 +1281,7 @@ func (st *Stroke) StrokePath(src, dst *path.Path) {
 		return
 	}
 
-	// We can always ignore centers for stroke and fill convex line-only paths TODO: remove the line-only restriction
+	// Stroke-and-fill can ignore the center of a closed convex line-only path. TODO: remove the line-only restriction.
 	ignoreCenter := st.doFill && src.SegmentMasks() == path.SegmentLine &&
 		src.IsLastContourClosed() && src.IsConvex()
 
@@ -1328,17 +1312,13 @@ func (st *Stroke) StrokePath(src, dst *path.Path) {
 			lastSegment = path.VerbCubic
 		case path.VerbClose:
 			if st.cap != CapButt {
-				/* If the stroke consists of a moveTo followed by a close, treat it
-				   as if it were followed by a zero-length line. Lines without length
-				   can have square and round end caps. */
+				// A moveTo followed by a close strokes as a zero-length line, which can have square and round caps.
 				if stroker.hasOnlyMoveTo() {
 					stroker.lineTo(stroker.moveToPt(), nil)
 					lastSegment = path.VerbLine
 					continue
 				}
-				/* If the stroke consists of a moveTo followed by one or more zero-length
-				   verbs, then followed by a close, treat is as if it were followed by a
-				   zero-length line. Lines without length can have square & round end caps. */
+				// Likewise for a moveTo followed by zero-length verbs and then a close.
 				if stroker.isCurrentContourEmpty() {
 					lastSegment = path.VerbLine
 					continue

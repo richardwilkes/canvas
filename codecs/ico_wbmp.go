@@ -137,9 +137,8 @@ func dibHeader(data []byte) (w, h, bpp int, ok bool) {
 	h2 := int(int32(binary.LittleEndian.Uint32(data[8:])))
 	bpp = int(binary.LittleEndian.Uint16(data[14:]))
 	compression := binary.LittleEndian.Uint32(data[16:])
-	// Cap the dimensions (matching the WBMP sibling) so the downstream stride/offset arithmetic in decodeDIB stays
-	// well within int range: an unbounded int32 width/height would overflow xorStride*h, bypassing the short-pixel-data
-	// guard and reaching an outsized make.
+	// Without the maxICODimension cap, an int32 width/height could overflow xorStride*h in decodeDIB, bypassing its
+	// short-pixel-data guard and reaching an outsized make.
 	if w <= 0 || h2 <= 0 || h2%2 != 0 || compression != 0 || w > maxICODimension || h2 > maxICODimension {
 		return 0, 0, 0, false
 	}

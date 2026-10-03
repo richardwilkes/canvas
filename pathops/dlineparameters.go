@@ -7,13 +7,12 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// A parameterized line ax + by + c = 0 whose signed evaluation (pointDistance) gives the (optionally normalized)
-// distance from a point to the line. quadEndPointsSE/lineEndPoints/cubicEndPointsSE build the line through a chosen
-// pair of curve or segment endpoints; normalize scales it to a unit normal; the control-point distance helpers measure
-// how far a curve's off-curve points sit from that line (used by dQuad.isLinear and dCubic.isLinear to decide whether a
-// curve is flat enough to treat as a line). The bool-returning quadEndPoints/cubicEndPoints/cubicPart forms
-// additionally pick a non-degenerate endpoint pair and break cw/ccw ties; dx/dy/pointDistance are consumed by
-// opAngle.setSpans (opangle.go).
+// A parameterized line ax + by + c = 0 whose evaluation (pointDistance) gives the signed, optionally normalized,
+// distance from a point to the line. quadEndPointsSE, lineEndPoints, and cubicEndPointsSE set the line through a pair
+// of curve or segment endpoints, and the control-point distance helpers measure how far a curve's off-curve points sit
+// from it (dQuad.isLinear and dCubic.isLinear use them to decide whether a curve is flat enough to treat as a line).
+// quadEndPoints, cubicEndPoints, and cubicPart also pick a non-degenerate endpoint pair and break cw/ccw ties, for
+// opAngle (opangle.go).
 
 package pathops
 
@@ -78,8 +77,8 @@ func (lp *lineParameters) quadEndPoints(pts dQuad) bool {
 	if lp.dx() < 0 { // only worry about y bias when breaking cw/ccw tie
 		return true
 	}
-	// The tangent is horizontal, so the cw/ccw comparison is a tie. Bias a to slightly negative (dy returns -a) when
-	// the quad's far end is above its start, so the sort has a deterministic answer rather than an arbitrary one.
+	// The tangent is horizontal, so the cw/ccw comparison is a tie. Push dy slightly negative (dy returns -a) when the
+	// quad's far end is above its start, so the sort has a deterministic answer rather than an arbitrary one.
 	if pts.pts[0].y > pts.pts[2].y {
 		lp.a = dblEpsilon
 	}
@@ -107,8 +106,6 @@ func (lp *lineParameters) cubicEndPoints(pts dCubic) bool {
 			return false
 		}
 	}
-	// The tangent is horizontal, so the cw/ccw comparison below is a tie; bumping the a coefficient breaks it
-	// deterministically. See quadEndPoints for the same bias on quads.
 	if lp.dx() < 0 { // only worry about y bias when breaking cw/ccw tie
 		return true
 	}

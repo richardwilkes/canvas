@@ -7,10 +7,9 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// The line, quad, and cubic lanes of degenerate-curve reduction: collapse a curve to the lowest-order form it actually
-// represents (point/line/quad/cubic). The reduced geometry is stored in the receiver's line/quad/cubic fields (only one
-// is populated per call, playing the role a union would in C). Also includes the
-// reduceOrderQuad/reduceOrderConic/reduceOrderCubic verb classifiers (a conic reduces via its quad control points).
+// Degenerate-curve reduction: collapse a line, quad, or cubic to the lowest-order form it actually represents
+// (point/line/quad/cubic). Also includes the reduceOrderQuad/reduceOrderConic/reduceOrderCubic verb classifiers (a
+// conic reduces via its quad control points).
 
 package pathops
 
@@ -29,8 +28,8 @@ const (
 	allowQuadratics
 )
 
-// reduceOrder holds the reduced geometry produced by the reduceLine/reduceQuad/reduceCubic methods (only the field
-// matching the returned order is populated).
+// reduceOrder holds the reduced geometry. reduceLine, reduceQuad, and reduceCubic each fill only their own field (line,
+// quad, cubic, playing the role a union would in C), using its leading points when the order drops.
 type reduceOrder struct {
 	line  dLine
 	quad  dQuad
@@ -48,8 +47,7 @@ func (r *reduceOrder) reduceLine(line dLine) int {
 	return 1 + different
 }
 
-// reductionLineCountQuad returns 2 if reduction's two line endpoints differ, else 1 (both endpoints collapsed to the
-// same point).
+// reductionLineCountQuad returns 2 if reduction's two line endpoints differ, else 1.
 func reductionLineCountQuad(reduction dQuad) int {
 	return 1 + b2i(!reduction.pts[0].approximatelyEqual(reduction.pts[1]))
 }
@@ -90,7 +88,7 @@ func (r *reduceOrder) reduceQuad(quad dQuad) int {
 		r.quad.pts[1] = quad.pts[2]
 		return reductionLineCountQuad(r.quad)
 	}
-	if quad.isLinear(0, 2) { // four are colinear: return line formed by outside
+	if quad.isLinear(0, 2) { // three are colinear: return line formed by outside
 		r.quad.pts[0] = quad.pts[0]
 		r.quad.pts[1] = quad.pts[2]
 		return reductionLineCountQuad(r.quad)
@@ -99,7 +97,7 @@ func (r *reduceOrder) reduceQuad(quad dQuad) int {
 	return 3
 }
 
-// pointsToVerb maps a reduced point count to its verb: 0->move, 1->line, 2->quad, 3->cubic, via (1<<points)>>1 (which
+// pointsToVerb maps a point count less one to its verb: 0->move, 1->line, 2->quad, 3->cubic, via (1<<points)>>1 (which
 // deliberately skips the conic verb — reduceOrderConic promotes to it separately).
 func pointsToVerb(points int) path.Verb {
 	return path.Verb((1 << uint(points)) >> 1)
@@ -147,8 +145,7 @@ func coincidentLineCubic(cubic dCubic, reduction *dCubic) int {
 	return 1
 }
 
-// reductionLineCountCubic returns 2 if reduction's two line endpoints differ, else 1 (both endpoints collapsed to the
-// same point).
+// reductionLineCountCubic returns 2 if reduction's two line endpoints differ, else 1.
 func reductionLineCountCubic(reduction dCubic) int {
 	return 1 + b2i(!reduction.pts[0].approximatelyEqual(reduction.pts[1]))
 }
@@ -212,7 +209,6 @@ func checkLinearCubic(cubic dCubic, reduction *dCubic) int {
 	if !cubic.isLinear(0, 3) {
 		return 0
 	}
-	// four are colinear: return line formed by outside
 	reduction.pts[0] = cubic.pts[0]
 	reduction.pts[1] = cubic.pts[3]
 	return reductionLineCountCubic(*reduction)

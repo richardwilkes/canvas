@@ -32,7 +32,7 @@ import (
 	"github.com/richardwilkes/canvas/textblob"
 )
 
-// glyphDrawScratch holds the per-draw accepted/rejected working slices that drawForBitmapDevice fills while
+// glyphDrawScratch holds the per-draw accepted/rejected working slices that drawGlyphRunListForBitmapDevice fills while
 // partitioning a run's glyphs into the direct-mask, path, and rescaled-bitmap stages. They are pooled (retaining
 // backing-array capacity across draws) rather than allocated fresh per draw.
 type glyphDrawScratch struct {
@@ -146,9 +146,8 @@ func (c *Canvas) onDrawGlyphRunList(glyphRunList *textblob.GlyphRunList, paint *
 }
 
 // drawGlyphRunListForBitmapDevice partitions each run's glyphs into the path, direct-mask, and rescaled-bitmap stages
-// and draws them (no drawables — no reachable scaler produces them). deviceProps carries the device's pixel geometry
-// for the LCD16 lane; the bitmap blitters can only draw LCD text in srcOver, so a non-srcOver paint falls back to the
-// unknown-geometry props.
+// and draws them. deviceProps carries the device's pixel geometry for the LCD16 lane; the bitmap blitters can only draw
+// LCD text in srcOver, so a non-srcOver paint falls back to the unknown-geometry props.
 //
 // drawPaths is false for every tile but the first when the caller is tiling: the path stage draws through the canvas
 // (which re-tiles over the whole device on its own), so issuing it per tile would draw those glyphs once per tile. The
@@ -241,7 +240,7 @@ func drawGlyphRunListForBitmapDevice(canvas *Canvas, dr *draw, glyphRunList *tex
 					}
 				}
 			}
-			// (Drawable glyphs would be processed here; no reachable scaler produces them.)
+			// (Drawable glyphs would be processed here.)
 		}
 		if len(sourceGlyphs) > 0 && !positionMatrix.HasPerspective() {
 			spec := font.MakeMaskSpec(runFont, &scalerPaint, &positionMatrix, props)
@@ -283,10 +282,7 @@ func drawGlyphRunListForBitmapDevice(canvas *Canvas, dr *draw, glyphRunList *tex
 			dr.paintMasks(acceptedGlyphs, acceptedPositions, paint, &scratch.mask)
 		}
 		if len(sourceGlyphs) > 0 {
-			// The rescaled-bitmap stage: perspective draws and glyphs too big for the direct mask land here. Create a
-			// strike in source space to calculate scale information, pick maxScale so the longest edge is 1:1 with its
-			// side in the cache, then draw each ARGB32 mask through drawBitmap with the inverse scale (A8/BW rejects
-			// are dropped).
+			// The rescaled-bitmap stage: perspective draws and glyphs too big for the direct mask land here.
 			drawRescaledBitmaps(dr, runFont, &scalerPaint, sourceGlyphs, sourcePositions, drawOrigin,
 				&positionMatrix, paint, props)
 		}
@@ -410,10 +406,7 @@ func (d *draw) paintMasks(glyphs []*font.Glyph, positions []geom.Point, paint *P
 
 	useRegion := d.rc.IsBW() && !d.rc.IsRect()
 
-	// mask is a caller-provided header (homed on the pooled glyphDrawScratch), reused across glyphs: its address
-	// escapes into BlitMask (an interface call), so a fresh per-glyph `mask :=` inside the loop would heap-allocate
-	// once per glyph and a function-local `var mask` once per draw; the heap-resident pooled header escapes nothing and
-	// is fully overwritten each iteration (observationally identical).
+	// mask is the caller's pooled header (see glyphDrawScratch.mask), fully overwritten for each glyph.
 	var clipper raster.RegionCliperator
 
 	if useRegion {

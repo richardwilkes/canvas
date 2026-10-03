@@ -8,8 +8,8 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // The vertex array object wrapper and the per-VAO attrib pointer/enable state shadow. AttribArrayState.Set chooses
-// glVertexAttribPointer vs glVertexAttribIPointer based on the caller- supplied gpuTypeIsFloat flag rather than a
-// shader type, since the caller already knows which GL call the destination shader attribute needs.
+// glVertexAttribPointer vs glVertexAttribIPointer based on the caller-supplied gpuTypeIsFloat flag rather than a shader
+// type, since the caller already knows which GL call the destination shader attribute needs.
 
 package gl
 
@@ -22,7 +22,6 @@ type attribLayout struct {
 	glType     uint32
 }
 
-// attribLayoutForType returns the GL attrib layout for a vertex attribute type.
 func attribLayoutForType(t gpu.VertexAttribType) attribLayout {
 	switch t {
 	case gpu.VertexAttribTypeFloat:
@@ -124,7 +123,7 @@ func (s *AttribArrayState) Resize(newCount int) {
 // Count returns the number of tracked attribute slots.
 func (s *AttribArrayState) Count() int { return len(s.states) }
 
-// Invalidate marks all cached attribute and enable state as stale, forcing the next Set/ EnableVertexArrays call to
+// Invalidate marks all cached attribute and enable state as stale, forcing the next Set/EnableVertexArrays call to
 // re-issue the corresponding GL calls.
 func (s *AttribArrayState) Invalidate() {
 	for i := range s.states {

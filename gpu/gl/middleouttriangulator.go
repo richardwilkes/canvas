@@ -32,7 +32,6 @@ import (
 	"github.com/richardwilkes/canvas/path"
 )
 
-// middleOutStackVertex is one entry on the middle-out triangulation stack.
 type middleOutStackVertex struct {
 	point geom.Point
 	// vertexIdxDelta is how many polygon vertices away this vertex is from the previous vertex on the stack.
@@ -74,7 +73,7 @@ func newMiddleOutPolygonTriangulator(maxPushVertexCalls int, startPoint geom.Poi
 //	[0, 4, 8]                                   // vertexIdxDelta == 4
 func (m *middleOutPolygonTriangulator) pushVertex(pt geom.Point, emit func(p0, p1, p2 geom.Point)) {
 	// Find as many new triangles as we can pop off the stack that have equal-delta sides. (This is a stack-based
-	// implementation of the recursive example method from the class comment.)
+	// implementation of the recursive example method from the file comment.)
 	endVertex := m.top
 	vertexIdxDelta := 1
 	for m.vertexStack[endVertex].vertexIdxDelta == vertexIdxDelta {
@@ -82,13 +81,10 @@ func (m *middleOutPolygonTriangulator) pushVertex(pt geom.Point, emit func(p0, p
 		vertexIdxDelta *= 2
 	}
 
-	// Iterates from the current top down to endVertex, yielding the popped triangles as {stack[v-1].point,
-	// stack[v].point, pt}.
 	for v := m.top; v != endVertex; v-- {
 		emit(m.vertexStack[v-1].point, m.vertexStack[v].point, pt)
 	}
 
-	// Once the above triangles are popped, push pt to the top of the stack.
 	m.top = endVertex + 1
 	if m.top >= len(m.vertexStack) {
 		panic("middle-out stack overflow: maxPushVertexCalls too small")
@@ -101,15 +97,14 @@ func (m *middleOutPolygonTriangulator) closeAndMove(newStartPoint geom.Point, em
 	// Add an implicit line back to the starting point.
 	startPt := m.vertexStack[0].point
 
-	// Triangulate the rest of the polygon. Since we simply have to finish now, we can't be picky anymore about getting
-	// a pure middle-out topology.
+	// Triangulate the rest of the polygon. Since we have to finish now, we can't be picky anymore about getting a pure
+	// middle-out topology.
 	endVertex := min(m.top, 1)
 
 	for v := m.top; v != endVertex; v-- {
 		emit(m.vertexStack[v-1].point, m.vertexStack[v].point, startPt)
 	}
 
-	// Reset the vertex stack with newStartPoint.
 	m.top = 0
 	m.vertexStack[0] = middleOutStackVertex{point: newStartPoint, vertexIdxDelta: 0}
 }
@@ -119,8 +114,8 @@ func (m *middleOutPolygonTriangulator) close(emit func(p0, p1, p2 geom.Point)) {
 	m.closeAndMove(m.vertexStack[0].point, emit)
 }
 
-// pathMiddleOutFanTriangles transforms and pushes a path's inner-fan vertices onto a middleOutPolygonTriangulator,
-// emitting every triangle through the callback.
+// pathMiddleOutFanTriangles pushes a path's inner-fan vertices onto a middleOutPolygonTriangulator, emitting every
+// triangle through the callback.
 func pathMiddleOutFanTriangles(p *path.Path, emit func(p0, p1, p2 geom.Point)) {
 	m := newMiddleOutPolygonTriangulator(p.CountVerbs(), geom.Point{})
 	it := path.NewRawIter(p)

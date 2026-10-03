@@ -14,10 +14,10 @@
 //
 // TestGPUEffectCoverageNoSilentNoOp asserts every paint-attachable shader and color-filter family in the public
 // shaders/colorfilter packages (the surface unison constructs effects through) converts (MakePaint returns ok=true).
-// TestEffectCoverageIsExhaustive then parses those packages' sources and
-// fails if a new exported shader/color-filter constructor is added without either a coverage case or an explicit
-// filter-internal exclusion here — so a future family cannot silently regress the same way. Skips the live-draw
-// assertions when no GL context is available; the exhaustiveness guard needs no GL.
+// TestEffectCoverageIsExhaustive then parses those packages' sources and fails if a new exported shader/color-filter
+// constructor is added without either a coverage case or an explicit filter-internal exclusion here — so a future
+// family cannot silently regress the same way. Skips the live-draw assertions when no GL context is available; the
+// exhaustiveness guard needs no GL.
 
 package gl_test
 
@@ -205,8 +205,7 @@ var filterInternalConstructors = map[string]bool{
 
 // TestEffectCoverageIsExhaustive parses the shaders and colorfilter package sources and asserts that every exported
 // constructor returning a Shader or ColorFilter has either a coverage case above or an explicit filter-internal
-// exclusion: adding a new paint-attachable effect constructor without wiring a GPU conversion case here fails this
-// test, forcing the silent-no-op question to be answered.
+// exclusion.
 func TestEffectCoverageIsExhaustive(t *testing.T) {
 	covered := map[string]bool{}
 	for _, tc := range shaderCoverageCases(rgbaTestImage(4, 4)) {

@@ -8,14 +8,14 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // lutProxyKeyCache bounds the small uniquely-keyed LUT textures the pixels-proxy lane mints (pixelsproxy.go): the
-// perlin-noise painting-data tables, keyed per shader instance, and the baked gradient ramps, keyed per bake. Neither key
-// is content-derived, so an animated shader — a fresh PerlinNoiseShader or a re-baked ramp per frame — produces a fresh
-// key every frame, and a uniquely-keyed proxy is only ever unregistered when its ref count reaches zero or when someone
-// issues ProcessInvalidUniqueKey. Nobody did, so the provider's map and the textures behind it grew without bound. This
-// cache is that missing issuer: it holds the most recently used keys and invalidates the ones that fall off the end, the
-// same eviction the clip stack performs for its cached masks. A key that is invalidated while an already-recorded draw
-// still samples its proxy stays correct — the proxy holds its own reference, and the next request for that LUT simply
-// re-uploads under a fresh proxy.
+// perlin-noise painting-data tables, keyed per shader instance, and the baked gradient ramps, keyed per bake. Neither
+// key is content-derived, so an animated shader — a fresh PerlinNoiseShader or a re-baked ramp per frame — produces a
+// fresh key every frame, and a uniquely-keyed proxy is unregistered only when its ref count reaches zero or its key is
+// passed to ProcessInvalidUniqueKey. Nothing else invalidates these keys, so without this cache the provider's map and
+// the textures behind it grow without bound. The cache holds the most recently used keys and invalidates the ones that
+// fall off the end, as the clip stack does for its cached masks. Invalidating a key while an already-recorded draw
+// still samples its proxy is safe: the proxy holds its own reference, and the next request for that LUT re-uploads
+// under a fresh proxy.
 
 package gl
 
@@ -26,8 +26,8 @@ import "github.com/richardwilkes/canvas/gpu"
 // (gradientBitmapCache caps its own entries at maxNumCachedGradientBitmaps).
 const maxLiveLUTProxies = 2*maxNumCachedGradientBitmaps + 8
 
-// lutProxyKeyCache is an MRU-ordered list of the LUT proxy keys registered with the proxy provider. It is per context (it
-// hangs off DirectContext) because the keys it holds are the provider's.
+// lutProxyKeyCache is an MRU-ordered list of the LUT proxy keys registered with the proxy provider. It is per context
+// (it hangs off DirectContext) because the keys it holds are the provider's.
 type lutProxyKeyCache struct {
 	keys       []gpu.UniqueKey // most recently used first
 	maxEntries int
@@ -41,7 +41,7 @@ func newLUTProxyKeyCache(maxEntries int) *lutProxyKeyCache {
 }
 
 // track records key as the most recently used LUT key, invalidating the least recently used keys once the cache is over
-// capacity. Callers pass every key they hand to FindOrCreatePixelsProxyView, hit or miss, so a LUT that keeps being drawn
+// capacity. FindOrCreatePixelsProxyView passes every key it is handed, hit or miss, so a LUT that keeps being drawn
 // keeps its texture.
 func (c *lutProxyKeyCache) track(proxyProvider *ProxyProvider, key *gpu.UniqueKey) {
 	if proxyProvider == nil || !key.IsValid() {

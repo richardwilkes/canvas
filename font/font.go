@@ -8,7 +8,7 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // Font's fields: size/scaleX/skewX, the flag set, and the measuring entry points (metrics, measure, widths,
-// x-positions, text→glyphs). Drawing arrives with the canvas text phase.
+// x-positions, text→glyphs).
 
 package font
 
@@ -54,9 +54,8 @@ const (
 	flagBaselineSnap     = 1 << 5
 )
 
-// Defaults for a newly constructed Font: baseline-snapping enabled, anti-aliased edging, and normal hinting. There is
-// deliberately no default size — NewFont is the only constructor and every caller states the size it wants, so a
-// default here would only be a value no Font ever holds (a zero size renders and measures nothing; see validSize).
+// Defaults for a newly constructed Font. There is deliberately no default size: NewFont is the only constructor and
+// every caller states the size it wants, so a default here would only be a value no Font ever holds.
 const (
 	defaultFlags   = flagBaselineSnap
 	defaultEdging  = EdgingAntiAlias
@@ -131,8 +130,8 @@ func (f *Font) setFlag(mask uint8, on bool) {
 	}
 }
 
-// SetForceAutoHinting sets whether auto-hinting is forced (recorded, never honored: this library renders outline fonts
-// only).
+// SetForceAutoHinting sets whether auto-hinting is forced (recorded, never honored: there is no hinter here, so the
+// request stays out of the scaler rec).
 func (f *Font) SetForceAutoHinting(on bool) { f.setFlag(flagForceAutoHinting, on) }
 
 // ForceAutoHinting reports whether auto-hinting is forced.

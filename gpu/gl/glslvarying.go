@@ -63,8 +63,6 @@ const (
 	InterpolationMustBeFlat                        // use "flat" even if it is known to be slow
 )
 
-// varyingInfo records one registered varying's vertex-shader name, type, stage visibility, and whether it uses flat
-// interpolation.
 type varyingInfo struct {
 	vsOut      string
 	visibility ShaderFlags
@@ -158,7 +156,6 @@ func (h *VaryingHandler) addAttribute(v ShaderVar) {
 		panic("attributes must be inputs")
 	}
 	for i := range h.vertexInputs {
-		// If the attribute was already added, don't add it again.
 		if h.vertexInputs[i].Name() == v.Name() {
 			return
 		}
@@ -195,7 +192,6 @@ func (h *VaryingHandler) finish() {
 	}
 }
 
-// appendDecls appends each variable's declaration, semicolon-terminated, to out.
 func (h *VaryingHandler) appendDecls(vars []ShaderVar, out *[]byte) {
 	for i := range vars {
 		vars[i].AppendDecl(out)
@@ -203,8 +199,6 @@ func (h *VaryingHandler) appendDecls(vars []ShaderVar, out *[]byte) {
 	}
 }
 
-// getVertexDecls appends the vertex shader's input and output variable declarations to inputDecls and outputDecls
-// respectively.
 func (h *VaryingHandler) getVertexDecls(inputDecls, outputDecls *[]byte) {
 	h.appendDecls(h.vertexInputs, inputDecls)
 	h.appendDecls(h.vertexOutputs, outputDecls)

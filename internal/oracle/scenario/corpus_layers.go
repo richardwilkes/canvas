@@ -16,8 +16,8 @@ import (
 	"github.com/richardwilkes/canvas/geom"
 )
 
-// SaveLayer variants — bounded layers, nesting, and the paint-carrying SaveLayer whose restore
-// composites through the paint's alpha / blend mode / color filter / image filter.
+// SaveLayer variants: bounded layers, nesting, and the paint-carrying SaveLayer whose restore composites through the
+// paint's alpha / blend mode / color filter / image filter.
 
 func init() {
 	reg("layer-bounded", func(c Canvas) {
@@ -34,8 +34,7 @@ func init() {
 	})
 
 	// Stacked translucent-layer restores accumulate div255 rounding that differs between SIMD architectures, which is
-	// exactly why the raster golden sets are per-platform: this scene gates bit-exactly against its own platform's set
-	// in every lane.
+	// why the raster golden sets are per-platform.
 	Register(Scenario{
 		Name: "layer-nested-alpha", Width: 256, Height: 256,
 		Draw: func(c Canvas) {

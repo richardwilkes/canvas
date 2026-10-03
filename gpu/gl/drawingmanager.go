@@ -11,8 +11,7 @@
 // sorts the DAG topologically at flush (partitioned around reorder blockers), optionally clusters same-target tasks and
 // merges them to reduce render passes (the reduce-ops-task-splitting mode, on by default), runs the resource allocator,
 // and prepares/executes the tasks. Trims: DDL moves, wait tasks (semaphores are not publicly reachable), the async
-// transfer-from task, buffer transfer/update tasks (nothing schedules them), and the write-pixels task (SurfaceContext
-// writes directly on a direct context).
+// transfer-from task, and buffer transfer/update tasks (nothing schedules them).
 
 package gl
 
@@ -37,13 +36,9 @@ type DrawingManager struct {
 	softwarePathRenderer *SoftwarePathRenderer
 	// cpuBufferCache is used by both the vertex and index pools, reusing memory across flushes.
 	cpuBufferCache *CpuBufferCache
-	// flushState and resourceAllocator are the per-flush scratch objects that would ideally be stack-allocated for a
-	// flush (so a steady-state frame allocates neither), but cannot be — flushState is passed by pointer into
-	// executeRenderTasks and the allocator into the reorder/gather/assign helpers, so both escape — so instead they are
-	// cached here and reset-and-reused across flushes, exactly like cpuBufferCache/pathRendererChain above. flushState
-	// owns the vertex/index BufferAllocPools whose blocks backing array is likewise retained across flushes. Both are
-	// cleaned at the end of each flush (OpFlushState.Reset / ResourceAllocator.Reset), so the next flush reuses a
-	// pristine object.
+	// flushState and resourceAllocator are per-flush scratch objects that would escape to the heap if built per flush,
+	// so they are cached here and reused, letting a steady-state frame allocate neither. Both are reset at the end of
+	// each flush (OpFlushState.Reset / ResourceAllocator.Reset) for the next flush to reuse.
 	flushState                *OpFlushState
 	resourceAllocator         *ResourceAllocator
 	pathRendererChain         *PathRendererChain
@@ -57,13 +52,12 @@ type DrawingManager struct {
 	onFlushCBObjects []OnFlushCallbackObject
 	// tokenTracker is the persistent draw/flush token counters the deferred-upload machinery sequences against.
 	tokenTracker gpu.TokenTracker
-	// Lazily allocated, with the chain options captured from the context options at construction.
+	// optionsForPathRendererChain is captured from the context options at construction; the chain is allocated lazily.
 	optionsForPathRendererChain PathRendererChainOptions
 	flushing                    bool
 	reduceOpsTaskSplitting      bool
 }
 
-// newDrawingManager creates a DrawingManager for context.
 func newDrawingManager(context *DirectContext, reduceOpsTaskSplitting bool) *DrawingManager {
 	chainOptions := PathRendererChainOptions{
 		AllowPathMaskCaching: true,
@@ -81,7 +75,6 @@ func newDrawingManager(context *DirectContext, reduceOpsTaskSplitting bool) *Dra
 	}
 }
 
-// destroy tears down the drawing manager, closing and releasing all its tasks.
 func (dm *DrawingManager) destroy() {
 	dm.closeAllTasks()
 	dm.removeRenderTasks()
@@ -89,9 +82,9 @@ func (dm *DrawingManager) destroy() {
 	dm.softwarePathRenderer = nil
 }
 
-// GetPathRenderer returns a renderer that can draw the shape per the chain's priority order, optionally falling back to
-// the SW renderer when allowSW is true. stencilSupport (when non-nil) receives the selected renderer's stencil support
-// for stencil draw types.
+// GetPathRenderer returns a renderer that can draw the shape per the chain's priority order, falling back to the SW
+// renderer when allowSW is true. stencilSupport (when non-nil) receives the selected renderer's stencil support for
+// stencil draw types.
 func (dm *DrawingManager) GetPathRenderer(args *CanDrawPathArgs, allowSW bool, drawType ChainDrawType, stencilSupport *StencilSupport) PathRenderer {
 	if dm.pathRendererChain == nil {
 		dm.pathRendererChain = NewPathRendererChain(dm.context, dm.optionsForPathRendererChain)
@@ -116,8 +109,7 @@ func (dm *DrawingManager) GetSoftwarePathRenderer() *SoftwarePathRenderer {
 	return dm.softwarePathRenderer
 }
 
-// GetTessellationPathRenderer works like GetPathRenderer, but only returns the tessellation path renderer (or nil when
-// it is not in the chain).
+// GetTessellationPathRenderer returns the chain's tessellation path renderer, or nil when it is not in the chain.
 func (dm *DrawingManager) GetTessellationPathRenderer() PathRenderer {
 	if dm.pathRendererChain == nil {
 		dm.pathRendererChain = NewPathRendererChain(dm.context, dm.optionsForPathRendererChain)
@@ -157,7 +149,6 @@ func (dm *DrawingManager) GetLastOpsTask(proxy *SurfaceProxy) *OpsTask {
 	return nil
 }
 
-// setLastRenderTask records task as the most recent render task targeting proxy.
 func (dm *DrawingManager) setLastRenderTask(proxy *SurfaceProxy, task RenderTask) {
 	if prior := dm.GetLastRenderTask(proxy); prior != nil && prior != task &&
 		!prior.taskBase().IsClosed() {
@@ -170,7 +161,6 @@ func (dm *DrawingManager) setLastRenderTask(proxy *SurfaceProxy, task RenderTask
 	}
 }
 
-// closeActiveOpsTask closes the currently active ops task, if any.
 func (dm *DrawingManager) closeActiveOpsTask() {
 	if dm.activeOpsTask != nil {
 		// In the single-opsTask world, ops that refer to a far earlier render target would have glommed onto the end of
@@ -180,7 +170,6 @@ func (dm *DrawingManager) closeActiveOpsTask() {
 	}
 }
 
-// closeAllTasks closes every task currently in the DAG.
 func (dm *DrawingManager) closeAllTasks() {
 	for _, task := range dm.dag {
 		task.taskBase().MakeClosed()
@@ -199,7 +188,6 @@ func (dm *DrawingManager) appendTask(task RenderTask) RenderTask {
 	return task
 }
 
-// insertTaskBeforeLast inserts task into the DAG immediately before the current last task.
 func (dm *DrawingManager) insertTaskBeforeLast(task RenderTask) RenderTask {
 	if task == nil {
 		return nil
@@ -284,8 +272,7 @@ func (dm *DrawingManager) NewCopyRenderTask(dst *SurfaceProxy, dstRect geom.IRec
 	}
 	dm.appendTask(task)
 
-	// Always kNo here: we are only copying from the base layer to another base layer, so the whole mip chain doesn't
-	// need to be valid.
+	// MipmappedNo: we only copy from one base layer to another, so the whole mip chain need not be valid.
 	task.AddDependency(dm, src, gpu.MipmappedNo, dm.context.GLCaps())
 	task.MakeClosed()
 
@@ -351,7 +338,6 @@ func topoSortTasks(span []RenderTask, offset uint32) bool {
 	counter := offset
 	succeeded := true
 
-	// visit recursively visits a node and all the nodes it depends on.
 	var visit func(task RenderTask) bool
 	visit = func(task RenderTask) bool {
 		base := task.taskBase()
@@ -464,13 +450,11 @@ func (l *taskLList) concat(other *taskLList) {
 // dependsOnForCluster reports whether dependee is a formal dependency of depender or uses a surface depender targets.
 func dependsOnForCluster(depender, dependee RenderTask) bool {
 	db := depender.taskBase()
-	// Check if depender writes to something dependee reads.
 	for i := 0; i < db.NumTargets(); i++ {
 		if dependee.taskBase().IsUsed(db.Target(i)) {
 			return true
 		}
 	}
-	// Check for a formal dependency.
 	return db.DependsOn(dependee)
 }
 
@@ -635,7 +619,6 @@ func (dm *DrawingManager) executeRenderTasks(flushState *OpFlushState) bool {
 	const maxRenderTasksBeforeFlush = 100
 	numRenderTasksExecuted := 0
 
-	// Execute the normal op lists.
 	for _, renderTask := range dm.dag {
 		if !renderTask.taskBase().IsInstantiated() {
 			continue
@@ -663,8 +646,8 @@ func (dm *DrawingManager) executeRenderTasks(flushState *OpFlushState) bool {
 	return anyRenderTasksExecuted
 }
 
-// Flush executes and submits the pending work for the given proxies (empty for the whole context) (the
-// surface-access/mutable-state parameters are trimmed with the backends that consume them).
+// Flush executes the pending work for the given proxies (empty for the whole context); SubmitToGpu submits it. The
+// surface-access/mutable-state parameters are trimmed with the backends that consume them.
 func (dm *DrawingManager) Flush(proxies []*SurfaceProxy, info FlushInfo) bool {
 	if dm.flushing || dm.wasAbandoned() {
 		if info.SubmittedProc != nil {
@@ -676,9 +659,9 @@ func (dm *DrawingManager) Flush(proxies []*SurfaceProxy, info FlushInfo) bool {
 		return false
 	}
 
-	// As of now we only short-circuit if we got an explicit list of surfaces to flush. A finished proc has to observe a
-	// real submission, so it blocks the short-circuit; a submitted proc does not, since it is called below. (Upstream
-	// also blocks on pending semaphores, which this trim has none of.)
+	// We only short-circuit when given an explicit list of surfaces to flush. A finished proc has to observe a real
+	// submission, so it blocks the short-circuit; a submitted proc does not, since it is called below. (Upstream also
+	// blocks on pending semaphores, which this trim has none of.)
 	if len(proxies) > 0 && info.FinishedProc == nil {
 		allUnused := true
 		for _, proxy := range proxies {
@@ -705,9 +688,8 @@ func (dm *DrawingManager) Flush(proxies []*SurfaceProxy, info FlushInfo) bool {
 
 	resourceCache := dm.context.ResourceCache()
 
-	// Semi-usually the render tasks are already closed at this point, but sometimes a flush is needed mid-draw. In that
-	// case, the devices' ops tasks won't be closed but need to be flushed anyway; new ones will be created to replace
-	// them if written to again.
+	// The render tasks are usually already closed here, but a mid-draw flush leaves the devices' ops tasks open; they
+	// must be flushed anyway, and new ones are created to replace them if written to again.
 	dm.closeAllTasks()
 	dm.activeOpsTask = nil
 
@@ -723,9 +705,8 @@ func (dm *DrawingManager) Flush(proxies []*SurfaceProxy, info FlushInfo) bool {
 		dm.cpuBufferCache = MakeCpuBufferCache(maxCachedBuffers)
 	}
 
-	// Create the flush state once and reuse it: it (and its vertex/index buffer pools) is reset after every flush, so
-	// the retained object is pristine here. All constructor arguments are stable for the context's lifetime
-	// (cpuBufferCache is set just above and never reassigned), so capturing them once is safe.
+	// Create the flush state once and reuse it (see the flushState field). All constructor arguments are stable for the
+	// context's lifetime (cpuBufferCache is set just above and never reassigned), so capturing them once is safe.
 	if dm.flushState == nil {
 		dm.flushState = NewOpFlushState(g, dm.context.ResourceProvider(), &dm.tokenTracker,
 			dm.cpuBufferCache, dm.context.ThreadSafeCache(), dm.context.AtlasManager(),
@@ -742,10 +723,9 @@ func (dm *DrawingManager) Flush(proxies []*SurfaceProxy, info FlushInfo) bool {
 	cachePurgeNeeded := false
 	if preFlushSuccessful {
 		usingReorderedDAG := false
-		// Reuse the resource allocator across flushes (see the flushState comment). Its end-of-flush Reset (below)
-		// clears the intervals, maps, and registers; beginFlush additionally clears the failedInstantiation latch that
-		// Reset intentionally leaves set for the in-flush reorder retry, so the starting state matches a freshly
-		// constructed allocator's exactly — the in-flush reorder/gather/assign logic is therefore unchanged.
+		// Reuse the resource allocator across flushes (see the flushState field). beginFlush clears the
+		// failedInstantiation latch that Reset deliberately leaves set for the in-flush reorder retry, so the allocator
+		// starts in the state of a freshly constructed one.
 		if dm.resourceAllocator == nil {
 			dm.resourceAllocator = NewResourceAllocator(dm.context)
 		}
@@ -831,7 +811,6 @@ func (dm *DrawingManager) FlushSurfaces(proxies []*SurfaceProxy, info FlushInfo)
 	return didFlush
 }
 
-// resolveAndMipmap resolves a dirty MSAA target and/or regenerates dirty mipmaps for proxy.
 func resolveAndMipmap(dm *DrawingManager, g *Gpu, proxy *SurfaceProxy) {
 	if !proxy.IsInstantiated() {
 		return
@@ -864,7 +843,6 @@ func (dm *DrawingManager) FreeGpuResources() {
 		}
 	}
 	dm.onFlushCBObjects = kept
-	// A path renderer may be holding onto resources.
 	dm.pathRendererChain = nil
 	dm.softwarePathRenderer = nil
 }

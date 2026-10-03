@@ -19,8 +19,9 @@
 //     (kAlpha_F16, for the GPU blur intermediates), and RGB8 (kRGB_888x). All other formats keep zeroed entries and
 //     report unsupported.
 //   - Protected content, compressed textures, and external/rectangle-texture-specific paths are excluded by the desktop
-//     trim. The surface/proxy-level queries (surfaceSupportsReadPixels, onCanCopySurface, getDstCopyRestrictions,
-//     makeDesc) live in capsqueries.go; the format-level primitives they build on are ported here.
+//     trim. The format-level queries live in capsqueries.go; the surface/proxy-level ones built on them
+//     (SurfaceSupportsReadPixels, CanCopySurface, GetDstCopyRestrictions, BuildProgramDesc) live in surfacecaps.go,
+//     dstcopy.go, and programdesc.go.
 
 package gl
 
@@ -166,7 +167,7 @@ const (
 )
 
 // externalIOFormat holds the external format and type to use when uploading/downloading data of colorType to a texture
-// of the owning format interpreted as the owning ColorTypeInfo's color type. A zero
+// of the owning format interpreted as the owning colorTypeInfo's color type. A zero
 // externalTexImageFormat/externalReadFormat means TexImage or ReadPixels is unsupported for the combination.
 type externalIOFormat struct {
 	colorType              gpu.ColorType
@@ -323,7 +324,6 @@ type Caps struct {
 	bindDefaultFramebufferOnPresent bool
 }
 
-// newCaps constructs and initializes a Caps from the context's GL version, extensions, and driver identity.
 func newCaps(options *gpu.ContextOptions, ctxInfo *ContextInfo, iface *Interface) *Caps {
 	c := &Caps{Caps: gpu.MakeCaps(options)}
 	for i := range c.formatTable {
@@ -398,7 +398,7 @@ func (c *Caps) init(options *gpu.ContextOptions, ctxInfo *ContextInfo, iface *In
 
 	c.clientCanDisableMultisample = true
 
-	// 3.1 has draw_instanced but not instanced_arrays; for the time being we only care about instanced arrays.
+	// 3.1 has draw_instanced but not instanced_arrays, and only instanced arrays matter here.
 	c.DrawInstancedSupport = version >= Ver(3, 2) ||
 		(ctxInfo.HasExtension("GL_ARB_draw_instanced") &&
 			ctxInfo.HasExtension("GL_ARB_instanced_arrays"))
@@ -474,7 +474,6 @@ func (c *Caps) init(options *gpu.ContextOptions, ctxInfo *ContextInfo, iface *In
 		c.initStencilSupport(ctxInfo)
 	}
 
-	// Setup blit framebuffer.
 	c.blitFramebufferFlags = NoSupportBlitFramebufferFlag
 	if version >= Ver(3, 0) || ctxInfo.HasExtension("GL_ARB_framebuffer_object") ||
 		ctxInfo.HasExtension("GL_EXT_framebuffer_blit") {
@@ -528,7 +527,7 @@ func (c *Caps) init(options *gpu.ContextOptions, ctxInfo *ContextInfo, iface *In
 
 	c.GpuTracingSupport = ctxInfo.HasExtension("GL_EXT_debug_marker")
 
-	// Disable scratch texture reuse on Mali and Adreno devices.
+	// Disable scratch texture reuse on ARM (Mali) devices.
 	c.ReuseScratchTextures = ctxInfo.Vendor() != VendorARM
 
 	if ctxInfo.HasExtension("GL_EXT_window_rectangles") {
@@ -594,7 +593,7 @@ func (c *Caps) init(options *gpu.ContextOptions, ctxInfo *ContextInfo, iface *In
 	}
 
 	c.samplerObjectSupport = version >= Ver(3, 3) || ctxInfo.HasExtension("GL_ARB_sampler_objects")
-	// We currently use sampler objects whenever they are available.
+	// Sampler objects are used whenever they are available.
 	c.useSamplerObjects = c.samplerObjectSupport
 
 	if ctxInfo.Vendor() == VendorARM {
@@ -611,11 +610,11 @@ func (c *Caps) init(options *gpu.ContextOptions, ctxInfo *ContextInfo, iface *In
 
 	c.finishInitialization(options)
 
-	// Besides the user-specifiable override we also want to avoid stencil buffers in Protected mode; protected content
-	// is excluded by the trim, leaving just the option.
+	// Skia also avoids stencil buffers in Protected mode; protected content is excluded by the trim, leaving just the
+	// option.
 	c.AvoidStencilBuffers = options.AvoidStencilBuffers
 
-	// For now these two are equivalent, but we could have dst read in shader via some other method.
+	// Framebuffer fetch is the only dst-read-in-shader method.
 	shaderCaps.DstReadInShaderSupport = shaderCaps.FBFetchSupport
 }
 
@@ -660,7 +659,7 @@ func isFloatFP32(ctxInfo *ContextInfo, f *Functions, precision uint32) bool {
 		return true
 	}
 	if f.getShaderPrecisionFormat == 0 {
-		// The query entry point is only resolved for GL 4.3+ or GL_ARB_ES2_compatibility (see assembleGLInterface,
+		// The query entry point is only resolved for GL 4.3+ or GL_ARB_ES2_compatibility (see MakeAssembledGLInterface,
 		// which mirrors upstream), so a 4.1/4.2 context without that extension has no way to ask. Assume 32-bit float
 		// rather than calling through a null proc.
 		return true
@@ -730,7 +729,6 @@ func (c *Caps) initFSAASupport(ctxInfo *ContextInfo) {
 	}
 }
 
-// initBlendEquationSupport detects advanced-blend-equation support.
 func (c *Caps) initBlendEquationSupport(ctxInfo *ContextInfo) {
 	shaderCaps := c.ShaderCaps
 	layoutQualifierSupport := shaderCaps.GLSLGeneration >= gpu.GLSL140
@@ -949,10 +947,8 @@ func (c *Caps) finishInitialization(options *gpu.ContextOptions) {
 		c.UseClientSideIndirectBuffers = true
 	}
 
-	// Base caps option overrides:
 	c.ShaderCaps.ApplyOptionsOverrides(options)
 
-	// GL-specific option overrides:
 	if options.ShaderCacheStrategy < gpu.ShaderCacheStrategyBackendBinary {
 		c.programBinarySupport = false
 	}

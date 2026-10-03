@@ -12,8 +12,8 @@
 // surfaces) with scratch reuse across disjoint intervals, optionally checks the budget, and finally instantiates and
 // assigns real surfaces. Instantiation failure handling: read-only lazy proxies instantiate during AddInterval,
 // fully-lazy ones during PlanAssignment, and everything else during Assign; the drawing manager drops the flush if
-// anything fails. Intervals and registers use ordinary allocation (they are outside the recording-arena work), so Reset
-// explicitly drops the register-held surface refs rather than relying on arena destruction.
+// anything fails. Registers are ordinary Go allocations, so Reset explicitly drops the register-held surface refs
+// rather than relying on arena destruction as upstream does.
 
 package gl
 
@@ -127,13 +127,11 @@ func (r *allocRegister) instantiateSurface(proxy *SurfaceProxy, resourceProvider
 		// The register keeps its own ref; the proxy gets an additional one.
 		surface.Ref()
 	}
-	// Make the surface budgeted if this proxy is budgeted.
 	if proxy.IsBudgeted() == gpu.BudgetedYes && surface.BudgetedType() != gpu.BudgetedTypeBudgeted {
 		// This gets the job done but isn't quite correct: better would be matching budgeted proxies with budgeted
 		// surfaces and unbudgeted with unbudgeted.
 		surface.MakeBudgeted()
 	}
-	// Propagate the proxy unique key to the surface if we have one.
 	if uniqueKey := proxy.UniqueKey(); uniqueKey.IsValid() {
 		if !surface.UniqueKey().IsValid() {
 			resourceProvider.AssignUniqueKeyToResource(uniqueKey, surface)
@@ -163,7 +161,6 @@ func (i *allocInterval) extendEnd(newEnd uint32) {
 	}
 }
 
-// intervalList is a singly linked list of intervals with head/tail pointers.
 type intervalList struct {
 	head *allocInterval
 	tail *allocInterval
@@ -231,7 +228,7 @@ func (l *intervalList) insertByIncreasingEnd(intvl *allocInterval) {
 	}
 }
 
-// ResourceAllocator assigns backing surfaces to proxies at flush time (see the package doc above).
+// ResourceAllocator assigns backing surfaces to proxies at flush time (see the file comment).
 type ResourceAllocator struct {
 	dContext *DirectContext
 
@@ -245,8 +242,8 @@ type ResourceAllocator struct {
 	activeIntvls   intervalList // live intervals during assignment, sorted by increasing end
 	finishedIntvls intervalList // completed intervals, sorted by increasing start
 
-	// freeIntvls is the allocInterval free list: Reset drains finishedIntvls into it (each interval zeroed so no
-	// proxy/register stays reachable) and AddInterval pops from it, so the steady-state frame reuses the previous
+	// freeIntvls is the allocInterval free list: Assign and Reset drain finishedIntvls into it (each interval zeroed so
+	// no proxy/register stays reachable) and AddInterval pops from it, so the steady-state frame reuses the previous
 	// flush's intervals instead of allocating. Chained through the same next pointers the live lists use.
 	freeIntvls *allocInterval
 
@@ -341,7 +338,6 @@ func (a *ResourceAllocator) AddInterval(proxy *SurfaceProxy, start, end uint32, 
 // the free pool.
 func (a *ResourceAllocator) findOrCreateRegisterFor(proxy *SurfaceProxy) *allocRegister {
 	resourceProvider := a.dContext.ResourceProvider()
-	// Handle uniquely keyed proxies.
 	if uniqueKey := proxy.UniqueKey(); uniqueKey.IsValid() {
 		if r := a.uniqueKeyRegisters[uniqueKey.MapKey()]; r != nil {
 			return r
@@ -353,7 +349,6 @@ func (a *ResourceAllocator) findOrCreateRegisterFor(proxy *SurfaceProxy) *allocR
 		return r
 	}
 
-	// Then look in the free pool.
 	var scratchKey gpu.ScratchKey
 	proxy.computeScratchKey(a.dContext.GLCaps(), &scratchKey)
 
@@ -473,8 +468,6 @@ func (a *ResourceAllocator) Reset() {
 		}
 	}
 	a.registers = nil
-	// Drain the finished intervals into the free list for the next flush's AddInterval calls, zeroing each so the pool
-	// pins no proxy or register.
 	for intvl := a.finishedIntvls.popHead(); intvl != nil; intvl = a.finishedIntvls.popHead() {
 		*intvl = allocInterval{next: a.freeIntvls}
 		a.freeIntvls = intvl
@@ -487,12 +480,10 @@ func (a *ResourceAllocator) Reset() {
 	a.numOps = 0
 }
 
-// beginFlush returns a reused allocator to the state a freshly constructed one has, so a single persistent allocator
-// can be reused across flushes rather than allocated fresh per flush (see DrawingManager's flushState/resourceAllocator
-// fields). The end-of-flush Reset already clears the intervals, maps, and registers; failedInstantiation is the one
-// field Reset deliberately leaves latched (the in-flush reorder retry reads it after the retry's Reset), so clearing it
-// here — and only here, at the start of a flush — makes the starting state identical to a fresh allocator's without
-// altering that in-flush retry behavior.
+// beginFlush returns a reused allocator to a freshly constructed one's state, so one persistent allocator serves every
+// flush (see DrawingManager's flushState/resourceAllocator fields). The end-of-flush Reset already clears the
+// intervals, maps, and registers; failedInstantiation is the one field Reset deliberately leaves latched (the in-flush
+// reorder retry reads it after the retry's Reset), so it is cleared here, and only here.
 func (a *ResourceAllocator) beginFlush() {
 	a.failedInstantiation = false
 }

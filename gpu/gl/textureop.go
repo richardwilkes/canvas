@@ -9,8 +9,8 @@
 
 // The batched textured-quad op behind drawImageRect's fast path — src-over textured quads that sample the texture in
 // the geometry processor rather than through FP trees. Trims: the multi-proxy image-set form and the cross-proxy
-// chaining lane are unreachable/deferred (no public entry point exposes image sets; different-texture draws simply
-// don't batch), and the texture color-space xform is identity in an sRGB-only pipeline.
+// chaining lane are not ported (no public entry point exposes image sets; different-texture draws simply don't batch),
+// and the texture color-space xform is identity in an sRGB-only pipeline.
 
 package gl
 
@@ -25,7 +25,7 @@ import (
 
 var textureOpClassID = GenOpClassID()
 
-// axisAlignedQuadSize returns the lengths of the vertical and horizontal edges of an axis-aligned quad.
+// axisAlignedQuadSize returns the lengths of the horizontal and vertical edges of an axis-aligned quad.
 func axisAlignedQuadSize(quad *Quad) (w, h float32) {
 	if quad.QuadType() != QuadTypeAxisAligned {
 		panic("axis-aligned quad required")
@@ -77,7 +77,6 @@ type normalizationParams struct {
 	yOffset float32 // 0 for top-left origin, height of [normalized] tex if bottom-left
 }
 
-// proxyNormalizationParams derives the normalization params for sampling proxy given its origin.
 func proxyNormalizationParams(proxy *SurfaceProxy, origin gpu.SurfaceOrigin) normalizationParams {
 	dimensions := proxy.BackingStoreDimensions()
 	var iw, ih, h float32
@@ -145,7 +144,6 @@ func normalizeAndInsetSubset(filter gpu.FilterMode, params normalizationParams, 
 	return geom.Rect{Left: l, Top: t, Right: r, Bottom: b}
 }
 
-// normalizeSrcQuad normalizes a quad's coordinates in place per params.
 func normalizeSrcQuad(params normalizationParams, srcQuad *Quad) {
 	if srcQuad.QuadType() == QuadTypePerspective {
 		panic("src quad cannot have perspective")
@@ -327,7 +325,6 @@ func (o *textureOp) characterize() {
 	}
 }
 
-// createProgramInfo builds the op's program info.
 func (o *textureOp) createProgramInfo(state *OpFlushState) {
 	samplerState := gpu.MakeSamplerState(gpu.WrapModeClamp, gpu.WrapModeClamp, o.filter,
 		gpu.MipmapModeNone)
@@ -450,14 +447,13 @@ func (o *textureOp) OnCombineIfPossible(t Op) CombineResult {
 		return CombineResultCannotCombine
 	}
 	if o.proxy != that.proxy {
-		// We can't merge across different proxies (the chaining lane is deferred).
+		// We can't merge across different proxies (the chaining lane is not ported).
 		return CombineResultCannotCombine
 	}
 
 	o.subset = o.subset || that.subset
 	o.colorType = max(o.colorType, that.colorType)
 
-	// Concatenate the quad lists together.
 	o.quads.Concat(that.quads)
 
 	if upgradeToCoverageAAOnMerge {
@@ -520,7 +516,7 @@ func NewTextureOp(caps *Caps, proxyView SurfaceProxyView, srcAlphaType gpu.Alpha
 // DrawTexture draws a textured rect, including the DMSAA lane that routes the draw through FillRRectOp via
 // FillRectToRect (the color-space xform collapses to the identity).
 func (sdc *SurfaceDrawContext) DrawTexture(clip Clip, view SurfaceProxyView, srcAlphaType gpu.AlphaType, filter gpu.FilterMode, mm gpu.MipmapMode, blendMode raster.BlendMode, color colorcore.PMColor4f, srcRect, dstRect geom.Rect, edgeAA gpu.QuadAAFlags, constraint SrcRectConstraint, viewMatrix *geom.Matrix) {
-	// If we are using dmsaa then go through FillRRectOp (via fillRectToRect).
+	// If we are using dmsaa then go through FillRRectOp (via FillRectToRect).
 	if (sdc.alwaysAntialias() || sdc.Caps().ReducedShaderMode()) && edgeAA != gpu.QuadAAFlagsNone {
 		deviceQuad := MakeQuadFromRect(dstRect, viewMatrix)
 		srcQuad := MakeQuadFromRectNoTransform(srcRect)
@@ -580,14 +576,13 @@ func (sdc *SurfaceDrawContext) DrawTexturedQuad(clip Clip, proxyView SurfaceProx
 		panic("drawTexturedQuad requires a texture proxy")
 	}
 
-	// Functionally this is very similar to drawFilledQuad except that there's no constColor to enable the
+	// Functionally this is very similar to DrawFilledQuad except that there's no constColor to enable the
 	// quadOptSubmitted optimizations, no stencil settings support, and it's a TextureOp.
 	opt := sdc.attemptQuadOptimization(clip, nil /* stencil */, quad, nil /* paint */)
 	if opt == quadOptSubmitted {
 		panic("texture quads cannot reduce to native clears")
 	}
 	if opt != quadOptDiscarded {
-		// Add the texture op if not discarded.
 		finalClip := clip
 		if opt == quadOptClipApplied {
 			finalClip = nil

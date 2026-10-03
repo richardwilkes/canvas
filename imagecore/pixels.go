@@ -121,7 +121,6 @@ func NewPixelsCopyFromBytes(info ImageInfo, data []byte, rowBytes int) (*Pixels,
 }
 
 // Subset returns a view (shared storage) of the pixel rect [l, t, r, b), which must be contained in the pixel bounds.
-// Callers are expected to always pass an in-range rect.
 func (p *Pixels) Subset(l, t, r, b int32) *Pixels {
 	epp := p.Info.ColorType.ElemsPerPixel()
 	off := int(t)*int(p.RowElems) + int(l)*int(epp)
@@ -144,7 +143,7 @@ func (p *Pixels) Subset(l, t, r, b int32) *Pixels {
 }
 
 // writeToBytes serializes the pixel rows into dst as little-endian bytes with the given row stride (the inverse of
-// NewPixelsCopyFromBytes); used by the ReadPixels store path.
+// NewPixelsCopyFromBytes); used by ConvertPixels' same-color-type lane.
 func (p *Pixels) writeToBytes(dst []byte, dstRowBytes int) {
 	w := int(p.Info.Width) * int(p.Info.ColorType.ElemsPerPixel())
 	for y := 0; y < int(p.Info.Height); y++ {

@@ -8,9 +8,9 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // The backend-neutral analytic-blur profile tables: the rect-blur integral table, the circle-blur / half-plane
-// profiles, and the blurred-rrect nine-patch mask. These are uploaded as A8 textures and sampled from a runtime-effect
-// shader so an axis-aligned rect, a circle, or a simple-circular rounded rect blurs analytically (no mask render +
-// separable convolution).
+// profiles, and the blurred-rrect nine-patch mask. These are uploaded as A8 textures and sampled by the analytic blur
+// fragment processors in gpu/gl so an axis-aligned rect, a circle, or a simple-circular rounded rect blurs analytically
+// (no mask render + separable convolution).
 
 package gpu
 
@@ -88,7 +88,7 @@ func ComputeIntegralTableWidth(sixSigma float32) int {
 ///////////////////////////////////////////////////////////////////////////////
 //  Circle Blur
 
-// makeUnnormalizedHalfKernel computes the right half of a Gaussian, sampled at half-pixel steps out from the center.
+// makeUnnormalizedHalfKernel computes the right half of a Gaussian, sampled at offsets 0.5, 1.5, ... from the center.
 // Returns the sum of the (unnormalized) values.
 func makeUnnormalizedHalfKernel(halfKernel []float32, halfKernelSize int, sigma float32) float32 {
 	invSigma := 1.0 / sigma
@@ -241,9 +241,8 @@ func CreateHalfPlaneProfile(profileWidth int) []byte {
 // ComputeBlurredRRectParams handles the uniform-radii rounded-rect subset: it derives the small 'rrectToDraw' to
 // rasterize+blur into the nine-patch mask and the 'dimensions' of that mask, and reports whether the rrect is
 // nine-patchable (the blur is small enough relative to the corner radii and the rrect's extent that the four blurred
-// corners do not overlap in the middle). Placed here beside CreateRRectBlurMask, which consumes its output, because it
-// is pure geometry. An overflow guard is omitted since reachable UI sizes cannot overflow int, and per-corner division
-// arrays for the general (non-uniform-radii) case are not produced since they are unused here.
+// corners do not overlap in the middle). An overflow guard is omitted since reachable UI sizes cannot overflow int, and
+// per-corner division arrays for the general (non-uniform-radii) case are not produced since they are unused here.
 func ComputeBlurredRRectParams(srcRRect, devRRect geom.RRect, sigma, xformedSigma float32) (rrectToDraw geom.RRect, dimensions geom.ISize, ninePatchable bool) {
 	// srcRRect and sigma feed only the (unused) source-space division arrays; kept for signature parity.
 	_, _ = srcRRect, sigma
@@ -284,7 +283,7 @@ func ComputeBlurredRRectParams(srcRRect, devRRect geom.RRect, sigma, xformedSigm
 // (CreateIntegralTable), sampled with linear interpolation.
 func evalV(top float32, y int, integral []byte, integralSize int, sixSigma float32) uint8 {
 	if top < 0 {
-		return 0 // an empty column
+		return 0
 	}
 	fT := (top - float32(y) - 0.5) * (float32(integralSize) / sixSigma)
 	if fT < 0 {

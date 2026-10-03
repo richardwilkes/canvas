@@ -7,8 +7,6 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// SweepGradient: an angular gradient sweeping around a center point.
-
 package shaders
 
 import (
@@ -43,8 +41,7 @@ func NewSweepGradient(center geom.Point, colors []colorcore.Color, pos []float32
 	}
 
 	if geom.ScalarNearlyEqualTolerance(startAngle, endAngle, gradDegenerateThreshold) {
-		// Degenerate gradient, which should follow default degenerate behavior unless it is clamped and the angle is
-		// greater than 0.
+		// Degenerate: use the default degenerate behavior unless clamped with a positive angle.
 		if tileMode == TileClamp && endAngle > gradDegenerateThreshold {
 			// The first color is repeated from 0 to the angle, then a hardstop switches to the last color (all other
 			// colors are compressed to the infinitely thin interpolation region).
@@ -56,7 +53,7 @@ func NewSweepGradient(center geom.Point, colors []colorcore.Color, pos []float32
 	}
 
 	if startAngle <= 0 && endAngle >= 360 {
-		// If the t-range includes [0,1], then we can always use clamping (presumably faster).
+		// The t-range includes [0,1], so clamping is equivalent to any other tile mode.
 		tileMode = TileClamp
 	}
 
@@ -69,7 +66,7 @@ func NewSweepGradient(center geom.Point, colors []colorcore.Color, pos []float32
 	return withLocalMatrixPtr(g, localMatrix)
 }
 
-// Center returns the sweep's center; TBias/TScale are the angular remapping coefficients.
+// Center returns the sweep's center.
 func (g *SweepGradient) Center() geom.Point { return g.center }
 
 // TBias returns the sweep's t bias (-t0).
@@ -81,7 +78,7 @@ func (g *SweepGradient) TScale() float32 { return g.tScale }
 // IsOpaque implements Shader by delegating to the shared gradient base logic.
 func (g *SweepGradient) IsOpaque() bool { return g.isOpaqueBase() }
 
-// appendStages runs the base gradient stages, then appends the sweep-specific stages: xy_to_unit_angle then the t remap
+// appendStages appends the base gradient stages around the sweep-specific ones: xy_to_unit_angle, then the t remap
 // Scale(tScale, 1) * Translate(tBias, 0).
 func (g *SweepGradient) appendStages(p *Pipeline, m MatrixRec) bool { //nolint:gocritic // see Shader.appendStages
 	return g.appendBaseStages(p, &m, func(p *Pipeline) {

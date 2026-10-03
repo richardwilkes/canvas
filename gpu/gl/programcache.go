@@ -40,7 +40,6 @@ type PipelineStats struct {
 	NumProgramCacheMisses int
 }
 
-// programCacheEntry is one LRU entry: a linked program and the key it was stored under.
 type programCacheEntry struct {
 	program *Program
 	key     string
@@ -52,11 +51,11 @@ type ProgramCache struct {
 	entries    map[string]*list.Element
 	lru        *list.List // front = most recently used
 	keyBuilder gpu.KeyBuilder
-	// desc, keyBuilder, and keyScratch are reused across draws so a steady-state frame's per-draw program lookup
-	// allocates nothing on a cache hit. The cache is touched only on the GL context thread, so no synchronization is
-	// needed; the descriptor is not retained past the lookup (CreateProgram consumes it synchronously and Program
-	// keeps no reference). keyBuilder is a value field (heap-resident with the cache) so building desc.key allocates
-	// nothing even though its add methods pass it to interface calls the compiler treats as escaping.
+	// desc, keyBuilder, and keyScratch are reused across draws so the per-draw program lookup allocates nothing on a
+	// cache hit. The cache is touched only on the GL context thread, so no synchronization is needed, and the
+	// descriptor is not retained past the lookup (CreateProgram consumes it synchronously and Program keeps no
+	// reference). keyBuilder is a value field (heap-resident with the cache) because the processors' AddToKey interface
+	// calls would make a per-lookup builder escape to the heap.
 	desc       ProgramDesc
 	keyScratch []byte
 	stats      PipelineStats
@@ -99,8 +98,6 @@ func (c *ProgramCache) Reset() {
 // FindOrCreateProgram builds the descriptor for the program info, then returns the cached program or compiles a new
 // one. Returns nil (and no cache entry) if building fails.
 func (c *ProgramCache) FindOrCreateProgram(programInfo *ProgramInfo) *Program {
-	// Reuse the cache's descriptor storage and key builder across draws (retains the key-word slice capacity; the
-	// builder avoids the per-key heap allocation its escaping add methods would force).
 	buildProgramDescReusing(&c.desc, &c.keyBuilder, programInfo, c.gpu.glCaps())
 	if !c.desc.IsValid() {
 		return nil

@@ -44,9 +44,6 @@ func countVerb(p *path.Path, verb path.Verb) int {
 	}
 }
 
-///////////////////////////////////////////////////////////////////////////////
-// dash
-
 func TestMakeDashValidation(t *testing.T) {
 	if MakeDash([]float32{10}, 0) != nil {
 		t.Error("odd interval count should fail")
@@ -66,7 +63,7 @@ func TestMakeDashValidation(t *testing.T) {
 }
 
 func TestDashSpecialLine(t *testing.T) {
-	// A wide butt-capped line takes the SpecialLineRec lane: the dashes are emitted directly as filled quads and the
+	// A wide butt-capped line takes the specialLineRec lane: the dashes are emitted directly as filled quads and the
 	// stroke rec is converted to fill.
 	pe := MakeDash([]float32{10, 10}, 0)
 	rec := strokeRec(4)
@@ -213,7 +210,7 @@ func TestDashAsPoints(t *testing.T) {
 		}
 	}
 
-	// hairlines, non-integer intervals, angled lines, and round-capped angles are rejected
+	// hairlines, non-integer intervals, and angled lines are rejected
 	rec0 := strokeRec(0)
 	if pe.AsPoints(&pd, line(0, 5, 20, 5), &rec0, ctm, &cull) {
 		t.Error("hairline should be rejected")
@@ -248,9 +245,6 @@ func TestDashAsPoints(t *testing.T) {
 		t.Errorf("flags: got %#x, want 0 (no implemented effect produces the circle form)", pd.Flags)
 	}
 }
-
-///////////////////////////////////////////////////////////////////////////////
-// corner
 
 func TestCornerEffect(t *testing.T) {
 	if MakeCorner(0) != nil || MakeCorner(-1) != nil || MakeCorner(float32(math.NaN())) != nil {
@@ -309,9 +303,6 @@ func TestCornerEffect(t *testing.T) {
 	}
 }
 
-///////////////////////////////////////////////////////////////////////////////
-// discrete
-
 func TestDiscreteEffect(t *testing.T) {
 	if MakeDiscrete(0, 1, 0) != nil || MakeDiscrete(float32(math.NaN()), 1, 0) != nil {
 		t.Error("invalid segLength should fail")
@@ -367,9 +358,6 @@ func TestDiscreteEffect(t *testing.T) {
 		t.Errorf("fast bounds should outset by deviation: %v", bounds)
 	}
 }
-
-///////////////////////////////////////////////////////////////////////////////
-// trim
 
 func TestTrimEffect(t *testing.T) {
 	if MakeTrim(0, 1, TrimNormal) != nil {
@@ -432,9 +420,6 @@ func TestTrimEffect(t *testing.T) {
 	}
 }
 
-///////////////////////////////////////////////////////////////////////////////
-// 1D
-
 func TestPath1DEffect(t *testing.T) {
 	stamp := &path.Path{}
 	stamp.AddRect(geom.RectLTRB(-1, -1, 1, 1), geom.DirectionCW)
@@ -495,9 +480,6 @@ func TestPath1DEffect(t *testing.T) {
 	}
 }
 
-///////////////////////////////////////////////////////////////////////////////
-// 2D
-
 func TestPath2DEffects(t *testing.T) {
 	if MakeLine2D(-1, identity()) != nil {
 		t.Error("negative width should fail")
@@ -542,9 +524,6 @@ func TestPath2DEffects(t *testing.T) {
 		t.Errorf("stamp count: got %d, want 8", got)
 	}
 }
-
-///////////////////////////////////////////////////////////////////////////////
-// sum / compose
 
 func TestSumAndCompose(t *testing.T) {
 	dash := MakeDash([]float32{10, 10}, 0)
@@ -720,9 +699,6 @@ func TestComposeDiscardsFailedInnerOutput(t *testing.T) {
 	}
 }
 
-///////////////////////////////////////////////////////////////////////////////
-// FillPathWithPaint integration
-
 func TestFillPathWithPaintAppliesEffect(t *testing.T) {
 	src := line(0, 0, 100, 0)
 
@@ -757,7 +733,6 @@ func TestFillPathWithPaintAppliesEffect(t *testing.T) {
 	}
 }
 
-// identity returns a pointer to a fresh identity matrix.
 func identity() *geom.Matrix {
 	m := geom.IdentityMatrix()
 	return &m

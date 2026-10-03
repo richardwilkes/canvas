@@ -8,7 +8,7 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // Turns a path.Path (and, for a binary operation, a second operand path) into the contour -> segment -> span data model
-// built in the opcontour/opsegment/opspan slice. preFetch flattens the path's verb/point/weight streams (running the
+// defined in opcontour.go/opsegment.go/opspan.go. preFetch flattens the path's verb/point/weight streams (running the
 // reduceOrder family to drop degenerate curves and forceSmallToZero to snap tiny coordinates), then walk feeds the
 // contour builder, splitting quads/conics at max curvature and complex cubics via complexBreak (dcubic.go) so
 // downstream intersection succeeds.
@@ -36,8 +36,8 @@ const (
 // (path.VerbClose). The path package does not expose a done verb of its own.
 const opVerbDone path.Verb = 6
 
-// forceSmallToZero snaps a point's coordinates to zero when they are already too tiny to be numerically meaningful,
-// since very small nonzero coordinates cause instability further down the pipeline.
+// forceSmallToZero snaps coordinates smaller than fltEpsilonOrderableErr to zero, since very small nonzero coordinates
+// cause instability further down the pipeline.
 func forceSmallToZero(pt geom.Point) geom.Point {
 	if math.Abs(float64(pt.X)) < fltEpsilonOrderableErr {
 		pt.X = 0
@@ -48,7 +48,6 @@ func forceSmallToZero(pt geom.Point) geom.Point {
 	return pt
 }
 
-// pointsAreFinite reports whether every point in pts is finite.
 func pointsAreFinite(pts []geom.Point) bool {
 	for i := range pts {
 		if !pts[i].IsFinite() {
@@ -58,8 +57,9 @@ func pointsAreFinite(pts []geom.Point) bool {
 	return true
 }
 
-// canAddCurve snaps the curve's points to zero and reports false for a move verb or a degenerate (zero-length) line,
-// both of which the contour builder should skip. The points are snapped in place, so the caller adds the snapped curve.
+// canAddCurve reports false for a move verb or a degenerate (zero-length) line, both of which the contour builder
+// should skip. Other curves have their points snapped in place by forceSmallToZero, so the caller adds the snapped
+// curve.
 func canAddCurve(verb path.Verb, curve []geom.Point) bool {
 	if verb == path.VerbMove {
 		return false
@@ -114,7 +114,7 @@ func (b *opEdgeBuilder) init() {
 // addOperand appends a second path's verbs after popping the first's done terminator, recording the second operand's
 // fill mask.
 func (b *opEdgeBuilder) addOperand(p *path.Path) {
-	b.pathVerbs = b.pathVerbs[:len(b.pathVerbs)-1] // drop the trailing done
+	b.pathVerbs = b.pathVerbs[:len(b.pathVerbs)-1]
 	b.path = p
 	mask := windingMask
 	if int(p.FillType())&1 != 0 {
@@ -124,8 +124,6 @@ func (b *opEdgeBuilder) addOperand(p *path.Path) {
 	b.preFetch()
 }
 
-// complete flushes the contour builder and, if the current contour holds any segments, finalizes it and clears the
-// builder's current contour.
 func (b *opEdgeBuilder) complete() {
 	b.contourBuilder.flush()
 	contour := b.contourBuilder.contour
@@ -364,10 +362,9 @@ func (b *opEdgeBuilder) walkConic(p []geom.Point, weight float32) {
 	vec2 := p[2].Sub(p[1])
 	if vec1.Dot(vec2) < 0 {
 		// There is no conic max-curvature routine in this tree, so the conic is measured as if its control hull were a
-		// quad's. The substitute is sound rather than exact: the weight shifts where the true maximum sits, so the
-		// split lands off it and the two halves are less balanced than they could be. Both halves are still valid
-		// conics and the walk still terminates, which makes this curve quality, not correctness -- and writing the
-		// real thing would move every conic chop point in the frozen goldens for no known failure.
+		// quad's. The weight shifts where the true maximum sits, so the split lands off it and the halves are less
+		// balanced than they could be, but both are still valid conics: this costs curve quality, not correctness.
+		// Writing the real thing would move every conic chop point in the frozen goldens for no known failure.
 		maxCurvature := geom.FindQuadMaxCurvature(p[:3])
 		if 0 < maxCurvature && maxCurvature < 1 {
 			conic := geom.Conic{Pts: [3]geom.Point{p[0], p[1], p[2]}, W: weight}
@@ -409,7 +406,8 @@ type splitsville struct {
 }
 
 // walkCubic is the cubic lane of walk: splits complex cubics (self-intersecting or high-curvature) before adding,
-// coalescing runs of un-addable sub-curves. Returns false on a non-finite subdivision.
+// coalescing runs of un-addable sub-curves. Returns false on a non-finite subdivision or when a coalesced sub-curve
+// still cannot be added.
 func (b *opEdgeBuilder) walkCubic(p []geom.Point) bool {
 	var cubicPts [4]geom.Point
 	copy(cubicPts[:], p[:4])

@@ -36,7 +36,6 @@ func TestBlurSigmaRadius(t *testing.T) {
 }
 
 func TestBlurBatchedKernelWidth(t *testing.T) {
-	// Verifies the kernel-width bucket boundaries.
 	cases := map[int32]int32{
 		2: 4, 3: 4, 4: 4,
 		5: 8, 8: 8,
@@ -69,14 +68,12 @@ func TestCompute1DBlurKernelNormalizedSymmetric(t *testing.T) {
 		if math.Abs(float64(sum)-1) > 1e-5 {
 			t.Errorf("sigma %v: kernel sum = %v, want 1", sigma, sum)
 		}
-		// Symmetric about the center.
 		for i := int32(0); i < radius; i++ {
 			if d := kernel[i] - kernel[width-1-i]; math.Abs(float64(d)) > 1e-6 {
 				t.Errorf("sigma %v: kernel not symmetric at %d (%v vs %v)", sigma, i,
 					kernel[i], kernel[width-1-i])
 			}
 		}
-		// The center weight is the largest.
 		for i := int32(0); i < width; i++ {
 			if kernel[i] > kernel[radius]+1e-6 {
 				t.Errorf("sigma %v: weight[%d]=%v exceeds center %v", sigma, i, kernel[i],
@@ -164,7 +161,6 @@ func TestCompute2DBlurKernelSeparable(t *testing.T) {
 		if math.Abs(float64(sum)-1) > 1e-5 {
 			t.Errorf("sigma (%v,%v): 2D kernel sum = %v, want 1", c.sx, c.sy, sum)
 		}
-		// The area beyond kernelArea must be zeroed.
 		for i := int(w * h); i < MaxBlurSamples; i++ {
 			if kernel[i] != 0 {
 				t.Errorf("sigma (%v,%v): kernel[%d] = %v, want 0 (trailing)", c.sx, c.sy, i, kernel[i])
@@ -194,7 +190,6 @@ func TestCompute2DBlurOffsets(t *testing.T) {
 				wxy[0], wxy[1])
 		}
 	}
-	// Trailing offsets repeat the last valid pair (1,1).
 	for i := 9; i < MaxBlurSamples; i++ {
 		if offsets[2*i] != 1 || offsets[2*i+1] != 1 {
 			t.Errorf("trailing offset[%d] = (%v,%v), want (1,1)", i, offsets[2*i], offsets[2*i+1])

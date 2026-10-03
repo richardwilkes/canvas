@@ -9,10 +9,9 @@
 
 // The base of all deferred GPU operations. Draw arguments are captured into ops and geometry is generated at flush
 // time, which is what allows the batching machinery (merge and chain in OpsTask) to minimize draw calls. This takes the
-// form of an Op interface plus an embedded OpBase carrying the chain links and bounds. "Deleting" an op is simply
-// dropping the reference to it — the arena allocation strategy arrives with the op recording work, so combineIfPossible
-// has no arena-allocator parameter for now. There is no separate "pre-prepare" pass; prepare happens once, right before
-// execute.
+// form of an Op interface plus an embedded OpBase carrying the chain links and bounds. A dead op is recycled to its
+// type's free list (oppool.go) or dropped for the GC, so CombineIfPossible takes no arena-allocator parameter. There is
+// no separate "pre-prepare" pass; prepare happens once, right before execute.
 
 package gl
 
@@ -70,7 +69,6 @@ type Op interface {
 	recycle()
 }
 
-// Op bounds flags.
 const (
 	opBoundsFlagAABloat  uint8 = 0x1
 	opBoundsFlagZeroArea uint8 = 0x2
@@ -147,7 +145,7 @@ func (b *OpBase) SetBounds(newBounds geom.Rect, aabloat HasAABloat, zeroArea IsH
 // VisitProxies is the default no-op for ops without proxies.
 func (b *OpBase) VisitProxies(func(*SurfaceProxy, gpu.Mipmapped)) {}
 
-// recycle is the default no-op for ops that are not pooled; such ops are simply dropped for the GC when their chain is
+// recycle is the default no-op for ops that are not pooled; such ops are dropped for the GC when their chain is
 // deleted. Pooled ops (the batchable geometry ops) override this to return themselves to their free list.
 func (b *OpBase) recycle() {}
 
@@ -209,7 +207,6 @@ func (b *OpBase) CutChain() Op {
 	return nil
 }
 
-// prepareOp / executeOp are small dispatch helpers used by the task machinery.
 func prepareOp(op Op, state *OpFlushState) { op.OnPrepare(state) }
 
 func executeOp(op Op, state *OpFlushState, chainBounds geom.Rect) {
@@ -239,7 +236,7 @@ func largestInvertedRect() geom.Rect {
 	return geom.Rect{Left: maxF32, Top: maxF32, Right: -maxF32, Bottom: -maxF32}
 }
 
-// joinPossiblyEmptyRect returns the unconditional min/max join of r and other, without special- casing empty rects.
+// joinPossiblyEmptyRect returns the unconditional min/max join of r and other, without special-casing empty rects.
 func joinPossiblyEmptyRect(r, other geom.Rect) geom.Rect {
 	return geom.Rect{
 		Left:   min(r.Left, other.Left),

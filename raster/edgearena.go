@@ -7,16 +7,14 @@
 // This Source Code Form is "Incompatible With Secondary Licenses", as
 // defined by the Mozilla Public License, version 2.0.
 
-// Pointer-stable bump allocation for the edge builders (pooled temporaries). A naive edge builder does one heap
-// allocation per segment, which dominates per-fill heap traffic on curve/stroke fills (a stroked path expands into
-// hundreds of edges). edgeArena uses a bump-allocation model instead: edges come from fixed-size blocks that are never
-// resized once created, so a *T handed out by alloc stays valid as the arena grows, and reset rewinds it for reuse by a
-// pooled builder (blocks are retained, so steady-state fills reallocate nothing).
+// Pointer-stable bump allocation for the edge builders. One heap allocation per edge would dominate per-fill heap
+// traffic on curve and stroke fills (a stroked path expands into hundreds of edges). edgeArena instead hands edges out
+// of fixed-size blocks that are never resized, so a *T from alloc stays valid as the arena grows, and reset rewinds it
+// for reuse by a pooled builder (blocks are retained, so steady-state fills reallocate nothing).
 
 package raster
 
-// edgeArenaBlock is the number of edges allocated per arena block. Blocks are never individually resized, so pointers
-// taken into them via alloc remain valid as the arena grows. 64 keeps a typical filled path within a single block while
+// edgeArenaBlock is the number of edges per arena block. 64 keeps a typical filled path within a single block while
 // bounding the wasted tail of the last block.
 const edgeArenaBlock = 64
 

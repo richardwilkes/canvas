@@ -16,9 +16,9 @@ import (
 )
 
 // TestQuickInverseSign pins quickInverse's documented result: +4194304/x with C-style truncating division, so the
-// result carries x's sign and an already-absolute slope yields the non-negative reciprocal the DY callers want. The
-// lookup table it replaces stores negative entries and cancels the sign in its indexing, which is easy to misread as a
-// negation of the result.
+// result carries x's sign and an already-absolute slope yields the non-negative reciprocal the DY callers want. Skia's
+// lookup table stores negative entries and cancels the sign in its indexing, which is easy to misread as a negation of
+// the result.
 func TestQuickInverseSign(t *testing.T) {
 	if got := quickInverse(0); got != 0 {
 		t.Fatalf("quickInverse(0) = %d, want 0", got)
@@ -67,10 +67,10 @@ func setLineQuantize(p geom.Point) (x, y Fixed) {
 	return x, y
 }
 
-// TestAnalyticSetLineDYMatchesUpdateLine: SetLine used to hand quickInverse the raw 16.16 slope while updateLine
-// converted to FDot6 first, so a line edge's DY was 1024x smaller than a curve segment's for the same geometry — and
-// 1024x off the "abs(1/DX)" contract on AnalyticEdge.DY, which feeds partialTriangleToAlpha. Both setters must now
-// derive DY the same way, across the inverse-table branch, the quickDiv branch, and the vertical MaxInt32 case.
+// TestAnalyticSetLineDYMatchesUpdateLine pins that SetLine and updateLine derive DY the same way, across the
+// quickInverse branch, the quickDiv branch, and the vertical MaxInt32 case. SetLine once handed quickInverse the raw
+// 16.16 slope, so a line edge's DY was 1024x smaller than a curve segment's for the same geometry and 1024x off the
+// abs(1/DX) contract on AnalyticEdge.DY, which feeds partialTriangleToAlpha.
 func TestAnalyticSetLineDYMatchesUpdateLine(t *testing.T) {
 	for _, tc := range []struct {
 		name   string

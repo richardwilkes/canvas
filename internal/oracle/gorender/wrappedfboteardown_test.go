@@ -18,33 +18,29 @@ import (
 	"github.com/richardwilkes/canvas/internal/oracle/scenario"
 )
 
-// mixedPathScenarios are the scenarios TestWrappedFBOTeardownResyncsContext interleaves: enough distinct render-target
-// sizes and enough drawing to make the render-target and FBO churn that recycles GL names, and each one paints most of
-// its canvas so a render that lands in the wrong framebuffer reads back as an obvious blank rather than a near-match.
+// mixedPathScenarios are the scenarios TestWrappedFBOTeardownResyncsContext interleaves: enough renders to produce the
+// render-target and FBO churn that recycles GL names, and each one paints most of its canvas so a render that lands in
+// the wrong framebuffer reads back as an obvious blank rather than a near-match.
 var mixedPathScenarios = []string{"clip-rotated-rect", "clip-nested-shrink", "hairlines", "ovals-rotated"}
 
 // TestWrappedFBOTeardownResyncsContext gates mixing the wrapped-FBO and library-owned render paths on one GPUContext.
 //
 // createOffscreenFBO binds an FBO behind the direct context's back, so the setup re-syncs the context's GL-state shadow
-// with ResetContext(AllBackendState). The teardown performs the symmetric mutation — an unbind plus three deletes,
-// again behind the context's back — and used to skip that re-sync, leaving the shadow describing GL state that no
-// longer exists (the deleted FBO recorded as the bound draw framebuffer, the torn-down wrapped target recorded as the
-// bound render target) while GL itself has framebuffer 0 bound. The library skips redundant render-target binds, so a
-// later render on the same context that the shadow believes is already bound would have its bind elided and draw into
-// framebuffer 0.
+// with ResetContext(AllBackendState). The teardown performs the symmetric mutation (an unbind plus three deletes) and
+// needs the same re-sync: without it the shadow describes GL state that no longer exists (the deleted FBO recorded as
+// the bound draw framebuffer, the torn-down wrapped target as the bound render target) while GL itself has framebuffer
+// 0 bound. The library skips redundant render-target binds, so a later render on the same context that the shadow
+// believes is already bound would have its bind elided and draw into framebuffer 0.
 //
-// Nothing in the harness mixed the two paths on one context before this test, which is why the asymmetry survived: the
-// gates each build their own context and stay on one path. The check therefore interleaves them deliberately —
+// The gates each build their own context and stay on one path, so the check interleaves the paths deliberately:
 // owned-RT baselines for several scenarios, then a wrapped-FBO render followed immediately by the same owned-RT render
-// for each — and requires every post-teardown render to reproduce its baseline within the ±1 LSB envelope the GPU
-// gates use. A render whose bind was elided loses its drawing entirely, far outside that envelope.
+// for each, requiring every post-teardown render to reproduce its baseline within the ±1 LSB envelope the GPU gates
+// use. A render whose bind was elided loses its drawing entirely, far outside that envelope.
 //
 // It is a guard over the mixed-path contract, not a reproduction of a live failure: the elision in
-// Gpu.flushRenderTarget keys on the render target's monotonically increasing unique ID rather than on the FBO name,
-// and the library invalidates that ID whenever it creates an FBO, so a freshly created render target rebinds
-// regardless and this test passes with the teardown re-sync removed. It exists so that mixing the paths — which
-// nothing did before — stays gated, and so the re-sync cannot be dropped without something exercising what it
-// protects.
+// Gpu.flushRenderTarget keys on the render target's monotonically increasing unique ID rather than on the FBO name, and
+// the library invalidates that ID whenever it creates an FBO, so a freshly created render target rebinds regardless and
+// this test passes with the teardown re-sync removed. It exists so that mixing the paths stays gated.
 //
 // It runs inline on the caller's goroutine (NewGPUContext locks the OS thread and the context is current only there)
 // and pins the software renderer for the same reason the golden gates do.

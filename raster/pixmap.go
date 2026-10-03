@@ -20,8 +20,7 @@ import (
 // words: on a little-endian target the byte order in memory is R, G, B, A, so the word layout is R | G<<8 | B<<16 |
 // A<<24. This package is N32-only; the full color-type matrix and the conversions into it live in imagecore.
 type Pixmap struct {
-	// Pix holds the pixels, RowPixels words per row (rows are contiguous; a row-bytes stride in units other than whole
-	// pixels only matters for borrowed-memory surfaces).
+	// Pix holds the pixels with a stride of RowPixels words per row.
 	Pix       []uint32
 	Width     int32
 	Height    int32

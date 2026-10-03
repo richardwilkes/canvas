@@ -23,10 +23,9 @@ import (
 	"github.com/richardwilkes/canvas/stroke"
 )
 
-// allowedStroke reports whether strokeRec's style can be drawn by this op family: this emits line primitives for
-// hairlines, so only support hairlines if allowed by caps. Otherwise we support all hairlines, bevels, and miters, but
-// not round joins. Also, check whether the miter limit makes a miter join effectively beveled; if so, it is only
-// supported when using an AA stroke.
+// allowedStroke reports whether this op family can draw strokeRec and whether its join is a true miter. Hairlines emit
+// line primitives, so they are supported only if caps allow line draws; otherwise hairlines, bevels, and miters are
+// supported, but not round joins. A miter limit that makes the join effectively beveled is supported only with AA.
 func allowedStroke(caps *Caps, strokeRec *stroke.Rec, aa gpu.AA) (isMiter, ok bool) {
 	if style := strokeRec.Style(); style != stroke.StyleStroke && style != stroke.StyleHairline {
 		panic("stroke rect requires stroke or hairline style")
@@ -187,7 +186,6 @@ func (o *nonAAStrokeRectOp) Finalize(caps *gpu.Caps, clip *AppliedClip, clampTyp
 		&o.color, nil)
 }
 
-// createProgramInfo builds the op's program info.
 func (o *nonAAStrokeRectOp) createProgramInfo(state *OpFlushState) {
 	localCoordsType := LocalCoordsTypeUnused
 	if o.helper.UsesLocalCoords() {
@@ -333,8 +331,8 @@ func computeAARects(caps *Caps, viewMatrix *geom.Matrix, rect geom.Rect, strokeW
 		devInside = geom.Rect{Left: cx, Top: cy, Right: cx, Bottom: cy}
 	}
 
-	// For bevel-stroke, use 2 rects (devOutside and devOutsideAssist) to draw the outside of the octagon. Because there
-	// are 8 vertices on the outer edge, while the vertex number of the inner edge is 4, the same as miter-stroke.
+	// For bevel-stroke, use 2 rects (devOutside and devOutsideAssist) to draw the outside of the octagon: the outer
+	// edge has 8 vertices, while the inner edge has 4, the same as miter-stroke.
 	if !miterStroke {
 		devOutside = devOutside.Inset(0, ry)
 		devOutsideAssist = devOutsideAssist.Outset(0, ry)
@@ -343,7 +341,6 @@ func computeAARects(caps *Caps, viewMatrix *geom.Matrix, rect geom.Rect, strokeW
 	return devOutside, devOutsideAssist, devInside, isDegenerate, devHalfStrokeSize, true
 }
 
-// createAAStrokeRectGP builds the geometry processor for an AA stroke-rect draw.
 func createAAStrokeRectGP(usesMSAASurface, tweakAlphaForCoverage bool, viewMatrix *geom.Matrix, usesLocalCoords, wideColor bool) GeometryProcessor {
 	// When MSAA is enabled, we have to extend our AA bloats and interpolate coverage values outside 0..1. We tell the
 	// gp in this case that coverage is an unclamped attribute so it will call saturate(coverage) in the fragment
@@ -601,7 +598,6 @@ func (o *aaStrokeRectOp) compatibleWithCoverageAsAlpha(usesMSAASurface bool) boo
 	return !usesMSAASurface && o.helper.CompatibleWithCoverageAsAlpha()
 }
 
-// createProgramInfo builds the op's program info.
 func (o *aaStrokeRectOp) createProgramInfo(state *OpFlushState) {
 	args := state.OpArgs()
 	gp := createAAStrokeRectGP(args.UsesMSAASurface(),
@@ -836,7 +832,7 @@ func (o *aaStrokeRectOp) generateAAStrokeRectGeometry(w *quadVertexWriter, info 
 			panic("degenerate interior must be a point")
 		}
 		writeAAStrokeQuad(w, devInside, innerColor, o.wideColor, innerCoverage, writeCoverage)
-		// ... unless we are degenerate, in which case we must apply the scaled coverage.
+		// The innermost quad, normally at the interior coverage, must also carry the scaled coverage when degenerate.
 		writeAAStrokeQuad(w, devInside, innerColor, o.wideColor, innerCoverage, writeCoverage)
 	}
 }

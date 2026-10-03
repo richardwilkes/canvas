@@ -20,7 +20,7 @@ import (
 )
 
 func TestRoundOutInTolerance(t *testing.T) {
-	// kRoundEpsilon absorbs float error just past integers.
+	// roundEpsilon absorbs float error just past integers.
 	r := geom.RectLTRB(9.9995, 10.0005, 20.0004, 29.9996)
 	if got := RoundOut(r); got != geom.IRectLTRB(10, 10, 20, 30) {
 		t.Fatalf("RoundOut = %v", got)
@@ -167,7 +167,7 @@ func TestIsNearlyIntegerTranslation(t *testing.T) {
 }
 
 func TestDecomposeCTM(t *testing.T) {
-	// Scale+translate CTMs stay whole in layer space for kScaleTranslate filters.
+	// Scale+translate CTMs stay whole in layer space for MatrixCapabilityScaleTranslate filters.
 	var ctm geom.Matrix
 	ctm.SetScaleTranslate(2, 3, 5, 7)
 	var m Mapping
@@ -180,7 +180,7 @@ func TestDecomposeCTM(t *testing.T) {
 	if l2d := m.LayerToDevice(); !l2d.IsIdentity() {
 		t.Fatalf("layer-to-device should be identity")
 	}
-	// A rotation with a kScaleTranslate filter factors into scale (layer) x rotation (device).
+	// A rotation with a MatrixCapabilityScaleTranslate filter factors into scale (layer) x rotation (device).
 	ctm.SetRotate(30)
 	ctm.PreScale(2, 2)
 	if !m.DecomposeCTM(&ctm, MatrixCapabilityScaleTranslate, geom.Point{X: 10, Y: 10}) {
@@ -200,7 +200,7 @@ func TestDecomposeCTM(t *testing.T) {
 			t.Fatalf("total[%d] = %g vs ctm %g", i, total.Get(i), ctm.Get(i))
 		}
 	}
-	// kTranslate defers the whole CTM to the device side.
+	// MatrixCapabilityTranslate defers the whole CTM to the device side.
 	if !m.DecomposeCTM(&ctm, MatrixCapabilityTranslate, geom.Point{}) {
 		t.Fatalf("decompose translate failed")
 	}
@@ -287,13 +287,13 @@ func TestDownscaleStepCount(t *testing.T) {
 	}{
 		{scale: 1, want: 0},
 		{scale: 0.9999, want: 0}, // near-identity collapse
-		{scale: 0.6, want: 1},    // single sub-1/2 step... 1/0.6=1.67 ceil 2 -> 1 step; finalScale 0.6*1=0.6 < 0.9
+		{scale: 0.6, want: 1},    // 1/0.6 = 1.67 ceil 2 -> 1 step; finalScale 0.6*1 = 0.6 < 0.999
 		{scale: 0.5, want: 1},
 		{scale: 0.26, want: 2},
 		{scale: 0.25, want: 2},
 		{scale: 0.24, want: 3}, // 1/0.24 = 4.17 ceil 5 -> nextLog2 3; finalScale 0.24*4 = 0.96 >= 0.9 -> 2
 	}
-	// Recompute expectations from the step-count formula:
+	// The 0.24 entry's want is the count before the final-step collapse, which reduces it to 2.
 	for _, c := range cases {
 		got := downscaleStepCount(c.scale)
 		switch c.scale {
@@ -434,8 +434,8 @@ func TestBlendModeAffectsTransparentBlack(t *testing.T) {
 	}
 }
 
-// invertOrIdentity falls back to the identity matrix — not geom.Matrix's all-zeros zero value — so the layer-to-
-// parameter matrix built by createInputShaders leaves sample coordinates alone when the layer matrix is singular.
+// invertOrIdentity falls back to the identity matrix — not geom.Matrix's all-zeros zero value, which maps every
+// coordinate to (0,0) — when the matrix is singular.
 func TestInvertOrIdentityFallsBackToIdentity(t *testing.T) {
 	var scale geom.Matrix
 	scale.SetScale(2, 4)
@@ -456,8 +456,7 @@ func TestInvertOrIdentityFallsBackToIdentity(t *testing.T) {
 		}
 	}
 
-	// The two downstream consumers in createInputShaders: an identity layer-to-parameter matrix is an integer
-	// translation (so no non-trivial-sampling flag is forced) and leaves the input shader unwrapped. The all-zeros
+	// The identity fallback is an integer translation and leaves a shader unwrapped as its local matrix. The all-zeros
 	// matrix fails both.
 	if !isNearlyIntegerTranslation(&fallback, nil) {
 		t.Fatal("identity fallback is not an integer translation")

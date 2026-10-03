@@ -2,15 +2,14 @@
 //
 // Use of this source code is governed by a BSD-style license that can be found in the LICENSE file.
 //
-// glcall9: the B.2 fixed-arity GL trampoline for amd64 SysV platforms (darwin/linux). Structurally
-// a trimmed port of purego's syscall15X (sys_amd64.s, Apache-2.0): integer registers only
-// (float-carrying GL entry points ride purego.RegisterFunc), three 8-byte stack slots for
-// arguments 7-9, AL zeroed for the SysV variadic convention (inert for the non-variadic GL entry
-// points), and no errno read-back. It must run on the system stack with the C calling convention:
-// it is only ever reached through runtime.cgocall(glcall9ABI0, &glcall9Args{...}), which enters
-// via asmcgocall on g0. On entry DI holds the *glcall9Args block; the result is stored back into
-// its r1 field. The struct field offsets come from the compiler-generated go_asm.h, so a layout
-// change in fastcall_sysv.go breaks this file's build instead of miscalling.
+// glcall9: the fixed-arity GL trampoline for amd64 SysV platforms (darwin/linux). Structurally a trimmed port of
+// purego's syscallX (sys_amd64.s, Apache-2.0): integer registers only (float-carrying GL entry points ride
+// purego.RegisterFunc), three 8-byte stack slots for arguments 7-9, AL zeroed for the SysV variadic convention (inert
+// for the non-variadic GL entry points), and no errno read-back. It must run on the system stack with the C calling
+// convention: it is only reached through runtime.cgocall(glcall9ABI0, args) in glCall, which enters via asmcgocall on
+// g0. On entry DI holds the *glcall9Args block; the result is stored back into its r1 field. The field offsets come
+// from the compiler-generated go_asm.h, so a layout change in fastcall_sysv.go breaks this file's build instead of
+// miscalling.
 
 //go:build darwin || linux
 

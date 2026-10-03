@@ -33,8 +33,8 @@ func newDrawTestSDC(t *testing.T, dc *DirectContext, w, h int32) *SurfaceDrawCon
 	return sdc
 }
 
-// solidPaint builds a trivial paint whose blended output is not constant (translucent src-over), so
-// attemptQuadOptimization cannot convert draws into clears.
+// solidPaint builds a trivial solid-color paint. When a < 1 its src-over output is not constant, so
+// attemptQuadOptimization cannot convert the draw into a clear.
 func solidPaint(r, g, b, a float32) *Paint {
 	paint := NewPaint()
 	paint.SetColor4f(colorcore.PMColor4f{R: r, G: g, B: b, A: a})

@@ -9,10 +9,9 @@
 
 // The three distance-field geometry processors — A8 text, path, and LCD text — plus the LCD atlas lookup helper,
 // emitted as direct GLSL (half types lower to float, saturate to clamp). Trims: the gamma-apply-to-A8 lane is
-// unimplemented, so the A8 GP's distance-adjust uniform lane is compiled out; the gamma-correct flag branch is kept in
-// the emitters for fidelity but never set (this codebase's destinations are never linearly blended). The path GP's
-// small-path-renderer consumer remains unimplemented, so it is exercised by the fake-driver GLSL tests until that
-// renderer lands.
+// unimplemented, so the A8 GP's distance-adjust uniform lane is omitted; the gamma-correct flag branch is kept in the
+// emitters for fidelity but never set (this codebase's destinations are never linearly blended). The path GP's
+// consumer, the small-path renderer, is unimplemented, so nothing exercises it yet.
 
 package gl
 
@@ -111,9 +110,6 @@ func dfAddNewViews(gp *GPBase, atlasDimensions *geom.ISize, views []SurfaceProxy
 	gp.setTextureSamplers(samplers)
 }
 
-//////////////////////////////////////////////////////////////////////////////
-// A8 distance-field text geometry processor
-
 // distanceFieldA8TextGeoProc is the geometry processor for A8 (grayscale) SDF text: the output color is a modulation of
 // the input color and a sample from a distance-field texture, using a smoothed step function near 0.5.
 type distanceFieldA8TextGeoProc struct {
@@ -173,7 +169,6 @@ func (g *distanceFieldA8TextGeoProc) MakeProgramImpl(*gpu.ShaderCaps) GPProgramI
 	return &distanceFieldA8TextGeoProcImpl{}
 }
 
-// distanceFieldA8TextGeoProcImpl is the shader implementation for distanceFieldA8TextGeoProc.
 type distanceFieldA8TextGeoProcImpl struct {
 	GPImplBase
 	atlasDimensions        geom.ISize
@@ -257,7 +252,7 @@ func emitDFCoverage(args *GPEmitArgs, flags uint32) {
 	case flags&gammaCorrectDistanceFieldEffectFlag != 0:
 		// The smoothstep falloff compensates for the non-linear sRGB response curve. If we are doing gamma-correct
 		// rendering (to an sRGB or F16 buffer), then we actually want distance mapped linearly to coverage, so use a
-		// linear step. (Never set in the library, since destinations are always sRGB — kept for fidelity.)
+		// linear step. (Never set; see the file comment.)
 		fb.CodeAppend("float val = clamp((distance + afwidth) / (2.0 * afwidth), 0.0, 1.0);")
 	default:
 		fb.CodeAppend("float val = smoothstep(-afwidth, afwidth, distance);")
@@ -273,24 +268,20 @@ func (i *distanceFieldA8TextGeoProcImpl) onEmitCode(args *GPEmitArgs, gpArgs *GP
 	varyingHandler := args.VaryingHandler
 	uniformHandler := args.UniformHandler
 
-	// Emit attributes.
 	varyingHandler.EmitAttributes(dfTexEffect)
 
 	var atlasDimensionsInvName string
 	i.atlasDimensionsInvUnif, atlasDimensionsInvName = uniformHandler.AddUniform(nil,
 		ShaderFlagVertex, GLSLTypeFloat2, "AtlasDimensionsInv")
 
-	// Set up pass-through color.
 	fragBuilder.CodeAppendf("vec4 %s;", args.OutputColor)
 	varyingHandler.AddPassThroughAttribute(dfTexEffect.attrs[1].AsShaderVar(), args.OutputColor,
 		InterpolationInterpolated)
 
-	// Set up position.
 	gpArgs.PositionVar = dfTexEffect.attrs[0].AsShaderVar()
 	WriteLocalCoord(vertBuilder, uniformHandler, args.ShaderCaps, gpArgs,
 		dfTexEffect.attrs[0].AsShaderVar(), &dfTexEffect.localMatrix, &i.localMatrixUniform)
 
-	// Add varyings.
 	var uv, texIdx, st Varying
 	appendIndexUVVaryings(args, dfTexEffect.NumTextureSamplers(), dfTexEffect.attrs[2].Name(),
 		atlasDimensionsInvName, &uv, &texIdx, &st)
@@ -308,9 +299,6 @@ func (i *distanceFieldA8TextGeoProcImpl) onEmitCode(args *GPEmitArgs, gpArgs *GP
 }
 
 var _ GeometryProcessor = (*distanceFieldA8TextGeoProc)(nil)
-
-//////////////////////////////////////////////////////////////////////////////
-// Path distance-field geometry processor
 
 // distanceFieldPathGeoProc is the geometry processor for SDF path masks: as the A8 text form, but for path masks —
 // positions always carry w, and the color attribute may be wide. No gamma-correct blending is applied.
@@ -370,7 +358,6 @@ func (g *distanceFieldPathGeoProc) MakeProgramImpl(*gpu.ShaderCaps) GPProgramImp
 	return &distanceFieldPathGeoProcImpl{}
 }
 
-// distanceFieldPathGeoProcImpl is the shader implementation for distanceFieldPathGeoProc.
 type distanceFieldPathGeoProcImpl struct {
 	GPImplBase
 	atlasDimensions        geom.ISize
@@ -403,7 +390,6 @@ func (i *distanceFieldPathGeoProcImpl) onEmitCode(args *GPEmitArgs, gpArgs *GPAr
 	varyingHandler := args.VaryingHandler
 	uniformHandler := args.UniformHandler
 
-	// Emit attributes.
 	varyingHandler.EmitAttributes(dfPathEffect)
 
 	var atlasDimensionsInvName string
@@ -414,7 +400,6 @@ func (i *distanceFieldPathGeoProcImpl) onEmitCode(args *GPEmitArgs, gpArgs *GPAr
 	appendIndexUVVaryings(args, dfPathEffect.NumTextureSamplers(), dfPathEffect.attrs[2].Name(),
 		atlasDimensionsInvName, &uv, &texIdx, &st)
 
-	// Set up pass-through color.
 	fragBuilder.CodeAppendf("vec4 %s;", args.OutputColor)
 	varyingHandler.AddPassThroughAttribute(dfPathEffect.attrs[1].AsShaderVar(), args.OutputColor,
 		InterpolationInterpolated)
@@ -432,16 +417,12 @@ func (i *distanceFieldPathGeoProcImpl) onEmitCode(args *GPEmitArgs, gpArgs *GPAr
 	fragBuilder.CodeAppend("float distance = " + font.DistanceFieldMultiplier +
 		"*(texColor.r - " + font.DistanceFieldThreshold + ");")
 
-	// The path variant computes afwidth before the (non-aliased) coverage step, exactly as the A8 form; its flag mask
-	// simply never carries the aliased flag.
+	// As upstream, the path variant has no aliased coverage branch, so the aliased flag is masked off.
 	emitDFAFWidth(args, dfPathEffect.flags, &st)
 	emitDFCoverage(args, dfPathEffect.flags&^aliasedDistanceFieldEffectFlag)
 }
 
 var _ GeometryProcessor = (*distanceFieldPathGeoProc)(nil)
-
-//////////////////////////////////////////////////////////////////////////////
-// LCD distance-field text geometry processor
 
 // DistanceAdjust holds the per-channel distance-field adjustment for LCD text rendering.
 type DistanceAdjust struct {
@@ -459,7 +440,6 @@ type distanceFieldLCDTextGeoProc struct {
 	flags           uint32
 }
 
-// newDistanceFieldLCDTextGeoProc builds a distanceFieldLCDTextGeoProc.
 func newDistanceFieldLCDTextGeoProc(caps *gpu.ShaderCaps, views []SurfaceProxyView, numActiveViews int, params gpu.SamplerState, distanceAdjust DistanceAdjust, flags uint32, localMatrix *geom.Matrix) *distanceFieldLCDTextGeoProc {
 	if numActiveViews > distanceFieldMaxTextures {
 		panic("too many atlas views")
@@ -510,7 +490,6 @@ func (g *distanceFieldLCDTextGeoProc) MakeProgramImpl(*gpu.ShaderCaps) GPProgram
 	}
 }
 
-// distanceFieldLCDTextGeoProcImpl is the shader implementation for distanceFieldLCDTextGeoProc.
 type distanceFieldLCDTextGeoProcImpl struct {
 	GPImplBase
 	distanceAdjust         DistanceAdjust
@@ -589,24 +568,20 @@ func (i *distanceFieldLCDTextGeoProcImpl) onEmitCode(args *GPEmitArgs, gpArgs *G
 	uniformHandler := args.UniformHandler
 	fragBuilder := args.FragBuilder
 
-	// Emit attributes.
 	varyingHandler.EmitAttributes(dfTexEffect)
 
 	var atlasDimensionsInvName string
 	i.atlasDimensionsInvUnif, atlasDimensionsInvName = uniformHandler.AddUniform(nil,
 		ShaderFlagVertex, GLSLTypeFloat2, "AtlasDimensionsInv")
 
-	// Set up pass-through color.
 	fragBuilder.CodeAppendf("vec4 %s;", args.OutputColor)
 	varyingHandler.AddPassThroughAttribute(dfTexEffect.attrs[1].AsShaderVar(), args.OutputColor,
 		InterpolationInterpolated)
 
-	// Set up position.
 	gpArgs.PositionVar = dfTexEffect.attrs[0].AsShaderVar()
 	WriteLocalCoord(vertBuilder, uniformHandler, args.ShaderCaps, gpArgs,
 		dfTexEffect.attrs[0].AsShaderVar(), &dfTexEffect.localMatrix, &i.localMatrixUniform)
 
-	// Set up varyings.
 	var uv, texIdx, st Varying
 	appendIndexUVVaryings(args, dfTexEffect.NumTextureSamplers(), dfTexEffect.attrs[2].Name(),
 		atlasDimensionsInvName, &uv, &texIdx, &st)

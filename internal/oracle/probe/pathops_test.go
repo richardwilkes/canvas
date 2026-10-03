@@ -21,20 +21,20 @@ import (
 	"github.com/richardwilkes/canvas/raster"
 )
 
-// Faithful pathops probes. The boolean engine is the faithful OpSegment machinery (runOp/runSimplify), so it keeps
-// curves exactly as Skia does; results are compared by area sampling: both sides'
-// result paths are rasterized through the library's (oracle-verified) rasterizer over the operands' joint bounds and
-// the coverage masks must agree except in a thin sub-pixel band around the boundaries, where AA edge placement and the
-// last-ULP conic-control-point noise from the SVG round-trip of the library's result legitimately differ. Success flags
-// and result fill types (the gOpInverse/ gOutInverse algebra) must agree exactly. The fast paths that bypass the engine
-// (rect intersect, empty operands with convex survivors) are compared bit-exactly through the verified SVG emitters.
+// The pathops boolean engine is the faithful OpSegment machinery (runOp/runSimplify), so it keeps curves exactly as
+// Skia does; results are compared by area sampling: both sides' result paths are rasterized through the library's
+// rasterizer over the operands' joint bounds, and the coverage masks must agree except in a thin sub-pixel band around
+// the boundaries, where AA edge placement and the last-ULP conic-control-point noise of the captured results' SVG
+// round-trip legitimately differ. Success flags and result fill types (Skia's gOpInverse/gOutInverse algebra) must
+// agree exactly. The fast paths that bypass the engine (rect intersect, empty operands with convex survivors) are
+// compared bit-exactly by point stream.
 
 const (
 	pathOpsMaskRes = 256 // pixels across the sampling window
 	// A boundary pixel legitimately disagrees by full coverage only in a sub-pixel band around curved edges, where the
 	// two sides' AA edge placement and the SVG-round-tripped conic controls differ: allow a small fraction of large
-	// diffs and a small mean. Measured worst case on the darwin leg with the faithful engine: mean 0.48, max delta 103,
-	// fracOver96 3e-5 — the caps carry ~2x / ~160x margin.
+	// diffs and a small mean. Measured worst case on the darwin leg: mean 0.48, max delta 103, fracOver96 3e-5, so the
+	// caps carry ~2x / ~160x margin.
 	pathOpsMaxFracOver96 = 0.005
 	pathOpsMaxMean       = 1.0
 )
@@ -362,8 +362,8 @@ func TestPathOpsBuilderConvexUnionExact(t *testing.T) {
 }
 
 // pathOpsExact compares a result path against the oracle's bit-exactly by raw point stream and fill type (the fast-path
-// lanes copy or construct geometry identically on both sides). The oracle's points are frozen straight off the C path —
-// see the note in ref_ops_test.go on why they do not travel through a rebuilt path.
+// lanes copy or construct geometry identically on both sides). The oracle's points are frozen straight off the C path;
+// see the note in ref_ops_pathops_test.go on why they do not travel through a rebuilt path.
 func pathOpsExact(t *testing.T, label string, gres *path.Path, cPts []geom.Point, cFill int) {
 	t.Helper()
 	gPts := make([]geom.Point, gres.CountPoints())
@@ -376,7 +376,7 @@ func pathOpsExact(t *testing.T, label string, gres *path.Path, cPts []geom.Point
 	}
 }
 
-// TestPathOpsExactFastPaths pins the lanes that bypass both boolean engines — the rect-intersect fast path and the
+// TestPathOpsExactFastPaths pins the lanes that bypass the boolean engine — the rect-intersect fast path and the
 // empty-operand handling with convex survivors — bit-exactly by point stream.
 func TestPathOpsExactFastPaths(t *testing.T) {
 	rectA := scenario.NewPathSpec().AddRect(geom.RectLTRB(10, 20, 110, 100), geom.DirectionCW)

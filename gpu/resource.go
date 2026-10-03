@@ -9,10 +9,9 @@
 
 // ResourceBase and the Resource interface: the base of every object managed by the ResourceCache. Concrete resources
 // (the GL object wrappers in gpu/gl) embed ResourceBase and implement the Resource hooks; RegisterWithCache wires the
-// back-pointer that stands in for virtual dispatch. The ref count still exists and still drives cache state (purgeable
-// vs not), but hitting zero refs simply drops the object to the garbage collector; a resource that has been released or
-// abandoned tracks this with an explicit destroyed flag (deterministic backend-object free stays with the cache — the
-// GC never frees GL objects).
+// back-pointer that stands in for virtual dispatch. The ref count drives cache state (purgeable vs not), but the Go
+// object itself is left to the garbage collector; a released or abandoned resource records that in an explicit
+// destroyed flag (deterministic backend-object free stays with the cache — the GC never frees GL objects).
 
 package gpu
 
@@ -99,7 +98,7 @@ func (b *ResourceBase) resourceBase() *ResourceBase { return b }
 // GL state before registering (e.g. a buffer whose creation bind is recorded in the buffer state shadow under the
 // unique ID) must call this first; the Register functions call it for everyone else.
 func (b *ResourceBase) InitResource(label string) {
-	b.refCnt.Store(1) // starts with one ref.
+	b.refCnt.Store(1)
 	b.cacheArrayIndex = -1
 	b.gpuMemorySize = invalidGpuMemorySize
 	b.budgetedType = BudgetedTypeUnbudgetedUncacheable
@@ -143,9 +142,7 @@ func (b *ResourceBase) RegisterWithCacheWrapped(cache *ResourceCache, self Resou
 	cache.insertResource(self)
 }
 
-// Default hook implementations (overridden by concrete types that need something other than no-op behavior).
-
-// ComputeScratchKey is the default no-op: by default resources are not recycled as scratch.
+// ComputeScratchKey is the default no-op, so resources are not recycled as scratch.
 func (b *ResourceBase) ComputeScratchKey(*ScratchKey) {}
 
 // OnSetLabel is the default no-op label hook.
@@ -302,7 +299,7 @@ func (b *ResourceBase) MakeUnbudgeted() {
 	}
 }
 
-// isScratch reports whether the resource is cached, holds a valid scratch key, and has no unique key.
+// isScratch reports whether the resource is budgeted, holds a valid scratch key, and has no unique key.
 func (b *ResourceBase) isScratch() bool {
 	return !b.uniqueKey.IsValid() && b.scratchKey.IsValid() &&
 		b.budgetedType == BudgetedTypeBudgeted

@@ -17,11 +17,18 @@
 // The entry is a tagged union over two payload kinds. VertexData carries an explicit ref count so "uniquely held" is
 // observable; ops ref it while they hold it and unref when executed. A SurfaceProxyView entry holds one ref on its
 // proxy — the cache adopts the caller's single construction ref in Add and drops it on eviction, so uniquelyHeld is
-// `proxy.RefCnt() == 1`. The view consumers here (the analytic-blur FPs) always generate the profile/mask on the CPU,
-// upload it as a lazy-upload texture, then add the resulting view, so no GPU-fill-in race resolution is needed on the
-// add path. Because those views are lazy-upload proxies whose callbacks regenerate the data, and transient holders
-// never ref proxies, a cached view becomes uniquely held as soon as its sampling op is recorded; a mid-recording budget
-// purge merely re-uploads it at flush with identical output.
+// `proxy.RefCnt() == 1`. The view consumers (the analytic-blur FPs and the SW filtered-mask lane, which upload
+// CPU-generated data through lazy-upload proxies, and the HW filtered-mask lane, which caches a GPU-rendered proxy) are
+// single-threaded find-then-add flows, so no GPU-fill-in race resolution is needed on the add path.
+//
+// Upstream hands every find and add caller a reffed view, which the consuming texture effect keeps until its op is
+// deleted at the end of the flush. Here transient holders never ref proxies, so the cache takes that ref itself: every
+// view a find or add returns carries a recording ref, held in recordingRefs until the drawing manager drops its render
+// tasks (releaseRecordingRefs). Without it a hit would be held only by the cache entry, and dropping the entry before
+// the flush (an explicit purge, or a budget purge from inside the flush's own resource allocation) would free the
+// texture of a proxy that, once instantiated by an earlier flush, has released its lazy callback and cannot be
+// recreated. With it, an entry used by the pending recording is never uniquely held, and DropAllRefs only drops the
+// cache's own ref, leaving the recording's.
 
 package gl
 
@@ -148,7 +155,10 @@ type ThreadSafeCacheStats struct {
 type ThreadSafeCache struct {
 	entries    map[string]*tscEntry
 	head, tail *tscEntry
-	stats      ThreadSafeCacheStats
+	// recordingRefs holds one proxy ref per view handed out by a find or add since the last releaseRecordingRefs (see
+	// the file comment).
+	recordingRefs []*SurfaceProxy
+	stats         ThreadSafeCacheStats
 }
 
 // NewThreadSafeCache returns a new, empty ThreadSafeCache.
@@ -327,9 +337,29 @@ func (c *ThreadSafeCache) Has(key *gpu.UniqueKey) bool {
 	return ok
 }
 
-// internalFindView returns the found view (invalid on miss) plus the stored key's custom data. Unlike the vertData lane
-// the returned view is not reffed — its consumer is a transient texture-effect FP within the current recording, kept
-// valid by GC and the cache's own ref (see the file comment).
+// refForRecording takes a recording ref on view's proxy on behalf of the transient texture-effect FP that is about to
+// sample it, keeping the proxy alive until the drawing manager drops the render tasks of the pending recording (see the
+// file comment). Returns view.
+func (c *ThreadSafeCache) refForRecording(view SurfaceProxyView) SurfaceProxyView {
+	proxy := view.Proxy()
+	proxy.Ref()
+	c.recordingRefs = append(c.recordingRefs, proxy)
+	return view
+}
+
+// releaseRecordingRefs drops the recording refs taken by every find and add since the last call. The drawing manager
+// calls it once it has dropped the render tasks that could sample those views: at the end of every flush, and on
+// teardown.
+func (c *ThreadSafeCache) releaseRecordingRefs() {
+	for i, proxy := range c.recordingRefs {
+		proxy.Unref()
+		c.recordingRefs[i] = nil
+	}
+	c.recordingRefs = c.recordingRefs[:0]
+}
+
+// internalFindView returns the found view (invalid on miss) plus the stored key's custom data. A found view carries a
+// recording ref (see refForRecording), so the entry cannot be purged out from under the recording that samples it.
 func (c *ThreadSafeCache) internalFindView(key *gpu.UniqueKey) (v SurfaceProxyView, data []byte) {
 	e := c.entries[key.MapKey()]
 	if e == nil || e.tag != tscTagView {
@@ -338,7 +368,7 @@ func (c *ThreadSafeCache) internalFindView(key *gpu.UniqueKey) (v SurfaceProxyVi
 	}
 	c.stats.Hits++
 	c.makeExistingEntryMRU(e)
-	return e.view, e.key.CustomData()
+	return c.refForRecording(e.view), e.key.CustomData()
 }
 
 // Find returns the cached view for key, or an invalid view on miss.
@@ -359,15 +389,15 @@ func (c *ThreadSafeCache) FindWithData(key *gpu.UniqueKey) (v SurfaceProxyView, 
 // DropUniqueRefs). A collision with a vertData entry has no incumbent view to hand back, so that entry is dropped in
 // favor of this one, which orphans any existing uses of the vertex data exactly as the is-newer-better replacement in
 // AddVertsWithData does; the caller's ref is adopted as usual and the returned view is always usable. Returns the
-// stored view plus the stored key's custom data. Neither collision path can occur in this package's single-threaded
-// find-then-add flow, but both are handled anyway.
+// stored view, which carries a recording ref (see refForRecording), plus the stored key's custom data. Neither
+// collision path can occur in this package's single-threaded find-then-add flow, but both are handled anyway.
 func (c *ThreadSafeCache) internalAddView(key *gpu.UniqueKey, view SurfaceProxyView) (v SurfaceProxyView, data []byte) {
 	if e := c.entries[key.MapKey()]; e != nil {
 		if e.tag == tscTagView {
 			// The incumbent was just accessed, so refresh its LRU position and last-access time exactly as a find would.
 			c.makeExistingEntryMRU(e)
 			view.Proxy().Unref()
-			return e.view, e.key.CustomData()
+			return c.refForRecording(e.view), e.key.CustomData()
 		}
 		c.dropEntry(e)
 	}
@@ -376,7 +406,7 @@ func (c *ThreadSafeCache) internalAddView(key *gpu.UniqueKey, view SurfaceProxyV
 	e.lastAccess = time.Now()
 	c.listAddToHead(e)
 	c.stats.Adds++
-	return e.view, e.key.CustomData()
+	return c.refForRecording(e.view), e.key.CustomData()
 }
 
 // Add adds view under key: the cache adopts the caller's ref on the view (see internalAddView). Returns the stored

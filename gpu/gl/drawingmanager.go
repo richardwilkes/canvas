@@ -313,6 +313,8 @@ func (dm *DrawingManager) removeRenderTasks() {
 	dm.dag = dm.dag[:0]
 	dm.reorderBlockerTaskIndices = dm.reorderBlockerTaskIndices[:0]
 	clear(dm.lastRenderTasks)
+	// The ops that sampled thread-safe-cache views are gone, so the refs the cache took on their behalf go too.
+	dm.context.ThreadSafeCache().releaseRecordingRefs()
 }
 
 // sortTasks topologically sorts the ranges between non-reorderable tasks.

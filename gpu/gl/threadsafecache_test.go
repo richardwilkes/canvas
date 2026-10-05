@@ -8,7 +8,7 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // Hermetic tests for ThreadSafeCache: find/add semantics, the is-newer-better replacement rule, uniquely-held-only
-// dropping in LRU order, age-based dropping, and payload ref pinning.
+// dropping in LRU order, age-based dropping, payload ref pinning, and the recording refs carried by returned views.
 
 package gl
 
@@ -314,6 +314,10 @@ func TestThreadSafeCacheViewFindAdd(t *testing.T) {
 	if got.Proxy() != proxy {
 		t.Fatal("add must return the added view")
 	}
+	if proxy.RefCnt() != 2 {
+		t.Fatalf("added proxy refCnt = %d, want 2 (the cache's adopted ref + the recording ref)", proxy.RefCnt())
+	}
+	c.releaseRecordingRefs()
 	if proxy.RefCnt() != 1 {
 		t.Fatalf("adopted proxy refCnt = %d, want 1 (the cache owns the single ref)", proxy.RefCnt())
 	}
@@ -324,13 +328,13 @@ func TestThreadSafeCacheViewFindAdd(t *testing.T) {
 		t.Fatal("Has must be true after add")
 	}
 
-	// Find returns the cached view without reffing it (the consumer is a transient FP).
+	// Find returns the cached view with a recording ref on behalf of the transient FP that will sample it.
 	found, _ := c.FindWithData(&key)
 	if found.Proxy() != proxy {
 		t.Fatal("find must return the cached view")
 	}
-	if proxy.RefCnt() != 1 {
-		t.Fatalf("find must not ref the transient view: refCnt = %d, want 1", proxy.RefCnt())
+	if proxy.RefCnt() != 2 {
+		t.Fatalf("find must take a recording ref: refCnt = %d, want 2", proxy.RefCnt())
 	}
 	if c.Stats().Hits != 1 {
 		t.Fatalf("hits = %d, want 1", c.Stats().Hits)
@@ -348,6 +352,14 @@ func TestThreadSafeCacheViewFindAdd(t *testing.T) {
 	}
 	if c.NumEntries() != 1 {
 		t.Fatalf("entries = %d, want 1 after a colliding add", c.NumEntries())
+	}
+	// The incumbent handed back by the collision carries its own recording ref, on top of the find's.
+	if proxy.RefCnt() != 3 {
+		t.Fatalf("incumbent refCnt = %d, want 3 (cache + two recording refs)", proxy.RefCnt())
+	}
+	c.releaseRecordingRefs()
+	if proxy.RefCnt() != 1 {
+		t.Fatalf("incumbent refCnt after release = %d, want 1", proxy.RefCnt())
 	}
 }
 
@@ -381,6 +393,13 @@ func TestThreadSafeCacheViewDropUniqueRefs(t *testing.T) {
 	proxyB := viewB.Proxy()
 	c.Add(&keyB, viewB)
 
+	// Both adds carry recording refs, so neither entry is uniquely held until the recording is released.
+	c.DropUniqueRefs(nil)
+	if c.NumEntries() != 2 {
+		t.Fatalf("entries = %d, want 2 (both held by the pending recording)", c.NumEntries())
+	}
+	c.releaseRecordingRefs()
+
 	// Simulate an in-flight op holding A: it is no longer uniquely held (refCnt 2).
 	proxyA.Ref()
 
@@ -398,8 +417,9 @@ func TestThreadSafeCacheViewDropUniqueRefs(t *testing.T) {
 		t.Fatal("A must survive while pinned")
 	}
 
-	// Release the simulated op ref: A becomes uniquely held and is dropped.
+	// Release the simulated op ref and the find's recording ref: A becomes uniquely held and is dropped.
 	proxyA.Unref()
+	c.releaseRecordingRefs()
 	c.DropUniqueRefs(nil)
 	if c.NumEntries() != 0 {
 		t.Fatalf("entries = %d, want 0", c.NumEntries())
@@ -419,8 +439,12 @@ func TestThreadSafeCacheViewRemoveAndDropAll(t *testing.T) {
 	if c.NumEntries() != 0 {
 		t.Fatalf("entries = %d, want 0 after remove", c.NumEntries())
 	}
+	if proxy.RefCnt() != 1 {
+		t.Fatalf("removed view proxy refCnt = %d, want 1 (only the recording ref remains)", proxy.RefCnt())
+	}
+	c.releaseRecordingRefs()
 	if proxy.RefCnt() != 0 {
-		t.Fatalf("removed view proxy refCnt = %d, want 0", proxy.RefCnt())
+		t.Fatalf("removed view proxy refCnt = %d, want 0 after the recording is released", proxy.RefCnt())
 	}
 
 	// DropAllRefs takes everything regardless of unique-ness, dropping only the cache's ref.
@@ -428,6 +452,7 @@ func TestThreadSafeCacheViewRemoveAndDropAll(t *testing.T) {
 	pinnedProxy := pinned.Proxy()
 	key2 := tscTestKey(8, nil)
 	c.Add(&key2, pinned)
+	c.releaseRecordingRefs()
 	pinnedProxy.Ref() // simulate an in-flight holder
 	c.DropAllRefs()
 	if c.NumEntries() != 0 {
@@ -451,6 +476,7 @@ func TestThreadSafeCacheViewSameProxyCollision(t *testing.T) {
 	// Add a second, unrelated entry so the incumbent above is no longer at the LRU head, and stamp the incumbent cold.
 	otherKey := tscTestKey(111, nil)
 	c.Add(&otherKey, tscTestView())
+	c.releaseRecordingRefs()
 	cold := time.Now().Add(-2 * time.Hour)
 	c.entries[key.MapKey()].lastAccess = cold
 
@@ -460,6 +486,7 @@ func TestThreadSafeCacheViewSameProxyCollision(t *testing.T) {
 	if got.Proxy() != proxy {
 		t.Fatal("colliding add must return the incumbent")
 	}
+	c.releaseRecordingRefs()
 	if proxy.RefCnt() != 1 {
 		t.Fatalf("same-proxy collision must drop the caller's redundant ref: refCnt = %d, want 1",
 			proxy.RefCnt())
@@ -499,6 +526,7 @@ func TestThreadSafeCacheViewOverVertDataCollision(t *testing.T) {
 	if !got.IsValid() || got.Proxy() != proxy {
 		t.Fatal("a vertData collision must still hand back a usable view")
 	}
+	c.releaseRecordingRefs()
 	if proxy.RefCnt() != 1 {
 		t.Fatalf("adopted proxy refCnt = %d, want 1 (the cache owns the single ref)", proxy.RefCnt())
 	}
@@ -560,6 +588,7 @@ func TestAddVertsWithDataOverViewEntry(t *testing.T) {
 	view := tscTestView()
 	viewProxy := view.Proxy()
 	c.Add(&key, view)
+	c.releaseRecordingRefs()
 	if viewProxy.RefCnt() != 1 {
 		t.Fatalf("adopted proxy refCnt = %d, want 1", viewProxy.RefCnt())
 	}

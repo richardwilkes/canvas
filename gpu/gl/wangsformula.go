@@ -199,8 +199,3 @@ func wangsConicP2(precision float32, p0, p1, p2 geom.Point, w float32, xf vector
 	// [t0,t1] = [0, 1].
 	return numer / denom
 }
-
-// wangsConic returns Wang's formula for a conic curve: the number of line segments needed.
-func wangsConic(tolerance float32, p0, p1, p2 geom.Point, w float32, xf vectorXform) float32 {
-	return sqrt32(wangsConicP2(tolerance, p0, p1, p2, w, xf))
-}

@@ -118,6 +118,11 @@ func distToSegment(x, y, x0, y0, x1, y1 float64) float64 {
 
 // TestWangsFormulaFlatnessGuarantee verifies the property the formula exists to provide: chopping a curve into
 // ceil(wangs) parametrically uniform segments keeps every point of the true curve within 1/precision of its chord.
+// wangsConic returns Wang's formula for a conic curve: the number of line segments needed.
+func wangsConic(precision float32, p0, p1, p2 geom.Point, w float32, xf vectorXform) float32 {
+	return sqrt32(wangsConicP2(precision, p0, p1, p2, w, xf))
+}
+
 func TestWangsFormulaFlatnessGuarantee(t *testing.T) {
 	const precision = tessPrecision
 	const tol = 1/float64(precision) + 1e-4

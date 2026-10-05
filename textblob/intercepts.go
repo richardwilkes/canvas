@@ -52,9 +52,6 @@ func getGlyphRunIntercepts(glyphRun *GlyphRun, paint *stroke.PaintSpec, bounds [
 		interceptFont.SetSize(canonicalTextSizeForPaths)
 		// scale can be zero here (even if it wasn't before the divide). IEEE divide semantics carry through; downstream
 		// checks for non-finite coordinates handle it.
-		if interceptPaint.Width > 0 && interceptPaint.Style != stroke.PaintStyleFill {
-			interceptPaint.Width /= scale
-		}
 	}
 
 	interceptPaint.Style = stroke.PaintStyleFill

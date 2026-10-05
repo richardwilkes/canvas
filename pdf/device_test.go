@@ -20,6 +20,7 @@ import (
 	"github.com/richardwilkes/canvas/colorcore"
 	"github.com/richardwilkes/canvas/geom"
 	"github.com/richardwilkes/canvas/path"
+	"github.com/richardwilkes/canvas/patheffect"
 	"github.com/richardwilkes/canvas/raster"
 	"github.com/richardwilkes/canvas/shaders"
 	"github.com/richardwilkes/canvas/stream"
@@ -374,6 +375,97 @@ func TestDevicePointsModes(t *testing.T) {
 	// Two independent segments, each moveto+lineto+stroke.
 	if n := strings.Count(lc, " m\n"); n != 2 {
 		t.Errorf("kLines expected 2 movetos, got %d\n%s", n, lc)
+	}
+}
+
+// TestDevicePointsPathEffect pins that a point/line draw whose paint carries a path effect is still drawn. Canvas.DrawLine
+// routes through DrawPoints, so a dashed line is the common case. Each dash must reach the page, whether the dash
+// effect reports a point representation (axis-aligned lines) or has to be applied to the segment's path (the rest).
+func TestDevicePointsPathEffect(t *testing.T) {
+	newDashPaint := func(on float32) *canvas.Paint {
+		p := canvas.NewPaint()
+		p.Style = canvas.StyleStroke
+		p.StrokeWidth = 4
+		p.PathEffect = patheffect.MakeDash([]float32{on, on}, 0)
+		return p
+	}
+
+	// Axis-aligned, dash length != stroke width: the point representation's rects lane, one rect per dash.
+	rects := renderPDF(t, 100, 100, func(c *canvas.Canvas) { c.DrawLine(10, 50, 90, 50, newDashPaint(10)) })
+	validatePDF(t, rects)
+	rc := pageContent(t, rects)
+	if n := strings.Count(rc, " re\n"); n != 4 {
+		t.Errorf("dashed horizontal line expected 4 rects, got %d\n%s", n, rc)
+	}
+	mustContain(t, rc, "f\n")
+
+	// Axis-aligned, dash length == stroke width: the point representation's square-points lane, one rect per dash.
+	squares := renderPDF(t, 100, 100, func(c *canvas.Canvas) { c.DrawLine(10, 50, 90, 50, newDashPaint(4)) })
+	validatePDF(t, squares)
+	sc := pageContent(t, squares)
+	if n := strings.Count(sc, " re\n"); n != 10 {
+		t.Errorf("dashed horizontal line expected 10 squares, got %d\n%s", n, sc)
+	}
+
+	// Diagonal: no point representation, so the dash is applied to the segment's path, one filled contour per dash.
+	diag := renderPDF(t, 100, 100, func(c *canvas.Canvas) { c.DrawLine(10, 10, 90, 90, newDashPaint(10)) })
+	validatePDF(t, diag)
+	dc := pageContent(t, diag)
+	if n := strings.Count(dc, " m\n"); n != 6 {
+		t.Errorf("dashed diagonal line expected 6 dash contours, got %d\n%s", n, dc)
+	}
+	mustContain(t, dc, "f\n")
+
+	// Polygon mode: every segment is dashed on its own.
+	pts := []geom.Point{{X: 10, Y: 10}, {X: 50, Y: 50}, {X: 90, Y: 10}}
+	poly := renderPDF(t, 100, 100, func(c *canvas.Canvas) {
+		c.DrawPoints(canvas.PointModePolygon, pts, newDashPaint(10))
+	})
+	validatePDF(t, poly)
+	pc := pageContent(t, poly)
+	if n := strings.Count(pc, "f\n"); n != 2 {
+		t.Errorf("dashed polygon expected 2 filled segments, got %d\n%s", n, pc)
+	}
+}
+
+// TestDevicePointsPerspective pins that point/line draws under a perspective CTM are still drawn: the geometry is
+// lowered to paths, which are mapped to device space and emitted under an identity transform.
+func TestDevicePointsPerspective(t *testing.T) {
+	var persp geom.Matrix
+	persp.SetAll(1, 0, 0, 0, 1, 0, 0.001, 0, 1)
+	pts := []geom.Point{{X: 10, Y: 10}, {X: 40, Y: 20}, {X: 70, Y: 5}, {X: 90, Y: 60}}
+	render := func(mode canvas.PointMode, capStyle canvas.StrokeCap) string {
+		p := canvas.NewPaint()
+		p.Style = canvas.StyleStroke
+		p.StrokeWidth = 6
+		p.Cap = capStyle
+		data := renderPDF(t, 100, 100, func(c *canvas.Canvas) {
+			c.Concat(&persp)
+			c.DrawPoints(mode, pts, p)
+		})
+		validatePDF(t, data)
+		return pageContent(t, data)
+	}
+
+	poly := render(canvas.PointModePolygon, canvas.CapButt)
+	if n := strings.Count(poly, "S\n"); n != 3 {
+		t.Errorf("perspective polygon expected 3 stroked segments, got %d\n%s", n, poly)
+	}
+	// The points are emitted already mapped through the perspective, so the local-space coordinates must not appear.
+	if strings.Contains(poly, "10 10 m\n") {
+		t.Errorf("perspective polygon emitted unmapped points\n%s", poly)
+	}
+
+	lines := render(canvas.PointModeLines, canvas.CapButt)
+	if n := strings.Count(lines, "S\n"); n != 2 {
+		t.Errorf("perspective lines expected 2 stroked segments, got %d\n%s", n, lines)
+	}
+
+	for _, capStyle := range []canvas.StrokeCap{canvas.CapButt, canvas.CapRound} {
+		points := render(canvas.PointModePoints, capStyle)
+		if n := strings.Count(points, "f\n"); n != len(pts) {
+			t.Errorf("perspective points (cap %d) expected %d fills, got %d\n%s", capStyle, len(pts), n, points)
+		}
 	}
 }
 

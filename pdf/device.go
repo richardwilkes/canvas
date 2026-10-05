@@ -256,8 +256,11 @@ func (d *Device) DrawPoints(mode canvas.PointMode, pts []geom.Point, paint *canv
 	if mode != canvas.PointModePoints {
 		p.Style = canvas.StyleStroke
 	}
-	// Skia's path-effect/perspective lane for points is not implemented; such draws are dropped.
+	// The direct lanes below can express neither a path effect nor perspective, so those draws are lowered to one
+	// path/rect/oval draw per primitive. Only they take the lowering, because of the overhead of the content entry
+	// each of its draws sets up.
 	if p.PathEffect != nil || d.localToDevice.HasPerspective() {
+		d.drawPointsLowered(mode, pts, &p)
 		return
 	}
 	if mode == canvas.PointModePoints && p.Cap != canvas.CapRound {
@@ -300,6 +303,113 @@ func (d *Device) DrawPoints(mode canvas.PointMode, pts []geom.Point, paint *canv
 			strokePath(content)
 		}
 	}
+}
+
+// drawPointsLowered draws points the way the raster backend's slow point lane does, but through this device's own
+// draws: round-cap points become ovals, other caps become rects, and lines/polygons become one stroked path per
+// segment, with a two-point line first offered to the path effect's point representation. paint is the cleaned paint,
+// already stroke-styled for the line modes.
+func (d *Device) drawPointsLowered(mode canvas.PointMode, pts []geom.Point, paint *canvas.Paint) {
+	// if we're in lines mode, force count to be even
+	if mode == canvas.PointModeLines {
+		pts = pts[:len(pts)&^1]
+	}
+
+	cullBounds := d.clipStack.bounds(d.bounds()).RoundOut()
+	if len(pts) == 0 || cullBounds.IsEmpty() {
+		return
+	}
+
+	for _, pt := range pts {
+		if !pt.IsFinite() {
+			return
+		}
+	}
+
+	switch mode {
+	case canvas.PointModePoints:
+		newPaint := *paint
+		newPaint.Style = canvas.StyleFill
+
+		width := newPaint.StrokeWidth
+		radius := width / 2
+
+		if newPaint.Cap == canvas.CapRound {
+			for _, pt := range pts {
+				d.DrawOval(geom.RectLTRB(pt.X-radius, pt.Y-radius, pt.X+radius, pt.Y+radius), &newPaint)
+			}
+		} else {
+			for _, pt := range pts {
+				d.DrawRect(geom.RectLTRB(pt.X-radius, pt.Y-radius, pt.X-radius+width, pt.Y-radius+width), &newPaint)
+			}
+		}
+	default: // lines and polygon
+		if mode == canvas.PointModeLines && len(pts) == 2 && paint.PathEffect != nil &&
+			d.drawDashedLineAsPoints(pts, paint, cullBounds.ToRect()) {
+			// 'asPoints' managed to find some fast path
+			return
+		}
+		inc := 1
+		if mode == canvas.PointModeLines {
+			inc = 2
+		}
+
+		// One path reused across segments (internalDrawPath may transform it in place, so it is rewound at the top of
+		// the next iteration), instead of a fresh allocation per segment.
+		line := &path.Path{}
+		for i := 0; i < len(pts)-1; i += inc {
+			line.Rewind()
+			line.MoveToPt(pts[i])
+			line.LineToPt(pts[i+1])
+			d.internalDrawPath(d.clipStack, &d.localToDevice, line, paint, true)
+		}
+	}
+}
+
+// drawDashedLineAsPoints handles a two-point line with a path effect — most likely a dashed line — by asking the effect
+// for a point representation it can draw directly. Returns false when the effect found no fast path (the caller falls
+// through to per-segment stroking).
+func (d *Device) drawDashedLineAsPoints(pts []geom.Point, paint *canvas.Paint, cullRect geom.Rect) bool {
+	spec := strokeSpecOf(paint)
+	strokeRec := stroke.NewStrokeRecFromPaint(&spec, 1)
+	var pointData stroke.PointData
+
+	line := &path.Path{}
+	line.MoveToPt(pts[0])
+	line.LineToPt(pts[1])
+
+	if !paint.PathEffect.AsPoints(&pointData, line, &strokeRec, &d.localToDevice, &cullRect) {
+		return false
+	}
+
+	newP := *paint
+	newP.PathEffect = nil
+	newP.Style = canvas.StyleFill
+
+	if !pointData.First.IsEmpty() {
+		d.internalDrawPath(d.clipStack, &d.localToDevice, &pointData.First, &newP, true)
+	}
+
+	if !pointData.Last.IsEmpty() {
+		d.internalDrawPath(d.clipStack, &d.localToDevice, &pointData.Last, &newP, true)
+	}
+
+	if pointData.Size.X == pointData.Size.Y {
+		// The rest of the dashed line can just be drawn as points
+		if pointData.Flags&stroke.CirclesPointFlag != 0 {
+			newP.Cap = canvas.CapRound
+		} else {
+			newP.Cap = canvas.CapButt
+		}
+		d.DrawPoints(canvas.PointModePoints, pointData.Points, &newP)
+	} else {
+		// The rest of the dashed line must be drawn as rects
+		for _, pt := range pointData.Points {
+			d.DrawRect(geom.RectLTRB(pt.X-pointData.Size.X, pt.Y-pointData.Size.Y,
+				pt.X+pointData.Size.X, pt.Y+pointData.Size.Y), &newP)
+		}
+	}
+	return true
 }
 
 // DrawImageRect implements canvas.Device. Sampling and the src-rect constraint do not affect the emitted Image XObject

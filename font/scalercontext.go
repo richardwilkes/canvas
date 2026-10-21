@@ -24,10 +24,10 @@
 // survive the styled-path lane, the only lane that recomputes bounds from the path. A8 masks stay linear coverage: only
 // LCD16 recs carry a luminance color (LumBits) and get the pre-blend, since keying every rec on the canonical color
 // would fragment strikes with no pixel difference. The device gamma and contrast are process-wide (maskgamma.go), not
-// per rec. Embolden (fake bold), the embedded-bitmap request, and the
-// hinting level are recorded on the Font but have no lane here (there is no synthetic-bold generator, bitmap strikes
-// are decoded whenever the typeface carries them, and rendering is always unhinted), so none of them reaches the rec:
-// keying strikes on a request that changes no pixel would only fragment the cache.
+// per rec. Embolden (fake bold) and the embedded-bitmap request are recorded on the Font but have no lane here (there
+// is no synthetic-bold generator, and bitmap strikes are decoded whenever the typeface carries them), so neither
+// reaches the rec: keying strikes on a request that changes no pixel would only fragment the cache. The hinting level
+// reaches it only as recFlagHinted.
 
 package font
 
@@ -56,6 +56,7 @@ const (
 	recFlagLCDBGROrder   = 1 << 5 // BGR LCD subpixel order: else RGB
 	recFlagGenA8FromLCD  = 1 << 6 // filter the path-generated A8 as the LCD lane would
 	recFlagAliased       = 1 << 7 // rasterize hard-edged coverage: EdgingAlias
+	recFlagHinted        = 1 << 8 // grid-fit outlines with the typeface's instructions (see hinting.go)
 )
 
 // PixelGeometry describes the destination's subpixel layout, with the same ordinals as surface.PixelGeometry (the font
@@ -241,7 +242,14 @@ func MakeRecAndEffects(f *Font, paint *ScalerPaint, deviceMatrix *geom.Matrix, p
 	if f.flags&flagBaselineSnap != 0 {
 		rec.Flags |= recFlagBaselineSnap
 	}
-	// The requested hinting level deliberately stays out of the rec (see the file comment and Hinting).
+	// Only a hinting level that changes pixels enters the rec, and only where it changes them: the others, and a strike
+	// that would not be hinted anyway (see hintedSizeFor), must not be split from strikes that hold the same masks.
+	if f.hinting == HintingFull && f.typeface.hintFont() != nil {
+		single := rec.singleMatrix()
+		if hintedSizeFor(f.typeface, &rec, &single) != nil {
+			rec.Flags |= recFlagHinted
+		}
+	}
 
 	// The paint color enters the rec (and the strike key) only when the typeface's glyph masks may paint with it, so
 	// ordinary fonts never fragment strikes per color.
@@ -376,6 +384,8 @@ type ScalerContext struct {
 	pathEffect stroke.PathEffect
 	maskFilter maskfilter.MaskFilter
 	typeface   *Typeface
+	hinter     *hintedSize // nil when outlines are drawn unhinted
+	outlines   pendingOutlines
 	rec        ScalerRec
 	single     geom.Matrix // cached rec.singleMatrix()
 	strikePpem uint16      // requested bitmap-strike ppem derived from the y scale
@@ -391,14 +401,20 @@ func NewScalerContext(typeface *Typeface, rec ScalerRec, effects ScalerEffects) 
 	if effects.MaskFilter == nil && rec.Format == MaskLCD16 {
 		preBlend = getMaskPreBlend(rec.LumBits)
 	}
+	single := rec.singleMatrix()
+	var hinter *hintedSize
+	if ok {
+		hinter = hinterFor(typeface, &rec, &single)
+	}
 	return &ScalerContext{
 		rec:                   rec,
 		typeface:              typeface,
+		hinter:                hinter,
 		pathEffect:            effects.PathEffect,
 		maskFilter:            effects.MaskFilter,
 		generateImageFromPath: rec.FrameWidth >= 0 || effects.PathEffect != nil,
 		preBlend:              preBlend,
-		single:                rec.singleMatrix(),
+		single:                single,
 		isSing:                !ok,
 		strikePpem:            strikePpemFor(scale.Y),
 	}
@@ -449,6 +465,9 @@ func (c *ScalerContext) generatePath(gid uint16) *path.Path {
 	t := c.typeface
 	if t.face == nil || t.upem <= 0 || int(gid) >= t.nGlyphs || c.isSing {
 		return nil
+	}
+	if p := c.hintedPath(gid); p != nil {
+		return p
 	}
 	return glyphOutlinePath(t, gid, c.mapDesignPoint)
 }
@@ -537,6 +556,11 @@ func (c *ScalerContext) generateMetrics(packedID PackedGlyphID) glyphMetrics {
 	// The outline control-box lane: map the extents quad through the single matrix, offset by the sub-pixel position,
 	// then the LCD outset (updateGlyphBoundsIfLCD).
 	mx.maskFormat = c.rec.Format
+	if bounds, hinted := c.hintedBounds(gid); hinted {
+		mx.bounds = c.offsetBoundsIfSubpixel(packedID, bounds, c.rec.isSubpixel())
+		mx.bounds = c.updateGlyphBoundsIfLCD(mx.maskFormat, mx.bounds)
+		return mx
+	}
 	ext, ok := t.faceGlyphExtents(opentype.GID(gid))
 	if ok && (ext.Width != 0 || ext.Height != 0) {
 		mx.bounds = c.offsetBoundsIfSubpixel(packedID, c.mapExtentsQuad(ext), c.rec.isSubpixel())
@@ -550,6 +574,9 @@ func (c *ScalerContext) generateMetrics(packedID PackedGlyphID) glyphMetrics {
 // outline at all) zaps the glyph, which is the honest answer for a bitmap-only face whose strikes this scaler cannot
 // decode. Everything downstream of the box — the mapping, the sub-pixel offset, the LCD outset — is the extents lane's.
 func (c *ScalerContext) outlineDeviceBounds(packedID PackedGlyphID, gid uint16, format MaskFormat) geom.Rect {
+	if bounds, hinted := c.hintedBounds(gid); hinted {
+		return c.updateGlyphBoundsIfLCD(format, c.offsetBoundsIfSubpixel(packedID, bounds, c.rec.isSubpixel()))
+	}
 	ext, ok := outlineControlBox(c.typeface, gid)
 	if !ok {
 		return geom.Rect{}

@@ -1133,28 +1133,51 @@ func (c *ScalerContext) generateMask(g *Glyph, bounds geom.IRect) {
 		RowBytes: int32(dstW),
 	}
 	maskfilter.RenderPathIntoMask(&intermediate, oversampled, fill)
-	pack4xHToMask(intermediate.Image, dstW, dstH, g, &c.preBlend, doBGR, verticalLCD)
+	coefficients := &lcdBoxCoefficients
+	if c.generateImageFromPath {
+		coefficients = &lcdGaussianCoefficients
+	}
+	pack4xHToMask(intermediate.Image, dstW, dstH, g, coefficients, &c.preBlend, doBGR, verticalLCD)
 }
 
-// pack4xHToMask coefficients: one 12-tap FIR per subpixel over the 4x samples, determined by a Gaussian where 5 samples
-// = 3 std deviations (0x110 'contrast'). The red subpixel is centered inside the first sample (at 1/6 pixel) and is
-// shifted; green is centered between two samples (1/2 pixel), so symmetric; blue is centered inside the last sample
-// (5/6 pixel), the red row reversed.
-var pack4xCoefficients = [3][12]uint32{
-	{0x03, 0x0b, 0x1c, 0x33, 0x40, 0x39, 0x24, 0x10, 0x05, 0x01, 0x00, 0x00},
-	{0x00, 0x02, 0x08, 0x16, 0x2b, 0x3d, 0x3d, 0x2b, 0x16, 0x08, 0x02, 0x00},
-	{0x00, 0x00, 0x01, 0x05, 0x10, 0x24, 0x39, 0x40, 0x33, 0x1c, 0x0b, 0x03},
-}
+// The pack4xHToMask coefficients: one 12-tap FIR per subpixel over the 4x samples. The red subpixel is centered at 1/6
+// of its pixel, green at 1/2 and blue at 5/6, so the blue row is the red one reversed.
+//
+// Skia applies its own filter, the Gaussian, only to glyphs it draws from a styled outline (stroked text or text with a
+// path effect); ordinary text arrives already filtered by FreeType or DirectWrite. Every glyph here is drawn from its
+// outline, so generateImageFromPath, the same condition Skia switches on, picks between the Gaussian and a box that
+// stands in for the platform filter.
+var (
+	// lcdBoxCoefficients is a box one pixel wide centered on each subpixel. That is FreeType's default LCD filter
+	// (Harmony), the one Skia's FreeType backend uses, and what DirectWrite's ClearType measures as. Each row sums to
+	// 0x100, so full coverage stays full, and each sample weighs the same in all three channels, so a moving stem keeps
+	// its color.
+	lcdBoxCoefficients = [3][12]uint32{
+		{0x00, 0x00, 0x15, 0x40, 0x40, 0x40, 0x2b, 0x00, 0x00, 0x00, 0x00, 0x00},
+		{0x00, 0x00, 0x00, 0x00, 0x40, 0x40, 0x40, 0x40, 0x00, 0x00, 0x00, 0x00},
+		{0x00, 0x00, 0x00, 0x00, 0x00, 0x2b, 0x40, 0x40, 0x40, 0x15, 0x00, 0x00},
+	}
+	// lcdGaussianCoefficients is Skia's filter: a Gaussian where 5 samples = 3 std deviations, with rows summing to
+	// 0x110 to simulate ink spread.
+	lcdGaussianCoefficients = [3][12]uint32{
+		{0x03, 0x0b, 0x1c, 0x33, 0x40, 0x39, 0x24, 0x10, 0x05, 0x01, 0x00, 0x00},
+		{0x00, 0x02, 0x08, 0x16, 0x2b, 0x3d, 0x3d, 0x2b, 0x16, 0x08, 0x02, 0x00},
+		{0x00, 0x00, 0x01, 0x05, 0x10, 0x24, 0x39, 0x40, 0x33, 0x1c, 0x0b, 0x03},
+	}
+)
 
 // pack4xHToMask downsamples a 4x-oversampled A8 raster into the glyph's LCD16 plane (or its A8 plane when the rec
-// generates A8 from the LCD lane), applying the mask pre-blend per channel on the LCD16 side only. src is
-// sampleWidth×height with tight rows; doVert transposes the write (x and y swap when writing to dst).
+// generates A8 from the LCD lane) through the given filter, applying the mask pre-blend per channel on the LCD16 side
+// only. src is sampleWidth×height with tight rows; doVert transposes the write (x and y swap when writing to dst).
 //
 // The A8 side takes no pre-blend, and is never handed an applicable one: NewScalerContext builds one only for a
 // mask-filter-free MaskLCD16 rec, while an A8 glyph arrives here only from an A8 rec (recFlagGenA8FromLCD), which never
 // carries LumBits. A8 masks stay linear coverage (see the file comment), so this lane averages the three filtered
 // channels and stops.
-func pack4xHToMask(src []uint8, sampleWidth, height int, g *Glyph, preBlend *maskPreBlend, doBGR, doVert bool) {
+func pack4xHToMask(
+	src []uint8, sampleWidth, height int, g *Glyph, coefficients *[3][12]uint32, preBlend *maskPreBlend,
+	doBGR, doVert bool,
+) {
 	toA8 := g.Format == MaskA8
 	dstW := int(g.Width)
 	for y := range height {
@@ -1169,9 +1192,9 @@ func pack4xHToMask(src []uint8, sampleWidth, height int, g *Glyph, preBlend *mas
 			coeffIndex := sampleIndex - (sampleX - 4)
 			for ; sampleIndex < min(sampleX+8, sampleWidth); sampleIndex++ {
 				value := uint32(srcRow[sampleIndex])
-				fir[0] += pack4xCoefficients[0][coeffIndex] * value
-				fir[1] += pack4xCoefficients[1][coeffIndex] * value
-				fir[2] += pack4xCoefficients[2][coeffIndex] * value
+				fir[0] += coefficients[0][coeffIndex] * value
+				fir[1] += coefficients[1][coeffIndex] * value
+				fir[2] += coefficients[2][coeffIndex] * value
 				coeffIndex++
 			}
 			for i := range fir {

@@ -181,7 +181,7 @@ func referenceLUT(srcI uint32, contrast float32) [256]uint8 {
 func TestMaskGammaLUT(t *testing.T) {
 	maskGammaOnce.Do(maskGammaInit)
 	for i := uint32(0); i < maskGammaNumTables; i++ {
-		want := referenceLUT(scale255Lum3(i), maskGammaContrast)
+		want := referenceLUT(scale255Lum3(i), maskGammaDefaultContrast)
 		for v := range 256 {
 			if maskGammaTables[i][v] != want[v] {
 				t.Fatalf("table %d entry %d = %d, want %d", i, v, maskGammaTables[i][v], want[v])
@@ -723,4 +723,71 @@ func maskInk16(g *Glyph) int {
 		ink += int(w >> 5 & 0x3F)
 	}
 	return ink
+}
+
+// TestCorrectingLUTParameters checks the table builder on the black-text table, where an entry is one minus the encoded
+// light the coverage leaves: gamma 1 with no contrast is the identity, a power-law gamma follows the power law,
+// contrast raises mid coverage only, weight 0 is the identity for any gamma, and gamma 0 is the default sRGB table.
+func TestCorrectingLUTParameters(t *testing.T) {
+	identity := func(table *[256]uint8) bool {
+		for i, v := range table {
+			if int(v) != i {
+				return false
+			}
+		}
+		return true
+	}
+	var table [256]uint8
+	buildCorrectingLUT(&table, 0, 0, 1, 1)
+	if !identity(&table) {
+		t.Error("gamma 1, contrast 0 is not the identity")
+	}
+	buildCorrectingLUT(&table, 0, 0.5, 2.2, 0)
+	if !identity(&table) {
+		t.Error("weight 0 is not the identity")
+	}
+
+	for _, gamma := range []float32{1.4, 1.8, 2.2} {
+		buildCorrectingLUT(&table, 0, 0, gamma, 1)
+		for i, v := range table {
+			want := 255 * (1 - math.Pow(1-float64(i)/255, 1/float64(gamma)))
+			if math.Abs(float64(v)-want) > 0.51 {
+				t.Fatalf("gamma %v: entry %d = %d, want %.2f", gamma, i, v, want)
+			}
+		}
+	}
+
+	var plain, boosted [256]uint8
+	buildCorrectingLUT(&plain, 0, 0, 1.8, 1)
+	buildCorrectingLUT(&boosted, 0, 0.5, 1.8, 1)
+	if boosted[0] != 0 || boosted[255] != 255 {
+		t.Errorf("contrast moved the ends: %d, %d", boosted[0], boosted[255])
+	}
+	for i := 16; i < 240; i++ {
+		if boosted[i] <= plain[i] {
+			t.Fatalf("contrast did not raise entry %d: %d against %d", i, boosted[i], plain[i])
+		}
+	}
+
+	maskGammaOnce.Do(maskGammaInit)
+	for i := uint32(0); i < maskGammaNumTables; i++ {
+		buildCorrectingLUT(&table, scale255Lum3(i), maskGammaDefaultContrast, 0, 1)
+		if table != maskGammaTables[i] {
+			t.Fatalf("gamma 0 table %d is not the default sRGB table", i)
+		}
+	}
+}
+
+// TestMaskGammaSettersBuildOnce ensures that gamma can only be set before the tables are built: once they are, the
+// setters refuse new values and the reported parameters keep matching the tables in use.
+func TestMaskGammaSettersBuildOnce(t *testing.T) {
+	maskGammaOnce.Do(maskGammaInit)
+	gamma, contrast := MaskGamma()
+	weight := MaskGammaWeight()
+	if SetMaskGamma(1.8, 0.25) || SetMaskGammaWeight(0.5) {
+		t.Error("a setter succeeded after the tables were built")
+	}
+	if g, c := MaskGamma(); g != gamma || c != contrast || MaskGammaWeight() != weight {
+		t.Error("a refused setter changed the parameters")
+	}
 }

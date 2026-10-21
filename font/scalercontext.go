@@ -23,8 +23,8 @@
 // omits upstream's "only BW/A8/LCD16 can be produced from paths, so force A8" normalization: the SDF format has to
 // survive the styled-path lane, the only lane that recomputes bounds from the path. A8 masks stay linear coverage: only
 // LCD16 recs carry a luminance color (LumBits) and get the pre-blend, since keying every rec on the canonical color
-// would fragment strikes with no pixel difference. The device gamma and contrast have no reachable variation (no API
-// exposes them) and stay the defaults in maskgamma.go. Embolden (fake bold), the embedded-bitmap request, and the
+// would fragment strikes with no pixel difference. The device gamma and contrast are process-wide (maskgamma.go), not
+// per rec. Embolden (fake bold), the embedded-bitmap request, and the
 // hinting level are recorded on the Font but have no lane here (there is no synthetic-bold generator, bitmap strikes
 // are decoded whenever the typeface carries them, and rendering is always unhinted), so none of them reaches the rec:
 // keying strikes on a request that changes no pixel would only fragment the cache.

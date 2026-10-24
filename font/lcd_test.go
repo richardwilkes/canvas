@@ -23,6 +23,7 @@ import (
 	"github.com/richardwilkes/canvas/geom"
 	"github.com/richardwilkes/canvas/maskfilter"
 	"github.com/richardwilkes/canvas/raster"
+	"github.com/richardwilkes/canvas/stroke"
 )
 
 func lcdTestFont(t *testing.T, size float32) *Font {
@@ -180,7 +181,7 @@ func referenceLUT(srcI uint32, contrast float32) [256]uint8 {
 func TestMaskGammaLUT(t *testing.T) {
 	maskGammaOnce.Do(maskGammaInit)
 	for i := uint32(0); i < maskGammaNumTables; i++ {
-		want := referenceLUT(scale255Lum3(i), maskGammaContrast)
+		want := referenceLUT(scale255Lum3(i), maskGammaDefaultContrast)
 		for v := range 256 {
 			if maskGammaTables[i][v] != want[v] {
 				t.Fatalf("table %d entry %d = %d, want %d", i, v, maskGammaTables[i][v], want[v])
@@ -369,13 +370,13 @@ func TestPack4xHToMaskImpulse(t *testing.T) {
 	src := make([]uint8, 8)
 	src[0] = 255
 	var noBlend maskPreBlend
-	pack4xHToMask(src, 8, 1, g, &noBlend, false, false)
+	pack4xHToMask(src, 8, 1, g, &lcdBoxCoefficients, &noBlend, false, false)
 
 	// Output pixel p has sampleX = 4p-4 and covers samples [4p-8, 4p+4), with coefficient index sample - (sampleX - 4).
 	// For sample 0 (value 255):
-	//   p=0: sampleX=-4, coeffIndex = 0 - (-8) = 8 → coeffs {r,g,b} = {0x05, 0x16, 0x33}
-	//   p=1: sampleX= 0, coeffIndex = 4            → {0x40, 0x2b, 0x10}
-	//   p=2: sampleX= 4, coeffIndex = 0            → {0x03, 0x00, 0x00}
+	//   p=0: sampleX=-4, coeffIndex = 0 - (-8) = 8 → coeffs {r,g,b} = {0x00, 0x00, 0x40}
+	//   p=1: sampleX= 0, coeffIndex = 4            → {0x40, 0x40, 0x00}
+	//   p=2: sampleX= 4, coeffIndex = 0            → {0x00, 0x00, 0x00}
 	//   p=3: sampleX= 8, out of reach              → 0
 	expect := func(rc, gc, bc uint32) uint16 {
 		r := min(rc*255/0x100, 255)
@@ -383,23 +384,34 @@ func TestPack4xHToMaskImpulse(t *testing.T) {
 		b := min(bc*255/0x100, 255)
 		return pack888ToRGB16(r, gg, b)
 	}
-	want := []uint16{expect(0x05, 0x16, 0x33), expect(0x40, 0x2b, 0x10), expect(0x03, 0x00, 0x00), 0}
+	want := []uint16{expect(0x00, 0x00, 0x40), expect(0x40, 0x40, 0x00), 0, 0}
 	for i, w := range want {
 		if g.Image16[i] != w {
 			t.Errorf("impulse pixel %d = %#04x, want %#04x", i, g.Image16[i], w)
 		}
 	}
 
-	// Step response: all samples 255 → each 12-tap kernel sums to 0x110 ("adding up to more than one simulates ink
-	// spread"), so pixels whose kernels are fully inside the samples saturate to 0xFFFF; the outset edge pixels see
-	// only part of each kernel. For width 7 the samples span (7-2)*4 = 20 and the fully-covered pixels are 2..4.
+	// The Gaussian, at the same coefficient indices, reaches one pixel further.
+	gauss := &Glyph{Width: 4, Height: 1, Format: MaskLCD16}
+	gauss.Image16 = make([]uint16, 4)
+	pack4xHToMask(src, 8, 1, gauss, &lcdGaussianCoefficients, &noBlend, false, false)
+	wantGauss := []uint16{expect(0x05, 0x16, 0x33), expect(0x40, 0x2b, 0x10), expect(0x03, 0x00, 0x00), 0}
+	for i, w := range wantGauss {
+		if gauss.Image16[i] != w {
+			t.Errorf("Gaussian impulse pixel %d = %#04x, want %#04x", i, gauss.Image16[i], w)
+		}
+	}
+
+	// Step response: all samples 255 → each 12-tap kernel sums to 0x100, so pixels whose kernels are fully inside the
+	// samples come out at exactly 0xFFFF; the outset edge pixels see only part of each kernel. For width 7 the samples
+	// span (7-2)*4 = 20 and the fully-covered pixels are 2..4.
 	g2 := &Glyph{Width: 7, Height: 1, Format: MaskLCD16}
 	g2.Image16 = make([]uint16, 7)
 	full := make([]uint8, 20)
 	for i := range full {
 		full[i] = 255
 	}
-	pack4xHToMask(full, 20, 1, g2, &noBlend, false, false)
+	pack4xHToMask(full, 20, 1, g2, &lcdBoxCoefficients, &noBlend, false, false)
 	for i := 2; i <= 4; i++ {
 		if g2.Image16[i] != 0xFFFF {
 			t.Errorf("step interior pixel %d = %#04x, want 0xFFFF", i, g2.Image16[i])
@@ -412,7 +424,7 @@ func TestPack4xHToMaskImpulse(t *testing.T) {
 	// doBGR swaps red and blue.
 	g3 := &Glyph{Width: 4, Height: 1, Format: MaskLCD16}
 	g3.Image16 = make([]uint16, 4)
-	pack4xHToMask(src, 8, 1, g3, &noBlend, true, false)
+	pack4xHToMask(src, 8, 1, g3, &lcdBoxCoefficients, &noBlend, true, false)
 	for i := range g.Image16 {
 		r0 := g.Image16[i] >> 11 & 0x1F
 		b0 := g.Image16[i] & 0x1F
@@ -426,11 +438,11 @@ func TestPack4xHToMaskImpulse(t *testing.T) {
 	// toA8: the same filter averaged across channels.
 	g4 := &Glyph{Width: 4, Height: 1, Format: MaskA8}
 	g4.Image = make([]uint8, 4)
-	pack4xHToMask(src, 8, 1, g4, &noBlend, false, false)
+	pack4xHToMask(src, 8, 1, g4, &lcdBoxCoefficients, &noBlend, false, false)
 	wantA8 := []uint8{
-		(min(0x05*255/0x100, 255) + min(0x16*255/0x100, 255) + min(0x33*255/0x100, 255)) / 3,
-		(min(0x40*255/0x100, 255) + min(0x2b*255/0x100, 255) + min(0x10*255/0x100, 255)) / 3,
-		(min(0x03*255/0x100, 255) + 0 + 0) / 3,
+		(0 + 0 + min(0x40*255/0x100, 255)) / 3,
+		(min(0x40*255/0x100, 255) + min(0x40*255/0x100, 255) + 0) / 3,
+		0,
 		0,
 	}
 	for i, w := range wantA8 {
@@ -444,7 +456,7 @@ func TestPack4xHToMaskImpulse(t *testing.T) {
 	blend := getMaskPreBlend(colorcore.RGB(0, 0, 0))
 	g6 := &Glyph{Width: 4, Height: 1, Format: MaskA8}
 	g6.Image = make([]uint8, 4)
-	pack4xHToMask(src, 8, 1, g6, &blend, false, false)
+	pack4xHToMask(src, 8, 1, g6, &lcdBoxCoefficients, &blend, false, false)
 	for i, w := range wantA8 {
 		if g6.Image[i] != w {
 			t.Errorf("toA8 with pre-blend pixel %d = %d, want the unblended %d", i, g6.Image[i], w)
@@ -452,15 +464,15 @@ func TestPack4xHToMaskImpulse(t *testing.T) {
 	}
 	g7 := &Glyph{Width: 4, Height: 1, Format: MaskLCD16}
 	g7.Image16 = make([]uint16, 4)
-	pack4xHToMask(src, 8, 1, g7, &blend, false, false)
+	pack4xHToMask(src, 8, 1, g7, &lcdBoxCoefficients, &blend, false, false)
 	expectBlended := func(rc, gc, bc uint32) uint16 {
 		return pack888ToRGB16(uint32(blend.r[min(rc*255/0x100, 255)]),
 			uint32(blend.g[min(gc*255/0x100, 255)]), uint32(blend.b[min(bc*255/0x100, 255)]))
 	}
 	wantBlended := []uint16{
-		expectBlended(0x05, 0x16, 0x33),
-		expectBlended(0x40, 0x2b, 0x10),
-		expectBlended(0x03, 0x00, 0x00),
+		expectBlended(0x00, 0x00, 0x40),
+		expectBlended(0x40, 0x40, 0x00),
+		expectBlended(0x00, 0x00, 0x00),
 		expectBlended(0x00, 0x00, 0x00),
 	}
 	for i, w := range wantBlended {
@@ -472,11 +484,49 @@ func TestPack4xHToMaskImpulse(t *testing.T) {
 	// doVert transposes: a 1-column mask (height 4) fed the same samples lands down the column.
 	g5 := &Glyph{Width: 1, Height: 4, Format: MaskLCD16}
 	g5.Image16 = make([]uint16, 4)
-	pack4xHToMask(src, 8, 1, g5, &noBlend, false, true)
+	pack4xHToMask(src, 8, 1, g5, &lcdBoxCoefficients, &noBlend, false, true)
 	for i := range want {
 		if g5.Image16[i] != want[i] {
 			t.Errorf("vertical pixel %d = %#04x, want %#04x", i, g5.Image16[i], want[i])
 		}
+	}
+}
+
+// TestLCDFilterFollowsTheLane draws an 'l' filled and as a zero-width stroke-and-fill, which is the same shape on the
+// styled lane: the fill must get the box, reaching full coverage, and the styled one the wider, fainter Gaussian.
+func TestLCDFilterFollowsTheLane(t *testing.T) {
+	f := lcdTestFont(t, 13)
+	f.SetHinting(HintingNone)
+	identity := geom.IdentityMatrix()
+	props := &DeviceProps{PixelGeometry: PixelGeometryRGBH}
+	gid := PackGlyphID(f.Typeface().UnicharToGlyph('l'))
+	stats := func(paint *ScalerPaint) (peak, lit int) {
+		spec := MakeMaskSpec(f, paint, &identity, props)
+		g, action := spec.FindOrCreateStrike().DigestFor(ActionDirectMaskCPU, gid)
+		if action != GlyphActionAccept || g.Format != MaskLCD16 {
+			t.Fatalf("no LCD mask: action %d", action)
+		}
+		row := g.Image16[int(g.Height/2)*int(g.Width):][:g.Width]
+		for _, px := range row {
+			peak = max(peak, int(px>>5&0x3F))
+			for _, channel := range []uint16{px >> 11, px >> 5 & 0x3F, px & 0x1F} {
+				if channel != 0 {
+					lit++
+				}
+			}
+		}
+		return peak, lit
+	}
+	fillPeak, fillLit := stats(&ScalerPaint{})
+	styledPeak, styledLit := stats(&ScalerPaint{Style: stroke.PaintStyleStrokeAndFill})
+	if fillPeak != 0x3F {
+		t.Errorf("filled stem peaks at %d of 63, want full coverage from the box", fillPeak)
+	}
+	if styledPeak >= fillPeak {
+		t.Errorf("styled stem peaks at %d, filled at %d; want the Gaussian's lower peak", styledPeak, fillPeak)
+	}
+	if styledLit <= fillLit {
+		t.Errorf("styled stem covers %d subpixels, filled %d; want the Gaussian's wider spread", styledLit, fillLit)
 	}
 }
 
@@ -674,4 +724,69 @@ func maskInk16(g *Glyph) int {
 		ink += int(w >> 5 & 0x3F)
 	}
 	return ink
+}
+
+// TestCorrectingLUTParameters checks the table builder on the black-text table, where an entry is one minus the encoded
+// light the coverage leaves: gamma 1 with no contrast is the identity, a power-law gamma follows the power law,
+// contrast raises mid coverage only, weight 0 is the identity for any gamma, and gamma 0 is the default sRGB table.
+func TestCorrectingLUTParameters(t *testing.T) {
+	identity := func(table *[256]uint8) bool {
+		for i, v := range table {
+			if int(v) != i {
+				return false
+			}
+		}
+		return true
+	}
+	var table [256]uint8
+	buildCorrectingLUT(&table, 0, 0, 1, 1)
+	if !identity(&table) {
+		t.Error("gamma 1, contrast 0 is not the identity")
+	}
+	buildCorrectingLUT(&table, 0, 0.5, 2.2, 0)
+	if !identity(&table) {
+		t.Error("weight 0 is not the identity")
+	}
+
+	for _, gamma := range []float32{1.4, 1.8, 2.2} {
+		buildCorrectingLUT(&table, 0, 0, gamma, 1)
+		for i, v := range table {
+			want := 255 * (1 - math.Pow(1-float64(i)/255, 1/float64(gamma)))
+			if math.Abs(float64(v)-want) > 0.51 {
+				t.Fatalf("gamma %v: entry %d = %d, want %.2f", gamma, i, v, want)
+			}
+		}
+	}
+
+	var plain, boosted [256]uint8
+	buildCorrectingLUT(&plain, 0, 0, 1.8, 1)
+	buildCorrectingLUT(&boosted, 0, 0.5, 1.8, 1)
+	if boosted[0] != 0 || boosted[255] != 255 {
+		t.Errorf("contrast moved the ends: %d, %d", boosted[0], boosted[255])
+	}
+	for i := 16; i < 240; i++ {
+		if boosted[i] <= plain[i] {
+			t.Fatalf("contrast did not raise entry %d: %d against %d", i, boosted[i], plain[i])
+		}
+	}
+
+	maskGammaOnce.Do(maskGammaInit)
+	for i := uint32(0); i < maskGammaNumTables; i++ {
+		buildCorrectingLUT(&table, scale255Lum3(i), maskGammaDefaultContrast, 0, 1)
+		if table != maskGammaTables[i] {
+			t.Fatalf("gamma 0 table %d is not the default sRGB table", i)
+		}
+	}
+}
+
+func TestMaskGammaSettersLockWithTheTables(t *testing.T) {
+	maskGammaOnce.Do(maskGammaInit)
+	gamma, contrast := MaskGamma()
+	weight := MaskGammaWeight()
+	if SetMaskGamma(1.8, 0.25) || SetMaskGammaWeight(0.5) {
+		t.Error("a setter succeeded after the tables were built")
+	}
+	if g, c := MaskGamma(); g != gamma || c != contrast || MaskGammaWeight() != weight {
+		t.Error("a refused setter changed the parameters")
+	}
 }

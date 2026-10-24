@@ -9,8 +9,8 @@
 
 // Typeface's surface (family name, font style, units-per-em, fixed pitch, text→glyph conversion), built over
 // go-text/typesetting's font parser: the sfnt tables are read directly rather than through a platform text-rendering
-// host. The deltas that follow from that: rendering is always unhinted with linear metrics (hinting and
-// forceAutoHinting are recorded but never honored, so neither reaches the scaler rec); embedded bitmap strikes are
+// host. The deltas that follow from that: metrics are always linear, and rendering is unhinted except for HintingFull
+// (hinting.go; forceAutoHinting is recorded but never honored, there being no auto-hinter); embedded bitmap strikes are
 // always used when present (the embeddedBitmaps request is recorded but never consulted: the scaler decodes an
 // sbix/CBDT/EBDT PNG strike into an ARGB32 mask whenever the typeface carries one); font metrics follow the FreeType
 // table recipe (hhea, or OS/2 typo metrics when fsSelection UseTypoMetrics is set, for ascent/descent/leading; the head
@@ -51,6 +51,7 @@ type Typeface struct {
 	postScriptName  string // name ID 6 (FT_Get_Postscript_Name)
 	data            []byte // the raw font-file bytes (what FontData returns)
 	palette         []colorcore.Color
+	hinting         typefaceHinting
 	head            tables.Head
 	nGlyphs         int
 	collectionIndex int // the TTC face index within data

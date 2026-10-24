@@ -17,10 +17,9 @@ import (
 	"github.com/richardwilkes/canvas/stroke"
 )
 
-// Hinting selects the requested hinting level. Every level is accepted and recorded, but none is honored: rendering
-// here is always unhinted with linear metrics, and no lane reads the recorded level. It therefore stays out of the
-// scaler rec, where it would only fragment strikes that render identically (the treatment SetEmbeddedBitmaps and
-// SetEmbolden get).
+// Hinting selects the requested hinting level. Only HintingFull is honored: it grid-fits glyphs vertically with the
+// typeface's TrueType instructions (see hinting.go). The other levels, including the default HintingNormal, draw the
+// outlines as designed. Metrics are linear at every level.
 type Hinting uint8
 
 // Hinting values.
@@ -175,8 +174,7 @@ func (f *Font) SetBaselineSnap(on bool) { f.setFlag(flagBaselineSnap, on) }
 // BaselineSnap reports whether the baseline of horizontal text is snapped to whole pixels.
 func (f *Font) BaselineSnap() bool { return f.flags&flagBaselineSnap != 0 }
 
-// SetHinting sets the requested hinting level (recorded, never honored: the library is always unhinted with linear
-// metrics, so the level stays out of the scaler rec — see Hinting).
+// SetHinting sets the requested hinting level. Only HintingFull changes rendering; see Hinting.
 func (f *Font) SetHinting(h Hinting) { f.hinting = h }
 
 // Hinting returns the recorded hinting.

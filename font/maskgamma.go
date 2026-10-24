@@ -8,10 +8,9 @@
 // defined by the Mozilla Public License, version 2.0.
 
 // Mask-gamma tables for the LCD16 lane: the per-channel gamma-correcting LUTs ("pre-blend") keyed by the paint's
-// luminance color at three luminance bits per channel. Neither the contrast nor the device gamma is exposed at the API,
-// so the tables are built once at the defaults: contrast 0.5, quantized the 0.8+1 fixed-point way a scaler rec would
-// store it, and gamma 0, which selects the sRGB luminance curve. That curve is hardcoded in srgbToLuma/srgbFromLuma, so
-// there is no gamma exponent anywhere below. The A8 lane never sees a pre-blend: it is ignored for every non-LCD rec.
+// luminance color at three luminance bits per channel. The tables are built once, on first use, for the device gamma,
+// text contrast and correction weight set before then (SetMaskGamma, SetMaskGammaWeight). The A8 lane never sees a
+// pre-blend: it is ignored for every non-LCD rec.
 
 package font
 
@@ -29,9 +28,9 @@ const (
 	maskGammaLumShift  = 8 - maskGammaLumBits  // 5
 )
 
-// maskGammaContrast is the default text contrast, 0.5, quantized as a scaler rec's fixed-point field would store it
-// (128/255).
-const maskGammaContrast = float32(128) / 255
+// maskGammaDefaultContrast is the default text contrast, 0.5, quantized as a scaler rec's fixed-point field would
+// store it (128/255).
+const maskGammaDefaultContrast = float32(128) / 255
 
 // scale255Lum3 scales a 3-bit value to [0, 255] by bit replication.
 func scale255Lum3(base uint32) uint32 {
@@ -79,8 +78,9 @@ func roundToU8(x float32) uint8 {
 	return uint8(int(math.Floor(float64(x) + 0.5)))
 }
 
-// buildCorrectingLUT builds a gamma-correcting LUT using the sRGB luminance curve on both sides (the paint color is
-// always in the device color space, so the source and destination conversions are the same curve).
+// buildCorrectingLUT builds a gamma-correcting LUT over the luminance curve for gamma (sRGB when zero, a power law
+// otherwise) on both sides, since the paint color is always in the device color space. weight scales the correction,
+// from 0 (raw linear coverage) to 1 (the full correction).
 //
 // Upstream guards the final divide by (src - dst) with a "src is close to dst" branch, a plain contrast ramp whenever
 // |src - dst| < 1/256, because it serves any luminance-bit count. Here the geometry is fixed at 3 bits: maskGammaInit
@@ -88,13 +88,18 @@ func roundToU8(x float32) uint8 {
 // which is |src - dst|, never drops below 0.1451, ~37x the threshold. The branch is therefore omitted;
 // TestMaskGammaStabilityBranchUnneeded pins the margin, so a change to the table geometry fails there rather than
 // silently reaching an unguarded divide.
-func buildCorrectingLUT(table *[256]uint8, srcI uint32, contrast float32) {
+func buildCorrectingLUT(table *[256]uint8, srcI uint32, contrast, gamma, weight float32) {
+	toLuma, fromLuma := srgbToLuma, srgbFromLuma
+	if gamma != 0 {
+		toLuma = func(v float32) float32 { return float32(math.Pow(float64(v), float64(gamma))) }
+		fromLuma = func(v float32) float32 { return float32(math.Pow(float64(v), 1/float64(gamma))) }
+	}
 	src := float32(srcI) / 255.0
-	linSrc := srgbToLuma(src)
+	linSrc := toLuma(src)
 	// Guess at the dst. The perceptual inverse provides smaller visual discontinuities when slight changes to
 	// desaturated colors cause a channel to map to a different correcting lut with neighboring srcI.
 	dst := 1.0 - src
-	linDst := srgbToLuma(dst)
+	linDst := toLuma(dst)
 
 	// Contrast value tapers off to 0 as the src luminance becomes white.
 	adjustedContrast := contrast * linDst
@@ -106,24 +111,92 @@ func buildCorrectingLUT(table *[256]uint8, srcI uint32, contrast float32) {
 
 		// Calculate the output we want.
 		linOut := linSrc*srca + dsta*linDst
-		out := srgbFromLuma(linOut)
+		out := fromLuma(linOut)
 
 		// Undo what the blit blend will do.
 		result := (out - dst) / (src - dst)
+
+		// Skipping the lerp at weight 1 keeps the default tables bit-identical to upstream's.
+		if weight != 1 {
+			result = rawSrca + (result-rawSrca)*weight
+		}
 		table[i] = roundToU8(255.0 * result)
 	}
 }
 
-// maskGammaTables holds the table block for the single (default) configuration: 8 tables of 256 entries, table i built
-// for the luminance scale255Lum3(i).
+// maskGammaTables holds 8 tables of 256 entries, table i built for the luminance scale255Lum3(i). Once built they are
+// immutable: scaler contexts on any goroutine read them through the row pointers getMaskPreBlend hands out, so the
+// parameters guarded by maskGammaLock are fixed from then on.
 var (
 	maskGammaOnce   sync.Once
 	maskGammaTables [maskGammaNumTables][256]uint8
+
+	maskGammaLock     sync.Mutex
+	maskGammaBuilt    bool
+	maskGammaExponent float32 // zero selects the sRGB curve
+	maskGammaContrast = maskGammaDefaultContrast
+	maskGammaWeight   = float32(1)
 )
 
+// SetMaskGamma sets the device gamma and text contrast the LCD lane's correcting tables are built for, the two values
+// Skia takes from SkSurfaceProps and a platform from the user's text settings. A gamma of zero selects the sRGB curve,
+// which with a contrast of 0.5 is the default. It must be called before any LCD text is rendered and reports whether
+// the values were taken.
+func SetMaskGamma(gamma, contrast float32) bool {
+	if !(gamma >= 0) {
+		gamma = 0
+	}
+	if !(contrast >= 0) {
+		contrast = 0
+	}
+	maskGammaLock.Lock()
+	defer maskGammaLock.Unlock()
+	if maskGammaBuilt {
+		return false
+	}
+	maskGammaExponent = min(gamma, 4)
+	maskGammaContrast = min(contrast, 1)
+	return true
+}
+
+// MaskGamma returns the device gamma (zero for sRGB) and text contrast the correcting tables are or will be built with.
+func MaskGamma() (gamma, contrast float32) {
+	maskGammaLock.Lock()
+	defer maskGammaLock.Unlock()
+	return maskGammaExponent, maskGammaContrast
+}
+
+// SetMaskGammaWeight sets how much of the gamma correction the LCD lane applies, from 0 (raw linear coverage, which is
+// what FreeType hands its clients) to 1 (the full correction, the default). The full correction is what blending in
+// sRGB-encoded space calls for, but it draws text visibly heavier than the platform text stacks do. It must be called
+// before any LCD text is rendered and reports whether the weight was taken.
+func SetMaskGammaWeight(weight float32) bool {
+	if !(weight >= 0) {
+		weight = 0
+	}
+	maskGammaLock.Lock()
+	defer maskGammaLock.Unlock()
+	if maskGammaBuilt {
+		return false
+	}
+	maskGammaWeight = min(weight, 1)
+	return true
+}
+
+// MaskGammaWeight returns the weight the correcting tables are or will be built with.
+func MaskGammaWeight() float32 {
+	maskGammaLock.Lock()
+	defer maskGammaLock.Unlock()
+	return maskGammaWeight
+}
+
 func maskGammaInit() {
+	maskGammaLock.Lock()
+	maskGammaBuilt = true
+	gamma, contrast, weight := maskGammaExponent, maskGammaContrast, maskGammaWeight
+	maskGammaLock.Unlock()
 	for i := uint32(0); i < maskGammaNumTables; i++ {
-		buildCorrectingLUT(&maskGammaTables[i], scale255Lum3(i), maskGammaContrast)
+		buildCorrectingLUT(&maskGammaTables[i], scale255Lum3(i), contrast, gamma, weight)
 	}
 }
 
@@ -136,9 +209,8 @@ type maskPreBlend struct {
 // isApplicable reports whether this pre-blend has been populated.
 func (p *maskPreBlend) isApplicable() bool { return p.g != nil }
 
-// getMaskPreBlend expands the rec's luminance color into a pre-blend, over the single cached table set (never a linear
-// table: the reachable contrast/gamma are the non-linear defaults, and non-LCD recs never call this — their pre-blend
-// is ignored).
+// getMaskPreBlend expands the rec's luminance color into a pre-blend over the cached table set. Non-LCD recs never
+// call this.
 func getMaskPreBlend(lumBits colorcore.Color) maskPreBlend {
 	maskGammaOnce.Do(maskGammaInit)
 	return maskPreBlend{

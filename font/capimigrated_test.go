@@ -59,16 +59,23 @@ func TestFontFlagAndHintingRoundTrip(t *testing.T) {
 		if got := f.Hinting(); got != h {
 			t.Errorf("SetHinting(%v) recorded %v", h, got)
 		}
-		// The recorded level must not reach the strike key: no lane honors hinting, so a level in the rec would only
-		// split byte-identical masks across two strikes and charge the cache budget for both.
-		if rec, _ := MakeRecAndEffects(f, nil, &identity, nil); rec != base {
-			t.Errorf("SetHinting(%v) changed the scaler rec, which no lane reads the level from", h)
+		// A level that is not honored must not reach the strike key: it would only split byte-identical masks across
+		// two strikes and charge the cache budget for both. HintingFull is honored, and reaches it as exactly one bit.
+		rec, _ := MakeRecAndEffects(f, nil, &identity, nil)
+		if h == HintingFull {
+			if f.Typeface().hintFont() != nil && rec.Flags&recFlagHinted == 0 {
+				t.Errorf("SetHinting(%v) did not mark the scaler rec of a typeface that carries instructions", h)
+			}
+			rec.Flags &^= recFlagHinted
+		}
+		if rec != base {
+			t.Errorf("SetHinting(%v) changed the scaler rec beyond the hinted bit", h)
 		}
 	}
 }
 
 // TestHintingDoesNotFragmentStrikes is the consequence TestFontFlagAndHintingRoundTrip's rec comparison exists to
-// prevent: since nothing honors the recorded level, two fonts differing only in hinting must resolve to the same strike
+// prevent: since neither of these levels is honored, two fonts differing only in them must resolve to the same strike
 // (and therefore the same cached glyph masks) rather than to two strikes holding identical bytes.
 func TestHintingDoesNotFragmentStrikes(t *testing.T) {
 	cache := NewStrikeCache()

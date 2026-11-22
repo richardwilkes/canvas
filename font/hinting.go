@@ -20,9 +20,15 @@ import (
 )
 
 // Hinting: with HintingFull, the TrueType instructions a typeface carries are run by the tthint package, a port of
-// Skrifa's interpreter: glyphs are fitted to the pixel grid vertically only, so advances and layout are unchanged. It
-// applies only to a strike that is an upright uniform scale, a TrueType typeface with instructions that is not a
-// variable font, and a size the font's own programs agree to run at. Anywhere else the unhinted outline is drawn.
+// Skrifa's interpreter: glyphs are fitted to the pixel grid vertically only. It applies only to a strike that is an
+// upright uniform scale, a TrueType typeface with instructions that is not a variable font, and a size the font's own
+// programs agree to run at. Anywhere else the unhinted outline is drawn.
+//
+// Advances follow Skia's FreeType and Fontations backends. With linear metrics (Font.SetLinearMetrics) a hinted glyph
+// keeps its design advance at the requested size, so layout is exactly what it is unhinted. Without them, which is the
+// default, its advance is the one the hinter reports, rounded to a whole pixel (hintedAdvance). The two differ most
+// for a font that asks for whole sizes, as nearly all hinted fonts do: at 12.5 pixels its glyphs are fitted for 13, and
+// only the hinted advance is spaced for 13 too.
 
 // maxHintInstances bounds the per-typeface cache of prepared sizes, so that animating a font size cannot grow it
 // without limit.
@@ -53,20 +59,29 @@ type hintedSize struct {
 	mu       sync.Mutex
 }
 
-// hintedBox is the control box of a hinted outline in 26.6 pixels, y up. hinted is false for a glyph that is not
-// hinted: one with no outline, or one the font describes wrongly.
+// hintedBox is what is kept of a hinted glyph: the control box of its outline and its advance, in 26.6 pixels, y up.
+// loaded is false for a glyph the font describes wrongly, which has neither. hinted is false for that glyph and for
+// one with no outline, which has an advance and no box.
 type hintedBox struct {
 	xMin, yMin, xMax, yMax int32
+	advance                int32
+	loaded                 bool
 	hinted                 bool
 }
 
-// boxOf returns the control box of an outline, which may be nil or empty for a glyph that is not hinted.
+// boxOf returns the box and advance of an outline, which is nil for a glyph the font describes wrongly.
 func boxOf(outline *tthint.Outline) hintedBox {
-	if outline == nil || len(outline.Points) == 0 {
+	if outline == nil {
 		return hintedBox{}
 	}
+	if len(outline.Points) == 0 {
+		return hintedBox{advance: outline.Advance, loaded: true}
+	}
 	first := outline.Points[0]
-	box := hintedBox{xMin: first.X, yMin: first.Y, xMax: first.X, yMax: first.Y, hinted: true}
+	box := hintedBox{
+		xMin: first.X, yMin: first.Y, xMax: first.X, yMax: first.Y,
+		advance: outline.Advance, loaded: true, hinted: true,
+	}
 	for _, p := range outline.Points[1:] {
 		box.xMin = min(box.xMin, p.X)
 		box.xMax = max(box.xMax, p.X)
@@ -76,13 +91,24 @@ func boxOf(outline *tthint.Outline) hintedBox {
 	return box
 }
 
+// hintedAdvance returns the advance to use in place of the linear one, in pixels, and whether there is one: the
+// hinter's, rounded to a whole pixel as FreeType rounds a hinted advance and as Skia rounds Skrifa's. An advance that
+// rounds to nothing is not used.
+func (b hintedBox) hintedAdvance() (advance float32, ok bool) {
+	if !b.loaded {
+		return 0, false
+	}
+	pixels := (b.advance + 32) >> 6
+	return float32(pixels), pixels != 0
+}
+
 // rect converts the box to pixels with y down.
 func (b hintedBox) rect() geom.Rect {
 	return geom.RectLTRB(float32(b.xMin)/64, -float32(b.yMax)/64, float32(b.xMax)/64, -float32(b.yMin)/64)
 }
 
-// box returns gid's control box, computing it the first time it is asked for. compute runs outside the
-// lock, so two callers may both hint a glyph nobody has yet; they get the same answer.
+// box returns gid's control box and advance, computing it the first time it is asked for. compute runs
+// outside the lock, so two callers may both hint a glyph nobody has yet; they get the same answer.
 func (h *hintedSize) box(gid uint16, compute func() hintedBox) hintedBox {
 	h.mu.Lock()
 	box, ok := h.boxes[gid]
@@ -103,7 +129,7 @@ func (h *hintedSize) box(gid uint16, compute func() hintedBox) hintedBox {
 	return box
 }
 
-// measuredBox returns gid's control box for a caller with no scaler context of its own to hint with.
+// measuredBox returns gid's control box and advance for a caller with no scaler context of its own to hint with.
 func (h *hintedSize) measuredBox(gid uint16) hintedBox {
 	return h.box(gid, func() hintedBox {
 		outline, _ := hintOutlinePool.Get().(*tthint.Outline)
@@ -247,15 +273,15 @@ type pendingOutlines struct {
 	mu       sync.Mutex
 }
 
-// hintedOutline returns gid's hinted outline, or nil if the glyph is not hinted: the glyph has no outline, or the font
-// describes it wrongly. The caller holds c.outlines.mu, and until it lets go the outline is its to read.
+// hintedOutline returns gid's hinted outline, which has no points if the glyph has no outline, or nil if the font
+// describes the glyph wrongly. The caller holds c.outlines.mu, and until it lets go the outline is its to read.
 func (c *ScalerContext) hintedOutline(gid uint16) *tthint.Outline {
 	pending := &c.outlines
 	if outline, ok := pending.outlines[gid]; ok {
 		return outline
 	}
 	outline, _ := hintOutlinePool.Get().(*tthint.Outline)
-	if !c.hinter.instance.Outline(gid, outline) || len(outline.Points) == 0 {
+	if !c.hinter.instance.Outline(gid, outline) {
 		hintOutlinePool.Put(outline)
 		outline = nil
 	}
@@ -285,6 +311,16 @@ func (c *ScalerContext) releaseHintedOutline(gid uint16) {
 	}
 }
 
+// hintedBox returns gid's control box and advance, the zero value if the context does not hint.
+func (c *ScalerContext) hintedBox(gid uint16) hintedBox {
+	if c.hinter == nil {
+		return hintedBox{}
+	}
+	c.outlines.mu.Lock()
+	defer c.outlines.mu.Unlock()
+	return c.hinter.box(gid, func() hintedBox { return boxOf(c.hintedOutline(gid)) })
+}
+
 // hintedPoint converts a hinted point, in 26.6 pixels with y up, to device space.
 func hintedPoint(p tthint.Point) geom.Point {
 	return geom.Pt(float32(p.X)/64, -float32(p.Y)/64)
@@ -299,7 +335,7 @@ func (c *ScalerContext) hintedPath(gid uint16) *path.Path {
 	defer c.outlines.mu.Unlock()
 	defer c.releaseHintedOutline(gid)
 	outline := c.hintedOutline(gid)
-	if outline == nil {
+	if outline == nil || len(outline.Points) == 0 {
 		return nil
 	}
 	p := path.New()
@@ -363,12 +399,7 @@ func appendQuadraticContour(p *path.Path, points []tthint.Point, onCurve []bool)
 // hintedBounds returns the control box of gid's hinted outline in device space, ok false if the glyph is not hinted.
 // Hinting moves edges by up to a pixel, so the design extents would clip the mask.
 func (c *ScalerContext) hintedBounds(gid uint16) (bounds geom.Rect, ok bool) {
-	if c.hinter == nil {
-		return geom.Rect{}, false
-	}
-	c.outlines.mu.Lock()
-	box := c.hinter.box(gid, func() hintedBox { return boxOf(c.hintedOutline(gid)) })
-	c.outlines.mu.Unlock()
+	box := c.hintedBox(gid)
 	if !box.hinted {
 		return geom.Rect{}, false
 	}

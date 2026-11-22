@@ -490,7 +490,8 @@ type glyphMetrics struct {
 }
 
 // generateMetrics computes a glyph's metrics through its lane: the COLR bounds, the bitmap-strike quad, or the outline
-// control box, plus the linear advance through the single matrix (unhinted; bitmap-font advances stay linear too).
+// control box, plus the advance: the linear one through the single matrix (bitmap-font and color-glyph advances stay
+// linear too), unless the strike is hinted without linear metrics, when it is the hinted one (see hinting.go).
 func (c *ScalerContext) generateMetrics(packedID PackedGlyphID) glyphMetrics {
 	var mx glyphMetrics
 	gid := packedID.GlyphID()
@@ -500,6 +501,12 @@ func (c *ScalerContext) generateMetrics(packedID PackedGlyphID) glyphMetrics {
 	advVec := c.single.MapVector(geom.Pt(adv, 0))
 	mx.advanceX = advVec.X
 	mx.advanceY = advVec.Y
+	// A hinted strike is an upright uniform scale, so its advance is along x.
+	if c.hinter != nil && c.rec.Flags&recFlagLinearMetrics == 0 && !t.hasCOLR && !t.hasBitmaps {
+		if hinted, ok := c.hintedBox(gid).hintedAdvance(); ok {
+			mx.advanceX = hinted
+		}
+	}
 
 	// COLR lanes (checked first). COLRv1 paint graphs (preferred over v0 records when both exist, per the spec's search
 	// order) take their bounding box from the ClipList when present, else a measuring traversal of the paint graph;

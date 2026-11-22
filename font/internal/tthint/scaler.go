@@ -21,6 +21,10 @@ type Outline struct {
 	OnCurve []bool
 	// ContourEnds holds the index of the last point of each contour.
 	ContourEnds []uint16
+	// Advance is the glyph's advance width in 26.6 pixels at the size it was hinted for, which for a font that asks
+	// for whole sizes is the rounded one: the distance between the two horizontal phantom points, as its programs
+	// left them. It is set for a glyph with no outline too.
+	Advance int32
 }
 
 // scaler loads one glyph: it scales its points, composes its components and runs the glyph programs. The points of
@@ -46,6 +50,7 @@ func (in *Instance) Outline(gid uint16, dst *Outline) bool {
 	if !sc.load(int(gid), 0) {
 		return false
 	}
+	dst.Advance = sc.phantom[1].X - sc.phantom[0].X
 	dst.Points = append(dst.Points[:0], s.scaled[:sc.points]...)
 	// The outline is placed so that its origin, the first phantom point, is at zero.
 	if shift := sc.phantom[0].X; shift != 0 {

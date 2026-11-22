@@ -19,7 +19,8 @@ import (
 
 // Hinting selects the requested hinting level. Only HintingFull is honored: it grid-fits glyphs vertically with the
 // typeface's TrueType instructions (see hinting.go). The other levels, including the default HintingNormal, draw the
-// outlines as designed. Metrics are linear at every level.
+// outlines as designed, with linear metrics. Under HintingFull the advances are the hinter's, in whole pixels, unless
+// linear metrics are asked for (SetLinearMetrics).
 type Hinting uint8
 
 // Hinting values.
@@ -136,8 +137,11 @@ func (f *Font) SetForceAutoHinting(on bool) { f.setFlag(flagForceAutoHinting, on
 // ForceAutoHinting reports whether auto-hinting is forced.
 func (f *Font) ForceAutoHinting() bool { return f.flags&flagForceAutoHinting != 0 }
 
-// SetLinearMetrics sets whether font and glyph metrics are requested to be linearly scalable. Rendering here is always
-// unhinted, so the request only enters the scaler rec (and therefore the strike key); it changes no metric.
+// SetLinearMetrics sets whether glyph advances are requested to be linearly scalable: the design advance at the
+// requested size, whatever hinting does to the glyph. It is off by default, and matters only where glyphs are hinted
+// (HintingFull): there, without it, an advance is the one the hinter reports, rounded to a whole pixel, which keeps
+// the spacing right for a font hinted at a rounded size but makes layout depend on the size and on the hinting. Set it
+// to have hinting change nothing but the glyphs' shapes.
 func (f *Font) SetLinearMetrics(on bool) { f.setFlag(flagLinearMetrics, on) }
 
 // LinearMetrics reports whether linearly scalable font and glyph metrics are requested.
@@ -325,9 +329,11 @@ func GetFontBounds(f *Font) geom.Rect {
 }
 
 // DrawTextPositions fills out with successive glyph origins from a no-device strike (actual size, no canonicalization),
-// starting at origin. It writes min(len(glyphs), len(out)) origins, as the sibling GetPos does.
+// starting at origin. It writes min(len(glyphs), len(out)) origins, as the sibling GetPos does. The advances are the
+// ones measuring reports, hinted ones included, so text is drawn as wide as it was measured.
 func DrawTextPositions(f *Font, glyphs []uint16, origin geom.Point, out []geom.Point) {
 	st := strike{t: f.typeface, size: f.size, scaleX: f.scaleX, skewX: f.skewX, frameWidth: -1}
+	st.setHinting(f)
 	sum := origin
 	n := min(len(glyphs), len(out))
 	for i := range n {

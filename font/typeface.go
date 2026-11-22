@@ -9,7 +9,7 @@
 
 // Typeface's surface (family name, font style, units-per-em, fixed pitch, text→glyph conversion), built over
 // go-text/typesetting's font parser: the sfnt tables are read directly rather than through a platform text-rendering
-// host. The deltas that follow from that: metrics are always linear, and rendering is unhinted except for HintingFull
+// host. The deltas that follow from that: rendering is unhinted with linear metrics except for HintingFull
 // (hinting.go; forceAutoHinting is recorded but never honored, there being no auto-hinter); embedded bitmap strikes are
 // always used when present (the embeddedBitmaps request is recorded but never consulted: the scaler decodes an
 // sbix/CBDT/EBDT PNG strike into an ARGB32 mask whenever the typeface carries one); font metrics follow the FreeType

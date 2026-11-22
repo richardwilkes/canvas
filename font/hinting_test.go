@@ -10,20 +10,33 @@
 package font
 
 import (
+	"math"
 	"slices"
 	"testing"
+
+	"github.com/go-text/typesetting/font/opentype"
 
 	"github.com/richardwilkes/canvas/font/internal/tthint"
 	"github.com/richardwilkes/canvas/geom"
 	"github.com/richardwilkes/canvas/path"
 )
 
-// hintedTestGlyph returns the mask of 'H' from the test font at 16 pixels under the given hinting level and matrix.
+// hintedTestGlyph returns the mask of 'H' from the test font at 16 pixels under the given hinting level and matrix,
+// with linear metrics.
 func hintedTestGlyph(t *testing.T, cache *StrikeCache, level Hinting, matrix *geom.Matrix, skewX float32) *Glyph {
+	t.Helper()
+	return hintedTestGlyphWithMetrics(t, cache, level, matrix, skewX, true)
+}
+
+// hintedTestGlyphWithMetrics is hintedTestGlyph with the choice of linear metrics.
+func hintedTestGlyphWithMetrics(t *testing.T, cache *StrikeCache, level Hinting, matrix *geom.Matrix, skewX float32,
+	linear bool,
+) *Glyph {
 	t.Helper()
 	f := loadMigratedTestFont(t, 16)
 	f.SetHinting(level)
 	f.SetSkewX(skewX)
+	f.SetLinearMetrics(linear)
 	gid := f.Typeface().UnicharToGlyph('H')
 	if gid == 0 {
 		t.Fatal("test font does not map 'H'")
@@ -49,7 +62,8 @@ func rowInk(g *Glyph) []int {
 	return rows
 }
 
-// TestFullHinting checks that hinting puts the cap height of an 'H' on a row boundary without changing its advance, and
+// TestFullHinting checks that hinting puts the cap height of an 'H' on a row boundary, without changing its advance
+// when metrics are linear, and
 // that a rotated or slanted strike is left unhinted.
 func TestFullHinting(t *testing.T) {
 	cache := NewStrikeCache()
@@ -254,6 +268,62 @@ func TestMeasuredBoundsCoverHintedInk(t *testing.T) {
 		}
 		if checked < 100 || moved == 0 {
 			t.Errorf("size %v: %d glyphs checked, %d with bounds hinting moved", size, checked, moved)
+		}
+	}
+}
+
+// TestHintedAdvances checks the advances of hinted glyphs without linear metrics, the default: each is a whole number
+// of pixels, the one the hinter reports for the size the glyphs were fitted to, and measuring reports what is drawn.
+// With linear metrics, or without hinting, the advance is the design one at the requested size.
+func TestHintedAdvances(t *testing.T) {
+	cache := NewStrikeCache()
+	identity := geom.IdentityMatrix()
+	// The test font asks for whole sizes, so at 12.5 its glyphs are fitted for 13.
+	const size, fitted = 12.5, 13
+	f := loadMigratedTestFont(t, size)
+	tf := f.Typeface()
+	gids := []uint16{tf.UnicharToGlyph('H'), tf.UnicharToGlyph('i'), tf.UnicharToGlyph('m'), tf.UnicharToGlyph(' ')}
+	design := func(gid uint16, ppem float32) float32 {
+		return tf.faceHAdvance(opentype.GID(gid)) / float32(tf.upem) * ppem
+	}
+	drawn := func(gid uint16) float32 {
+		rec, effects := MakeRecAndEffects(f, nil, &identity, nil)
+		strike := cache.FindOrCreateStrike(&StrikeSpec{Typeface: tf, Rec: rec, Effects: effects})
+		return strike.Metrics([]uint16{gid}, nil)[0].AdvanceX
+	}
+	measured := func(gid uint16) float32 {
+		var width [1]float32
+		f.GlyphWidths([]uint16{gid}, width[:])
+		// Text is laid out for drawing with the advance it is measured with.
+		var positions [2]geom.Point
+		DrawTextPositions(f, []uint16{gid, gid}, geom.Point{}, positions[:])
+		if positions[1].X != width[0] {
+			t.Errorf("glyph %d: positioned for drawing with an advance of %v, measured as %v", gid, positions[1].X, width[0])
+		}
+		return width[0]
+	}
+	for _, gid := range gids {
+		f.SetHinting(HintingFull)
+		f.SetLinearMetrics(false)
+		want := float32(math.Round(float64(design(gid, fitted))))
+		if got := drawn(gid); got != want {
+			t.Errorf("glyph %d: hinted advance %v, want %v", gid, got, want)
+		}
+		if got := measured(gid); got != want {
+			t.Errorf("glyph %d: measured hinted advance %v, want %v", gid, got, want)
+		}
+		linear := design(gid, size)
+		f.SetLinearMetrics(true)
+		if got := drawn(gid); got != linear {
+			t.Errorf("glyph %d: advance with linear metrics %v, want %v", gid, got, linear)
+		}
+		if got := measured(gid); got != linear {
+			t.Errorf("glyph %d: measured advance with linear metrics %v, want %v", gid, got, linear)
+		}
+		f.SetHinting(HintingNormal)
+		f.SetLinearMetrics(false)
+		if got := drawn(gid); got != linear {
+			t.Errorf("glyph %d: unhinted advance %v, want %v", gid, got, linear)
 		}
 	}
 }

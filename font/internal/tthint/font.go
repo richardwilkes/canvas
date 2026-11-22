@@ -30,6 +30,9 @@ const (
 	compHaveTransformMask = compHaveScale | compHaveXYScale | compHaveTwoByTwo
 )
 
+// minFunctionDefs is the least number of function definitions there is room for, whatever the font declares.
+const minFunctionDefs = 64
+
 // Limits on what a glyph may ask for, so that a malformed font cannot make loading one unbounded.
 const (
 	maxRecursionDepth = 64
@@ -83,13 +86,16 @@ func NewFont(table func(tag string) []byte) (*Font, error) {
 	}
 	// Bit 3 of the head flags asks for ppem to be rounded to an integer before scaling.
 	f.forceIntegerPPEM = binary.BigEndian.Uint16(head[16:])&(1<<3) != 0
-	f.longLoca = binary.BigEndian.Uint16(head[50:]) == 1
+	// Any format but zero means long offsets, as FreeType reads it. Skrifa takes only one for long.
+	f.longLoca = binary.BigEndian.Uint16(head[50:]) != 0
 	f.numGlyphs = int(binary.BigEndian.Uint16(maxp[4:]))
 	var maxInstructions uint16
 	if len(maxp) >= 32 {
 		f.maxTwilight = binary.BigEndian.Uint16(maxp[16:])
 		f.maxStorage = binary.BigEndian.Uint16(maxp[18:])
-		f.maxFunctionDefs = binary.BigEndian.Uint16(maxp[20:])
+		// Fonts declare fewer functions than their font program defines, down to none (Keystrokes MT), and would not
+		// be hinted at all, so there is room for at least 64, as in FreeType. Skrifa takes the font's word.
+		f.maxFunctionDefs = max(binary.BigEndian.Uint16(maxp[20:]), minFunctionDefs)
 		f.maxInstrDefs = binary.BigEndian.Uint16(maxp[22:])
 		f.maxStack = binary.BigEndian.Uint16(maxp[24:])
 		maxInstructions = binary.BigEndian.Uint16(maxp[26:])
@@ -154,26 +160,43 @@ func (f *Font) hMetrics(gid int) (advance, lsb int32) {
 
 // glyphData returns the bytes of a glyph's record in glyf: empty for a glyph with no outline, and ok false for one
 // the font does not have or describes wrongly.
+//
+// Two kinds of broken loca table are mended the way FreeType mends them, where Skrifa gives the glyph up: a last glyph
+// that runs past the end of glyf is cut off there, and a glyph whose record ends before it starts, in a table that is
+// out of order, is taken to run to the end of glyf. The glyph's own header and point counts say how much of that is
+// read.
 func (f *Font) glyphData(gid int) (data []byte, ok bool) {
 	if gid < 0 || gid >= f.numGlyphs {
 		return nil, false
 	}
-	var start, end int
+	var start, end, locations uint64
 	if f.longLoca {
-		if (gid+2)*4 > len(f.loca) {
+		locations = uint64(len(f.loca) / 4)
+		if uint64(gid)+2 > locations {
 			return nil, false
 		}
-		start = int(binary.BigEndian.Uint32(f.loca[gid*4:]))
-		end = int(binary.BigEndian.Uint32(f.loca[gid*4+4:]))
+		start = uint64(binary.BigEndian.Uint32(f.loca[gid*4:]))
+		end = uint64(binary.BigEndian.Uint32(f.loca[gid*4+4:]))
 	} else {
-		if (gid+2)*2 > len(f.loca) {
+		locations = uint64(len(f.loca) / 2)
+		if uint64(gid)+2 > locations {
 			return nil, false
 		}
-		start = int(binary.BigEndian.Uint16(f.loca[gid*2:])) * 2
-		end = int(binary.BigEndian.Uint16(f.loca[gid*2+2:])) * 2
+		start = uint64(binary.BigEndian.Uint16(f.loca[gid*2:])) * 2
+		end = uint64(binary.BigEndian.Uint16(f.loca[gid*2+2:])) * 2
 	}
-	if start > end || end > len(f.glyf) {
+	size := uint64(len(f.glyf))
+	if start > size {
 		return nil, false
+	}
+	switch {
+	case end < start:
+		end = size
+	case end > size:
+		if uint64(gid)+2 != locations {
+			return nil, false
+		}
+		end = size
 	}
 	return f.glyf[start:end], true
 }

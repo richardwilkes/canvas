@@ -9,6 +9,8 @@
 
 package tthint
 
+import "math"
+
 const phantomPointCount = 4
 
 // Outline is a hinted glyph outline.
@@ -103,7 +105,9 @@ func (sc *scaler) load(gid, depth int) bool {
 	sc.phantom[2] = Point{Y: ascent}
 	sc.phantom[3] = Point{Y: ascent - (ascent - descent)}
 	switch {
-	case len(data) == 0:
+	case len(data) == 0 || header.contours == 0:
+		// A record that declares no contours is an empty glyph, as in FreeType, whatever else it holds. Skrifa reads
+		// one as a simple glyph, and gives up one that stops at its header, along with every composite that uses it.
 		for i := range sc.phantom {
 			sc.phantom[i] = sc.scalePoint(sc.phantom[i])
 		}
@@ -177,14 +181,11 @@ func (sc *scaler) loadSimple(body []byte, contourCount int) bool {
 // componentScale widens a 2.14 transform term to 16.16.
 func componentScale(v int16) int32 { return int32(v) * 4 }
 
-// hypot16 approximates the length of a 16.16 vector, the way Skrifa measures a component's transform to scale its
-// offset.
+// hypot16 returns the length of a 16.16 vector, which is what a component's offset is scaled by when the font asks for
+// that. FreeType measures it this way. Skrifa uses an older approximation, the longer side plus three eighths of the
+// shorter, which is 3% short for a component turned 45 degrees: half a pixel on an offset of 1000 units at 32 ppem.
 func hypot16(a, b int32) int32 {
-	a, b = abs32(a), abs32(b)
-	if a > b {
-		return a + ((3 * b) >> 3)
-	}
-	return b + ((3 * a) >> 3)
+	return int32(math.Round(math.Hypot(float64(a), float64(b))))
 }
 
 func (sc *scaler) loadComposite(body []byte, depth int) bool {
@@ -236,11 +237,14 @@ func (sc *scaler) loadComposite(body []byte, depth int) bool {
 			if c.flags&compRoundXYToGrid != 0 {
 				offset.Y = round26(offset.Y)
 			}
-		} else {
-			// The component is placed by making one of its points coincide with one already in the composite.
+		} else if endPoint != startPoint {
+			// The component is placed by making one of its points coincide with one already in the composite. Both
+			// are looked up among the points loaded so far: Skrifa bounds them by its whole buffer, which lets an index
+			// that is out of range read whatever an earlier glyph left there. A component with no points has nothing to
+			// place.
 			base := pointBase + int(c.arg1)
 			comp := startPoint + int(c.arg2)
-			if base >= len(s.scaled) || comp >= len(s.scaled) {
+			if base >= endPoint || comp >= endPoint {
 				return false
 			}
 			offset = Point{X: s.scaled[base].X - s.scaled[comp].X, Y: s.scaled[base].Y - s.scaled[comp].Y}

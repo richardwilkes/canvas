@@ -131,7 +131,7 @@ func TestMatchesFreeType(t *testing.T) {
 }
 
 // TestRefusals checks the errors a caller is expected to tell apart or act on: a font with no outlines to hint, a size
-// the font's own control value program turns hinting off at, and a size of zero.
+// the font's own control value program turns hinting off at, and a size that is nothing or rounds to nothing.
 func TestRefusals(t *testing.T) {
 	if _, err := NewFont(func(string) []byte { return nil }); !errors.Is(err, ErrNoOutlines) {
 		t.Errorf("expected ErrNoOutlines, got %v", err)
@@ -140,8 +140,10 @@ func TestRefusals(t *testing.T) {
 	if _, err := font.NewInstance(7, TargetLCD); !errors.Is(err, ErrHintingDisabled) {
 		t.Errorf("expected Roboto to disable its instructions at 7 ppem, got %v", err)
 	}
-	if _, err := font.NewInstance(0, TargetLCD); err == nil {
-		t.Error("expected a size of zero to be refused")
+	for _, ppem := range []float32{0, 0.01, 0.4} {
+		if _, err := font.NewInstance(ppem, TargetLCD); err == nil || errors.Is(err, ErrHintingDisabled) {
+			t.Errorf("expected a size of %v to be refused as invalid, got %v", ppem, err)
+		}
 	}
 }
 
@@ -199,5 +201,172 @@ func TestDamagedFontsDoNotPanic(t *testing.T) {
 	if fonts < rounds/2 || instances < rounds/2 || outlines < rounds*100 {
 		t.Errorf("the damage kept the pipeline from running: %d fonts, %d instances, %d outlines in %d rounds", fonts,
 			instances, outlines, rounds)
+	}
+}
+
+// compositeTestFont builds a font of one triangle (glyph 0), one empty glyph (glyph 1) and the given composite glyphs
+// after them, each described by the bytes of its component records.
+func compositeTestFont(tb testing.TB, composites ...[]byte) *Font {
+	tb.Helper()
+	be16 := func(values ...int) []byte {
+		var out []byte
+		for _, v := range values {
+			out = binary.BigEndian.AppendUint16(out, uint16(v))
+		}
+		return out
+	}
+	// One contour through (0,0), (100,0) and (0,100), every point on the curve with 16-bit deltas.
+	triangle := be16(1, 0, 0, 100, 100, 2, 0)
+	triangle = append(triangle, 1, 1, 1)
+	triangle = append(triangle, be16(0, 100, -100, 0, 0, 100)...)
+	triangle = append(triangle, 0)
+	glyf := bytes.Clone(triangle)
+	loca := be16(0, len(glyf)/2, len(glyf)/2)
+	for _, components := range composites {
+		glyf = append(glyf, be16(-1, 0, 0, 100, 100)...)
+		glyf = append(glyf, components...)
+		if len(glyf)%2 != 0 {
+			glyf = append(glyf, 0)
+		}
+		loca = append(loca, be16(len(glyf)/2)...)
+	}
+	head := make([]byte, 54)
+	binary.BigEndian.PutUint16(head[18:], 1000)
+	maxp := make([]byte, 32)
+	binary.BigEndian.PutUint16(maxp[4:], uint16(2+len(composites)))
+	font, err := NewFont(lookup(map[string][]byte{"head": head, "maxp": maxp, "glyf": glyf, "loca": loca}))
+	if err != nil {
+		tb.Fatal(err)
+	}
+	return font
+}
+
+// TestCompositeAnchorPoints checks components placed by matching a point of theirs to one already in the composite:
+// the two points must be among those loaded, whatever an earlier glyph left in the buffers, and a component with no
+// points is not placed at all.
+func TestCompositeAnchorPoints(t *testing.T) {
+	const (
+		argsAreWords   = compArgsAreWords
+		argsAreXY      = compArgsAreXYValues
+		moreComponents = compMoreComponents
+	)
+	first := []byte{0, argsAreXY | moreComponents, 0, 0, 0, 0} // the triangle, at an offset of nothing
+	font := compositeTestFont(t,
+		// 2: the triangle twice, the second with its point 2 on the first's point 1.
+		append(bytes.Clone(first), 0, 0, 0, 0, 1, 2),
+		// 3: the triangle, then the empty glyph anchored by points that do not exist.
+		append(bytes.Clone(first), 0, 0, 0, 1, 200, 200),
+		// 4: the triangle anchored to a point past the three it has: the first of its own phantom points.
+		[]byte{0, 0, 0, 0, 3, 0},
+		// 5: the triangle anchored to a point far past anything loaded.
+		[]byte{0, argsAreWords, 0, 0, 0, 200, 0, 0},
+	)
+	in, err := font.NewInstance(10, TargetLCD)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var o Outline
+	if !in.Outline(2, &o) {
+		t.Fatal("a composite with valid anchor points did not load")
+	}
+	if len(o.Points) != 6 || o.Points[5] != o.Points[1] {
+		t.Errorf("anchored component's point at %v, want it on %v", o.Points[5], o.Points[1])
+	}
+	if !in.Outline(3, &o) || len(o.Points) != 3 {
+		t.Errorf("a composite with an empty anchored component did not load as its other component")
+	}
+	// Loaded after the composites above, these find their indices inside buffers those left behind.
+	for _, gid := range []uint16{4, 5} {
+		if in.Outline(gid, &o) {
+			t.Errorf("glyph %d: an anchor point that was never loaded was accepted", gid)
+		}
+	}
+}
+
+// TestLoaderRepairs checks the repairs made to fonts that declare less than they use or index their glyphs wrongly:
+// room for 64 functions whatever maxp says, any nonzero loca format read as long, and a loca table that overruns glyf
+// at its last glyph, or is out of order, mended rather than costing the glyph its hinting.
+func TestLoaderRepairs(t *testing.T) {
+	if got := compositeTestFont(t).maxFunctionDefs; got != minFunctionDefs {
+		t.Errorf("room for %d function definitions in a font that declares none, want %d", got, minFunctionDefs)
+	}
+	glyf := make([]byte, 40)
+	long := func(offsets ...uint32) []byte {
+		var loca []byte
+		for _, offset := range offsets {
+			loca = binary.BigEndian.AppendUint32(loca, offset)
+		}
+		return loca
+	}
+	head := make([]byte, 54)
+	binary.BigEndian.PutUint16(head[18:], 1000)
+	binary.BigEndian.PutUint16(head[50:], 2) // not zero, so long offsets
+	maxp := make([]byte, 6)
+	binary.BigEndian.PutUint16(maxp[4:], 4)
+	// Glyph 1 ends before it starts, glyph 2 runs past glyf without being the last, and glyph 3, the last, does too.
+	font, err := NewFont(lookup(map[string][]byte{
+		"head": head, "maxp": maxp, "glyf": glyf, "loca": long(0, 20, 10, 60, 80),
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for gid, want := range []int{20, 20, -1, -1} {
+		data, ok := font.glyphData(gid)
+		if got := len(data); ok != (want >= 0) || (ok && got != want) {
+			t.Errorf("glyph %d: %d bytes, ok %v; want %d", gid, got, ok, want)
+		}
+	}
+	font.loca = long(0, 20, 10, 30, 80)
+	if data, ok := font.glyphData(3); !ok || len(data) != 10 {
+		t.Errorf("a last glyph overrunning glyf: %d bytes, ok %v; want it cut to 10", len(data), ok)
+	}
+}
+
+// TestScaledComponentOffset checks that an offset the font asks to have scaled with its component is scaled by the
+// true length of the transform: a component turned 45 degrees without being resized keeps its offset.
+func TestScaledComponentOffset(t *testing.T) {
+	const (
+		flags = compArgsAreWords | compArgsAreXYValues | compHaveTwoByTwo | compScaledOffset
+		cos45 = 0x2D41 // in 2.14
+	)
+	component := binary.BigEndian.AppendUint16(nil, flags)
+	for _, v := range []int{0, 1000, 0, cos45, cos45, -cos45, cos45} { // glyph, x, y, then xx, yx, xy, yy
+		component = binary.BigEndian.AppendUint16(component, uint16(v))
+	}
+	// At 1000 pixels per em of 1000 units, a unit is a pixel.
+	in, err := compositeTestFont(t, component).NewInstance(1000, TargetLCD)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var o Outline
+	if !in.Outline(2, &o) {
+		t.Fatal("the composite did not load")
+	}
+	// The triangle's first point is its origin, so it lands on the offset.
+	if want := (Point{X: 1000 * 64}); o.Points[0] != want {
+		t.Errorf("component placed at %v, want %v", o.Points[0], want)
+	}
+}
+
+// TestGlyphWithNoContoursIsEmpty checks that a glyph record declaring no contours loads as an empty glyph, even one
+// that holds nothing but its header.
+func TestGlyphWithNoContoursIsEmpty(t *testing.T) {
+	head := make([]byte, 54)
+	binary.BigEndian.PutUint16(head[18:], 1000)
+	maxp := make([]byte, 6)
+	binary.BigEndian.PutUint16(maxp[4:], 1)
+	font, err := NewFont(lookup(map[string][]byte{
+		"head": head, "maxp": maxp, "glyf": make([]byte, 10), "loca": {0, 0, 0, 5},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	in, err := font.NewInstance(16, TargetLCD)
+	if err != nil {
+		t.Fatal(err)
+	}
+	o := Outline{Points: make([]Point, 3)}
+	if !in.Outline(0, &o) || len(o.Points) != 0 {
+		t.Errorf("loaded %v with %d points, want an empty glyph", in.Outline(0, &o), len(o.Points))
 	}
 }

@@ -10,6 +10,8 @@
 package tthint
 
 import (
+	"bytes"
+	"errors"
 	"slices"
 	"testing"
 )
@@ -86,6 +88,22 @@ func TestMoveAlongAHorizontalProjection(t *testing.T) {
 	}
 }
 
+// TestLoopIterationsCountAgainstTheBudget checks that a program cannot multiply its work by the loop counter: the
+// iterations of a repeating instruction are charged like instructions, so asking for more of them than the budget of a
+// run ends it.
+func TestLoopIterationsCountAgainstTheBudget(t *testing.T) {
+	// SLOOP 32767; ALIGNRP on an empty stack, which aligns point 0 with itself each time round.
+	once := []byte{opPUSHW0, 0x7F, 0xFF, opSLOOP, opALIGNRP}
+	e := testEngine(make([]Point, 1), nil, once)
+	if err := e.runProgram(programGlyph); err != nil {
+		t.Errorf("one full loop: %v", err)
+	}
+	e = testEngine(make([]Point, 1), nil, bytes.Repeat(once, maxRunInstructions/0x7FFF+1))
+	if err := e.runProgram(programGlyph); !errors.Is(err, errExceededExecutionBudget) {
+		t.Errorf("more iterations than the budget: got %v, want %v", err, errExceededExecutionBudget)
+	}
+}
+
 // TestPhantomPointsSurviveAFailedProgram checks that a glyph program which ends in an error outside backward
 // compatibility still hands back the phantom points it had moved, like the rest of the outline.
 func TestPhantomPointsSurviveAFailedProgram(t *testing.T) {
@@ -108,5 +126,54 @@ func TestPhantomPointsSurviveAFailedProgram(t *testing.T) {
 	}
 	if points[2].X != 704 {
 		t.Errorf("advance phantom point at %d, want 704", points[2].X)
+	}
+}
+
+// TestAATakesItsOperand checks that the obsolete AA instruction still pops the value it was given, so that what
+// follows finds the stack it expects.
+func TestAATakesItsOperand(t *testing.T) {
+	e := testEngine(make([]Point, 1), nil, []byte{opPUSHB0 + 1, 5, 7, opAA, opSRP0})
+	if err := e.runProgram(programGlyph); err != nil {
+		t.Fatal(err)
+	}
+	if e.gs.rp0 != 5 {
+		t.Errorf("rp0 is %d, want 5: AA left its operand for SRP0", e.gs.rp0)
+	}
+}
+
+// TestSDPVTLOnCoincidentOriginalPoints checks that SDPVTL asked for a perpendicular gives it up for both vectors once
+// the two points turn out to coincide in the original outline: the dual projection vector is the x axis, and the
+// projection vector runs along the line through the points' current positions, not across it.
+func TestSDPVTLOnCoincidentOriginalPoints(t *testing.T) {
+	e := testEngine(make([]Point, 2), nil, []byte{opPUSHB0 + 1, 0, 1, opSDPVTL0 + 1})
+	e.gs.zones[zoneGlyph].points[1] = Point{Y: 64}
+	if err := e.runProgram(programGlyph); err != nil {
+		t.Fatal(err)
+	}
+	if want := (Point{X: 0x4000}); e.gs.dualProjVector != want {
+		t.Errorf("dual projection vector %v, want %v", e.gs.dualProjVector, want)
+	}
+	if want := (Point{Y: -0x4000}); e.gs.projVector != want {
+		t.Errorf("projection vector %v, want %v", e.gs.projVector, want)
+	}
+}
+
+// TestMSIRPStartsATwilightPointFromTheReferencePoint checks that MSIRP into the twilight zone measures its distance
+// from the reference point's original position, wherever the twilight point was before.
+func TestMSIRPStartsATwilightPointFromTheReferencePoint(t *testing.T) {
+	e := testEngine([]Point{{Y: 700}}, nil, []byte{
+		opPUSHB0, 0, opSZP1,
+		0x00,                // SVTCA[y]
+		opPUSHB0 + 1, 1, 64, // point 1, a distance of one pixel
+		opMSIRP0,
+	})
+	twilight := e.gs.zone(zoneTwilight)
+	twilight.original[1] = Point{X: 3, Y: 999}
+	if err := e.runProgram(programGlyph); err != nil {
+		t.Fatal(err)
+	}
+	want := Point{Y: 764}
+	if twilight.original[1] != want || twilight.points[1] != want {
+		t.Errorf("twilight point at %v, originally %v, want both %v", twilight.points[1], twilight.original[1], want)
 	}
 }

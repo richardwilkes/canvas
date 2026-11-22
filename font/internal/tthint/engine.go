@@ -106,8 +106,10 @@ type engine struct {
 	loopCalls      int
 	skipped        int
 	cvtLen         int
-	initial        program
-	current        program
+	// loopWork counts the iterations of the instructions that repeat under SLOOP.
+	loopWork int
+	initial  program
+	current  program
 	// defsWritable is true only while the font and control value programs run.
 	defsWritable bool
 	// hintReliant is the font's: its glyph programs run without backward compatibility.
@@ -156,6 +158,7 @@ func (e *engine) reset(p program) {
 	e.backwardJumps = 0
 	e.loopCalls = 0
 	e.skipped = 0
+	e.loopWork = 0
 	switch p {
 	case programFont:
 		clear(e.functions)
@@ -174,6 +177,21 @@ func (e *engine) reset(p program) {
 			e.gs.backwardCompatibility = false
 		}
 	}
+}
+
+// takeLoopCount returns how many times the instruction being run repeats, and puts the loop counter back to one.
+//
+// The iterations are charged against the budget of a run. Skrifa counts only instructions, so a program that sets the
+// counter to its limit before each of them does some sixty thousand times the work the budget allows for; no font needs
+// that, and a damaged or hostile one must not be able to ask for it.
+func (e *engine) takeLoopCount() uint32 {
+	count := e.gs.loopCounter
+	e.gs.loopCounter = 1
+	e.loopWork += int(count)
+	if e.loopWork > maxRunInstructions {
+		fail(errExceededExecutionBudget)
+	}
+	return count
 }
 
 // setLoopLimit computes the bound on loop calls and backward jumps, as FreeType does.

@@ -61,6 +61,10 @@ func (f *Font) NewInstance(ppem float32, target Target) (*Instance, error) {
 	if f.forceIntegerPPEM {
 		size = round26(size)
 	}
+	if size <= 0 {
+		// A size that rounds to nothing would scale every point to the origin.
+		return nil, errors.New("invalid size")
+	}
 	scale := divFixed(size, int32(f.unitsPerEm))
 	// The integer ppem instructions see is rounded in fixed point, as FreeType does.
 	roundedPPEM := (mulFixed(scale, int32(f.unitsPerEm)) + 32) >> 6

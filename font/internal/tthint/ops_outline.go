@@ -13,8 +13,7 @@ package tthint
 
 func (e *engine) opFLIPPT() {
 	gs := &e.gs
-	count := gs.loopCounter
-	gs.loopCounter = 1
+	count := e.takeLoopCount()
 	if gs.backwardCompatibility && gs.didIUPX && gs.didIUPY {
 		for range count {
 			e.pop()
@@ -54,9 +53,7 @@ func (e *engine) setOnCurveForRange(on bool) {
 func (e *engine) opSHP(opcode uint8) {
 	gs := &e.gs
 	disp := gs.pointDisplacement(opcode)
-	count := gs.loopCounter
-	gs.loopCounter = 1
-	for range count {
+	for range e.takeLoopCount() {
 		gs.moveZP2Point(e.popIndex(), disp.dx, disp.dy, true)
 	}
 }
@@ -108,10 +105,8 @@ func (e *engine) opSHPIX() {
 	amount := e.pop()
 	dx := mul14(amount, gs.freedomVector.X)
 	dy := mul14(amount, gs.freedomVector.Y)
-	count := gs.loopCounter
-	gs.loopCounter = 1
 	didIUP := gs.didIUPX && gs.didIUPY
-	for range count {
+	for range e.takeLoopCount() {
 		p := e.popIndex()
 		if gs.backwardCompatibility {
 			if inTwilight ||
@@ -132,7 +127,10 @@ func (e *engine) opMSIRP(opcode uint8) {
 		return
 	}
 	if gs.zp1 == zoneTwilight {
-		*gs.zone(gs.zp1).pointRef(point) = gs.zone(gs.zp0).originalPoint(gs.rp0)
+		// A twilight point is first put at the reference point's original position, as in FreeType. Skrifa writes that
+		// into the point's current position, which the last line here overwrites, so the move starts from wherever
+		// the point's original position already was.
+		*gs.zone(gs.zp1).originalRef(point) = gs.zone(gs.zp0).originalPoint(gs.rp0)
 		gs.moveOriginal(gs.zp1, point, distance)
 		*gs.zone(gs.zp1).pointRef(point) = gs.zone(gs.zp1).originalPoint(point)
 	}
@@ -327,11 +325,11 @@ func (e *engine) opISECT() {
 
 func (e *engine) opIP() {
 	gs := &e.gs
-	count := gs.loopCounter
-	gs.loopCounter = 1
 	if !gs.inBounds(gs.zp0, gs.rp1) || !gs.inBounds(gs.zp1, gs.rp2) {
+		gs.loopCounter = 1
 		return
 	}
+	count := e.takeLoopCount()
 	inTwilight := gs.zp0 == zoneTwilight || gs.zp1 == zoneTwilight || gs.zp2 == zoneTwilight
 	z0, z1 := gs.zone(gs.zp0), gs.zone(gs.zp1)
 	var orusBase Point

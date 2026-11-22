@@ -26,19 +26,35 @@
 //     SLOOP run their full count on those zeros.
 //   - The font program runs at the size being prepared, and each glyph program of a composite starts from the state
 //     the control value program left, not from what an earlier component did to it.
-//   - Limits and repairs FreeType applies while loading are absent: the floor on function definitions, the cap on the
-//     twilight zone, the loop budget tied to the glyph count, the mending of an unordered loca table.
-//   - The vertical phantom points come from the OS/2 typographic metrics, and a scaled component offset is measured
-//     with an approximate vector length.
-//   - A few instructions differ on valid programs: MSIRP into the twilight zone sets the point's current position from
-//     the reference point where FreeType sets its original one, SDPVTL rotates the projection vector even when the two
-//     points coincide in the original outline, AA takes nothing off the stack, and ODD and EVEN test the integer bit
-//     alone, as FreeType itself now does (it masked the fraction in too, through 2.13.2).
+//   - Limits FreeType applies while running are absent: the cap on the twilight zone, and the loop budget tied to the
+//     glyph count.
+//   - The vertical phantom points come from the OS/2 typographic metrics.
+//   - ODD and EVEN test the integer bit alone, as FreeType itself now does (it masked the fraction in too, through
+//     2.13.2).
 //
 // Instructions that move points horizontally are ignored ("backward compatibility" in the interpreter's terms), because
 // subpixel rendering resolves horizontal detail better than rounding to whole pixels does, so hinting changes where
 // rows of a glyph fall and leaves its widths and advances alone. The exception is a font that needs its instructions to
 // draw correct contours at all (IsHintReliant), which runs them in full.
+//
+// Some things here are not Skrifa's. Four are things Skrifa gets wrong for valid fonts, and they follow FreeType until
+// Skrifa does:
+//
+//   - MSIRP into the twilight zone starts the point from the reference point's original position. Skrifa leaves the
+//     point's original position where it was (opMSIRP).
+//   - SDPVTL on two points that coincide in the original outline sets both vectors without the rotation. Skrifa still
+//     rotates the projection vector (dispatch).
+//   - AA takes its operand off the stack. Skrifa leaves it there (dispatch).
+//   - A component's scaled offset is scaled by the true length of the transform's columns. Skrifa uses an approximation
+//     that is short for a rotated component (hypot16).
+//
+// Four are repairs FreeType makes to fonts in circulation, which cost nothing to make here: room for at least 64
+// function definitions, any nonzero loca format read as long, a loca table that is out of order or overruns glyf
+// mended, and a glyph record with no contours read as an empty glyph (NewFont, glyphData, load).
+//
+// And three guard against fonts that are damaged or hostile. The iterations of a repeating instruction count against
+// the budget of a run (takeLoopCount). A component placed by matching points may only name points that have been
+// loaded (loadComposite). And a size that rounds to zero is refused rather than hinted to nothing (NewInstance).
 //
 // Variable fonts are not handled: a Font reports HasVariations and the caller is expected not to hint an instance
 // away from the default.

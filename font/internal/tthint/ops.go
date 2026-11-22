@@ -294,9 +294,7 @@ func (e *engine) dispatch(ins *instruction) {
 	case opMSIRP0, opMSIRP0 + 1:
 		e.opMSIRP(op)
 	case opALIGNRP:
-		count := gs.loopCounter
-		gs.loopCounter = 1
-		for range count {
+		for range e.takeLoopCount() {
 			p := e.popIndex()
 			distance := gs.project(gs.zone(gs.zp1).point(p), gs.zone(gs.zp0).point(gs.rp0))
 			gs.movePoint(gs.zp1, p, -distance)
@@ -453,7 +451,9 @@ func (e *engine) dispatch(ins *instruction) {
 	case opSANGW:
 		e.pop()
 	case opAA:
-		// Unsupported everywhere; does nothing.
+		// Unsupported everywhere, but it still takes its operand, as in FreeType. Skrifa leaves the operand on the
+		// stack, which puts every later instruction one value out.
+		e.pop()
 	case opFLIPPT:
 		e.opFLIPPT()
 	case opFLIPRGON:
@@ -466,8 +466,14 @@ func (e *engine) dispatch(ins *instruction) {
 		index1 := e.popIndex()
 		index2 := e.popIndex()
 		parallel := op&1 == 0
-		gs.dualProjVector = lineVector(gs.zone(gs.zp1).originalPoint(index2), gs.zone(gs.zp2).originalPoint(index1),
-			parallel)
+		// Two points that coincide in the original outline give the x axis, and with it the instruction stops asking
+		// for a perpendicular: the projection vector built next is then parallel too, as in FreeType. Skrifa goes on
+		// to rotate that one.
+		o1, o2 := gs.zone(gs.zp1).originalPoint(index2), gs.zone(gs.zp2).originalPoint(index1)
+		if o1 == o2 {
+			parallel = true
+		}
+		gs.dualProjVector = lineVector(o1, o2, parallel)
 		gs.projVector = lineVector(gs.zone(gs.zp1).point(index2), gs.zone(gs.zp2).point(index1), parallel)
 		gs.updateProjectionState()
 	case opGETINFO:

@@ -13,11 +13,14 @@
 //
 //   - makeCanonicalized decides whether the strike measures at the requested size or at the canonical path size
 //     (canonicalTextSizeForPaths = 64) with a strike→source scale, dropping the paint in the canonical case.
-//   - Advances are always linear (no hinting level is honored): the design-space advance mapped through the text
-//     matrix, the same values an unhinted linear-metrics lane would produce.
+//   - Advances are linear: the design-space advance mapped through the text matrix. The exception is HintingFull
+//     without linear metrics, where a hinted glyph's advance is the hinter's, rounded to a whole pixel (hintedBox), the
+//     same advance its strike draws with.
 //   - Fill bounds come from the glyph extents (the outline control box) mapped through the text matrix and rounded out
 //     (saturateBounds) — except for the color and bitmap-strike lanes, whose extent the control box does not describe:
 //     those come from the drawing scaler itself (scalerContext), the same source SkFont::measureText routes through.
+//     With HintingFull they come from the hinted outline's control box instead (hintedBounds), since that is what is
+//     drawn and hinting moves edges off the design extents.
 //   - Styled bounds (stroke and/or path effect) come from the styled outline path's bounds: for the no-device strike
 //     the post 2x2 is identity, so the style applies directly in text-matrix space.
 //   - Glyphs whose bounds are empty in either dimension are zeroed.
@@ -33,6 +36,7 @@ import (
 
 	tsfont "github.com/go-text/typesetting/font"
 
+	"github.com/richardwilkes/canvas/font/internal/tthint"
 	"github.com/richardwilkes/canvas/geom"
 	"github.com/richardwilkes/canvas/path"
 	"github.com/richardwilkes/canvas/stroke"
@@ -54,7 +58,10 @@ type strike struct {
 	miterLimit    float32
 	cap           stroke.Cap
 	join          stroke.Join
+	hintTarget    tthint.Target // the rendering the font's edging asks hinting for, when hinted
 	strokeAndFill bool
+	hinted        bool // HintingFull was asked for, so fill bounds follow the hinted outline where there is one
+	linearMetrics bool // advances stay linear even where the glyph is hinted
 }
 
 // makeCanonicalized returns the strike to measure with and the strike→source scale to apply to the results.
@@ -77,7 +84,21 @@ func makeCanonicalized(f *Font, paint *stroke.PaintSpec) (st strike, strikeToSou
 	if paint != nil {
 		st.pathEffect = paint.PathEffect
 	}
+	st.setHinting(f)
 	return st, strikeToSourceScale
+}
+
+// setHinting records what the font asks of hinting, for a strike at the font's own size.
+func (st *strike) setHinting(f *Font) {
+	if f.hinting != HintingFull {
+		return
+	}
+	st.hinted = true
+	st.linearMetrics = f.flags&flagLinearMetrics != 0
+	st.hintTarget = tthint.TargetNormal
+	if f.edging == EdgingSubpixelAntiAlias {
+		st.hintTarget = tthint.TargetLCD
+	}
 }
 
 // shouldDrawAsPath reports whether the font/paint combination should be measured/drawn as a path rather than through
@@ -125,6 +146,13 @@ func (st *strike) glyphAdvance(gid uint16) float32 {
 	if t.face == nil || t.upem <= 0 || int(gid) >= t.nGlyphs || st.degenerate() {
 		return 0
 	}
+	if !st.linearMetrics && !t.hasCOLR && !t.hasBitmaps {
+		if box, ok := st.hintedBox(gid); ok {
+			if hinted, use := box.hintedAdvance(); use {
+				return hinted
+			}
+		}
+	}
 	adv := t.faceHAdvance(opentype.GID(gid))
 	return adv / float32(t.upem) * st.size * st.scaleX
 }
@@ -167,6 +195,9 @@ func (st *strike) glyphBounds(gid uint16) geom.Rect {
 	if st.frameWidth >= 0 || st.pathEffect != nil {
 		return st.styledGlyphBounds(gid)
 	}
+	if r, hinted := st.hintedBounds(gid); hinted {
+		return saturateBounds(r)
+	}
 	ext, ok := t.faceGlyphExtents(opentype.GID(gid))
 	if !ok || (ext.Width == 0 && ext.Height == 0) {
 		return geom.Rect{}
@@ -185,6 +216,34 @@ func (st *strike) glyphBounds(gid uint16) geom.Rect {
 		max(p0.Y, p1.Y, p2.Y, p3.Y),
 	)
 	return saturateBounds(r)
+}
+
+// hintedBounds returns the control box of gid's hinted outline in strike space, ok false if the glyph is drawn
+// unhinted. Drawing hints under the same conditions (hinterFor) and takes its mask bounds from the same box, so a
+// caller sizing a layer or a dirty rect from GlyphBounds or MeasureText covers the ink.
+//
+// This is exact when text is drawn at the size it was measured at. Under a scaling device matrix the glyphs are hinted
+// for the device size, which a measurement made without a device cannot know; the box is then the hinted one for the
+// font's own size, as the unhinted bounds are the design ones. Nor does a measurement know the device's pixel geometry,
+// so on a vertically striped display the box is the one for horizontal stripes.
+func (st *strike) hintedBounds(gid uint16) (bounds geom.Rect, ok bool) {
+	box, ok := st.hintedBox(gid)
+	if !ok || !box.hinted {
+		return geom.Rect{}, false
+	}
+	return box.rect(), true
+}
+
+// hintedBox returns gid's hinted control box and advance, ok false if the strike is not one drawing would hint.
+func (st *strike) hintedBox(gid uint16) (box hintedBox, ok bool) {
+	if !st.hinted || st.scaleX != 1 || st.skewX != 0 {
+		return hintedBox{}, false
+	}
+	size := st.t.hintedSize(st.size, st.hintTarget)
+	if size == nil {
+		return hintedBox{}, false
+	}
+	return size.measuredBox(gid), true
 }
 
 // styledGlyphBounds computes bounds from the outline in text-matrix space, with any path effect and stroke applied,

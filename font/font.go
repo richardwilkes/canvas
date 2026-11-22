@@ -17,10 +17,10 @@ import (
 	"github.com/richardwilkes/canvas/stroke"
 )
 
-// Hinting selects the requested hinting level. Every level is accepted and recorded, but none is honored: rendering
-// here is always unhinted with linear metrics, and no lane reads the recorded level. It therefore stays out of the
-// scaler rec, where it would only fragment strikes that render identically (the treatment SetEmbeddedBitmaps and
-// SetEmbolden get).
+// Hinting selects the requested hinting level. Only HintingFull is honored: it grid-fits glyphs vertically with the
+// typeface's TrueType instructions (see hinting.go). The other levels, including the default HintingNormal, draw the
+// outlines as designed, with linear metrics. Under HintingFull the advances are the hinter's, in whole pixels, unless
+// linear metrics are asked for (SetLinearMetrics).
 type Hinting uint8
 
 // Hinting values.
@@ -137,8 +137,11 @@ func (f *Font) SetForceAutoHinting(on bool) { f.setFlag(flagForceAutoHinting, on
 // ForceAutoHinting reports whether auto-hinting is forced.
 func (f *Font) ForceAutoHinting() bool { return f.flags&flagForceAutoHinting != 0 }
 
-// SetLinearMetrics sets whether font and glyph metrics are requested to be linearly scalable. Rendering here is always
-// unhinted, so the request only enters the scaler rec (and therefore the strike key); it changes no metric.
+// SetLinearMetrics sets whether glyph advances are requested to be linearly scalable: the design advance at the
+// requested size, whatever hinting does to the glyph. It is off by default, and matters only where glyphs are hinted
+// (HintingFull): there, without it, an advance is the one the hinter reports, rounded to a whole pixel, which keeps
+// the spacing right for a font hinted at a rounded size but makes layout depend on the size and on the hinting. Set it
+// to have hinting change nothing but the glyphs' shapes.
 func (f *Font) SetLinearMetrics(on bool) { f.setFlag(flagLinearMetrics, on) }
 
 // LinearMetrics reports whether linearly scalable font and glyph metrics are requested.
@@ -175,8 +178,7 @@ func (f *Font) SetBaselineSnap(on bool) { f.setFlag(flagBaselineSnap, on) }
 // BaselineSnap reports whether the baseline of horizontal text is snapped to whole pixels.
 func (f *Font) BaselineSnap() bool { return f.flags&flagBaselineSnap != 0 }
 
-// SetHinting sets the requested hinting level (recorded, never honored: the library is always unhinted with linear
-// metrics, so the level stays out of the scaler rec — see Hinting).
+// SetHinting sets the requested hinting level. Only HintingFull changes rendering; see Hinting.
 func (f *Font) SetHinting(h Hinting) { f.hinting = h }
 
 // Hinting returns the recorded hinting.
@@ -327,9 +329,11 @@ func GetFontBounds(f *Font) geom.Rect {
 }
 
 // DrawTextPositions fills out with successive glyph origins from a no-device strike (actual size, no canonicalization),
-// starting at origin. It writes min(len(glyphs), len(out)) origins, as the sibling GetPos does.
+// starting at origin. It writes min(len(glyphs), len(out)) origins, as the sibling GetPos does. The advances are the
+// ones measuring reports, hinted ones included, so text is drawn as wide as it was measured.
 func DrawTextPositions(f *Font, glyphs []uint16, origin geom.Point, out []geom.Point) {
 	st := strike{t: f.typeface, size: f.size, scaleX: f.scaleX, skewX: f.skewX, frameWidth: -1}
+	st.setHinting(f)
 	sum := origin
 	n := min(len(glyphs), len(out))
 	for i := range n {

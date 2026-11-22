@@ -496,6 +496,7 @@ func TestPack4xHToMaskImpulse(t *testing.T) {
 // styled lane: the fill must get the box, reaching full coverage, and the styled one the wider, fainter Gaussian.
 func TestLCDFilterFollowsTheLane(t *testing.T) {
 	f := lcdTestFont(t, 13)
+	f.SetHinting(HintingNone)
 	identity := geom.IdentityMatrix()
 	props := &DeviceProps{PixelGeometry: PixelGeometryRGBH}
 	gid := PackGlyphID(f.Typeface().UnicharToGlyph('l'))
